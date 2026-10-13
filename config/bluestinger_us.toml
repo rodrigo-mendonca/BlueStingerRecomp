@@ -1,0 +1,43 @@
+# Configuracao por jogo: Blue Stinger NTSC-U.
+# Contem apenas metadados e enderecos (fatos), nunca bytes do jogo.
+# O esquema completo sera definido nos marcos M1 (secao [input]) e M3 (demais).
+
+[game]
+title      = "Blue Stinger"
+product_id = "T13001N"
+version    = "V1.000"
+ip_date    = "19990705"
+region     = "JUE"
+os         = "katana"          # bit 0 dos perifericos = 0 (nao e Windows CE)
+
+[input]
+# Hash SHA-256 do 1ST_READ.BIN suportado (o mesmo de tools/extractor/known_versions.h).
+first_read_sha256 = "013301f3bd5e8305058f661ec3a0cddcb8468b524a2c5f4d8f88e4d523d21a50"   # rip CDI; o hash do GD original pode diferir
+first_read_size   = 1975556
+
+[load]
+base  = 0x8C010000
+entry = 0x8C010000
+
+# --- M3 ---
+# [[functions]]          # funcoes extras / fronteiras forcadas
+# address = 0x8C0xxxxx
+# size    = 0x40
+#
+# [[jump_tables]]        # tabelas de salto manuais
+# braf_address = 0x8C0xxxxx
+# table        = 0x8C0xxxxx
+# count        = 8
+#
+# [[data_ranges]]        # regioes do executavel que sao dados
+# start = 0x8C0xxxxx
+# end   = 0x8C0xxxxx
+#
+# [[overrides]]          # funcoes substituidas por codigo em runtime/game/overrides
+# address = 0x8C0xxxxx
+# name    = "wait_vblank"
+#
+# [[midasm_hooks]]
+# address   = 0x8C0xxxxx
+# name      = "on_room_load"
+# registers = ["r4", "r5"]

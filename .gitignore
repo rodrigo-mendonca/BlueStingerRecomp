@@ -1,0 +1,30 @@
+# --- NUNCA versionar dados do jogo ---
+ISO/
+*.cdi
+*.gdi
+*.chd
+*.iso
+*.bin
+*.raw
+*.img
+*.mds
+*.mdf
+game-data/
+saves/
+# codigo gerado a partir do jogo
+generated/
+analysis/
+# BIOS / flash
+dc_boot*
+dc_flash*
+# build
+build/
+out/
+.vs/
+.vscode/
+*.user
+CMakeUserPresets.json
+# logs e capturas
+logs/
+*.log
+*.trace
