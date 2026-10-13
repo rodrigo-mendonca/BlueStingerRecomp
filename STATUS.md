@@ -7,8 +7,8 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | Marco | Estado |
 |---|---|
 | M0 esqueleto, README, LEGAL, ARCHITECTURE | concluído (decisões D1–D6 registradas em 2026-10-13) |
-| M1 extrator + hash | concluído, aguardando revisão |
-| M2 decodificador SH-4 + testes | — |
+| M1 extrator + hash | concluído (commit 4fc7336) |
+| M2 decodificador SH-4 + testes | concluído, aguardando revisão |
 | M3 descoberta de funções + C++ que compila | — |
 | M4 boot até o primeiro frame | — |
 | M5 PowerVR2 completo | — |
@@ -39,9 +39,15 @@ original vai ser diferente. Vamos saber quando houver suporte a GDI.
 | 2026-10-13 | Nomes de arquivo maliciosos (`..\`) são rejeitados | Teste unitário `iso9660_rejects_path_traversal_names` |
 | 2026-10-13 | Desembaralhamento MIL-CD | **Só ida e volta** (scramble → descramble) em testes. Não foi testado com executável embaralhado real |
 | 2026-10-13 | `game-data/` e `ISO/` ignorados pelo git | `git status` / `git check-ignore` |
+| 2026-10-13 | Decodificador SH-4: 209 instruções, sem padrões sobrepostos, cada uma alcançada por exatamente 2^(bits livres) opcodes | Testes `decoder_table_has_no_overlapping_patterns` e `decoder_every_op_reachable_with_expected_count` |
+| 2026-10-13 | Decodificação e disassembly dos **65 536 opcodes** iguais ao Capstone 6.0.0, exceto divergências revisadas: `fmov.s`≈`fmov` (nome); 32 regras de instruções SH-2A/SH-4A que o Capstone aceita e o SH7091 não tem; `fipr`/`fcnvsd`/`fcnvds`, que o Capstone não decodifica | `tools/dev/compare_capstone.py` + `tools/dev/capstone_review.txt` (regras com regex de operandos, para não esconder erro real) |
+| 2026-10-13 | 76 vetores de disassembly, campos (n/m de 4, 3 e 2 bits; imediatos com e sem sinal; deslocamentos escalados), alvos PC-relativos (incluindo `PC & ~3` do `mov.l`/`mova`) e flags (delay slot, condicional, chamada, indireto, ilegal em slot, privilegiado) | Teste `decoder_disassembly_vectors` e `decoder_fields_and_flags`. Os vetores foram conferidos com o Capstone |
+| 2026-10-13 | Código real: o entry point `0x8C010000` decodifica como o startup Katana (CCR `0xFF00001C` com ICI e `jmp` para `0x8C0100A0`). Na varredura linear, 32% das palavras são inválidas, porque o arquivo também tem seções de dados. A varredura linear não separa código de dados (isso é trabalho do M3) | `bs-disasm` e `bs-disasm --stats` sobre `game-data/1ST_READ.BIN` |
 
 ## Em aberto
 
 - Confirmar se `BSDATA/R*.BIN` contêm código SH-4 (risco R3, início do M3).
+- Testes de **semântica** por instrução (executar sobre o `Sh4Context`) entram no M3, junto com a tradução.
+- Instrução PC-relativa em delay slot (`mova`/`mov.x @(disp,PC)`): o decodificador calcula o alvo a partir do PC da própria instrução. A regra especial do manual para delay slot é tratada no M3.
 - D7 (distribuição), decidir no M8.
 - clang-cl não está instalado nesta máquina. Por enquanto só o MSVC é testado.

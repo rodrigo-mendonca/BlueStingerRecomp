@@ -104,9 +104,12 @@ Endereço de carga e entry point: `0x8C010000` (P1, cacheável).
 
 1. **Decodificador** (M2): uma tabela de 65 536 entradas indexada pelo opcode
    de 16 bits, gerada a partir de uma lista declarativa de padrões
-   (`0110nnnnmmmm0011 MOV Rm,Rn`, …). Ela serve ao analisador, ao gerador e aos
-   testes. O SH-4 tem cerca de 230 formas, todas de 16 bits, então a tabela
-   completa é trivial e exaustivamente testável.
+   (`0110nnnnmmmm0011 MOV Rm,Rn`, …) em `translator/decoder/sh4_isa.inc`. Ela
+   serve ao analisador, ao gerador e aos testes. São 209 formas, todas de 16
+   bits, independentes de FPSCR (PR/SZ mudam a semântica, não a codificação).
+   Validação: todos os 65 536 opcodes são comparados com o Capstone 6 por
+   `tools/dev/compare_capstone.py`, com cada divergência revisada em
+   `tools/dev/capstone_review.txt`.
 2. **Descoberta recursiva** a partir do entry point e de ponteiros conhecidos
    (vetores de VBR, callbacks registrados em syscalls):
    - `bsr`/`jsr` criam funções. `bra`/`bt`/`bf` criam blocos.

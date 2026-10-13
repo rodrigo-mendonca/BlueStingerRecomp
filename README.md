@@ -47,6 +47,13 @@ cmake --build --preset msvc-debug
 ctest --preset msvc-debug
 ```
 
+Disassembly (ferramenta de desenvolvimento):
+
+```
+bs-disasm game-data/1ST_READ.BIN 0x8C010000 0x8C010000 64   # base, início, quantidade
+bs-disasm --stats game-data/1ST_READ.BIN
+```
+
 O teste `real_disc` usa a sua imagem se `BS_DISC_IMAGE` apontar para o `.cdi`.
 Sem essa variável, ele é ignorado.
 
@@ -55,8 +62,8 @@ Sem essa variável, ele é ignorado.
 ```
 config/       configuração TOML por versão do jogo (só metadados e endereços)
 docs/         notas de hardware e engenharia reversa
-tools/        extractor/ (bs-extract)
-translator/   decoder/ analysis/ codegen/ app/ (bs-recomp)
+tools/        extractor/ (bs-extract), dev/ (scripts opcionais de verificação)
+translator/   decoder/ (tabela SH-4 em sh4_isa.inc) e app/ (bs-recomp, bs-disasm)
 runtime/      cpu/ memory/ hle/ gdrom/ pvr/ aica/ maple/ platform/ core/ game/ app/
 tests/        unit/ (sem dados do jogo) e diff/ (diferencial contra o Flycast)
 third_party/  dependências externas (adicionadas por marco)

@@ -2,6 +2,7 @@ add_executable(bs_unit_tests
   unit/main.cpp
   unit/test_skeleton.cpp
   unit/test_disc.cpp
+  unit/test_decoder.cpp
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc)
 add_test(NAME unit COMMAND bs_unit_tests)

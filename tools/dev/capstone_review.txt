@@ -1,0 +1,46 @@
+# Divergencias revisadas entre o decodificador do projeto e o Capstone 6.0.0
+# (modo SH4 | SHFPU | little-endian). Revisado em 2026-10-13 contra o
+# Renesas SH-4 Software Manual (SH7750/SH7091).
+
+alias fmov.s fmov          # mesmo opcode; o manual SH-4 chama as formas com memoria de FMOV.S
+
+# Instrucoes SH-2A / SH-4A: nao existem no SH7091 do Dreamcast. O Capstone as
+# decodifica mesmo com CS_MODE_SH4. Para nos, sao instrucoes invalidas.
+capstone-only ldc r\d+,sgr          # ldc Rm,SGR so existe no SH-4A
+capstone-only ldc.l @r\d+\+,sgr     # ldc.l @Rm+,SGR so existe no SH-4A
+capstone-only mov.b r0,@r\d+\+      # mov.b R0,@Rn+ (SH-2A)
+capstone-only mov.w r0,@r\d+\+      # mov.w R0,@Rn+ (SH-2A)
+capstone-only mov.l r0,@r\d+\+      # mov.l R0,@Rn+ (SH-2A)
+capstone-only movua.l      # SH-4A
+capstone-only movmu.l      # SH-2A
+capstone-only movml.l      # SH-2A
+capstone-only movrt        # SH-2A
+capstone-only stc tbr,r\d+          # stc TBR,Rn (SH-2A)
+capstone-only stc.l tbr,@-r\d+      # stc.l TBR,@-Rn (SH-2A)
+capstone-only ldc r\d+,tbr          # ldc Rm,TBR (SH-2A)
+capstone-only ldc.l @r\d+\+,tbr     # ldc.l @Rm+,TBR (SH-2A)
+capstone-only mov.b @-r\d+,r0       # mov.b @-Rm,R0 (SH-2A)
+capstone-only mov.w @-r\d+,r0       # mov.w @-Rm,R0 (SH-2A)
+capstone-only mov.l @-r\d+,r0       # mov.l @-Rm,R0 (SH-2A)
+capstone-only rtv/n        # SH-2A
+capstone-only jsr/n        # SH-2A
+capstone-only rts/n        # SH-2A
+capstone-only mulr         # SH-2A
+capstone-only clipu.b      # SH-2A
+capstone-only clipu.w      # SH-2A
+capstone-only clips.b      # SH-2A
+capstone-only clips.w      # SH-2A
+capstone-only divu         # SH-2A
+capstone-only divs         # SH-2A
+capstone-only stbank       # SH-2A
+capstone-only ldbank       # SH-2A
+capstone-only resbank      # SH-2A
+capstone-only nott         # SH-2A
+capstone-only synco        # SH-4A
+capstone-only fpchg        # SH-4A
+
+# Instrucoes SH-4 validas que o Capstone 6.0.0 nao decodifica neste modo
+# (manual SH-4, secao de instrucoes de ponto flutuante).
+ours-only fipr             # FIPR FVm,FVn (1111nnmm11101101)
+ours-only fcnvsd           # FCNVSD FPUL,DRn (1111nnn010101101)
+ours-only fcnvds           # FCNVDS DRm,FPUL (1111mmm010111101)
