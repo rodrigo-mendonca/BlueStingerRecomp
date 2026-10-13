@@ -5,6 +5,7 @@ add_executable(bs_unit_tests
   unit/test_decoder.cpp
   unit/test_ops.cpp
   unit/test_analysis.cpp
+  unit/test_port.cpp
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc)
 add_test(NAME unit COMMAND bs_unit_tests)
@@ -12,7 +13,8 @@ add_test(NAME unit COMMAND bs_unit_tests)
 # Usa a imagem do usuario se BS_DISC_IMAGE estiver definido; senao, SKIP.
 add_executable(bs_real_disc_test data/test_real_disc.cpp)
 target_link_libraries(bs_real_disc_test PRIVATE bs_disc)
-add_test(NAME real_disc COMMAND bs_real_disc_test)
+# Raiz do repositorio: BS_DISC_IMAGE relativo (ex.: "ISO/Blue Stinger.cdi") funciona.
+add_test(NAME real_disc COMMAND bs_real_disc_test WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(real_disc PROPERTIES SKIP_RETURN_CODE 77)
 
 # Pipeline completo sobre o programa sintetico: analise -> C++ -> compila -> executa.

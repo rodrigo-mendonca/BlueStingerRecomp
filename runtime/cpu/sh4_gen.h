@@ -4,6 +4,11 @@
 #include "cpu/sh4_ops.h"
 #include "cpu/sh4_runtime.h"
 
+// Entrada de funcao: rastreabilidade endereco SH-4 <-> funcao C++ (custo: um teste).
+#define BS_FN_ENTER(addr)                                    \
+    do {                                                     \
+        if (::bs::g_sh4_trace) ::bs::g_sh4_trace(c, (addr)); \
+    } while (0)
 // Ciclos estimados de um trecho linear.
 #define BS_CYCLES(n) (c->cycles += (n))
 // Ponto de checagem de eventos (back-edges): interrupcoes, VBlank, timers.

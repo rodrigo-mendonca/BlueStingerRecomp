@@ -1,0 +1,16 @@
+# Diferencas aceitas no trace do boot (entrada 0x8C010000) contra o Flycast.
+# Uma por linha; so vale se chamada, funcao, coluna e os dois valores casarem.
+# <chamada> <funcao> <coluna> <flycast> <recompilado> <motivo>
+#
+# 8C17B6F8 e 8C17BDEC saltam para o espelho P2 do proprio codigo (mova + or 0xA0000000
+# + jmp) antes de mexer no CCR; o bsr feito ali deixa PR em AC... no Flycast. O codigo
+# recompilado nao modela o espelho em que executa e grava o retorno canonico 8C...
+# O PR nao e lido como dado nessas funcoes (so volta por rts/lds.l).
+34	8C17BDEC	pr	AC17B702	8C17B702	retorno de bsr feito em P2 (rotina de cache)
+35	8C17BE18	pr	AC17B702	8C17B702	retorno de bsr feito em P2 (rotina de cache)
+# 8C172620 espera o vsync em SPG_STATUS e deixa a ultima leitura em r2/r3. A fase do
+# video vem dos ciclos estimados e nao coincide com o Flycast (modelo aproximado).
+# 8C172634 nao le r2 nem r3 (sobrescreve r3); ao voltar, o chamador sobrescreve r3 em 8C172782.
+# r2 seguiria igual a outra divergencia: se fosse lido, o trace divergiria adiante (nao divergiu em 3000).
+43	8C172634	r2	00002204	00002000	fase do SPG_STATUS (vsync) em r2
+43	8C172634	r3	00000424	00000003	fase do SPG_STATUS (fim do vsync) em r3

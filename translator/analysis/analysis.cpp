@@ -151,6 +151,15 @@ private:
             case Op::MOVA:
                 if (reg != 0) return std::nullopt;
                 return sh4::target(*in, a);
+            case Op::OR: {
+                // "mova L,r0; mov.l #0xA0000000,r1; or r0,r1; jmp @r1": salto para o
+                // espelho P2 (sem cache) do proprio codigo, antes de mexer no CCR
+                if (in->rn != reg) return std::nullopt;
+                auto x = constBefore(a, in->rn, labels);
+                auto y = x ? constBefore(a, in->rm, labels) : std::nullopt;
+                if (!y) return std::nullopt;
+                return *x | *y;
+            }
             default: return std::nullopt;
             }
         }

@@ -64,7 +64,7 @@ public:
             emitInsn(s, pc, next);
         }
 
-        std::string out = "void " + fname(f_.entry) + "(bs::Sh4Context* c) {\n";
+        std::string out = "void " + fname(f_.entry) + "(bs::Sh4Context* c) {\n    BS_FN_ENTER(" + hx(f_.entry) + ");\n";
         if (order.empty()) {
             out += "    ::bs::sh4_unreachable(c, " + hx(f_.entry) + ");\n}\n";
             return out;

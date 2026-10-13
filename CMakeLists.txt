@@ -31,9 +31,20 @@ if(EXISTS "${BS_GENERATED_DIR}/generated.cmake")
   endif()
   add_executable(bs-gen-check tools/gen_check/main.cpp)
   target_link_libraries(bs-gen-check PRIVATE bs_generated)
+  add_executable(bs-diff tools/diff/main.cpp)
+  target_link_libraries(bs-diff PRIVATE bs_generated)
 endif()
 
 if(BS_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+  # Regressao do boot contra o trace do Flycast (dados locais em BS_SNAPSHOT_DIR; senao SKIP).
+  find_package(Python3 COMPONENTS Interpreter)
+  if(TARGET bs-diff AND Python3_FOUND)
+    add_test(NAME boot_trace
+             COMMAND Python3::Interpreter -I "${CMAKE_SOURCE_DIR}/tests/diff/boot_regression.py"
+                     $<TARGET_FILE:bs-diff> "${CMAKE_SOURCE_DIR}/tools/dev/flycast_oracle.py"
+                     "${CMAKE_SOURCE_DIR}/tests/diff/boot_accepted.tsv")
+    set_tests_properties(boot_trace PROPERTIES SKIP_RETURN_CODE 77)
+  endif()
 endif()

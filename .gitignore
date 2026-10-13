@@ -30,3 +30,6 @@ CMakeUserPresets.json
 *.trace
 # revisoes do Codex (podem citar disassembly do jogo)
 /reviews/
+# snapshots de estado (memoria do jogo) para testes diferenciais
+/snapshots/
+__pycache__/

@@ -38,4 +38,14 @@ void sh4_ldtlb(Sh4Context* c);
 void sh4_sq_flush(Sh4Context* c, uint32_t addr);  // pref em 0xE0000000-0xE3FFFFFF
 void sh4_service(Sh4Context* c);                   // eventos/interrupcoes pendentes
 
+// Rastreabilidade: toda funcao gerada chama BS_FN_ENTER(endereco SH-4). Com um
+// observador registrado, cada entrada e reportada (testes diferenciais, traces).
+using Sh4TraceFn = void (*)(Sh4Context* c, uint32_t entry);
+// Erro fatal (despacho sem funcao, address error, ...). Sem tratador: log + abort.
+// Um tratador (p.ex. bs-diff) pode lancar excecao para continuar o processo.
+using Sh4FatalFn = void (*)(Sh4Context* c, const char* what, uint32_t pc, uint32_t extra);
+void sh4_set_fatal_handler(Sh4FatalFn fn);
+extern Sh4TraceFn g_sh4_trace;
+inline void sh4_set_trace(Sh4TraceFn fn) { g_sh4_trace = fn; }
+
 } // namespace bs

@@ -47,11 +47,15 @@ void sh4_set_fpscr(Sh4Context& c, uint32_t v) {
         std::memcpy(c.xf, tmp, sizeof(tmp));
     }
     c.fpscr = v;
+    sh4_apply_host_fp_mode(v);
+}
+
+void sh4_apply_host_fp_mode(uint32_t fpscr) {
     // RM: 00 = mais proximo, 01 = para zero (padrao do Dreamcast). O host segue o guest.
-    std::fesetround((v & kFpscrRM) == 1 ? FE_TOWARDZERO : FE_TONEAREST);
+    std::fesetround((fpscr & kFpscrRM) == 1 ? FE_TOWARDZERO : FE_TONEAREST);
     // DN=1: denormalizados viram zero na entrada e no resultado (FTZ + DAZ no MXCSR).
     constexpr unsigned kFtzDaz = 0x8040;
-    _mm_setcsr((v & kFpscrDN) ? (_mm_getcsr() | kFtzDaz) : (_mm_getcsr() & ~kFtzDaz));
+    _mm_setcsr((fpscr & kFpscrDN) ? (_mm_getcsr() | kFtzDaz) : (_mm_getcsr() & ~kFtzDaz));
 }
 
 const float* sh4_fsca_table() {

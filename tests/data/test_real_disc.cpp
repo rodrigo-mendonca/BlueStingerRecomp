@@ -10,10 +10,11 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 
 using namespace bs;
 
-int main() {
+static int run() {
     const char* path = std::getenv("BS_DISC_IMAGE");
     if (!path || !*path) {
         std::printf("BS_DISC_IMAGE nao definido: teste ignorado\n");
@@ -54,4 +55,14 @@ int main() {
 
     std::printf("[%s] real_disc\n", bs::test::failures() ? "FAIL" : " ok ");
     return bs::test::failures() ? 1 : 0;
+}
+
+int main() {
+    try {
+        return run();
+    } catch (const std::exception& e) {
+        // caminho errado/arquivo ilegivel: falha com mensagem, nao com abort silencioso
+        std::printf("[FAIL] real_disc: %s\n", e.what());
+        return 1;
+    }
 }

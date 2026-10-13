@@ -51,6 +51,7 @@ void     sh4_reset(Sh4Context& c, uint32_t entry);
 uint32_t sh4_get_sr(const Sh4Context& c);
 void     sh4_set_sr(Sh4Context& c, uint32_t v);     // troca bancos se RB mudar
 void     sh4_set_fpscr(Sh4Context& c, uint32_t v);  // troca FR/XF se FR mudar; ajusta arredondamento do host
+void     sh4_apply_host_fp_mode(uint32_t fpscr);    // so o modo do host (RM, DN), sem trocar bancos
 
 // Tabela de FSCA: 0x10000 pares (seno, cosseno), gerada uma vez com arredondamento
 // ao mais proximo. Funcoes da libm nao podem ser usadas na thread da CPU porque o

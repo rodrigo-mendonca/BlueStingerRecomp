@@ -12,8 +12,10 @@ namespace {
 
 const Sh4FuncEntry* g_table = nullptr;
 size_t              g_count = 0;
+Sh4FatalFn          g_fatal = nullptr;
 
-[[noreturn]] void fatal(const Sh4Context* c, const char* what, uint32_t pc, uint32_t extra) {
+[[noreturn]] void fatal(Sh4Context* c, const char* what, uint32_t pc, uint32_t extra) {
+    if (g_fatal) g_fatal(c, what, pc, extra);  // pode lancar
     std::fprintf(stderr, "[sh4] FATAL: %s em PC=%08X (valor %08X) PR=%08X R15=%08X\n", what, pc, extra,
                  c ? c->pr : 0, c ? c->r[15] : 0);
     std::fflush(stderr);
@@ -21,6 +23,10 @@ size_t              g_count = 0;
 }
 
 } // namespace
+
+Sh4TraceFn g_sh4_trace = nullptr;
+
+void sh4_set_fatal_handler(Sh4FatalFn fn) { g_fatal = fn; }
 
 void sh4_set_function_table(const Sh4FuncEntry* table, size_t count) {
     g_table = table;
