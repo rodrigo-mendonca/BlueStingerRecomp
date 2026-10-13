@@ -19,7 +19,15 @@ first_read_size   = 1975556
 base  = 0x8C010000
 entry = 0x8C010000
 
-# --- M3 ---
+[analysis]
+pointer_candidates = true   # constantes do pool que apontam para inicio de funcao
+data_pointers      = true   # palavras de dados que apontam para inicio de funcao
+
+[codegen]
+inline_pool_constants = true   # constantes do pool viram literais no C++
+funcs_per_file        = 400
+
+# --- overrides manuais (exemplos) ---
 # [[functions]]          # funcoes extras / fronteiras forcadas
 # address = 0x8C0xxxxx
 # size    = 0x40

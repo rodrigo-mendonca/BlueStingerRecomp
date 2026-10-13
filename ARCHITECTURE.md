@@ -19,7 +19,7 @@ não é versionada). Nenhum byte do jogo foi copiado para o repositório.
 | Volume | `BLUE_DCRES`, 2094 entradas, quase tudo em `BSDATA/` | |
 | Arquivos com LBA < 239355 | `*.SFD` (FMV), p.ex. `ENDING.SFD` LBA 25, `NEWGAME.SFD` LBA 58771 | Os vídeos ficam em **outra faixa/sessão** do CDI. O extrator resolve LBA → (faixa, offset). |
 | Tipos de arquivo | 790 `.NT` + 759 `.NJ` (Ninja: texturas/modelos), 266 `.BIN` (salas `R??nn`), 233 `.WAV`, 16 `.SFD` (Sofdec), `.MLT`/`.MPB`/`.MSB` (som Manatee), `MANATEE.DRV` | O jogo usa o SDK Katana com **Ninja + Kamui2**, o driver de som **Manatee** (ARM7) e vídeo **Sofdec** (MPEG-1 + ADX). |
-| `R*.BIN` | Começam com um cabeçalho de offsets (`24 00 00 00 24 00 00 00 …`). Alguns têm densidade alta de `rts` | **Não sabemos ainda se contêm código.** É o risco R3 abaixo, a verificar no M3. |
+| `R*.BIN` | Cabeçalho de 9 offsets (o primeiro sempre 0x24). Nenhum dos 265 arquivos tem epílogo de função (`lds.l @r15+,pr` + `rts`); o `1ST_READ.BIN` tem ~1/KB | **São dados de sala, não overlays** (R3 reduzido, ver §9). |
 
 O SH-4 do Dreamcast roda em **little-endian**, igual ao x64. Isso elimina a troca
 de bytes em todos os acessos à memória, uma vantagem real sobre os projetos
@@ -130,7 +130,18 @@ Endereço de carga e entry point: `0x8C010000` (P1, cacheável).
    bibliotecas estáticas da Sega, idênticas em vários jogos. Identificar as
    funções por hash de bytes mascarados (estilo FLIRT) dá nomes e pontos de
    HLE/override. Isso é opcional e incremental.
-4. **Config TOML** (`config/bluestinger_us.toml`): funções extras, fronteiras
+4. **Ponteiros de função** (o que dá a maior parte da cobertura): palavras em
+   dados e constantes do pool que apontam para uma **fronteira de função**
+   (logo depois de `rts`/`bra`/`jmp` + slot, de dado do pool, de `nop` de
+   alinhamento ou de palavra que não decodifica) **e** têm cara de função:
+   prólogo típico do SHC (`sts.l pr`/`mov.l rX,@-r15`/`fmov.s frX,@-r15`/
+   `add #-n,r15`), folha curta terminada em `rts`, ou stub/thunk (`bra` para
+   código plausível, `mov.l @(d,PC),rX; jmp @rX`). Nenhuma instrução
+   privilegiada é aceita no caminho. Iterado até o ponto fixo.
+   **Invariantes verificados a cada execução**: zero "fins mortos" (fluxo que
+   cai em dado) e zero instruções órfãs (alcançadas na fase 1 sem função na
+   fase 2).
+5. **Config TOML** (`config/bluestinger_us.toml`): funções extras, fronteiras
    forçadas, tabelas de salto manuais, faixas de dados, instruções a ignorar,
    funções a substituir (override), hooks no meio da função e overlays.
 
@@ -160,11 +171,17 @@ Endereço de carga e entry point: `0x8C010000` (P1, cacheável).
   quase sempre roda com PR=0 e alterna SZ em torno de cópias). Onde o modo é
   ambíguo, o gerador emite as duas variantes com um teste em runtime. `FR`
   (troca de banco) usa um índice de banco, sem copiar 32 floats.
+- **Arredondamento**: o Dreamcast roda com `FPSCR.RM = 01` (para zero). O
+  runtime aplica o modo do guest ao host (`fesetround`) na thread da CPU.
+  Consequência: **nenhum código da thread da CPU pode depender da libm** (o
+  `sin` da CRT erra o último bit em modo "para zero"). `FSCA` usa uma tabela
+  gerada uma vez com arredondamento ao mais próximo. Outras threads (render,
+  áudio) não são afetadas, porque o modo é por thread.
 - **Precisão**: `FIPR`, `FTRV`, `FSCA` e `FSRRA` têm resultados aproximados no
   hardware. Implementação inicial com float IEEE e `FSCA` por tabela de
   seno/cosseno de 64K entradas gerada em build. Os testes diferenciais medem a
   divergência; se importar para a lógica (colisão, RNG), reproduzimos bit a
-  bit. O host roda com FTZ/DAZ (o hardware usa `FPSCR.DN=1`).
+  bit. O host liga FTZ/DAZ quando `FPSCR.DN=1` (padrão do Dreamcast). Os campos Cause/Flag/Enable do FPSCR ainda não são atualizados (exige exceções de FPU).
 - **Interrupções e tempo** (ponto crítico, ver R1): o código gerado incrementa
   um contador de ciclos estimado por bloco e chama `sh4_poll(c)` em **back-edges
   de laços, chamadas e retornos**. `sh4_poll` entrega VBlank, fim de DMA, fim de
@@ -251,7 +268,7 @@ Registradas em 2026-10-13.
 |---|---|---|---|
 | R1 | Interrupções e temporização em código estático (VBlank, DMA, fim de render, laços de espera ativa em registradores) | Travamento no boot ou timing errado | Poll em back-edges + contador de ciclos. Overrides para laços de espera conhecidos. Scheduler de eventos por ciclo. Trace comparado ao Flycast. |
 | R2 | Ponteiros de função e vtables (Ninja usa callbacks; o jogo pode usar tabelas de estados) | Funções não descobertas | Varredura de prólogos + dispatch com log de misses + TOML. Cada miss vira entrada no config e o tradutor roda de novo. |
-| R3 | **Código fora do `1ST_READ.BIN`** (`R*.BIN` por sala, overlays carregados por GD-ROM) | Exige recompilar overlays com relocação | Primeira tarefa do M3: logar todo `jsr/jmp` para fora da imagem e todo `icbi`. Se houver overlays, recompilar cada arquivo como unidade com base de carga conhecida (como as seções do N64Recomp). |
+| R3 | Código fora do `1ST_READ.BIN` | Exigiria recompilar overlays | **Reduzido no M3**: os `R*.BIN` são dados (nenhum epílogo de função em 265 arquivos). Resta código copiado/gerado em RAM em tempo de execução: o despacho registra todo desvio para endereço sem função. |
 | R4 | Modos de FPU ambíguos (PR/SZ/FR) | Resultados float errados em silêncio | Propagação de modo + variantes com teste em runtime + asserts em debug. |
 | R5 | Aproximações de FSCA/FSRRA/FIPR | Divergência sutil de física ou IA | Testes diferenciais. Tabela de FSCA idêntica à do hardware se necessário. |
 | R6 | Store queues + DMA para o TA | Geometria faltando | Implementar SQ → TA cedo (M4). É o caminho principal do Kamui. |

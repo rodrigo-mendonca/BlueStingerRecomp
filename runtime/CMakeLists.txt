@@ -1,5 +1,7 @@
 add_library(bs_runtime STATIC
   cpu/sh4_context.cpp
+  cpu/sh4_runtime.cpp
+  memory/memory.cpp
 )
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
