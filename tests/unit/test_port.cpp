@@ -63,10 +63,11 @@ BS_TEST(pvr_spg_status_vsync_toggles_once_per_field) {
     PortFixture f;
     pvr_regs_reset();
     sh4_write32(&f.c, 0xA05F80D8, (262u << 16) | 857);  // SPG_LOAD: 263 linhas
+    sh4_write32(&f.c, 0xA05F80DC, (21u << 16) | 240);   // SPG_VBLANK: de 240 a 21
     const uint64_t field = 200000000ull * 1001 / 60000;
     int rises = 0;
     bool prev = false;
-    for (uint64_t t = 0; t < 3 * field; t += 997) {
+    for (uint64_t t = field * 100 / 263; t < field * 100 / 263 + 3 * field; t += 997) {
         f.c.cycles = t;
         const uint32_t st = sh4_read32(&f.c, 0xA05F810C);
         BS_CHECK((st & 0x3FF) < 263);
@@ -86,7 +87,7 @@ BS_TEST(holly_istnrm_vblank_in_sets_once_per_field_and_clears_on_write) {
     pvr_regs_reset();
     holly_intc_reset();
     sh4_write32(&f.c, 0xA05F80D8, (262u << 16) | 857);  // SPG_LOAD: 263 linhas
-    sh4_write32(&f.c, 0xA05F80C4, (21u << 16) | 240);   // SPG_VBLANK_INT: out 21, in 240
+    sh4_write32(&f.c, 0xA05F80CC, (21u << 16) | 240);   // SPG_VBLANK_INT: out 21, in 240
     const uint64_t field = 200000000ull * 1001 / 60000;
     f.c.cycles = field / 10;  // linha ~26: passou do VBlank-Out, antes do VBlank-In
     BS_CHECK((sh4_read32(&f.c, 0xA05F6900) & 0x18) == 0x10);
@@ -132,10 +133,10 @@ BS_TEST(holly_istnrm_spg_reprogram_is_not_retroactive) {
     pvr_regs_reset();
     holly_intc_reset();
     sh4_write32(&f.c, 0xA05F80D8, (262u << 16) | 857);
-    sh4_write32(&f.c, 0xA05F80C4, (200u << 16) | 250);  // in 250, out 200
+    sh4_write32(&f.c, 0xA05F80CC, (200u << 16) | 250);  // in 250, out 200
     const uint64_t field = 200000000ull * 1001 / 60000;
     f.c.cycles = field * 100 / 263;                      // linha ~100: nada cruzado
-    sh4_write32(&f.c, 0xA05F80C4, (150u << 16) | 50);   // agora in 50, out 150 (50 ja passou)
+    sh4_write32(&f.c, 0xA05F80CC, (150u << 16) | 50);   // agora in 50, out 150 (50 ja passou)
     f.c.cycles = field * 120 / 263;
     BS_CHECK((sh4_read32(&f.c, 0xA05F6900) & 0x18) == 0);
     f.c.cycles = field * 160 / 263;

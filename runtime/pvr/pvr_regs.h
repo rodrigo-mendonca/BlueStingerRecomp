@@ -19,6 +19,13 @@ struct SpgPos {
 };
 SpgPos pvr_spg_position(uint64_t cycles);
 
+// Banco de registradores (0x005F8000-0x005F9FFF, 2048 palavras) como o guest le,
+// para comparacao com o oraculo; SPG_STATUS depende de `cycles`.
+void pvr_regs_dump(Sh4Context* c, uint32_t* out);
+// Carrega o banco inteiro (estado deixado pelo BIOS; ID, REVISION e SPG_STATUS sao
+// calculados e ignorados).
+void pvr_regs_load(const uint32_t* words);
+
 // O inicio de `line` (em algum campo) caiu no intervalo (from, to]?
 bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line);
 // Linhas das interrupcoes de VBlank (SPG_VBLANK_INT 0x005F80C4).

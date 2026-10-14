@@ -8,9 +8,10 @@
 # O PR nao e lido como dado nessas funcoes (so volta por rts/lds.l).
 34	8C17BDEC	pr	AC17B702	8C17B702	retorno de bsr feito em P2 (rotina de cache)
 35	8C17BE18	pr	AC17B702	8C17B702	retorno de bsr feito em P2 (rotina de cache)
-# 8C172620 espera o vsync em SPG_STATUS e deixa a ultima leitura em r2/r3. A fase do
-# video vem dos ciclos estimados e nao coincide com o Flycast (modelo aproximado).
-# 8C172634 nao le r2 nem r3 (sobrescreve r3); ao voltar, o chamador sobrescreve r3 em 8C172782.
-# r2 seguiria igual a outra divergencia: se fosse lido, o trace divergiria adiante (nao divergiu em 3000).
-43	8C172634	r2	00002204	00002000	fase do SPG_STATUS (vsync) em r2
-43	8C172634	r3	00000424	00000003	fase do SPG_STATUS (fim do vsync) em r3
+# 8C172620 espera SPG_STATUS.vsync (bit 13) ligar e depois desligar; r2 fica com a
+# primeira leitura com vsync. O Flycast entrou no laco antes do vblank e leu a linha 516
+# (0x204, inicio da regiao SPG_VBLANK); o recompilado entrou ja dentro do vblank e leu a
+# linha 0 do campo seguinte. Depende dos ciclos ate o laco (estimados): aproximacao de
+# tempo. r3 (fim do vsync, linha 36) coincide desde a fase inicial vinda do BIOS.
+# 8C172634 nao le r2 e, ao voltar, o chamador nao o usa (trace igual nas 3 000 chamadas).
+43	8C172634	r2	00002204	00002400	fase do vblank na 1a leitura de SPG_STATUS em r2

@@ -45,6 +45,7 @@ if(BS_BUILD_TESTS)
              COMMAND Python3::Interpreter -I "${CMAKE_SOURCE_DIR}/tests/diff/boot_regression.py"
                      $<TARGET_FILE:bs-diff> "${CMAKE_SOURCE_DIR}/tools/dev/flycast_oracle.py"
                      "${CMAKE_SOURCE_DIR}/tests/diff/boot_accepted.tsv")
-    set_tests_properties(boot_trace PROPERTIES SKIP_RETURN_CODE 77)
+    # raiz do repositorio: BS_DISC_IMAGE/BS_SNAPSHOT_DIR relativos funcionam
+    set_tests_properties(boot_trace PROPERTIES SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
   endif()
 endif()

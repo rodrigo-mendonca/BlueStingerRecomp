@@ -69,6 +69,7 @@ public:
             out += "    ::bs::sh4_unreachable(c, " + hx(f_.entry) + ");\n}\n";
             return out;
         }
+        if (img_.relocatedAt(f_.entry)) out += codeGuard();
         if (order.front() != f_.entry) {
             labels_.insert(f_.entry);
             out += "    goto " + lname(f_.entry) + ";\n";
@@ -84,11 +85,25 @@ public:
 private:
     Insn at(uint32_t pc) const { return sh4::decode(img_.read16(pc)); }
 
+    // Codigo copiado pelo jogo para a RAM (Image::relocated): antes de executar, confere
+    // que as instrucoes la sao as compiladas (o pool, que e dado, fica de fora).
+    std::string codeGuard() const {
+        std::set<uint32_t> pcs(f_.insns.begin(), f_.insns.end());
+        pcs.insert(f_.slots.begin(), f_.slots.end());
+        std::string a = "    static const uint32_t kGuardPc[] = {", o = "    static const uint16_t kGuardOp[] = {";
+        for (uint32_t pc : pcs) {
+            a += hx(pc) + ",";
+            o += hx(img_.read16(pc)) + ",";
+        }
+        return a + "};\n" + o + "};\n    ::bs::sh4_check_code(c, kGuardPc, kGuardOp, " + std::to_string(pcs.size()) +
+               ");\n";
+    }
+
     // Transferencia para `t`: goto se `t` esta no corpo, senao fim morto explicito.
     std::string jumpTo(uint32_t t, uint32_t from) {
         if (!f_.insns.count(t)) return "{ ::bs::sh4_unreachable(c, " + hx(t) + "); return; }";
         labels_.insert(t);
-        return std::string(t <= from ? "{ BS_POLL(); goto " : "{ goto ") + lname(t) + "; }";
+        return std::string(t <= from ? "{ BS_POLL(" + hx(t) + "); goto " : "{ goto ") + lname(t) + "; }";
     }
 
     void fallthrough(std::string& s, uint32_t pc, uint32_t cont, uint32_t next) {
@@ -107,10 +122,14 @@ private:
         char        b[160];
         const char* name = in.info().name;
         switch (in.op) {
+        case Op::Invalid:  // p.ex. slot de desvio que cai em dado (fim morto da analise)
+            std::snprintf(b, sizeof(b), "::bs::sh4_illegal(c, 0x%08Xu, 0x%04Xu);", pc, unsigned(img_.read16(pc)));
+            return b;
         case Op::MOVW_PC: case Op::MOVL_PC: {
             const uint32_t addr = sh4::target(in, pc);
             const bool     word = in.op == Op::MOVW_PC;
-            if (opt_.inline_pool && img_.contains(addr, word ? 2 : 4)) {
+            // pool de codigo realocado e lido da RAM: o jogo pode corrigi-lo na copia
+            if (opt_.inline_pool && img_.inMain(addr, word ? 2 : 4)) {
                 const uint32_t v = word ? uint32_t(int32_t(int16_t(img_.read16(addr)))) : img_.read32(addr);
                 std::snprintf(b, sizeof(b), "c->r[%u] = 0x%08Xu;", in.rn, v);
             } else {
@@ -149,6 +168,13 @@ private:
         comment(s, pc, in);
         if (!in.has(sh4::F_BRANCH)) {
             s += "    " + plain(pc, in) + "\n";
+            // SR novo pode desmascarar uma interrupcao pendente: o hardware a aceita antes
+            // da proxima instrucao (o Flycast faz o mesmo; ver STATUS.md, checkpoint 8C094E28)
+            if (in.op == Op::LDC_SR || in.op == Op::LDCL_SR) s += "    BS_IRQ_CHECK(" + hx(pc + 2) + ");\n";
+            // pref numa store queue pode enviar um fim de lista ao TA, que gera interrupcao
+            // na hora (no Flycast, aceita poucas instrucoes depois; ver STATUS.md, fim de
+            // lista opaca em 8C18BC3C): checar aqui, nao so no proximo poll
+            if (in.op == Op::PREF) s += "    BS_IRQ_CHECK(" + hx(pc + 2) + ");\n";
             fallthrough(s, pc, pc + 2, next);
             return;
         }
@@ -212,7 +238,7 @@ private:
             return;
         case Op::RTE:
             // SPC e lido antes; SR = SSR antes do slot (o slot ja ve o banco restaurado).
-            s += "    { const uint32_t tgt = c->spc; ::bs::sh4_set_sr(*c, c->ssr); " + slot(pc) + "\n      BS_RET(" +
+            s += "    { const uint32_t tgt = c->spc; ::bs::sh4_set_sr(*c, c->ssr); " + slot(pc) + "\n      BS_RTE(" +
                  hx(pc) + ", tgt); }\n";
             return;
         default:

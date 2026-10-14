@@ -11,9 +11,10 @@ Fala o protocolo GDB remoto com um Flycast compilado com ENABLE_GDB_SERVER
         (mesmo formato de `bs-diff trace`)
     python tools/dev/flycast_oracle.py first-diff <flycast.tsv> <recompilado.tsv> [--accept lista.tsv]
         mostra a primeira divergencia entre dois traces
-    python tools/dev/flycast_oracle.py snap  <func> <arquivo.bss> [--hit N] [--no-mask-irq]
-        para na N-esima entrada de <func> e grava so o estado de entrada (para
-        funcoes que nao retornam, como a entrada do jogo)
+    python tools/dev/flycast_oracle.py snap  <func> <arquivo.bss> [--hit N] [--no-mask-irq] [--vram]
+        para na N-esima entrada de <func> e grava o estado (checkpoint para
+        `bs-diff until`); com --vram, tambem <arquivo>.vram; com --entry, grava
+        antes a entrada do jogo na mesma sessao (pareada com o checkpoint)
     python tools/dev/flycast_oracle.py regs
         registradores atuais (diagnostico)
 
@@ -29,6 +30,10 @@ import time
 
 RAM_BASE = 0x8C000000
 RAM_SIZE = 16 << 20
+VRAM32_BASE = 0xA5000000
+VRAM_SIZE = 8 << 20
+PVR_BASE = 0xA05F8000
+PVR_SIZE = 0x2000
 CHUNK = 0x400
 SR_IMASK = 0xF << 4
 
@@ -113,13 +118,15 @@ class Gdb:
         else:
             self.bps.pop(addr & 0x1FFFFFFF, None)
 
-    def cont(self, poll=0.05, limit=180.0) -> str:
+    def cont(self, poll=0.05, limit=600.0) -> str:
         """Continua ate um breakpoint.
 
         O stub do Flycast descarta o aviso de parada se ainda estiver enviando
         outro pacote (Connection::send, "Message dropped"): o trap para a CPU,
         mas a resposta nunca chega. Por isso, sem resposta em `poll` segundos,
-        interrompe (^C) e confere se o PC parou num breakpoint nosso.
+        interrompe (^C) e confere se o PC parou num breakpoint nosso. A espera dobra
+        a cada tentativa (ate 2 s): cada ^C para e recria a thread de emulacao, e
+        interromper a cada 50 ms deixaria execucoes longas mais paradas que rodando.
         """
         deadline = time.time() + limit
         self.send("c")
@@ -127,6 +134,7 @@ class Gdb:
             if time.time() > deadline:
                 raise SystemExit(f"nenhum breakpoint atingido em {limit:.0f}s")
             self.s.settimeout(poll)
+            poll = min(poll * 2, 2.0)
             try:
                 return self.recv()
             except socket.timeout:
@@ -256,11 +264,29 @@ def mask_irq(g: Gdb, r):
 
 def cmd_snap(a):
     g = connect(a)
+    if a.entry:
+        # Entrada e checkpoint da mesma sessao: o reios grava a hora do host em
+        # 0x8C000078 no boot, entao snapshots de sessoes diferentes nunca batem.
+        enter_game(g)
+        snapshot(g, a.entry)
+        print(f"entrada do jogo -> {a.entry}")
     r = run_to(g, a.func, a.hit)
     if not a.no_mask_irq:
         mask_irq(g, r)
     r = snapshot(g, a.file)
     print(f"entrada {a.func:08X}: PC={r[R_PC]:08X} PR={r[R_PR]:08X} R15={r[15]:08X} -> {a.file}")
+    if a.vram:
+        # caminho de 32 bits (linear), o mesmo layout de runtime/pvr/vram.cpp
+        path = os.path.splitext(a.file)[0] + ".vram"
+        with open(path, "wb") as f:
+            f.write(g.read(VRAM32_BASE, VRAM_SIZE))
+        print(f"vram -> {path}")
+    if a.pvr:
+        # registradores do PVR, paleta e neblina (0x005F8000-0x005F9FFF), lidos pelo GDB
+        path = os.path.splitext(a.file)[0] + ".pvr"
+        with open(path, "wb") as f:
+            f.write(g.read(PVR_BASE, PVR_SIZE))
+        print(f"pvr -> {path}")
     finish(a, g)
 
 
@@ -422,6 +448,9 @@ def main():
     n.add_argument("file")
     n.add_argument("--hit", type=int, default=1)
     n.add_argument("--no-mask-irq", action="store_true")
+    n.add_argument("--pvr", action="store_true", help="grava tambem <arquivo>.pvr (registradores do PVR)")
+    n.add_argument("--entry", help="grava antes o estado na entrada do jogo (mesma sessao)")
+    n.add_argument("--vram", action="store_true", help="grava tambem <arquivo>.vram (8 MB, caminho de 32 bits)")
     sp.add_parser("regs")
     a = p.parse_args()
     try:

@@ -87,6 +87,11 @@ int main(int argc, char** argv) {
                                              " (rode bs-extract antes)");
             img.bytes.assign(std::istreambuf_iterator<char>(f), {});
         }
+        for (const auto& r : cfg.relocated) {
+            if (!img.inMain(r.source, r.size))
+                throw std::runtime_error("relocated: origem fora do executavel");
+            img.relocated.push_back(r);
+        }
         const analysis::Analysis a = analysis::analyze(img, cfg.analysis);
         writeReport(a, analysisDir);
         const auto& s = a.stats;

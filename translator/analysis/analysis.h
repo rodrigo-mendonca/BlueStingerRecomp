@@ -11,13 +11,34 @@
 
 namespace bs::analysis {
 
+// Codigo que o jogo copia do executavel para outro endereco e executa la (R3), p.ex.
+// os vetores de excecao/interrupcao em VBR+0x100/0x400/0x600. As instrucoes sao
+// analisadas no destino (mova/PC-relativas corretas); o pool e lido da RAM em tempo
+// de execucao, porque o jogo pode corrigi-lo ao instalar a copia.
+struct Relocated {
+    uint32_t dest = 0;    // endereco de execucao (P1)
+    uint32_t source = 0;  // origem no executavel (P1)
+    uint32_t size = 0;
+};
+
 struct Image {
-    uint32_t             base = 0;  // endereco de carga (P1, p.ex. 0x8C010000)
-    std::vector<uint8_t> bytes;
+    uint32_t               base = 0;  // endereco de carga (P1, p.ex. 0x8C010000)
+    std::vector<uint8_t>   bytes;
+    std::vector<Relocated> relocated;
 
     uint32_t end() const { return base + uint32_t(bytes.size()); }
-    bool     contains(uint32_t a, uint32_t n = 1) const { return a >= base && a - base + n <= bytes.size(); }
-    uint16_t read16(uint32_t a) const { return uint16_t(bytes[a - base] | (bytes[a - base + 1] << 8)); }
+    bool     inMain(uint32_t a, uint32_t n = 1) const { return a >= base && a - base + n <= bytes.size(); }
+    const Relocated* relocatedAt(uint32_t a, uint32_t n = 1) const {
+        for (const auto& r : relocated)
+            if (a >= r.dest && a - r.dest + n <= r.size) return &r;
+        return nullptr;
+    }
+    bool contains(uint32_t a, uint32_t n = 1) const { return inMain(a, n) || relocatedAt(a, n); }
+    uint8_t byte(uint32_t a) const {
+        if (const Relocated* r = relocatedAt(a)) a = r->source + (a - r->dest);
+        return bytes[a - base];
+    }
+    uint16_t read16(uint32_t a) const { return uint16_t(byte(a) | (byte(a + 1) << 8)); }
     uint32_t read32(uint32_t a) const { return read16(a) | (uint32_t(read16(a + 2)) << 16); }
     // Converte qualquer espelho (P0/P1/P2/P3) para o segmento da imagem; 0 se fora dela.
     uint32_t normalize(uint32_t a) const;

@@ -190,6 +190,32 @@ Endereço de carga e entry point: `0x8C010000` (P1, cacheável).
   substitui o "interromper em qualquer instrução", que é impossível em código
   estático e desnecessário para código Katana (que não depende de interrupção
   no meio de um bloco).
+  Implementado no M4 (`cpu/sh4_intc.cpp`): `BS_POLL(retomada)` nos back-edges e no
+  retorno de cada chamada; checagem imediata (`BS_IRQ_CHECK`) depois de `ldc …,sr`
+  e de `pref` (um envio ao TA pode gerar interrupção na hora; o jogo depende de o
+  tratador rodar antes da fila de DMA seguinte). Depois do `rte` do tratador, a
+  checagem se repete antes de retomar.
+- **`rte` para outro contexto e threads do guest** (M4, `cpu/sh4_threads.cpp`): o
+  Blue Stinger tem um escalonador próprio que troca de thread com `rte` (SPC/SR e
+  R15 de outro contexto). Cada chamada guarda `ret_expect` (PC de retorno) e
+  `ret_sp` (R15). Num `rte` cujo alvo difere do esperado: se alvo e R15 casam com uma
+  thread suspensa, retoma aquela; se R15 é o esperado, é continuação na mesma
+  thread (rotina adiada do tratador), despachada na pilha atual; senão, é uma thread
+  nova. Cada thread do guest roda numa fibra do Windows (pilha C própria); o
+  núcleo da CPU só conhece `sh4_rte_redirect`, então a troca de fibras por outro
+  mecanismo (threads do host com passagem de bastão, ucontext) não muda o código
+  gerado. O modo de FP do host é reaplicado a partir do FPSCR a cada troca.
+- **Código copiado para a RAM** (R3): segmentos `[[relocated]]` na configuração
+  (destino, origem, tamanho); as instruções são analisadas no destino, o pool é
+  lido da RAM e o runtime confere as instruções antes de executar
+  (`sh4_check_code`). Usado para os vetores de exceção do Katana em VBR. O pool
+  nunca é embutido (`inline_pool_constants = false`): o jogo grava em palavras do
+  pool.
+- **HLE do BIOS e disco** (M4, `hle/`, `gdrom/`): vetores de syscall em
+  `0x8C0000B0+` apontam para `0x8C001000+`, onde há funções nativas registradas no
+  despacho (`sh4_register_hle`). O GD-ROM lê setores por `DiscSource`; a fonte
+  inicial é o CDI do usuário (`gdrom/image_source.cpp`), e `game-data/`, GDI e CHD
+  entram como novas fontes sem mudar o runtime.
 - **Overrides**: funções em `runtime/game/overrides/*.cpp` com o mesmo símbolo
   (`f_8C0xxxxx`) têm prioridade, como no N64Recomp, porque o código gerado vai
   numa biblioteca estática. Uso: substituir rotinas de espera ativa, cópias de

@@ -24,8 +24,40 @@ pointer_candidates = true   # constantes do pool que apontam para inicio de func
 data_pointers      = true   # palavras de dados que apontam para inicio de funcao
 
 [codegen]
-inline_pool_constants = true   # constantes do pool viram literais no C++
+# false: o jogo escreve em palavras do pool em tempo de execucao (p.ex. a pilha de
+# interrupcao em 8C198478, gravada por 8C19830E-8C198312); embutir o valor do arquivo
+# daria resultado errado. As constantes continuam guiando a analise de fluxo, e os
+# alvos resolvidos sao conferidos em tempo de execucao (BS_EXPECT_TARGET).
+inline_pool_constants = false
 funcs_per_file        = 400
+
+# --- codigo copiado para a RAM (R3) ---
+# 8C17C460 instala os vetores de excecao/interrupcao do Katana em VBR (0x8C00F400):
+# copia o stub de 8C198140 para VBR+0x100 e VBR+0x400, e o de 8C198174 para
+# VBR+0x600, depois de corrigir o literal de destino no pool (8C17C48E-8C17C494).
+# Verificado em 2026-10-13: RAM do Flycast em VBR+0x100/0x400/0x600 = esses bytes
+# (exceto o pool). Cada stub tem 0x34 bytes (codigo + pool).
+[[relocated]]
+dest   = 0x8C00F500
+source = 0x8C198140
+size   = 0x34
+
+[[relocated]]
+dest   = 0x8C00F800
+source = 0x8C198140
+size   = 0x34
+
+[[relocated]]
+dest   = 0x8C00FA00
+source = 0x8C198174
+size   = 0x34
+
+# Destinos que 8C17C460 grava no pool dos stubs (alcancados so via RAM):
+[[functions]]
+address = 0x8C1982F4   # tratador de interrupcao (literal em 8C17C4F4)
+
+[[functions]]
+address = 0x8C1981A8   # tratador de excecao (literal original em 8C198170/8C1981A4)
 
 # --- overrides manuais (exemplos) ---
 # [[functions]]          # funcoes extras / fronteiras forcadas

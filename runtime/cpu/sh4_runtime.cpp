@@ -3,9 +3,13 @@
 // de excecao/sleep/store queue pelo hardware de verdade.
 #include "cpu/sh4_runtime.h"
 
+#include "cpu/sh4_intc.h"
+#include "cpu/sh4_mem.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_map>
 
 namespace bs {
 namespace {
@@ -13,6 +17,7 @@ namespace {
 const Sh4FuncEntry* g_table = nullptr;
 size_t              g_count = 0;
 Sh4FatalFn          g_fatal = nullptr;
+std::unordered_map<uint32_t, Sh4Func> g_hle;
 
 [[noreturn]] void fatal(Sh4Context* c, const char* what, uint32_t pc, uint32_t extra) {
     if (g_fatal) g_fatal(c, what, pc, extra);  // pode lancar
@@ -28,6 +33,8 @@ Sh4TraceFn g_sh4_trace = nullptr;
 
 void sh4_set_fatal_handler(Sh4FatalFn fn) { g_fatal = fn; }
 
+void sh4_fatal(Sh4Context* c, const char* what, uint32_t pc, uint32_t extra) { fatal(c, what, pc, extra); }
+
 void sh4_set_function_table(const Sh4FuncEntry* table, size_t count) {
     g_table = table;
     g_count = count;
@@ -37,8 +44,12 @@ Sh4Func sh4_lookup(uint32_t addr) {
     const uint32_t p  = sh4_phys(addr);
     const auto*    it = std::lower_bound(g_table, g_table + g_count, p,
                                          [](const Sh4FuncEntry& e, uint32_t v) { return e.addr < v; });
-    return (it != g_table + g_count && it->addr == p) ? it->fn : nullptr;
+    if (it != g_table + g_count && it->addr == p) return it->fn;
+    const auto h = g_hle.find(p);
+    return h != g_hle.end() ? h->second : nullptr;
 }
+
+void sh4_register_hle(uint32_t addr, Sh4Func fn) { g_hle[sh4_phys(addr)] = fn; }
 
 void sh4_dispatch(Sh4Context* c, uint32_t from_pc, uint32_t target) {
     if (Sh4Func f = sh4_lookup(target)) {
@@ -70,8 +81,17 @@ void sh4_sleep(Sh4Context* c) { sh4_service(c); }
 
 void sh4_ldtlb(Sh4Context* c) { fatal(c, "ldtlb (MMU nao suportada)", c->pc, 0); }
 
-void sh4_sq_flush(Sh4Context* c, uint32_t addr) { fatal(c, "store queue (M4)", c->pc, addr); }
 
-void sh4_service(Sh4Context* c) { c->next_event = c->cycles + 100000; }
+void sh4_check_code(Sh4Context* c, const uint32_t* pcs, const uint16_t* ops, size_t n) {
+    for (size_t k = 0; k < n; ++k)
+        if (sh4_read16(c, pcs[k]) != ops[k]) fatal(c, "codigo em RAM difere do compilado (relocated)", pcs[k], ops[k]);
+}
+
+// Poll periodico (BS_POLL nos back-edges): reavalia interrupcoes a cada quantum de
+// ciclos. c->pc ja e o endereco de retomada.
+void sh4_service(Sh4Context* c) {
+    c->next_event = c->cycles + kServiceQuantum;
+    sh4_irq_check(c);
+}
 
 } // namespace bs

@@ -11,6 +11,8 @@
 #include "pvr/pvr_regs.h"
 
 #include <array>
+#include <cstdio>
+#include <cstdlib>
 
 namespace bs {
 namespace {
@@ -38,6 +40,19 @@ void update(uint64_t now) {
 
 void holly_intc_sync(uint64_t cycles) { update(cycles); }
 
+void holly_intc_raise(uint32_t bits) { reg(kIstNrm) |= bits; }
+
+uint32_t holly_irl_level(uint64_t cycles) {
+    update(cycles);
+    const uint32_t nrm = reg(kIstNrm), ext = reg(kIstExt), err = reg(kIstErr);
+    // IML6NRM 0x005F6930, IML4NRM 0x005F6920, IML2NRM 0x005F6910; EXT +4, ERR +8
+    for (uint32_t level : {6u, 4u, 2u}) {
+        const uint32_t m = 0x005F6910 + (level / 2 - 1) * 0x10;
+        if ((nrm & reg(m)) || (ext & reg(m + 4)) || (err & reg(m + 8))) return level;
+    }
+    return 0;
+}
+
 void holly_intc_reset(uint64_t cycles) {
     g_regs.fill(0);
     g_last = cycles;
@@ -55,8 +70,14 @@ bool holly_intc_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     update(c->cycles);
-    if (p == kIstNrm || p == kIstExt || p == kIstErr) reg(p) &= ~v;  // escrever 1 limpa
-    else reg(p) = v;
+    if (p == kIstNrm || p == kIstExt || p == kIstErr) {
+        reg(p) &= ~v;  // escrever 1 limpa
+    } else {
+        // Diagnostico: BS_PVR_DEBUG=1 registra mudancas das mascaras IML*
+        static const bool debug = std::getenv("BS_PVR_DEBUG") != nullptr;
+        if (debug && reg(p) != v) std::fprintf(stderr, "[intc] %08X = %08X\n", p, v);
+        reg(p) = v;
+    }
     return true;
 }
 

@@ -44,6 +44,17 @@ GameConfig loadConfig(const std::filesystem::path& path) {
             o.count = u32(tb["count"].node(), "jump_tables.count");
             c.analysis.jump_tables.push_back(o);
         }
+    if (auto arr = t["relocated"].as_array())
+        for (auto& el : *arr) {
+            const auto&         tb = *el.as_table();
+            analysis::Relocated r;
+            r.dest   = u32(tb["dest"].node(), "relocated.dest");
+            r.source = u32(tb["source"].node(), "relocated.source");
+            r.size   = u32(tb["size"].node(), "relocated.size");
+            if ((r.dest | r.source | r.size) & 1) throw std::runtime_error("config: relocated desalinhado");
+            c.relocated.push_back(r);
+            c.analysis.extra_functions.push_back(r.dest);  // o jogo executa a copia a partir do inicio
+        }
     if (auto arr = t["data_ranges"].as_array())
         for (auto& el : *arr) {
             const auto& tb = *el.as_table();

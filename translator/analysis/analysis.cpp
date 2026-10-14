@@ -9,8 +9,12 @@ using sh4::Op;
 
 uint32_t Image::normalize(uint32_t a) const {
     const uint32_t phys = a & 0x1FFFFFFF, pbase = base & 0x1FFFFFFF;
-    if (a >= 0xE0000000 || phys < pbase || phys - pbase >= bytes.size()) return 0;
-    return base + (phys - pbase);
+    if (a >= 0xE0000000) return 0;
+    if (phys >= pbase && phys - pbase < bytes.size()) return base + (phys - pbase);
+    for (const auto& r : relocated)
+        if (phys >= (r.dest & 0x1FFFFFFF) && phys - (r.dest & 0x1FFFFFFF) < r.size)
+            return r.dest + (phys - (r.dest & 0x1FFFFFFF));
+    return 0;
 }
 
 uint32_t gprWrites(const Insn& in) {
@@ -70,7 +74,7 @@ public:
             if (cfg_.pointer_candidates)
                 for (uint32_t v : std::set<uint32_t>(poolValues_)) {
                     const uint32_t t = img_.normalize(v);
-                    if (!t || entries_.count(t) || !looksLikeFunction(t)) continue;
+                    if (!t || entries_.count(t) || !looksLikeFunction(t) || !bodyIsCode(t)) continue;
                     addEntry(t, Origin::Pointer, 0);
                     ++added;
                 }
@@ -78,7 +82,11 @@ public:
                 for (uint32_t a = img_.base; img_.contains(a, 4); a += 4) {
                     if (visited_.count(a) && !out_.data.count(a)) continue;  // dentro de codigo
                     const uint32_t t = img_.normalize(img_.read32(a));
-                    if (!t || entries_.count(t) || !atBoundary(t) || !looksLikeFunction(t)) continue;
+                    // ponteiro em dado + fronteira de funcao: basta codigo linear plausivel
+                    // (callbacks sem prologo, p.ex. 8C15AFC0 = "mov.w; stc sr; ...")
+                    if (!t || entries_.count(t) || !atBoundary(t)) continue;
+                    if (!looksLikeFunction(t) && !plausibleCode(t, 2, true)) continue;
+                    if (!bodyIsCode(t)) continue;
                     addEntry(t, Origin::DataPointer, 0);
                     ++added;
                 }
@@ -120,7 +128,7 @@ private:
             if (img_.contains(a, 4)) {
                 out_.data.insert(a);
                 out_.data.insert(a + 2);
-                poolValues_.insert(img_.read32(a));
+                if (img_.inMain(a, 4)) poolValues_.insert(img_.read32(a));
             }
         }
     }
@@ -141,7 +149,7 @@ private:
             case Op::MOVL_PC: {
                 if (in->rn != reg) return std::nullopt;
                 const uint32_t p = sh4::target(*in, a);
-                if (!img_.contains(p, 4)) return std::nullopt;
+                if (!img_.inMain(p, 4)) return std::nullopt;  // pool realocado e mutavel (corrigido na copia)
                 return img_.read32(p);
             }
             case Op::MOV:
@@ -189,9 +197,31 @@ private:
         const Op load = br.op == Op::BRAF ? Op::MOVW_LD_R0 : Op::MOVL_LD_R0;
         auto     l    = at(pc - 2);
         auto     m    = at(pc - 4);
-        if (!l || !m || l->op != load || l->rn != br.rn || m->op != Op::MOVA) return std::nullopt;
-        const uint32_t table = sh4::target(*m, pc - 4);
-        return readTable(pc, table, br.op == Op::BRAF ? 2 : 4, boundBefore(pc - 4), false);
+        if (l && m && l->op == load && l->rn == br.rn && m->op == Op::MOVA) {
+            const uint32_t table = sh4::target(*m, pc - 4);
+            return readTable(pc, table, br.op == Op::BRAF ? 2 : 4, boundBefore(pc - 4), false);
+        }
+        if (br.op == Op::JMP) return matchPoolJumpTable(pc, br);
+        return std::nullopt;
+    }
+
+    // jmp @rk  <- mov.l @(r0,rb),rk  [+ ate 3 instrucoes que nao tocam rk]  com rb do pool
+    // (copia desenrolada estilo Duff, 8C08D1D0). So destinos locais (ate 4 KB do jmp):
+    // uma tabela de ponteiros para outras funcoes nao vira label desta.
+    std::optional<JumpTable> matchPoolJumpTable(uint32_t pc, const Insn& br) {
+        for (uint32_t a = pc - 2, k = 0; k < 4; ++k, a -= 2) {
+            auto in = at(a);
+            if (!in || in->has(sh4::F_BRANCH)) return std::nullopt;
+            if (auto prev = at(a - 2); prev && prev->has(sh4::F_DELAYED)) return std::nullopt;
+            if (!(gprWrites(*in) & (1u << br.rn))) continue;
+            if (in->op != Op::MOVL_LD_R0 || in->rn != br.rn || in->rm == 0) return std::nullopt;
+            auto base = constBefore(a, in->rm, nullptr);
+            if (!base) return std::nullopt;
+            const uint32_t table = img_.normalize(*base);
+            if (!table) return std::nullopt;
+            return readTable(pc, table, 4, boundBefore(a), false, true);
+        }
+        return std::nullopt;
     }
 
     // Procura `mov #N,rk` + `cmp/hs rk,ri` (N casos) ou `cmp/hi` (N+1) antes do indice.
@@ -226,7 +256,9 @@ private:
         return 0;
     }
 
-    std::optional<JumpTable> readTable(uint32_t pc, uint32_t table, uint32_t esize, uint32_t count, bool forced) {
+    // `localOnly`: destino a mais de 4 KB do desvio conta como entrada invalida.
+    std::optional<JumpTable> readTable(uint32_t pc, uint32_t table, uint32_t esize, uint32_t count, bool forced,
+                                       bool localOnly = false) {
         JumpTable jt;
         jt.insn       = pc;
         jt.table      = table;
@@ -237,7 +269,8 @@ private:
             const uint32_t ea = table + k * esize;
             if (!img_.contains(ea, esize)) break;
             uint32_t t = esize == 2 ? pc + 4 + uint32_t(int32_t(int16_t(img_.read16(ea)))) : img_.normalize(img_.read32(ea));
-            const bool ok = t && !(t & 1) && img_.contains(t, 2) && at(t).has_value();
+            const bool ok = t && !(t & 1) && img_.contains(t, 2) && at(t).has_value() &&
+                            (!localOnly || (t + 0x1000 >= pc && t <= pc + 0x1000));
             if (!ok) {
                 if (jt.bounded) {
                     warn("tabela de salto em " + hex(pc) + ": entrada " + std::to_string(k) + " invalida");
@@ -338,7 +371,7 @@ private:
     // (prologo tipico) ou folha curta que termina em rts.
     static bool isPrologue(const Insn& in) {
         switch (in.op) {
-        case Op::STSL_PR: case Op::STSL_MACL: case Op::STSL_MACH: return true;
+        case Op::STSL_PR: case Op::STSL_MACL: case Op::STSL_MACH: return in.rn == 15;  // so na pilha
         case Op::MOVL_PREDEC: case Op::FMOVS_PREDEC: return in.rn == 15;
         case Op::ADD_IMM: return in.rn == 15 && in.imm < 0;
         default: return false;
@@ -347,10 +380,75 @@ private:
 
     // Trecho linear com pelo menos `min` instrucoes validas (sem dado nem privilegiada)
     // ate um desvio incondicional com delay slot valido.
-    bool plausibleCode(uint32_t t, uint32_t min) const {
+    // Privilegiadas comuns em rotinas de sistema do Katana com prologo: mascarar
+    // interrupcoes (stc/ldc sr) e manipular o contexto de excecao (ssr/spc), como no
+    // trampolim de retorno de interrupcao 8C17DE4C. As demais desqualificam candidatos.
+    static bool kernelOp(const Insn& in) {
+        switch (in.op) {
+        case Op::STC_SR: case Op::LDC_SR: case Op::STC_SSR: case Op::LDC_SSR: case Op::STC_SPC: case Op::LDC_SPC:
+        case Op::STCL_SSR: case Op::LDCL_SSR: case Op::STCL_SPC: case Op::LDCL_SPC:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    // Todo o corpo alcancavel a partir de `t` (desvios condicionais, bra, slots e alvos de
+    // bsr) decodifica como codigo valido, fora de dados e sem privilegiadas alem de
+    // stc/ldc sr. Valida candidatos vindos de ponteiros antes de virarem funcao: o
+    // trecho linear sozinho aceitava dados (p.ex. 8C0AAAEC, 8C1DC228).
+    bool bodyIsCode(uint32_t t) const {
+        std::vector<uint32_t> stack{t};
+        std::set<uint32_t>    seen;
+        auto ok = [&](uint32_t pc, bool slot) {
+            auto in = at(pc);
+            if (!in || out_.data.count(pc)) return false;
+            if (in->has(sh4::F_PRIV) && !kernelOp(*in)) return false;
+            return !(slot && in->has(sh4::F_SLOT_ILLEGAL));
+        };
+        while (!stack.empty()) {
+            uint32_t pc = stack.back();
+            stack.pop_back();
+            for (;;) {
+                if (!seen.insert(pc).second) break;
+                if (seen.size() > 8192 || !ok(pc, false)) return seen.size() > 8192;
+                const Insn in = *at(pc);
+                if (!in.has(sh4::F_BRANCH)) {
+                    pc += 2;
+                    continue;
+                }
+                if (in.has(sh4::F_DELAYED) && !ok(pc + 2, true)) return false;
+                const uint32_t next = pc + (in.has(sh4::F_DELAYED) ? 4 : 2);
+                switch (in.op) {
+                case Op::BT: case Op::BF: case Op::BTS: case Op::BFS:
+                    stack.push_back(sh4::target(in, pc));
+                    pc = next;
+                    continue;
+                case Op::BRA:
+                    stack.push_back(sh4::target(in, pc));
+                    break;
+                case Op::BSR:
+                    if (!ok(sh4::target(in, pc), false)) return false;
+                    pc = next;
+                    continue;
+                case Op::JSR: case Op::BSRF:
+                    pc = next;
+                    continue;
+                default:  // rts, rte, jmp, braf
+                    break;
+                }
+                break;
+            }
+        }
+        return true;
+    }
+
+    // `srOk`: stc/ldc sr permitidas (mascarar interrupcoes, comum nas rotinas do Katana).
+    bool plausibleCode(uint32_t t, uint32_t min, bool srOk = false) const {
         for (uint32_t pc = t, k = 0; k < 1024; ++k, pc += 2) {
             auto in = at(pc);
-            if (!in || out_.data.count(pc) || in->has(sh4::F_PRIV)) return false;
+            const bool sr = in && kernelOp(*in);
+            if (!in || out_.data.count(pc) || (in->has(sh4::F_PRIV) && !(srOk && sr))) return false;
             if (in->has(sh4::F_BRANCH) && !in->has(sh4::F_COND)) {
                 auto slot = at(pc + 2);
                 return k >= min && slot && !slot->has(sh4::F_SLOT_ILLEGAL) && !out_.data.count(pc + 2);
@@ -364,10 +462,22 @@ private:
         if (out_.data.count(t)) return false;
         auto first = at(t);
         if (!first) return false;
-        const bool prologue = isPrologue(*first);
+        // prologo nas 4 primeiras instrucoes, depois de preparo em linha reta
+        // (p.ex. "sts fpscr,r0; mov.l r0,@-r15" em 8C1C56D4; "mov #0,r3; mov.l @(d,pc),r2;
+        // mov.l r14,@-r15" em 8C17B04E, alcancada por tabela de ponteiros)
+        bool prologue = false;
+        for (uint32_t k = 0; k < 4 && !prologue; ++k) {
+            auto in = at(t + 2 * k);
+            if (!in || in->has(sh4::F_BRANCH)) break;
+            prologue = isPrologue(*in);
+        }
         for (uint32_t pc = t, k = 0; k < 1024; ++k, pc += 2) {
             auto in = at(pc);
-            if (!in || out_.data.count(pc) || in->has(sh4::F_PRIV)) return false;
+            // stc/ldc sr (mascarar interrupcoes) sao comuns em rotinas do Katana com prologo
+            // (p.ex. 8C17C1B8, callback de interrupcao); outras privilegiadas desqualificam
+            // (dado com cara de codigo: ldc.l @r5+,spc em 8C105516)
+            const bool srOnly = in && kernelOp(*in);
+            if (!in || out_.data.count(pc) || (in->has(sh4::F_PRIV) && !(prologue && srOnly))) return false;
             if (in->has(sh4::F_BRANCH) && !in->has(sh4::F_COND)) {
                 auto slot = at(pc + 2);
                 if (!slot || slot->has(sh4::F_SLOT_ILLEGAL) || out_.data.count(pc + 2)) return false;

@@ -16,6 +16,9 @@ struct Sh4FuncEntry {
 
 // Tabela de funcoes recompiladas (ordenada por addr). Registrada pelo executavel.
 void          sh4_set_function_table(const Sh4FuncEntry* table, size_t count);
+// Funcao nativa (HLE) num endereco sem codigo recompilado, p.ex. as syscalls do BIOS
+// em 0x8C001000+. A tabela recompilada tem prioridade.
+void          sh4_register_hle(uint32_t addr, Sh4Func fn);
 Sh4Func       sh4_lookup(uint32_t addr);  // nullptr se desconhecido
 inline uint32_t sh4_phys(uint32_t addr) { return addr & 0x1FFFFFFF; }
 
@@ -26,6 +29,8 @@ void sh4_dispatch_miss(Sh4Context* c, uint32_t from_pc, uint32_t target);
 
 // rts/rte para um endereco diferente do que o chamador esperava.
 void sh4_bad_return(Sh4Context* c, uint32_t pc, uint32_t target);
+// rte para um SPC diferente do esperado: continua em `target` (ver BS_RTE).
+void sh4_rte_redirect(Sh4Context* c, uint32_t pc, uint32_t target);
 // O fluxo chegou num endereco que a analise classificou como dado/invalido.
 void sh4_unreachable(Sh4Context* c, uint32_t pc);
 // Instrucao sem traducao (p.ex. opcode invalido alcancado).
@@ -36,7 +41,11 @@ void sh4_address_error(Sh4Context* c, uint32_t addr, bool write);  // word/longw
 void sh4_sleep(Sh4Context* c);
 void sh4_ldtlb(Sh4Context* c);
 void sh4_sq_flush(Sh4Context* c, uint32_t addr);  // pref em 0xE0000000-0xE3FFFFFF
+constexpr uint64_t kServiceQuantum = 2000;          // ciclos entre polls (~10 us a 200 MHz)
 void sh4_service(Sh4Context* c);                   // eventos/interrupcoes pendentes
+// Codigo que o jogo copia para a RAM e o tradutor compilou no destino (relocated):
+// confere que as instrucoes na RAM sao as compiladas; diferenca e fatal.
+void sh4_check_code(Sh4Context* c, const uint32_t* pcs, const uint16_t* ops, size_t n);
 
 // Rastreabilidade: toda funcao gerada chama BS_FN_ENTER(endereco SH-4). Com um
 // observador registrado, cada entrada e reportada (testes diferenciais, traces).
@@ -45,6 +54,8 @@ using Sh4TraceFn = void (*)(Sh4Context* c, uint32_t entry);
 // Um tratador (p.ex. bs-diff) pode lancar excecao para continuar o processo.
 using Sh4FatalFn = void (*)(Sh4Context* c, const char* what, uint32_t pc, uint32_t extra);
 void sh4_set_fatal_handler(Sh4FatalFn fn);
+// Erro fatal a partir do hardware/HLE (mesmo tratamento do despacho).
+[[noreturn]] void sh4_fatal(Sh4Context* c, const char* what, uint32_t pc, uint32_t extra);
 extern Sh4TraceFn g_sh4_trace;
 inline void sh4_set_trace(Sh4TraceFn fn) { g_sh4_trace = fn; }
 

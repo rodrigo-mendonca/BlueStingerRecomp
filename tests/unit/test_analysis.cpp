@@ -87,7 +87,7 @@ BS_TEST(codegen_rte_uses_spc) {
     const auto a = analysis::analyze(img, cfg);
     const std::string s = codegen::emitFunction(img, a, a.functions.at(fx::kBase), codegen::Options{});
     const size_t spc = s.find("const uint32_t tgt = c->spc;"), sr = s.find("sh4_set_sr(*c, c->ssr)"),
-                 ret = s.find("BS_RET(0x8C010000u, tgt)");
+                 ret = s.find("BS_RTE(0x8C010000u, tgt)");  // rte: retorno conferido ou continuacao/troca de thread
     BS_CHECK(spc != std::string::npos && sr != std::string::npos && ret != std::string::npos);
     BS_CHECK(spc < sr && sr < ret);
 }

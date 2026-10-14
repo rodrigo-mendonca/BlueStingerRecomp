@@ -1,3 +1,4 @@
+enable_language(ASM_MASM)
 add_executable(bs_unit_tests
   unit/main.cpp
   unit/test_skeleton.cpp
@@ -6,6 +7,12 @@ add_executable(bs_unit_tests
   unit/test_ops.cpp
   unit/test_analysis.cpp
   unit/test_port.cpp
+  unit/test_vram.cpp
+  unit/test_intc.cpp
+  unit/test_analysis_m4.cpp
+  unit/test_m4_hw.cpp
+  unit/test_threads.cpp
+  unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc)
 add_test(NAME unit COMMAND bs_unit_tests)

@@ -42,6 +42,7 @@ struct Sh4Context {
     uint64_t cycles;      // contador estimado
     uint64_t next_event;  // quando sh4_service() deve rodar
     uint32_t ret_expect;  // endereco de retorno esperado pelo chamador (verificacao de rts)
+    uint32_t ret_sp;      // R15 do chamador nesse ponto: identifica a thread do guest (sh4_threads)
 
     uint8_t* ram;         // 16 MB de RAM principal
     void*    owner;       // runtime dono deste contexto

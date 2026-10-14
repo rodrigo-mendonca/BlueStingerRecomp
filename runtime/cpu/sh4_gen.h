@@ -2,6 +2,7 @@
 // Incluido por todo arquivo gerado por bs-recomp. Macros de fluxo usadas pelo
 // gerador; `c` e sempre o Sh4Context* da funcao corrente.
 #include "cpu/sh4_ops.h"
+#include "cpu/sh4_intc.h"
 #include "cpu/sh4_runtime.h"
 
 // Entrada de funcao: rastreabilidade endereco SH-4 <-> funcao C++ (custo: um teste).
@@ -12,17 +13,33 @@
 // Ciclos estimados de um trecho linear.
 #define BS_CYCLES(n) (c->cycles += (n))
 // Ponto de checagem de eventos (back-edges): interrupcoes, VBlank, timers.
-#define BS_POLL()                                              \
-    do {                                                       \
-        if (c->cycles >= c->next_event) ::bs::sh4_service(c);  \
+// `resume` e o endereco SH-4 onde a execucao continua (vira SPC se houver interrupcao).
+#define BS_POLL(resume)                       \
+    do {                                      \
+        if (c->cycles >= c->next_event) {     \
+            c->pc = (resume);                 \
+            ::bs::sh4_service(c);             \
+        }                                     \
     } while (0)
-// Chamada: registra o retorno esperado para verificar o rts do chamado.
+// Depois de `ldc ...,sr`: uma interrupcao pendente pode ter sido desmascarada agora.
+#define BS_IRQ_CHECK(resume)        \
+    do {                            \
+        c->pc = (resume);           \
+        ::bs::sh4_irq_check(c);     \
+    } while (0)
+// Chamada: registra o retorno esperado para verificar o rts do chamado. No retorno ha
+// um ponto de poll (alem dos back-edges): trechos longos sem laco, mas com chamadas,
+// nao passam muito do quantum sem checar interrupcoes.
 #define BS_CALL(call_expr, ret)                     \
     do {                                            \
         const uint32_t saved_ret_ = c->ret_expect;  \
+        const uint32_t saved_sp_  = c->ret_sp;      \
         c->ret_expect             = (ret);          \
+        c->ret_sp                 = c->r[15];       \
         call_expr;                                  \
         c->ret_expect = saved_ret_;                 \
+        c->ret_sp     = saved_sp_;                  \
+        BS_POLL(ret);                               \
     } while (0)
 // rts/rte: o alvo (PR ou SPC, lido antes do delay slot) precisa ser o que o
 // chamador espera. Ao invocar um tratador de excecao/interrupcao, o runtime
@@ -31,6 +48,14 @@
     do {                                                                 \
         if ((tgt) != c->ret_expect) ::bs::sh4_bad_return(c, (pc), (tgt)); \
         return;                                                          \
+    } while (0)
+// rte: SPC diferente do esperado e uma continuacao (o tratador redirecionou a volta da
+// interrupcao, p.ex. para rodar uma rotina adiada em 8C17DE4C). O runtime despacha o
+// alvo mantendo ret_expect; o rte final, de volta ao ponto interrompido, desenrola.
+#define BS_RTE(pc, tgt)                                                         \
+    do {                                                                        \
+        if ((tgt) != c->ret_expect) ::bs::sh4_rte_redirect(c, (pc), (tgt));     \
+        return;                                                                 \
     } while (0)
 // Alvo resolvido estaticamente: confere em tempo de execucao.
 #define BS_EXPECT_TARGET(pc, got, want)                                         \
