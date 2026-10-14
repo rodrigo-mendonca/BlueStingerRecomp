@@ -171,8 +171,9 @@ boot nativo; estado inicial do PVR no boot nativo.
   interrupções, a comparação é **parcial**.
 - **Tempo é aproximado**: ciclos estimados por bloco, campo de vídeo fixo em 59,94 Hz,
   DMA (GD-ROM e canal 2) síncrono, interrupções só nos pontos de poll.
-- Não implementados: TMU (o contador lê 0), DMA do Maple (buffers de resposta vazios),
-  interrupção de render concluído, rasterização, áudio (ARM7/AICA além de RTC e RAM).
+- Não implementados: TMU (o contador lê 0), áudio (ARM7/AICA além de RTC e RAM).
+  Depois do commit `ada8d9a` vieram fim de render (tempo aproximado), rasterizador de
+  referência e Maple (controle, sem VMU): ver a seção seguinte.
 - Flash: só a do Flycast no modo diferencial; a flash padrão própria para o boot
   nativo ainda não existe. Estado inicial do PVR: só a captura do Flycast no modo
   diferencial; o boot nativo ainda não o reproduz.
@@ -192,7 +193,288 @@ boot nativo; estado inicial do PVR no boot nativo.
   `SwitchToFiber` já preserva XMM6-XMM15); o flag fica, conforme a documentação da
   Microsoft. O teste de arredondamento achou o defeito real antes da correção.
 
+### M4: rasterizador de referência, comparação de framebuffer e Maple (2026-10-14)
+
+**Rasterizador (`runtime/pvr/pvr_render.cpp`, `pvr_texture.cpp`)**: roda inteiro na
+escrita de STARTRENDER, a partir dos parâmetros recebidos pelo TA; grava em FB_W_SOF1
+no formato de FB_W_CTRL. Fundo pelo plano de ISP_BACKGND_T/D, listas opaca,
+punch-through e translúcida, profundidade 1/w, regra top-left, perspectiva correta,
+texturas 16 bpp e paleta 4/8 bpp (twiddled/linear), blend do TSP.
+- Testes: `pvr_twiddle_*`, `pvr_texel*`, `render_*` (fundo, cobertura por centro de
+  pixel, regra de preenchimento nos dois sentidos, profundidade).
+- **Aproximações**: sem fog, dither, mipmap, VQ, YUV, bump, dois volumes, volumes
+  modificadores, escala do SCALER_CTL. Formatos sem suporte são registrados e omitidos
+  (contador `omitidos`). O autosort por pixel foi implementado depois (seção seguinte).
+- Ferramentas: `tools/dev/fb_png.py` (framebuffer → PNG e diferença pixel a pixel;
+  `--read` lê o buffer exibido, `--sof` escolhe o endereço); `BS_DIFF_SAVE` grava
+  também `.vram` e `.pvr`; diagnósticos `BS_VRAM_WATCH` e `BS_PVR_WATCH`.
+
+**Comparação com o Flycast** (oráculo com `rend.EmulateFramebuffer = yes` no `emu.cfg`
+local da ferramenta, não em configuração global):
+- No 41º STARTRENDER, VRAM igual exceto os marcadores de OPB do Flycast e o plano de
+  fundo em VRAM 0, que o jogo grava em `8C1C2066` a cada quadro. No Flycast esse código
+  ainda não tinha rodado: o ritmo de quadros diverge (FB_R_CTRL=1 no recompilado, 0 no
+  Flycast).
+- Primeiro framebuffer produzido pelo recompilado (STARTRENDER 150 e 400): a tela "VMU
+  not found / Press START", 304 triângulos de texto, sem formato omitido.
+  **Não é resultado válido de equivalência.** O caminho até ela dependia da ausência
+  do Maple (ver abaixo), e o framebuffer do Flycast em VRAM saiu todo zero nos pontos
+  capturados.
+- Causa da divergência (checkpoint pareado na 1ª entrada de `8C1C4914`, a rotina de
+  flip): RAM diferente nos buffers do Maple (`0C27E1A0`, `0C2841A0`, `0C2845A0`...). O
+  Flycast responde com controle + 2 VMUs; o recompilado não tinha Maple (buffers
+  zerados e nenhuma interrupção de fim de DMA, o que o hardware nunca produz).
+
+**Maple (`runtime/maple/maple.cpp`)**: DMA pela tabela de SB_MDSTAR, quadros, "sem
+resposta" = 0xFFFFFFFF, fim em ISTNRM bit 12, SB_MDST ocupado durante a transferência.
+Controle padrão na porta A, sem VMU. Os dados do controle foram conferidos com as
+respostas que o jogo recebe no Flycast. O tempo (100 ciclos por bit, 2 Mbit/s) é
+aproximado. Testes: `maple_*` (5).
+- Com o Maple modelado, com controle ou sem dispositivo nenhum (`BS_MAPLE_PORTS=none`),
+  o jogo chega ao escalonador cooperativo da biblioteca de threads. Ele usa setjmp
+  (`8C099F8C`) e longjmp (`8C099F18`): o yield em `8C09037E` faz
+  `if (setjmp(atual) == 0) longjmp(escalonador, 1)`, o escalonador em `8C0903C0` faz
+  longjmp para o contexto de cada thread, e threads novas começam pelo `rts` do longjmp
+  num contexto com PR = entrada (`8C09081A`) e pilha nova. O runtime para com fatal
+  "retorno para endereço inesperado" (`8C099F84` → `8C09081A`).
+- **Decisão do mantenedor (2026-10-14)**: suporte genérico a longjmp (ARCHITECTURE.md),
+  e nos testes diferenciais o controle sem VMU dos dois lados. No oráculo isso fica no
+  `emu.cfg` local da ferramenta: `[input] device1.1 = device1.2 = 10` (MDT_None).
+- Implementado: `[threads] setjmp = [8C099F8C]`, `longjmp = [8C099F18]`. O gerador cria
+  5 funções com pontos de reentrada, e o runtime tem `sh4_longjmp_redirect`. Testes:
+  `longjmp_switches_between_scheduler_and_worker_fibers` (escalonador → thread nova →
+  yield → retomada → fim, com as macros do código gerado), `longjmp_to_unknown_target_is_fatal`,
+  `codegen_setjmp_return_is_reentry_label`.
+- Resultado no boot: 2 threads cooperativas criadas (`8C09081A`, `8C09081E`), 1 236
+  trocas por longjmp até o 150º STARTRENDER, 4 threads do guest no total. A tela
+  renderizada é "VMU not found", agora por um caminho coerente com a configuração
+  (controle sem VMU).
+- Regressão depois da mudança: todos os testes passam (84 unitários); `boot_trace` com
+  3 000 chamadas, checkpoint `8C1C6334` igual e marco STARTRENDER ok.
+
+**TMU (`runtime/memory/sh4_tmu.cpp`)**: comparação pareada no 3º STARTRENDER
+(controle sem VMU nos dois lados, entrada `nv3_entry`). O jogo guarda leituras do TMU0
+em `0C1DD20C`/`0C1DD224`: no Flycast `0x4B4ABF`..., no recompilado 0 e 0xFFFFFFFF,
+porque o TMU não existia. Implementados os três canais (TOCR, TSTR, TCOR/TCNT/TCR,
+TCPR2), contagem decrescente derivada de `c->cycles` (4 ciclos da CPU por tick de
+P = 50 MHz, divisores 4/16/64/256/1024), recarga e UNF. Interrupção de underflow e
+fontes RTC/externa ficam registradas, sem modelo (o jogo usa TCR0 = 2, sem UNIE).
+Testes: `tmu_channel0_free_running_counter`, `tmu_underflow_reloads_and_sets_unf`.
+
+**Divergência ainda aberta (tempo e oráculo)**:
+- No 3º STARTRENDER, o Flycast tinha 281 VBlanks (`0C1DD1C4` = 0x119) e o recompilado
+  22. O TMU confirma a diferença: ~6 s contra ~0,6 s. Causa provável: o Flycast emula a
+  velocidade de leitura do GD-ROM, e o HLE do GD-ROM daqui termina as leituras na hora.
+  Pareamento por número de STARTRENDER deixa de ser comparável depois dos primeiros
+  quadros.
+- No oráculo, o buffer 0 fica no estado 4 (tabela `8C329AFC`) do 1º ao 150º
+  STARTRENDER, o flip (`8C1C4914`) nunca liga o vídeo (FB_R_CTRL = 0, VO_CONTROL com
+  blank) e a VRAM do framebuffer fica zerada, mesmo com `rend.EmulateFramebuffer`. No
+  recompilado, os buffers giram (estados 7/4) e a imagem aparece. Ainda não está claro
+  se é comportamento real ou artefato do Flycast parado pelo GDB (render em thread).
+  Com `rend.ThreadedRendering = no` o Flycast fecha a conexão GDB, e a opção foi
+  revertida. Até resolver isso, a comparação de framebuffer com o Flycast **não está
+  disponível**, e nenhum framebuffer daqui é declarado equivalente. → **Resolvido
+  abaixo** (artefato da captura por breakpoint).
+
+### M4: oráculo gráfico e validação do rasterizador (2026-10-14)
+
+**Causa do framebuffer zerado no Flycast: a captura, não o Flycast.**
+- Interrupção de fim de render: depois do 1º STARTRENDER, o tratador Holly do jogo
+  (`8C1C53E2`, que lê ISTNRM em r13) recebeu ISTNRM = 0x17 (bits 0-2 + VBlank). O fim de
+  render chega ao jogo no Flycast. O tratador só passa o buffer para o estado 5
+  (`8C1C54BC`) com o bit 2 aceso.
+- Execução livre: o jogo rodou sem breakpoints, parado por ^C a cada 30 s (script de
+  experimento fora do repositório). A partir do VBlank ~371, o Flycast gira os buffers
+  (estados 5/3/7), liga o vídeo (FB_R_CTRL = 1, VO_CONTROL sem blank) e alterna
+  FB_R_SOF1, como o recompilado. Os 15 min de execução e 3 535 VBlanks foram estáveis.
+- Conclusão: as paradas repetidas na instrução que escreve STARTRENDER (`snap --hit N`
+  com breakpoint em `8C1C4DF8`) interferem no PVR do Flycast (o stub chama `emu.stop()`
+  e `emu.start()` em cada parada, e o render roda em outra thread). O mecanismo exato
+  dentro do Flycast **não foi verificado**. Nada foi alterado no Flycast.
+- Ferramenta: `flycast_oracle.py snap-free <arquivo> --seconds N` (sem breakpoint depois
+  da entrada do jogo; grava `.bss`, `.vram`, `.pvr`). O jogo no oráculo roda a ~2
+  VBlanks por segundo de host (interpretador, imposto pelo stub). O 1º STARTRENDER do
+  Flycast ocorre no VBlank 282, contra ~20 no recompilado (ver tempo, abaixo).
+
+**Primeiro framebuffer válido do Flycast e comparação** (`snapshots/fr_200`, parada
+livre após 200 s, VBlank 681, tela "VMU not found"; recompilado no 150º STARTRENDER,
+mesma tela estática, controle sem VMU nos dois). `fb_png.py` com o buffer exibido
+(FB_R_SOF1 = 0x200000), 640x480 em 0555:
+1. 1ª comparação: 48,2% dos pixels diferentes. Retângulos escuros atrás de cada linha de
+   texto apareciam só no recompilado. Causa (por `BS_RENDER_PROBE`): o painel da janela e
+   o texto são translúcidos (TSP 949004ED); o texto vem antes e tem z-write. Desenhado na
+   ordem de submissão, as células transparentes do texto gravavam z e o painel falhava
+   embaixo delas. O jogo usa ISP_FEED_CFG = 0x00800408 (bit 0 = 0, **autosort**).
+   **Corrigido**: autosort por pixel (fragmentos ordenados por 1/w, do mais distante para o
+   mais próximo, sem z-write dos translúcidos). Teste `render_translucent_autosort_vs_presort`.
+2. Depois da correção: 36,42% diferentes, sendo **35,63% de no máximo 1 passo de
+   quantização** e 0,79% maiores.
+   - Os de 1 passo formam um xadrez 2x2 (0x0001/0x0021) no fundo da janela: **dither**
+     (FB_W_CTRL bit 3 = 1), que o recompilado não modela. O dither do Flycast é um
+     modelo próprio (tabela 4x4 num shader GPL) e não foi conferido com hardware. Fica
+     como aproximação registrada, sem copiar o modelo do Flycast.
+   - Os maiores (2 422 pixels) ficam só nas bordas dos glifos. Neles a coordenada de
+     textura cai **exatamente na fronteira entre texels** (u·256 = 194,00000; 250,00001),
+     então o texel escolhido depende da precisão numérica. Um experimento temporário
+     (empate para o texel de baixo) reduziu os de 28-29 passos de 1 202 para 361, mas
+     ainda não igualou o Flycast, cuja escolha vem do float da GPU, não do hardware.
+     **Revertido**; fica registrado como ambiguidade sem referência de hardware.
+   - Janela, borda, fundo e fora da janela: iguais ou dentro de 1 passo.
+- Paleta (PAL_RAM_CTRL 2, entradas 0/FFFF/F111) e o atlas de fonte 4 bpp (256x256 em
+  0x59D000 e 0x5A5000) são **idênticos byte a byte** nos dois lados.
+
+**Validação do rasterizador** (`tests/unit/test_render_formats.cpp`, valores esperados
+calculados à mão a partir dos formatos documentados):
+- formatos 565/4444/1555 (limiar)/888/0888 (K)/8888; gouraud e flat; culling por
+  orientação; strip; z-write desligado; os 8 compares de profundidade; blend SRC_ALPHA,
+  os 8 fatores de origem e de destino; punch-through com PT_ALPHA_REF; textura com ponto
+  e UV16; bilinear com meio texel; repetir/clamp/espelhar; paleta 8 bpp com seletor;
+  textura linear com stride; instruções decal/modulate/decal alpha/modulate alpha, offset
+  e ignore texture alpha; cor float e intensidade 1/2; sprite (cobertura e 4º vértice
+  pelo plano); HALF_OFFSET; color clamp; autosort contra pre-sort; FB_X_CLIP e stride
+  na VRAM.
+- Linha de base de regressão: hash FNV-1a da cena composta `0x1797BA480B2C33A5` (gerado
+  pela implementação atual e conferido visualmente; **não é evidência de equivalência**).
+- Correções da revisão Codex (abaixo): 4º vértice do sprite pelo plano de A, B, C (antes
+  A + C − B), HALF_OFFSET bits 0-2, color clamp do TSP (bit 21).
+- `pvr_render.cpp` foi reconstruído depois de uma perda acidental (truncado por um
+  script). A revisão completa do Codex sobre o arquivo reconstruído está abaixo.
+- Total: 116 testes unitários; `boot_trace` com disco real passa.
+
+**Segunda revisão do rasterizador** (manual Dreamcast/Dev.Box 3.4.2-3.4.3; tabela de
+achados abaixo, em Revisões):
+- Autosort: compare do polígono ignorado e forçado em `>=` contra as listas opacas.
+- Punch-through: ordenado por pixel da frente para trás, compare `>=`; vale o fragmento
+  mais próximo que passa no alfa (os que falham revelam o seguinte). A regra de empate
+  ("último submetido vence") **não foi verificada**.
+- Region Array tipo 2 (modo por tile): sem modelo. Se algum tile pedir modo diferente
+  do global, o rasterizador avisa. Na captura do Flycast, 300 tiles, todos em autosort.
+- Cores em float (vértice, face, intensidade) saturadas em [0, 1] e quantizadas em 8
+  bits, como o TA as guarda. Achado ao passar de START: as cenas 3D usam offset em float
+  negativo, e sem a saturação o offset subtraía e o quadro ficava preto. Arredondamento
+  para o mais próximo, **não verificado** contra o hardware.
+- `fb_png.py`: limiar de "1 passo" por formato (4444: 17 em 8 bits).
+- Testes: `render_autosort_forces_gequal`, `render_punch_through_front_to_back`,
+  `render_sprite_fourth_vertex_uv_perspective`, `render_half_offset_attribute_sample`,
+  `render_half_offset_texel_center`, `render_negative_float_offset_saturates_to_zero`.
+  Total: 126 unitários. A comparação da tela "VMU not found" com o Flycast não mudou
+  (36,42% / 35,63% em 1 passo / 0,79% maiores).
+
+### M4: controles (entrada) e primeira tela além de "Press START" (2026-10-14)
+
+- `runtime/input/` (independente do Maple): `PadState` (botões em lógica positiva,
+  analógico, gatilhos) e fontes:
+  - teclado do Windows (`GetAsyncKeyState`) com mapa `BOTAO = TECLA`. Padrão: setas,
+    ENTER = START, Z/X/A/S = A/B/X/Y, Q/W = gatilhos, I/J/K/L = analógico;
+  - XInput (primeiro controle conectado);
+  - roteiro determinístico `BS_INPUT_SCRIPT`, com linhas `<n> <botões|->`, onde `n` é a
+    n-ésima leitura de condição feita pelo jogo à porta A (não depende do relógio).
+- Ativação: `BS_INPUT_SCRIPT=<arquivo>`, ou `BS_INPUT=host` (teclado + XInput,
+  `BS_INPUT_MAP` opcional). Sem nada disso, nenhuma entrada: os testes diferenciais
+  continuam determinísticos.
+- O Maple traduz o estado da fonte na condição do controle (ativo em 0, analógico com
+  centro em 0x80). VMU continua fora.
+- Testes: `input_button_names`, `input_script_is_deterministic_by_read_sequence`,
+  `input_script_and_keymap_errors`, `input_script_drives_maple_get_condition`.
+- **Resultado**: com o roteiro `200 START` / `230 -`, o jogo passa da tela "VMU not
+  found". Depois vêm ~360 quadros de 2 a 4 triângulos e então cenas 3D de 6 400 a 7 000
+  triângulos, sem formato omitido. No 700º STARTRENDER, o framebuffer mostra a **tela de
+  título** (logotipo BLUE STINGER e personagem 3D com partículas). Ainda **sem
+  comparação com o Flycast** nessa tela: para isso é preciso mandar START ao oráculo pela
+  entrada dele.
+- Limitação: ainda não há executável nativo interativo (janela + apresentação do
+  framebuffer). As fontes de teclado e XInput existem e estão testadas na leitura, mas
+  só podem ser usadas fora do `bs-diff`, que as recusa por não serem determinísticas.
+
+### M4: tempo do GD-ROM (2026-10-14)
+
+Separação das causas da divergência de VBlanks (1º STARTRENDER no VBlank 282 no Flycast,
+18 no recompilado):
+- **Depuração**: descartada. Na execução livre (sem breakpoints), o Flycast também só
+  começa a renderizar entre os VBlanks 252 e 371.
+- **Leitura de disco**: até o 1º STARTRENDER, o jogo lê 7,7 MB (74 leituras, 3 781
+  setores). O oráculo usa o BIOS HLE do Flycast (reios). Nele, cada leitura por DMA anda
+  em blocos de 5 setores, de 1 000 000 de ciclos cada enquanto restam mais de 5 setores
+  (~2 MB/s), e o último bloco leva 2 ciclos por byte. Daqui, tudo terminava na hora.
+- **Escalonamento/ciclos**: o resto. O contador de ciclos daqui é uma estimativa por
+  bloco, e o do Flycast vem do interpretador dele.
+
+Modelo implementado (`runtime/gdrom/gdrom.cpp`), configurável por
+`BS_GDROM_TIMING=instant|reios` (padrão `instant`, o comportamento validado até aqui):
+`reios` reimplementa o modelo do oráculo descrito acima (comportamento, nenhum código
+copiado). É o modelo do oráculo, não o do hardware, e serve para comparações
+determinísticas. A transferência avança pelo poll central (`sh4_service` →
+`gdrom_poll`), sem depender de nova syscall, como o scheduler do Flycast. Um pedido novo
+descarta a transferência antiga (como o reios). Testes
+`gdrom_reios_timing_reads_in_timed_blocks` (12 setores: blocos em +1 000 000,
++2 000 000 e +2 008 192 ciclos; `result[2]` progressivo) e
+`gdrom_reios_timing_edge_cases` (5 e 6 setores, 0 setores, RESET seguido de pedido novo,
+erro no meio de um bloco, avanço sem syscall).
+- Resultado: com `reios`, o 1º STARTRENDER vem no **VBlank 237** (Flycast 282, `instant`
+  18). A diferença cai de 264 para 45 VBlanks: o disco explica (237 − 18) / (282 − 18) ≈
+  **83%** dela. O resto fica para a estimativa de ciclos da CPU.
+- Na comparação gráfica, o critério continua sendo **estado equivalente** (mesma tela
+  estática, captura livre) e não "o quadro N". As capturas do Flycast com breakpoint em
+  STARTRENDER (`sr_*`, `nv_*`) estão contaminadas pela interferência descrita acima e não
+  servem para comparar o PVR.
+
 ## Revisões independentes (Codex)
+
+### 2026-10-14: modelo de tempo do GD-ROM. Relatório em `reviews/codex-20261014-111438.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [MÉDIA] A transferência só avançava em syscalls de GD-ROM | **Aceito** | `gdrom_poll` no poll central (`sh4_service`). Teste: buffer pronto sem syscall |
+| [MÉDIA] RESET seguido de pedido novo herdava a transferência antiga | **Aceito** | REQ_CMD zera a transferência (como `multi_read_count = 0` no reios). Teste com RESET no meio de uma leitura |
+| [BAIXA] Teste sem bordas | **Aceito** | `gdrom_reios_timing_edge_cases` |
+| [BAIXA] "~84% da diferença" com a razão errada | **Aceito** | (237 − 18) / (282 − 18) ≈ 83%. Corrigido |
+
+Depois das correções: 131 testes unitários e `boot_trace` com disco real passam. O 1º
+STARTRENDER com `reios` continua no VBlank 237.
+
+### 2026-10-14: controles (entrada), cores float, punch-through. Relatório em `reviews/codex-20261014-110826.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [MÉDIA] Punch-through respeitava o z-write disable | **Aceito** (evidência de compatibilidade, não do manual) | Registro do DEmul ("ignore z-write disable for punch-through", Bust-A-Move 4). O punch-through sempre grava a profundidade. Teste `render_punch_through_ignores_zwrite_disable`. Uso pelo Blue Stinger não verificado |
+| [BAIXA] `bs-diff` aceitava entrada ao vivo (não determinística) | **Aceito** | `BS_INPUT=host` recusado (saída 2), salvo com `BS_DIFF_LIVE_INPUT=1`, que avisa que o resultado não é determinístico |
+| [BAIXA] Serialização do Maple só testada com START | **Aceito** | Teste `input_maple_serializes_every_button_and_axis`: os 12 botões, gatilhos R/L e analógicos assimétricos |
+| [BAIXA] Dispositivo principal respondia ao endereço de outra porta | **Aceito** | Exige destino `(porta << 6) \| 0x20`. Teste `maple_main_device_only_at_own_port_address` |
+
+Depois das correções: 130 testes unitários e `boot_trace` com disco real passam.
+
+### 2026-10-14: correções do rasterizador (autosort, HALF_OFFSET, sprite, clamp). Relatório em `reviews/codex-20261014-105620.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Autosort usava o compare do polígono; o hardware força `>=` | **Aceito** | Manual 3.4.2. Corrigido; teste `render_autosort_forces_gequal` (translúcido atrás de opaco com ISP ALWAYS é rejeitado em autosort) |
+| [MÉDIA] Region Array tipo 2 escolhe o modo por tile (bit 29) | **Limitação registrada + aviso** | O rasterizador não percorre o Region Array. Agora confere os tiles e avisa se algum diverge do modo global. Na captura do Flycast, os 300 tiles estão em autosort |
+| [MÉDIA] Punch-through como z-buffer comum | **Aceito** | Manual 3.4.3. Ordenado por pixel da frente para trás, compare `>=`, o mais próximo que passa no alfa vence. Teste `render_punch_through_front_to_back` |
+| [BAIXA] Testes não exercitavam UV do 4º vértice do sprite nem os bits 1 e 2 de HALF_OFFSET | **Aceito** | Testes `render_sprite_fourth_vertex_uv_perspective` (u(D) = 3/4 contra 0), `render_half_offset_attribute_sample`, `render_half_offset_texel_center` |
+| [BAIXA] `fb_png.py` com limiar de 1 passo fixo (errado para 4444) | **Aceito** | Limiar por formato |
+
+### 2026-10-14: revisão completa do `pvr_render.cpp` reconstruído. Relatório em `reviews/codex-20261014-102327.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] 4º vértice do sprite por A + C − B | **Aceito** | Manual 3.1.1.1 (equações de superfície). D tirado dos planos de z e de u·z, v·z. Testes de z e UV |
+| [MÉDIA] HALF_OFFSET ignorado | **Aceito** | Bits 0-2 implementados. O jogo escreve 7 (o comportamento anterior). Os fixtures dos testes usam 7 |
+| [BAIXA] Color clamp do TSP (bit 21) | **Aceito** | FPU_CLAMP_MAX/MIN aplicados com `min(max())`, sem UB se min > max. Teste `render_tsp_color_clamp` |
+| [MÉDIA] Cobertura de testes insuficiente | **Aceito** | Testes por campo: modos de sombreamento, offset, ignore alpha, bilinear, clamp/flip, paleta 8 bpp, stride, 8+8 fatores de blend, punch-through, 8 compares, cor float e intensidade, sprite. O hash composto é só regressão |
+
+### 2026-10-14: rasterizador, Maple, setjmp/longjmp entre threads, TMU. Relatório em `reviews/codex-20261014-093636.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] FB_W_CTRL com K e limiar de alfa trocados | **Aceito** | Layout conferido (K nos bits 15-8, limiar nos 23-16; mesma definição na referência de comportamento). Corrigido em `writeBack`. Teste `render_fb_0555_uses_k_from_bits_15_8` (com os campos trocados, falha) |
+| [ALTA] Quadro reentrante intermediário com o mesmo R15 capturava longjmp de um quadro externo e abortava | **Aceito** | O despacho `bs_reenter_` só consome alvo da própria função; senão deixa o redirect pendente e retorna. Sem quadro de destino até o topo da thread, erro fatal (`fiberMain` e `bs-diff`). Teste `longjmp_skips_inner_reentrant_frame_with_same_sp` |
+| [ALTA] Retomada só por R15 e thread nova inferida só por "alvo é entrada de função" | **Aceito** | O gerador emite a tabela de pontos de reentrada (`sh4_set_reentry_points`, 4 no jogo). Alvo de reentrada retoma a **única** thread suspensa com esse R15; nenhuma ou mais de uma é fatal. Thread nova só para alvo que não é reentrada. Teste `longjmp_to_reentry_without_suspended_thread_is_fatal` |
+| [MÉDIA] Recorte do usuário (parâmetro tipo 1, PCW 17-16) ignorado | **Aceito** | Implementados os modos dentro/fora com o retângulo em tiles. Teste `render_user_clip_inside_and_outside` |
+| [MÉDIA] DMA do Maple limitado a 8 descritores | **Aceito** | Segue até LAST; sem LAST em 1024 descritores, fatal. Teste `maple_follows_descriptors_until_last` |
+| [BAIXA] Underflow do TMU com UNIE não gera interrupção | **Limitação registrada** | O jogo usa TCR0 = 2 (sem UNIE); o runtime avisa se algum canal ligar UNIE. Implementar quando aparecer |
+
+Depois das correções: 91 testes unitários passam; `boot_trace` (3 000 chamadas, checkpoint `8C1C6334`, marco STARTRENDER) passa; o boot chega ao 150º STARTRENDER com 4 threads do guest e a tela "VMU not found".
 
 ### 2026-10-14: revisão complementar (SPG corrigido, fase inicial, banco do PVR, FPU nas fibras)
 

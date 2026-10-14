@@ -3,6 +3,7 @@
 #include "analysis/analysis.h"
 
 #include <filesystem>
+#include <set>
 
 namespace bs::codegen {
 
@@ -11,6 +12,9 @@ struct Options {
     bool                  inline_pool    = true;  // constantes do pool viram literais
     bool                  comments       = true;  // disassembly como comentario
     uint32_t              funcs_per_file = 400;
+    // Biblioteca de threads cooperativa ([threads] no TOML): chamadas a setjmp marcam o
+    // retorno como ponto de reentrada; o rts das funcoes longjmp troca de contexto.
+    std::set<uint32_t>    setjmp_funcs, longjmp_funcs;
 };
 
 struct Result {

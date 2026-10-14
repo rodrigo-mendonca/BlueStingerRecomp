@@ -26,6 +26,11 @@ public:
 
 void gdrom_set_disc(std::unique_ptr<DiscSource> disc);
 void gdrom_reset();
+// Tempo das leituras por DMA: false = instantaneo, true = modelo do reios (oraculo). O
+// padrao vem de BS_GDROM_TIMING (instant | reios).
+void gdrom_set_timing(bool reios);
+// Avanca uma leitura por DMA em andamento ate c->cycles (chamado pelo poll central).
+void gdrom_poll(Sh4Context* c);
 
 // Syscall GDROM (r6 = 0): `func` = r7, argumentos r4/r5. Grava r0 so nas funcoes que
 // devolvem valor (EXEC_SERVER, INIT_SYSTEM e RESET deixam r0 como estava).

@@ -104,6 +104,8 @@ int main(int argc, char** argv) {
         opt.out_dir        = out;
         opt.inline_pool    = cfg.inline_pool_constants;
         opt.funcs_per_file = cfg.funcs_per_file;
+        opt.setjmp_funcs   = cfg.setjmp_funcs;
+        opt.longjmp_funcs  = cfg.longjmp_funcs;
         const auto r       = codegen::generate(img, a, opt);
         std::printf("gerado: %zu arquivos, %zu funcoes, %zu linhas em %s\n", r.files, r.functions, r.lines,
                     out.string().c_str());

@@ -9,6 +9,7 @@
 #include "pvr/holly_intc.h"
 
 #include "pvr/pvr_regs.h"
+#include "maple/maple.h"
 
 #include <array>
 #include <cstdio>
@@ -33,6 +34,16 @@ void update(uint64_t now) {
     if (now <= g_last) return;
     if (pvr_spg_crossed(g_last, now, pvr_vblank_in_line())) reg(kIstNrm) |= kIstVblankIn;
     if (pvr_spg_crossed(g_last, now, pvr_vblank_out_line())) reg(kIstNrm) |= kIstVblankOut;
+    // fim de render agendado pelo STARTRENDER: bits 0 (video), 1 (ISP), 2 (TSP)
+    if (const uint64_t due = pvr_render_done_due(); due && now >= due) {
+        reg(kIstNrm) |= 0x7;
+        pvr_render_done_take();
+    }
+    // fim do DMA do Maple: bit 12
+    if (const uint64_t due = maple_dma_due(); due && now >= due) {
+        reg(kIstNrm) |= kIstMapleDma;
+        maple_dma_take();
+    }
     g_last = now;
 }
 

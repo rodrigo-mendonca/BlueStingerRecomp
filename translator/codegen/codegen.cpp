@@ -31,6 +31,21 @@ std::string lname(uint32_t a) {
     return b;
 }
 
+// Pontos de reentrada de `f`: retorno de cada chamada a setjmp (alvo resolvido).
+std::set<uint32_t> reentryPoints(const Image& img, const Function& f, const Options& opt) {
+    std::set<uint32_t> out;
+    if (opt.setjmp_funcs.empty()) return out;
+    for (uint32_t pc : f.insns) {
+        const Insn in = sh4::decode(img.read16(pc));
+        uint32_t   t  = 0;
+        if (in.op == Op::BSR) t = img.normalize(sh4::target(in, pc));
+        else if (in.op == Op::JSR || in.op == Op::BSRF)
+            if (auto it = f.direct.find(pc); it != f.direct.end()) t = it->second;
+        if (t && opt.setjmp_funcs.count(t) && f.insns.count(pc + 4)) out.insert(pc + 4);
+    }
+    return out;
+}
+
 class FnEmitter {
 public:
     FnEmitter(const Image& img, const Analysis& a, const Function& f, const Options& opt)
@@ -38,6 +53,8 @@ public:
 
     std::string run() {
         std::vector<uint32_t> order(f_.insns.begin(), f_.insns.end());
+        reentry_ = reentryPoints(img_, f_, opt_);
+        labels_.insert(reentry_.begin(), reentry_.end());
         // Inicio de bloco: entrada, labels e o que vem depois de um desvio.
         std::set<uint32_t> blockStart(f_.labels.begin(), f_.labels.end());
         blockStart.insert(f_.entry);
@@ -77,6 +94,14 @@ public:
         for (size_t k = 0; k < order.size(); ++k) {
             if (labels_.count(order[k])) out += lname(order[k]) + ":;\n";
             out += bodies[k];
+        }
+        // longjmp de volta a este quadro (BS_CALL_REENTRANT, R15 igual ao da chamada). Alvo
+        // que nao e desta funcao: outro quadro com o mesmo R15 mais acima; o redirect
+        // continua pendente e a funcao retorna (revisao Codex 2026-10-14).
+        if (!reentry_.empty()) {
+            out += "    return;\nbs_reenter_:;\n    switch (c->redirect) {\n";
+            for (uint32_t r : reentry_) out += "    case " + hx(r) + ": c->redirect = 0; goto " + lname(r) + ";\n";
+            out += "    default: return;\n    }\n";
         }
         out += "}\n";
         return out;
@@ -157,10 +182,12 @@ private:
         return s;
     }
 
+    std::string callMacro() const { return reentry_.empty() ? "BS_CALL(" : "BS_CALL_REENTRANT("; }
+
     std::string callTo(uint32_t pc, uint32_t t, uint32_t ret) const {
         const uint32_t nt = img_.normalize(t);
-        if (nt && a_.functions.count(nt)) return "BS_CALL(" + fname(nt) + "(c), " + hx(ret) + ");";
-        return "BS_CALL(::bs::sh4_dispatch(c, " + hx(pc) + ", " + hx(t) + "), " + hx(ret) + ");";
+        if (nt && a_.functions.count(nt)) return callMacro() + fname(nt) + "(c), " + hx(ret) + ");";
+        return callMacro() + "::bs::sh4_dispatch(c, " + hx(pc) + ", " + hx(t) + "), " + hx(ret) + ");";
     }
 
     void emitInsn(std::string& s, uint32_t pc, uint32_t next) {
@@ -207,9 +234,9 @@ private:
             s += "    { const uint32_t tgt = " + tgt + "; c->pr = " + hx(ret) + "; " + slot(pc) + "\n";
             if (auto it = f_.direct.find(pc); it != f_.direct.end()) {
                 s += "      BS_EXPECT_TARGET(" + hx(pc) + ", tgt, " + hx(it->second) + ");\n";
-                s += "      BS_CALL(" + fname(it->second) + "(c), " + hx(ret) + "); }\n";
+                s += "      " + callMacro() + fname(it->second) + "(c), " + hx(ret) + "); }\n";
             } else {
-                s += "      BS_CALL(::bs::sh4_dispatch(c, " + hx(pc) + ", tgt), " + hx(ret) + "); }\n";
+                s += "      " + callMacro() + "::bs::sh4_dispatch(c, " + hx(pc) + ", tgt), " + hx(ret) + "); }\n";
             }
             fallthrough(s, pc, ret, next);
             return;
@@ -234,7 +261,8 @@ private:
             return;
         }
         case Op::RTS:
-            s += "    { const uint32_t tgt = c->pr; " + slot(pc) + "\n      BS_RET(" + hx(pc) + ", tgt); }\n";
+            s += "    { const uint32_t tgt = c->pr; " + slot(pc) + "\n      " +
+                 (opt_.longjmp_funcs.count(f_.entry) ? "BS_LONGJMP_RET(" : "BS_RET(") + hx(pc) + ", tgt); }\n";
             return;
         case Op::RTE:
             // SPC e lido antes; SR = SSR antes do slot (o slot ja ve o banco restaurado).
@@ -251,6 +279,7 @@ private:
     const Function&    f_;
     const Options&     opt_;
     std::set<uint32_t> labels_;
+    std::set<uint32_t> reentry_;  // retorno de chamadas a setjmp
 };
 
 void writeIfChanged(const fs::path& p, const std::string& text) {
@@ -309,7 +338,17 @@ Result generate(const Image& img, const Analysis& a, const Options& opt) {
     std::sort(table.begin(), table.end());
     std::string d = std::string(banner) + "#include \"funcs.h\"\n\nnamespace bsg {\nnamespace {\nconst bs::Sh4FuncEntry kTable[] = {\n";
     for (auto [phys, addr] : table) d += "    {" + hx(phys) + ", &" + fname(addr) + "},\n";
-    d += "};\n} // namespace\n\nvoid register_functions() { bs::sh4_set_function_table(kTable, sizeof(kTable) / sizeof(kTable[0])); }\n} // namespace bsg\n";
+    // Pontos de reentrada (retornos de setjmp): o runtime so retoma uma thread por
+    // longjmp num deles, e so cria thread nova fora deles.
+    std::set<uint32_t> reentry;
+    for (const auto& [addr, f] : a.functions) {
+        const auto pts = reentryPoints(img, f, opt);
+        reentry.insert(pts.begin(), pts.end());
+    }
+    d += "};\nconst uint32_t kReentry[] = {";
+    for (uint32_t p : reentry) d += hx(p) + ", ";
+    d += "0};\n} // namespace\n\nvoid register_functions() {\n    bs::sh4_set_function_table(kTable, sizeof(kTable) / sizeof(kTable[0]));\n"
+         "    bs::sh4_set_reentry_points(kReentry, " + std::to_string(reentry.size()) + ");\n}\n} // namespace bsg\n";
     writeIfChanged(opt.out_dir / "dispatch.cpp", d);
     sources.push_back("dispatch.cpp");
 

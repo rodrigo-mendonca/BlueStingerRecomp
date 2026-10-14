@@ -5,12 +5,17 @@ add_library(bs_runtime STATIC
   cpu/sh4_threads.cpp
   memory/memory.cpp
   memory/sh4_port.cpp
+  memory/sh4_tmu.cpp
   memory/sh4_ccn.cpp
   memory/sh4_sq.cpp
   memory/sh4_dmac.cpp
   pvr/pvr_regs.cpp
+  pvr/pvr_render.cpp
+  pvr/pvr_texture.cpp
   pvr/holly_intc.cpp
   pvr/holly_sb.cpp
+  maple/maple.cpp
+  input/input.cpp
   pvr/vram.cpp
   pvr/ta.cpp
   aica/aica_regs.cpp
@@ -22,7 +27,7 @@ add_library(bs_runtime STATIC
 )
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # leitura da imagem de disco do usuario (gdrom/image_source.cpp)
-target_link_libraries(bs_runtime PUBLIC bs_disc)
+target_link_libraries(bs_runtime PUBLIC bs_disc PRIVATE xinput)
 
 if(BS_BUILD_GAME)
   # M4: SDL3 + Vulkan + generated/*.cpp

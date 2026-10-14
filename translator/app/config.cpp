@@ -61,6 +61,14 @@ GameConfig loadConfig(const std::filesystem::path& path) {
             c.analysis.data_ranges.push_back({u32(tb["start"].node(), "data_ranges.start"),
                                               u32(tb["end"].node(), "data_ranges.end")});
         }
+    // [threads]: funcoes setjmp/longjmp da biblioteca de threads cooperativa do jogo
+    for (const char* k : {"setjmp", "longjmp"})
+        if (auto arr = t["threads"][k].as_array())
+            for (auto& el : *arr) {
+                const uint32_t a = u32(&el, "threads");
+                (std::string(k) == "setjmp" ? c.setjmp_funcs : c.longjmp_funcs).insert(a);
+                c.analysis.extra_functions.push_back(a);
+            }
     return c;
 }
 

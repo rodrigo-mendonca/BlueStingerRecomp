@@ -9,6 +9,7 @@
 // real (DMA em andamento, Maple) aparece aqui antes de virar divergencia.
 #include "pvr/holly_sb.h"
 
+#include "maple/maple.h"
 #include "memory/sh4_dmac.h"
 #include "pvr/holly_intc.h"
 
@@ -35,11 +36,13 @@ uint32_t canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 void holly_sb_reset() {
     g_regs.fill(0);
     g_reported.fill(false);
+    maple_reset();
 }
 
-bool holly_sb_read(Sh4Context*, uint32_t a, unsigned size, uint32_t& v) {
+bool holly_sb_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
+    if (maple_read(c, a, v)) return true;
     if (p == kSbRev) {
         v = 0x0000000B;
         return true;
@@ -56,6 +59,7 @@ bool holly_sb_read(Sh4Context*, uint32_t a, unsigned size, uint32_t& v) {
 bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
+    if (maple_write(c, a, v)) return true;
     if (p != kSbRev) g_regs[(p - kBase) / 4] = v;
     // Diagnostico: BS_PVR_DEBUG=1 registra o disparo do DMA do canal 2 (SB_C2DST)
     static const bool debug = std::getenv("BS_PVR_DEBUG") != nullptr;

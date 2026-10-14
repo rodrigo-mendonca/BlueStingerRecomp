@@ -205,6 +205,22 @@ Endereço de carga e entry point: `0x8C010000` (P1, cacheável).
   núcleo da CPU só conhece `sh4_rte_redirect`, então a troca de fibras por outro
   mecanismo (threads do host com passagem de bastão, ucontext) não muda o código
   gerado. O modo de FP do host é reaplicado a partir do FPSCR a cada troca.
+- **setjmp/longjmp entre threads** (M4, decisão do mantenedor de 2026-10-14: suporte
+  genérico, não HLE da biblioteca): a biblioteca de threads cooperativa do jogo troca
+  de contexto com setjmp/longjmp, declarados em `[threads]` no TOML. O gerador marca o
+  retorno de cada chamada a setjmp como **ponto de reentrada** (rótulo na própria
+  função). Nessas funções as chamadas usam `BS_CALL_REENTRANT`, e no fim há um
+  despacho `bs_reenter_` para os rótulos. O `rts` de uma função longjmp usa
+  `BS_LONGJMP_RET`. Com alvo inesperado, `sh4_longjmp_redirect` retoma a thread
+  suspensa cuja chamada pendente tem o R15 restaurado e marca `c->redirect` com o
+  alvo. Senão, o alvo começa uma thread nova (contexto montado pelo jogo, com PR =
+  entrada e pilha nova). A fibra retomada sobe pelos quadros (todo `BS_CALL` retorna
+  com `redirect` pendente) até o quadro cujo R15 na chamada é o restaurado, e salta
+  para o rótulo. Assim o código real do jogo continua a partir do retorno do setjmp,
+  com os registradores que o longjmp do guest restaurou. Fora desses casos (longjmp
+  para quadro da própria thread, alvo desconhecido, ponto que não é reentrada) o
+  resultado é erro fatal, nunca silêncio. O mecanismo não depende de fibras: só de
+  "retomar a thread X" e de `c->redirect`.
 - **Código copiado para a RAM** (R3): segmentos `[[relocated]]` na configuração
   (destino, origem, tamanho); as instruções são analisadas no destino, o pool é
   lido da RAM e o runtime confere as instruções antes de executar

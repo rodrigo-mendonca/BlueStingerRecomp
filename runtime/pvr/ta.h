@@ -18,6 +18,7 @@ void                         ta_reset();
 void                         ta_list_init();      // TA_LIST_INIT: comeca listas novas
 void                         ta_list_continue();  // TA_LIST_CONT: continua as listas atuais
 const std::vector<TaParam>&  ta_params();         // parametros recebidos desde o ultimo init
+uint32_t                     ta_bytes();          // bytes recebidos pela FIFO desde o ultimo init
 
 // Destino das store queues/DMA na area 4: FIFO de poligonos (0x10000000), caminho direto
 // de textura (0x11000000, escreve na VRAM pelo caminho de 64 bits). 32 bytes por vez.

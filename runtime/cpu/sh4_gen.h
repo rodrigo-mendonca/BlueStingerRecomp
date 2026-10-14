@@ -39,7 +39,35 @@
         call_expr;                                  \
         c->ret_expect = saved_ret_;                 \
         c->ret_sp     = saved_sp_;                  \
+        if (c->redirect) return;                    \
         BS_POLL(ret);                               \
+    } while (0)
+// Um longjmp pendente (c->redirect) sobe pelos quadros ate o da funcao que chamou o
+// setjmp (BS_CALL acima so retorna). Numa funcao com pontos de reentrada, o longjmp
+// volta a este quadro se o R15 restaurado e o do momento da chamada (o mesmo do
+// setjmp, no mesmo quadro); a funcao entao salta para o rotulo do retorno do setjmp.
+#define BS_CALL_REENTRANT(call_expr, ret)               \
+    do {                                                \
+        const uint32_t saved_ret_ = c->ret_expect;      \
+        const uint32_t saved_sp_  = c->ret_sp;          \
+        const uint32_t call_sp_   = c->r[15];           \
+        c->ret_expect             = (ret);              \
+        c->ret_sp                 = call_sp_;           \
+        call_expr;                                      \
+        c->ret_expect = saved_ret_;                     \
+        c->ret_sp     = saved_sp_;                      \
+        if (c->redirect) {                              \
+            if (c->r[15] == call_sp_) goto bs_reenter_; \
+            return;                                     \
+        }                                               \
+        BS_POLL(ret);                                   \
+    } while (0)
+// rts de uma funcao longjmp (config [threads]): alvo diferente do esperado e troca de
+// contexto do guest.
+#define BS_LONGJMP_RET(pc, tgt)                                                 \
+    do {                                                                        \
+        if ((tgt) != c->ret_expect) ::bs::sh4_longjmp_redirect(c, (pc), (tgt)); \
+        return;                                                                 \
     } while (0)
 // rts/rte: o alvo (PR ou SPC, lido antes do delay slot) precisa ser o que o
 // chamador espera. Ao invocar um tratador de excecao/interrupcao, o runtime

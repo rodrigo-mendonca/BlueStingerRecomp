@@ -12,6 +12,12 @@ add_executable(bs_unit_tests
   unit/test_analysis_m4.cpp
   unit/test_m4_hw.cpp
   unit/test_threads.cpp
+  unit/test_render.cpp
+  unit/test_render_formats.cpp
+  unit/test_maple.cpp
+  unit/test_longjmp.cpp
+  unit/test_tmu.cpp
+  unit/test_input.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc)

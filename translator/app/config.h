@@ -3,6 +3,7 @@
 #include "analysis/analysis.h"
 
 #include <filesystem>
+#include <set>
 #include <string>
 
 namespace bs {
@@ -14,6 +15,7 @@ struct GameConfig {
     std::vector<analysis::Relocated> relocated;  // [[relocated]]: copiado para a imagem
     bool               inline_pool_constants = true;
     uint32_t           funcs_per_file        = 400;
+    std::set<uint32_t> setjmp_funcs, longjmp_funcs;  // [threads]
 };
 
 GameConfig loadConfig(const std::filesystem::path& path);

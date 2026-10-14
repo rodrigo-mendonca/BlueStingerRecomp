@@ -163,6 +163,93 @@ BS_TEST(gdrom_request_lifecycle_and_reads) {
     BS_CHECK(gdCall(h.c, 1, bad, stat) == 0xFFFFFFFF);
 }
 
+// Perfil de tempo "reios" (o do oraculo): DMAREAD de 12 setores em blocos de 5. Restando
+// 12 e 7 setores (> 10 240 bytes), cada bloco leva 1 000 000 ciclos; o ultimo (2 setores),
+// 2 ciclos por byte = 8 192. Ocupado ate o ultimo bloco; result[2] = bytes ja copiados.
+BS_TEST(gdrom_reios_timing_reads_in_timed_blocks) {
+    Hw h;
+    gdrom_set_disc(std::make_unique<FakeDisc>());
+    gdrom_set_timing(true);
+    const uint32_t params = 0x8C200000, stat = 0x8C200100, buf = 0x8C210000;
+    sh4_write32(&h.c, params, 45150);
+    sh4_write32(&h.c, params + 4, 12);
+    sh4_write32(&h.c, params + 8, buf);
+    sh4_write32(&h.c, params + 12, 0);
+    const uint32_t id = gdCall(h.c, 0, 0x11, params);
+    gdCall(h.c, 2);  // EXEC_SERVER: comeca no ciclo c0
+    const uint64_t c0 = h.c.cycles;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 1 && sh4_read32(&h.c, stat + 8) == 0);
+    BS_CHECK(sh4_read8(&h.c, buf) == 0);
+    h.c.cycles = c0 + 1000000;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 1 && sh4_read32(&h.c, stat + 8) == 5 * 2048);
+    BS_CHECK(sh4_read8(&h.c, buf + 4 * 2048) == ((45150 + 4) & 0xFF) && sh4_read8(&h.c, buf + 5 * 2048) == 0);
+    h.c.cycles = c0 + 2000000 + 8191;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 1 && sh4_read32(&h.c, stat + 8) == 10 * 2048);
+    h.c.cycles = c0 + 2000000 + 8192;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 2 && sh4_read32(&h.c, stat + 8) == 12 * 2048);
+    BS_CHECK(sh4_read8(&h.c, buf + 11 * 2048) == ((45150 + 11) & 0xFF));
+    gdrom_set_timing(false);
+}
+
+namespace {
+// DMAREAD de `n` setores a partir de `fad` para `buf`; devolve o id (EXEC_SERVER chamado).
+uint32_t dmaRead(Hw& h, uint32_t fad, uint32_t n, uint32_t buf) {
+    const uint32_t params = 0x8C200000;
+    sh4_write32(&h.c, params, fad);
+    sh4_write32(&h.c, params + 4, n);
+    sh4_write32(&h.c, params + 8, buf);
+    sh4_write32(&h.c, params + 12, 0);
+    const uint32_t id = gdCall(h.c, 0, 0x11, params);
+    gdCall(h.c, 2);
+    return id;
+}
+} // namespace
+
+// Bordas do perfil reios (revisao Codex 2026-10-14): 5 setores = um bloco de 2 ciclos por
+// byte (20 480); 6 setores = 1 000 000 + 4 096; 0 setores termina na hora; RESET seguido
+// de pedido novo descarta a transferencia antiga; erro no meio de um bloco; e o avanco
+// pelo poll central (gdrom_poll), sem nova syscall.
+BS_TEST(gdrom_reios_timing_edge_cases) {
+    Hw h;
+    gdrom_set_disc(std::make_unique<FakeDisc>());
+    gdrom_set_timing(true);
+    const uint32_t stat = 0x8C200100, buf = 0x8C210000;
+    // 5 setores
+    uint32_t       id = dmaRead(h, 45150, 5, buf);
+    uint64_t       c0 = h.c.cycles;
+    h.c.cycles        = c0 + 20479;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 1);
+    h.c.cycles = c0 + 20480;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 2 && sh4_read32(&h.c, stat + 8) == 5 * 2048);
+    // 6 setores, avancando so pelo poll central: o buffer fica pronto sem syscall
+    id = dmaRead(h, 45200, 6, buf);
+    c0 = h.c.cycles;
+    h.c.cycles = c0 + 1000000 + 4096;
+    gdrom_poll(&h.c);
+    BS_CHECK(sh4_read8(&h.c, buf + 5 * 2048) == ((45200 + 5) & 0xFF));
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 2 && sh4_read32(&h.c, stat + 8) == 6 * 2048);
+    // 0 setores: termina dentro do EXEC_SERVER
+    id = dmaRead(h, 45150, 0, buf);
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 2);
+    // RESET no meio de uma transferencia; o pedido seguinte nao herda a antiga
+    dmaRead(h, 45300, 12, buf);
+    gdCall(h.c, 9);  // RESET
+    sh4_write8(&h.c, buf + 2 * 2048, 0x5A);
+    id = dmaRead(h, 45400, 2, buf);
+    c0 = h.c.cycles;
+    h.c.cycles = c0 + 8192;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 2 && sh4_read32(&h.c, stat + 8) == 2 * 2048);
+    BS_CHECK(sh4_read8(&h.c, buf) == (45400 & 0xFF) && sh4_read8(&h.c, buf + 2 * 2048) == 0x5A);
+    h.c.cycles += 5000000;  // os prazos da transferencia antiga passam sem efeito
+    gdrom_poll(&h.c);
+    BS_CHECK(sh4_read8(&h.c, buf + 2 * 2048) == 0x5A);
+    // erro de leitura no meio do 1o bloco (o disco sintetico acaba no FAD 45649)
+    id = dmaRead(h, 45647, 6, buf);
+    h.c.cycles += 1000000;
+    BS_CHECK(gdCall(h.c, 1, id, stat) == 0xFFFFFFFF);
+    gdrom_set_timing(false);
+}
+
 // TOC: [faixa-1] = ctrl<<28 | adr<<24 | FAD; [99]/[100] primeira/ultima; [101] lead-out.
 BS_TEST(gdrom_toc_version_and_drive_status) {
     Hw h;

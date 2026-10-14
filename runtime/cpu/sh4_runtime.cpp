@@ -5,6 +5,7 @@
 
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
+#include "gdrom/gdrom.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -91,6 +92,9 @@ void sh4_check_code(Sh4Context* c, const uint32_t* pcs, const uint16_t* ops, siz
 // ciclos. c->pc ja e o endereco de retomada.
 void sh4_service(Sh4Context* c) {
     c->next_event = c->cycles + kServiceQuantum;
+    // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
+    // sem depender de nova syscall (revisao Codex 2026-10-14)
+    gdrom_poll(c);
     sh4_irq_check(c);
 }
 

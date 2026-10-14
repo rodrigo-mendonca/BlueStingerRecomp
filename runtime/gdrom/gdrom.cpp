@@ -4,13 +4,15 @@
 //   1 GET_CMD_STAT(r4 = id, r5 = estado[4])      -> 0 ocioso, 1 ocupado, 2 concluido, -1 erro
 //   2 EXEC_SERVER                                 -> executa o pedido pendente
 //   3 INIT_SYSTEM, 4 GET_DRV_STAT(r4 = [estado, tipo do disco]), 9 RESET
-// Um pedido por vez; o comando e executado inteiro na chamada a EXEC_SERVER.
+// Um pedido por vez; o comando e executado na chamada a EXEC_SERVER (inteiro, ou em
+// blocos de tempo com BS_GDROM_TIMING=reios).
 #include "gdrom/gdrom.h"
 
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace bs {
@@ -27,7 +29,36 @@ struct State {
     uint32_t command = 0;
     uint32_t params[4] = {};
     uint32_t result[4] = {};
+    // leitura por DMA em andamento (perfil de tempo "reios")
+    uint32_t xferFad = 0, xferLeft = 0, xferTotal = 0, xferDest = 0;
+    uint64_t xferDue = 0;  // ciclo em que o proximo bloco fica pronto
 } g;
+
+// Tempo das leituras por DMA (BS_GDROM_TIMING):
+//  - instant (padrao): o comando inteiro termina dentro do EXEC_SERVER;
+//  - reios: o mesmo modelo do BIOS HLE do Flycast usado no oraculo (so referencia de
+//    comportamento, reimplementado): blocos de 5 setores; enquanto restam mais de 5
+//    setores, cada bloco leva 1 000 000 ciclos (~2 MB/s); o ultimo, 2 ciclos por byte.
+//    O comando fica ocupado ate o ultimo bloco. E o modelo do oraculo, nao o do
+//    hardware; serve para as comparacoes deterministicas (STATUS.md, tempo).
+int g_timingOverride = -1;  // gdrom_set_timing (testes); -1 = ambiente
+
+bool reiosTiming() {
+    if (g_timingOverride >= 0) return g_timingOverride == 1;
+    static const bool t = [] {
+        const char* e = std::getenv("BS_GDROM_TIMING");
+        if (!e || std::strcmp(e, "instant") == 0) return false;
+        if (std::strcmp(e, "reios") == 0) return true;
+        std::fprintf(stderr, "BS_GDROM_TIMING invalido: %s (use instant ou reios)\n", e);
+        std::exit(2);
+    }();
+    return t;
+}
+
+uint64_t reiosTicks(uint32_t sectorsLeft) {
+    const uint64_t len = uint64_t(sectorsLeft) * 2048;
+    return len > 10240 ? 1000000 : len * 2;
+}
 
 std::unique_ptr<DiscSource> g_disc;
 
@@ -87,8 +118,17 @@ void execute(Sh4Context* c) {
     case kCmdGetVersion:
         getVersion(c, g.params[0]);
         break;
-    case kCmdPioRead:
-    case kCmdDmaRead: {
+    case kCmdDmaRead:
+        if (reiosTiming() && g.params[1]) {  // termina aos blocos (advance)
+            g.xferFad   = g.params[0] & 0xFFFFFF;
+            g.xferLeft  = g.xferTotal = g.params[1];
+            g.xferDest  = g.params[2];
+            g.xferDue   = c->cycles + reiosTicks(g.xferLeft);
+            g.result[2] = 0;
+            return;  // continua ocupado
+        }
+        [[fallthrough]];
+    case kCmdPioRead: {
         const uint32_t fad = g.params[0] & 0xFFFFFF, n = g.params[1], dest = g.params[2];
         if (!readSectors(c, fad, n, dest)) {
             g.status    = kErr;
@@ -104,13 +144,33 @@ void execute(Sh4Context* c) {
     g.status = kComplete;
 }
 
+// Leitura por DMA em blocos (perfil reios): copia os blocos cujo tempo ja passou.
+void advance(Sh4Context* c) {
+    while (g.xferLeft && c->cycles >= g.xferDue) {
+        const uint32_t k = g.xferLeft < 5 ? g.xferLeft : 5;
+        if (!readSectors(c, g.xferFad, k, g.xferDest)) {
+            g.xferLeft  = 0;
+            g.status    = kErr;
+            g.result[0] = 3;
+            return;
+        }
+        g.xferFad += k, g.xferDest += k * 2048, g.xferLeft -= k;
+        g.result[2] = (g.xferTotal - g.xferLeft) * 2048;
+        if (!g.xferLeft) g.status = kComplete;
+        else g.xferDue += reiosTicks(g.xferLeft);
+    }
+}
+
 } // namespace
 
 void gdrom_set_disc(std::unique_ptr<DiscSource> disc) { g_disc = std::move(disc); }
 void gdrom_reset() { g = {}; }
+void gdrom_set_timing(bool reios) { g_timingOverride = reios ? 1 : 0; }
+void gdrom_poll(Sh4Context* c) { advance(c); }
 
 void gdrom_syscall(Sh4Context* c, uint32_t func, uint32_t r4, uint32_t r5) {
     uint32_t& r0 = c->r[0];
+    advance(c);  // blocos de leitura cujo tempo ja passou
     switch (func) {
     case kReqCmd:
         if (g.status != kOk) {
@@ -118,6 +178,7 @@ void gdrom_syscall(Sh4Context* c, uint32_t func, uint32_t r4, uint32_t r5) {
             return;
         }
         for (int i = 0; i < 4; ++i) g.params[i] = r5 ? sh4_read32(c, r5 + 4 * i) : 0;
+        g.xferLeft = 0;  // pedido novo descarta transferencia antiga (como o reios)
         for (auto& r : g.result) r = 0;
         if (g.nextId == 0 || g.nextId == 0xFFFFFFFF) g.nextId = 1;
         g.lastId  = g.nextId++;
@@ -139,7 +200,7 @@ void gdrom_syscall(Sh4Context* c, uint32_t func, uint32_t r4, uint32_t r5) {
         return;
     }
     case kExecServer:
-        if (g.status == kBusy) execute(c);
+        if (g.status == kBusy && !g.xferLeft) execute(c);
         return;
     case kInitSystem:
         g = {};

@@ -33,6 +33,7 @@ struct State {
 } g;
 
 std::vector<TaParam> g_params;
+uint32_t             g_bytes = 0;  // bytes recebidos pela FIFO de poligonos desde o init
 
 constexpr uint32_t kListEndBit[5] = {1u << 7, 1u << 8, 1u << 9, 1u << 10, 1u << 21};
 
@@ -113,12 +114,16 @@ void polygonFifo(Sh4Context* c, const uint32_t* d) {
 void ta_reset() {
     g = {};
     g_params.clear();
+    g_bytes = 0;
 }
 
 void ta_list_init() {
     g = {};
     g_params.clear();
+    g_bytes = 0;
 }
+
+uint32_t ta_bytes() { return g_bytes; }
 
 void ta_list_continue() { g.list = -1; }
 
@@ -129,6 +134,7 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     if ((p >> 26) != 4) return false;  // area 4: 0x10000000-0x13FFFFFF
     const uint32_t region = p & 0x01800000;  // 0x00 poligonos, 0x00800000 YUV, 0x01000000+ textura
     if (region == 0) {
+        g_bytes += 32;
         polygonFifo(c, data);
         return true;
     }

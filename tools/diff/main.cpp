@@ -14,6 +14,10 @@
 //                                                    FPU, 16 MB de RAM e, se existir
 //                                                    <esperado>.vram, os 8 MB de VRAM
 //                                                    (checkpoint `snap --hit` do oraculo).
+//                                                    <alvo> = STARTRENDER: para na n-esima
+//                                                    escrita em STARTRENDER, antes de ela
+//                                                    ser guardada (oraculo: breakpoint na
+//                                                    instrucao que escreve).
 //                                                    Comparacao PARCIAL: o snapshot nao tem
 //                                                    SGR, DBR, XF (o stub GDB do Flycast nao
 //                                                    os expoe), ciclos nem registradores
@@ -26,6 +30,7 @@
 #include "gdrom/image_source.h"
 #include "hle/bios.h"
 #include "hle/flashrom.h"
+#include "input/input.h"
 #include "cpu/sh4_threads.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/vram.h"
@@ -62,8 +67,13 @@ std::FILE* g_traceOut   = nullptr;
 size_t     g_traceCount = 0;
 size_t     g_traceMax   = 100000;
 uint32_t   g_untilFunc  = 0;
+bool       g_untilStartRender = false;  // alvo "STARTRENDER": para na n-esima escrita
+
 size_t     g_untilHit   = 0;
 size_t     g_untilSeen  = 0;
+void onStartRender(Sh4Context*, int n) {
+    if (g_untilStartRender && size_t(n) == g_untilHit) throw Stop{};
+}
 
 // BS_TRACE_FROM=<funcao>:<n>: o trace so comeca na n-esima entrada da funcao (alinha
 // com `flycast_oracle.py trace <funcao> --hit n`); `max` conta so as linhas gravadas.
@@ -72,7 +82,7 @@ size_t   g_fromHit = 0, g_fromSeen = 0, g_traced = 0;
 
 void onEnter(Sh4Context* c, uint32_t entry) {
     if (g_traceOut && g_traced == g_traceMax) throw Stop{};
-    if (g_untilHit && entry == g_untilFunc && ++g_untilSeen == g_untilHit) {
+    if (g_untilHit && !g_untilStartRender && entry == g_untilFunc && ++g_untilSeen == g_untilHit) {
         c->pc = entry;
         throw Stop{};
     }
@@ -121,6 +131,7 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     bsg::register_functions();
     sh4_set_fatal_handler(onFatal);
     sh4_set_trace(onEnter);
+    pvr_set_startrender_hook(onStartRender);
 
     const Snapshot       in = Snapshot::load(entryPath);
     std::vector<uint8_t> ram(16u << 20);
@@ -155,6 +166,15 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     bios_hle_install(&c, false);
     // Disco: BS_DISC_IMAGE (a mesma imagem que o Flycast usou para gerar o snapshot).
     if (const char* disc = std::getenv("BS_DISC_IMAGE")) gdrom_set_disc(open_disc_image(disc));
+    // Entrada: so roteiro (deterministico) ou nenhuma. Entrada ao vivo (BS_INPUT=host)
+    // tornaria a comparacao nao reproduzivel; so com BS_DIFF_LIVE_INPUT=1, avisando.
+    if (const char* inMode = std::getenv("BS_INPUT"); inMode && std::string(inMode) == "host" && !std::getenv("BS_DIFF_LIVE_INPUT")) {
+        std::fprintf(stderr, "bs-diff: BS_INPUT=host recusado (nao deterministico); use BS_INPUT_SCRIPT ou "
+                             "BS_DIFF_LIVE_INPUT=1\n");
+        return 2;
+    }
+    if (std::getenv("BS_DIFF_LIVE_INPUT")) std::fprintf(stderr, "aviso: entrada ao vivo; resultado NAO deterministico\n");
+    input_configure_from_env();
     // Flash: BS_FLASH_IMAGE (a do Flycast, data/dc_nvmem.bin, para comparar exatamente).
     if (const char* flash = std::getenv("BS_FLASH_IMAGE"); flash && !flashrom_load(flash))
         std::fprintf(stderr, "aviso: flash %s invalida (esperado 128 KB)\n", flash);
@@ -187,6 +207,8 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     bool        stopped = false;
     try {
         f(&c);
+        // longjmp que nenhum quadro da thread 0 reconheceu (subiu ate aqui)
+        if (c.redirect) sh4_fatal(&c, "longjmp sem quadro de destino nesta thread", c.pc, c.redirect);
     } catch (const FatalError& e) {
         fatal = e.what();
     } catch (const Stop&) {
@@ -210,7 +232,17 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     const Snapshot expected = Snapshot::load(outPath);
     const Snapshot actual   = Snapshot::capture(c, until ? c.pc : expected.regs.pc);
     // Diagnostico: BS_DIFF_SAVE=<arquivo> grava o estado recompilado (mesmo formato do oraculo)
-    if (const char* save = std::getenv("BS_DIFF_SAVE")) actual.save(save);
+    // (+ <arquivo>.vram, 8 MB no caminho de 32 bits, e <arquivo>.pvr, banco do PVR).
+    if (const char* save = std::getenv("BS_DIFF_SAVE")) {
+        actual.save(save);
+        std::filesystem::path v = save, r = save;
+        std::ofstream(v.replace_extension(".vram"), std::ios::binary)
+            .write(reinterpret_cast<const char*>(vram_data()), kVramSize);
+        std::vector<uint32_t> bank(2048);
+        pvr_regs_dump(&c, bank.data());
+        std::ofstream(r.replace_extension(".pvr"), std::ios::binary)
+            .write(reinterpret_cast<const char*>(bank.data()), 8192);
+    }
     const auto     d        = compare(expected, actual);
     size_t         regDiffs = 0;
     for (const auto& x : d) {
@@ -220,7 +252,9 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     }
     std::printf("registradores/FPU: %zu divergencias\n", regDiffs);
     // PC por endereco fisico: o Flycast pode estar no espelho P2 (AC...) do mesmo codigo
-    const bool pcOk = !until || sh4_phys(expected.regs.pc) == sh4_phys(c.pc);
+    // alvo STARTRENDER: o recompilado para dentro da escrita (sem PC de instrucao); o
+    // oraculo para na instrucao que a faz. O PC nao e comparavel nesse modo.
+    const bool pcOk = !until || g_untilStartRender || sh4_phys(expected.regs.pc) == sh4_phys(c.pc);
     if (!pcOk) std::printf("  pc               flycast=%08X recompilado=%08X\n", expected.regs.pc, c.pc);
     printRanges("ram", 0x0C000000, expected.ram, actual.ram);
     bool same = d.empty() && pcOk;
@@ -281,7 +315,8 @@ int main(int argc, char** argv) {
         g_fromHit  = (end && *end == ':') ? std::strtoull(end + 1, nullptr, 0) : 1;
     }
     if (std::strcmp(mode, "until") == 0) {
-        g_untilFunc = uint32_t(std::strtoul(argv[5], nullptr, 0));
+        g_untilStartRender = std::strcmp(argv[5], "STARTRENDER") == 0;
+        g_untilFunc        = g_untilStartRender ? 0 : uint32_t(std::strtoul(argv[5], nullptr, 0));
         g_untilHit  = std::strtoull(argv[6], nullptr, 0);
         if (!g_untilHit) {
             std::fprintf(stderr, "n deve ser >= 1\n");

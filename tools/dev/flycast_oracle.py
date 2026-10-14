@@ -290,6 +290,50 @@ def cmd_snap(a):
     finish(a, g)
 
 
+def interrupt(g: Gdb):
+    """^C e descarta pacotes que sobrarem (parada real chegando junto)."""
+    g.s.sendall(b"\x03")
+    g.recv()
+    g.s.settimeout(0.2)
+    try:
+        while True:
+            g.recv()
+    except socket.timeout:
+        pass
+    finally:
+        g.s.settimeout(None)
+
+
+def cmd_snap_free(a):
+    """Captura sem breakpoint durante o render.
+
+    Breakpoints em STARTRENDER (snap --hit) interferem no PVR do Flycast: com paradas
+    repetidas na submissao, o buffer do jogo fica no estado 4, o video nunca liga e a
+    VRAM do framebuffer fica zerada; rodando livre, o mesmo jogo gira os buffers e liga
+    o video (STATUS.md, oraculo grafico). Aqui o jogo roda sem breakpoints por
+    `seconds` (tempo do host) e para por ^C num ponto qualquer.
+    """
+    g = connect(a)
+    if a.entry:
+        enter_game(g)
+        snapshot(g, a.entry)
+        print(f"entrada do jogo -> {a.entry}")
+    else:
+        enter_game(g)
+    g.send("c")
+    time.sleep(a.seconds)
+    interrupt(g)
+    r = snapshot(g, a.file)
+    print(f"parada livre apos {a.seconds:.0f}s: PC={r[R_PC]:08X} -> {a.file}")
+    base = os.path.splitext(a.file)[0]
+    with open(base + ".vram", "wb") as f:
+        f.write(g.read(VRAM32_BASE, VRAM_SIZE))
+    with open(base + ".pvr", "wb") as f:
+        f.write(g.read(PVR_BASE, PVR_SIZE))
+    print(f"vram, pvr -> {base}.vram/.pvr")
+    finish(a, g)
+
+
 def cmd_call(a):
     import os
     os.makedirs(a.dir, exist_ok=True)
@@ -451,10 +495,14 @@ def main():
     n.add_argument("--pvr", action="store_true", help="grava tambem <arquivo>.pvr (registradores do PVR)")
     n.add_argument("--entry", help="grava antes o estado na entrada do jogo (mesma sessao)")
     n.add_argument("--vram", action="store_true", help="grava tambem <arquivo>.vram (8 MB, caminho de 32 bits)")
+    sf = sp.add_parser("snap-free")
+    sf.add_argument("file")
+    sf.add_argument("--seconds", type=float, default=180.0, help="tempo do host rodando livre antes da parada")
+    sf.add_argument("--entry", help="grava antes o estado na entrada do jogo (mesma sessao)")
     sp.add_parser("regs")
     a = p.parse_args()
     try:
-        return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs}[a.cmd](a) or 0
+        return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs, "snap-free": cmd_snap_free}[a.cmd](a) or 0
     finally:
         finish(a, None)  # erro no meio do comando: nao deixar Flycast orfao
 

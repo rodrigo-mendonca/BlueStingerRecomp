@@ -31,6 +31,17 @@ data_pointers      = true   # palavras de dados que apontam para inicio de funca
 inline_pool_constants = false
 funcs_per_file        = 400
 
+# --- biblioteca de threads cooperativa ---
+# setjmp 8C099F8C grava R15, R14, PR, R13-R0, MACH/MACL, GBR, FPSCR, FPUL e FR0-FR15 em
+# @r4 e devolve 0. longjmp 8C099F18 restaura esse contexto e faz rts para o PR salvo
+# com r0 = r5 (1 se 0). O yield (8C09037E) faz `if (setjmp(atual) == 0)
+# longjmp(escalonador, 1)`, o escalonador (8C0903C0) faz longjmp para cada thread, e a
+# criacao (8C090146) monta o contexto com PR = funcao de entrada e pilha nova.
+# Verificado no disassembly em 2026-10-14 (ver STATUS.md, Maple).
+[threads]
+setjmp  = [0x8C099F8C]
+longjmp = [0x8C099F18]
+
 # --- codigo copiado para a RAM (R3) ---
 # 8C17C460 instala os vetores de excecao/interrupcao do Katana em VBR (0x8C00F400):
 # copia o stub de 8C198140 para VBR+0x100 e VBR+0x400, e o de 8C198174 para

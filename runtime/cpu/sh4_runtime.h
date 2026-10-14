@@ -31,6 +31,12 @@ void sh4_dispatch_miss(Sh4Context* c, uint32_t from_pc, uint32_t target);
 void sh4_bad_return(Sh4Context* c, uint32_t pc, uint32_t target);
 // rte para um SPC diferente do esperado: continua em `target` (ver BS_RTE).
 void sh4_rte_redirect(Sh4Context* c, uint32_t pc, uint32_t target);
+// rts de uma funcao longjmp (config [threads]) para um alvo diferente do esperado:
+// retoma a thread suspensa cujo R15 e o do contexto restaurado, no ponto de retorno do
+// setjmp (`target`), ou comeca uma thread nova em `target` (ver sh4_threads.h).
+void sh4_longjmp_redirect(Sh4Context* c, uint32_t pc, uint32_t target);
+// Pontos de reentrada do codigo gerado (retornos de setjmp), ordenados.
+void sh4_set_reentry_points(const uint32_t* points, size_t count);
 // O fluxo chegou num endereco que a analise classificou como dado/invalido.
 void sh4_unreachable(Sh4Context* c, uint32_t pc);
 // Instrucao sem traducao (p.ex. opcode invalido alcancado).

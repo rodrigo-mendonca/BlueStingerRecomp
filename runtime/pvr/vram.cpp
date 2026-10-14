@@ -8,6 +8,8 @@
 
 #include "cpu/sh4_runtime.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -43,6 +45,12 @@ bool vram_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const int64_t o = locate(a);
     if (o < 0) return false;
     if ((uint64_t(o) & 3) + size > 4) sh4_fatal(c, "acesso a VRAM atravessa palavra de 32 bits", c->pc, a);
+    // Diagnostico: BS_VRAM_WATCH=<offset no layout de 32 bits> registra as escritas na palavra
+    static const char*    watch = std::getenv("BS_VRAM_WATCH");
+    static const uint32_t wofs  = watch ? uint32_t(std::strtoul(watch, nullptr, 0)) & ~3u : 0;
+    if (watch && (uint32_t(o) & ~3u) == wofs)
+        std::fprintf(stderr, "[vram] escrita %08X <- %08X (%u bytes) pc=%08X pr=%08X ciclo %llu\n", a, v, size, c->pc,
+                     c->pr, (unsigned long long)c->cycles);
     std::memcpy(&g_vram[size_t(o)], &v, size);
     return true;
 }

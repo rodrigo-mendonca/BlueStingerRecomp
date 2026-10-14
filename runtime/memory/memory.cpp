@@ -8,6 +8,7 @@
 #include "memory/sh4_ccn.h"
 #include "memory/sh4_dmac.h"
 #include "memory/sh4_port.h"
+#include "memory/sh4_tmu.h"
 #include "memory/sh4_sq.h"
 #include "pvr/holly_intc.h"
 #include "pvr/holly_sb.h"
@@ -42,6 +43,7 @@ bool hwRead(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
            aica_reg_read(c, a, size, v) ||       // 0x00702C00, RTC
            sh4_intc_read(a, size, v) ||          // P4: ICR/IPR, INTEVT
            sh4_port_read(a, size, v) ||          // P4: PCTRA/PDTRA
+           sh4_tmu_read(c, a, size, v) ||        // P4: TMU
            sh4_sq_read(a, size, v) ||            // P4: store queues, QACR
            sh4_dmac_read(a, size, v) ||          // P4: DMAC
            sh4_ccn_read(a, size, v);             // P4: CCR, arrays de cache
@@ -54,6 +56,7 @@ bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
            aica_reg_write(c, a, size, v) ||
            sh4_intc_write(a, size, v) ||
            sh4_port_write(a, size, v) ||
+           sh4_tmu_write(c, a, size, v) ||
            sh4_sq_write(a, size, v) ||
            sh4_dmac_write(a, size, v) ||
            sh4_ccn_write(a, size, v);
