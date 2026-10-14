@@ -15,4 +15,8 @@ struct RenderStats {
 
 RenderStats pvr_render(Sh4Context* c);
 
+// Testes: true se, desde a ultima chamada, algum worker da resolucao paralela calculou com
+// MXCSR diferente do padrao (o render deve isolar o ambiente de ponto flutuante).
+bool pvr_render_take_fp_violation();
+
 } // namespace bs

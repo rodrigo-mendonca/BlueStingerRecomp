@@ -4,16 +4,21 @@
 // documentados; o hash da cena composta (no fim) e so linha de base de regressao.
 #include "test.h"
 
+#include "cpu/sh4_context.h"
 #include "cpu/sh4_mem.h"
 #include "pvr/pvr_regs.h"
+#include "pvr/pvr_render.h"
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <execution>
 #include <vector>
+#include <xmmintrin.h>
 
 using namespace bs;
 
@@ -274,6 +279,63 @@ BS_TEST(render_vram_write_respects_clip_and_stride) {
 // --- linha de base de regressao: cena composta, hash do framebuffer ---
 // Gerado pela implementacao atual (2026-10-14). Mudanca intencional no rasterizador:
 // conferir a imagem (BS_RENDER_DUMP) e atualizar o hash no STATUS.md e aqui.
+namespace {
+uint64_t compositeHash();
+}
+
+// O ambiente de ponto flutuante do SH-4 (arredondamento para zero + FTZ/DAZ, que o runtime
+// aplica na thread do jogo) nao pode mudar o resultado do PVR: o render usa um ambiente
+// fixo. Mesmo hash da cena composta, e o modo do chamador e restaurado.
+BS_TEST(render_independent_of_guest_fp_mode) {
+    const unsigned before = _mm_getcsr();
+    sh4_apply_host_fp_mode(0x00040001);  // RM = 01 (para zero), DN = 1
+    const unsigned guest = _mm_getcsr();
+    const uint64_t h     = compositeHash();
+    BS_CHECK(_mm_getcsr() == guest);
+    sh4_apply_host_fp_mode(0);  // volta ao mais proximo (x87 e SSE)
+    _mm_setcsr(before);
+    BS_CHECK(h == 0x1797BA480B2C33A5ull);
+}
+
+// As threads do pool que resolvem os pixels em paralelo tem MXCSR indefinido: aqui elas
+// ficam sujas de proposito (para zero + FTZ/DAZ) e o resultado nao muda.
+BS_TEST(render_independent_of_worker_fp_mode) {
+    std::vector<int> work(256);
+    std::for_each(std::execution::par, work.begin(), work.end(), [](int&) {
+        _mm_setcsr(0x1F80 | 0x6000 | 0x8040);  // RZ, FTZ, DAZ, sem restaurar
+        volatile double x = 0;
+        for (int i = 0; i < 2000; ++i) x = x + 1.0 / (i + 1);
+    });
+    pvr_render_take_fp_violation();
+    bool same = true;
+    for (int i = 0; i < 4; ++i) same = same && compositeHash() == 0x1797BA480B2C33A5ull;
+    // o hash desta cena nao e sensivel ao arredondamento; o ambiente dos workers e conferido
+    // diretamente
+    BS_CHECK(!pvr_render_take_fp_violation());
+    std::for_each(std::execution::par, work.begin(), work.end(), [](int&) { _mm_setcsr(0x1F80); });  // limpa
+    BS_CHECK(same);
+}
+
+namespace {
+uint64_t compositeHash() {
+    Scene s(0x00203040);
+    s.global(0x80000002u, kIspAlways, kTspOpaque);
+    s.col(2, 3, 1, 0xFFFF0000);
+    s.col(29, 6, 1, 0xFF00FF00);
+    s.col(8, 27, 1, 0xFF0000FF, true);
+    s.endList();
+    loadTexture();
+    s.global(0x8200000Au, kIspAlways | (1u << 25), (4u << 29) | (5u << 26) | (1u << 20) | 0x00800000u | (3u << 6),
+             (1u << 27) | (kTex >> 3));
+    s.vtx(10, 10, 2, fb(0), fb(0), 0x80FFFFFF, 0);
+    s.vtx(30, 12, 2, fb(1), fb(0), 0x80FFFFFF, 0);
+    s.vtx(12, 30, 2, fb(0), fb(1), 0x80FFFFFF, 0, true);
+    s.endList();
+    s.render();
+    return fnv1a(vram_data() + kFb, 32 * 64);
+}
+} // namespace
+
 BS_TEST(render_composite_scene_hash) {
     Scene s(0x00203040);
     s.global(0x80000002u, kIspAlways, kTspOpaque);

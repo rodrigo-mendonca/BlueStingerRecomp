@@ -7,6 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BS_BUILD_TESTS "Compilar testes" ON)
 option(BS_BUILD_GAME  "Compilar o executavel do jogo (requer generated/)" OFF)
+# OFF no kit do Builder: so runtime + jogo (sem tradutor, ferramentas de dev nem rede)
+option(BS_BUILD_TOOLS "Compilar tradutor, ferramentas de desenvolvimento e o Builder" ON)
 
 if(MSVC)
   add_compile_options(/W4 /permissive- /utf-8)
@@ -15,7 +17,9 @@ else()
 endif()
 
 add_subdirectory(tools/extractor)
-add_subdirectory(translator)
+if(BS_BUILD_TOOLS)
+  add_subdirectory(translator)
+endif()
 add_subdirectory(runtime)
 
 # Codigo gerado por bs-recomp a partir do executavel do usuario (nao versionado).
@@ -29,13 +33,23 @@ if(EXISTS "${BS_GENERATED_DIR}/generated.cmake")
     # substitui as opcoes herdadas (/W4) para nao gerar o aviso D9025
     set_property(TARGET bs_generated PROPERTY COMPILE_OPTIONS /bigobj /W1 /utf-8 /permissive-)
   endif()
+  if(BS_BUILD_TOOLS)
   add_executable(bs-gen-check tools/gen_check/main.cpp)
   target_link_libraries(bs-gen-check PRIVATE bs_generated)
   add_executable(bs-diff tools/diff/main.cpp)
   target_link_libraries(bs-diff PRIVATE bs_generated)
+  endif()
 endif()
 
-if(BS_BUILD_TESTS)
+# Executavel nativo e seu nucleo (app/); o executavel so com BS_BUILD_GAME=ON.
+add_subdirectory(app)
+
+# Builder (CDI -> BlueStinger.exe na maquina do usuario)
+if(BS_BUILD_TOOLS)
+  add_subdirectory(builder)
+endif()
+
+if(BS_BUILD_TESTS AND BS_BUILD_TOOLS)
   enable_testing()
   add_subdirectory(tests)
   # Regressao do boot contra o trace do Flycast (dados locais em BS_SNAPSHOT_DIR; senao SKIP).

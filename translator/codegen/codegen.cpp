@@ -292,7 +292,11 @@ void writeIfChanged(const fs::path& p, const std::string& text) {
     }
     std::ofstream out(p, std::ios::binary | std::ios::trunc);
     out << text;
-    if (!out) throw std::runtime_error("falha ao gravar " + p.string());
+    out.close();  // erro de escrita no fechamento (disco cheio) tambem conta
+    if (!out) {
+        const std::u8string u = p.u8string();  // path::string() lanca com caracteres fora do ANSI
+        throw std::runtime_error("falha ao gravar " + std::string(u.begin(), u.end()));
+    }
 }
 
 } // namespace

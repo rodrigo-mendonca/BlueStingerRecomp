@@ -269,6 +269,119 @@ runtime/
   decodificador nativo se o desempenho exigir.
 - **Threads**: a CPU guest roda na thread principal. Áudio numa thread SDL
   alimentada por um ring buffer. Renderização na thread principal no início.
+  (Revisto no M4: o executável roda o jogo numa thread própria, ver abaixo.)
+
+### Executável nativo (M4, 2026-10-14)
+
+```
+app/
+  game_host.{h,cpp}  núcleo sem janela (bs_app_core): thread do jogo, boot, ritmo, quadros
+  main_sdl.cpp       bluestinger.exe: janela, apresentação e eventos pelo SDL3
+runtime/
+  boot/              boot nativo a partir do CDI (sem BIOS, sem snapshot)
+  pvr/pvr_video.*    quadro exibido pelo PVR (FB_R_*) e gancho de VBlank
+  input/             fontes de entrada (eventos de teclado, XInput, roteiro)
+```
+
+- **SDL3 isolado**: entra por FetchContent (3.2.30, estático, licença zlib) e só no
+  alvo `bluestinger` (`BS_BUILD_GAME=ON` + `generated/`). O runtime, os testes e as
+  ferramentas não dependem dele. Trocar de camada de janela é trocar `main_sdl.cpp`.
+- **Duas frequências**: o jogo roda na thread do `GameHost`. A cada VBlank-in emulado,
+  o gancho `pvr_set_vblank_hook` publica o quadro exibido (troca de buffer sob mutex) e
+  segura o ritmo em 59,94 campos por segundo de relógio. Se atrasar mais de 250 ms,
+  recomeça a contagem em vez de acelerar. A janela apresenta na frequência do monitor
+  (vsync) o quadro mais recente. Com isso, o tempo do Dreamcast nunca depende da
+  apresentação.
+- **Quadro exibido, não o renderizado**: `pvr_video_frame` lê o que o hardware mostra
+  (FB_R_CTRL/SIZE/SOF1/SOF2, campos entrelaçados intercalados, blank/vídeo desligado =
+  preto). A janela usa área lógica 640x480 com letterbox (4:3 ao redimensionar).
+- **Entrada**: a janela entrega eventos de tecla por nome ao `KeyEventInput`
+  (runtime/input; nada é lido globalmente; perder o foco solta as teclas). O XInput é
+  combinado a ele. O Maple lê a fonte combinada. Roteiros (`BS_INPUT_SCRIPT`) só sem
+  janela.
+- **Encerramento**: fechar a janela pede a parada; o gancho de VBlank lança
+  `StopRequest`, que atravessa o código gerado e as fibras (uma fibra que não é a thread
+  0 devolve a exceção à thread 0, ver `sh4_threads`). Na thread do jogo, o host apaga as
+  fibras (`sh4_threads_shutdown`), solta o gancho e fecha a imagem de disco. O estado das
+  threads do guest é `thread_local`: pertence à thread do host que roda o jogo.
+- **Boot nativo**: `boot_read_disc` lê IP.BIN e 1ST_READ.BIN do CDI e exige o hash da
+  versão recompilada. `boot_prepare` monta o estado de entrada medido no oráculo
+  (`bios_entry_state.inc`: registradores do PVR e variáveis do sistema, nenhum byte do
+  jogo). Os restos da rotina de boot do IP.BIN em 0x8CDE0000+ não são reproduzidos (ver
+  STATUS.md).
+- **Poll central** (`sh4_service`): avança a leitura do GD-ROM em curso, sincroniza os
+  eventos do Holly/SPG (VBlank anda mesmo com SR.BL, porque o vídeo não depende da
+  máscara da CPU) e só então tenta entregar interrupções.
+- **Rasterizador e o host**: o render roda num ambiente de ponto flutuante fixo (MXCSR
+  padrão), isolado do FPSCR do SH-4 que o runtime aplica à thread do jogo. A resolução de
+  autosort/punch-through agrupa fragmentos por pixel e resolve as linhas em paralelo
+  (`std::execution::par`), com o mesmo resultado da ordem sequencial. Há também um cache
+  de texels por render.
+- **Dados do jogo**: o executável não embute nada do disco; lê o CDI do usuário ao
+  iniciar. Mas ele **contém o código gerado** a partir do 1ST_READ.BIN do usuário. Por
+  isso o binário compilado é derivado da cópia do usuário e não deve ser redistribuído.
+  A forma de distribuição (D7) continua para o M8.
+
+### Distribuição Preview (2026-10-14)
+
+`tools/dist/make_preview.ps1` monta `dist/BlueStinger-Preview/` (uso local, não
+publicável): exe Release, runtime do MSVC app-local, instruções, versão e licenças. A
+montagem é feita numa pasta temporária, confere dependências (`dumpbin`) e ausência de
+caminhos de desenvolvimento nos binários, e só então troca a Preview anterior (com
+restauração se a troca falhar). Dependências de build: Visual Studio Build Tools 2026
+(v18, MSVC 14.50, runtime VC145, com o CMake e o Ninja que ele traz; CMake ≥ 3.25), Git
+(versão e FetchContent do SDL3/toml++), rede no primeiro configure. O passo seguinte é o Builder (D7), que faz a recompilação na máquina do
+usuário a partir do CDI.
+
+### Builder (D7, 2026-10-14)
+
+Objetivo: o usuário sai do próprio CDI para um `BlueStinger.exe` nativo, com recompilação
+real na máquina dele. Nenhum binário pronto, nada do jogo na distribuição, sem Flycast.
+
+```
+builder/
+  builder_core.*    fluxo completo (biblioteca, sem janela)
+  toolchain.*       vswhere -> vcvars64 (ambiente em UTF-16) -> CMake/Ninja/CRT do VS
+  child_process.*   processos filhos: pipe, UTF-8/OEM/UTF-16, job object (cancela a árvore)
+  main_cli.cpp      bs-builder.exe (automação, testes)
+  main_win32.cpp    BlueStingerBuilder.exe (janela Win32 nativa)
+translator/app/recomp.*   análise + geração como biblioteca (bs-recomp e Builder)
+```
+
+- **Escolhas do mantenedor** (2026-10-14): janela **Win32 nativa** (controles comuns v6,
+  diálogos nativos, DPI por monitor; sem dependência nova). Compilação com **kit de
+  fontes + CMake/Ninja** do próprio Visual Studio do usuário: o Builder leva as fontes do
+  runtime/app/leitor de disco (MIT) e do SDL3 (zlib), e tudo é compilado com o toolset
+  do usuário (sem incompatibilidade de ABI de `.lib` pré-compilada).
+- **Etapas**: entradas → compilador → disco (hash do 1ST_READ) → análise + C++ (em
+  processo) → CMake (`BS_BUILD_TOOLS=OFF`: sem tradutor, testes nem rede; SDL3 por
+  `FETCHCONTENT_SOURCE_DIR_SDL3`, versão por `BS_VERSION_OVERRIDE`) → compilação →
+  pacote numa pasta temporária → **verificação** (`--version` e boot headless de 120
+  VBlanks com o CDI do usuário) → troca. Só depois da troca o resultado é sucesso.
+- **Nunca destruir a versão anterior**: a pasta nova entra por rename no mesmo volume; a
+  anterior vira backup e só sai depois. Falha na troca restaura (e, se nem isso der
+  certo, a mensagem diz onde está a anterior); uma sobra de troca interrompida é
+  recuperada na próxima execução. Cada instalação leva `.bs-package` (lista dos arquivos
+  do pacote: o resto da pasta é do usuário e vai para a versão nova) e `.bs-install`
+  (instante; só backups com essa marca são recuperados ou apagados). Pacotes temporários
+  têm a marca `.bs-stage` e criação exclusiva. A trava `.bs-build\.bs-lock` permite uma
+  execução por pasta de saída. O cancelamento vale até o primeiro rename da troca.
+- **Caminhos**: o Ninja do VS (1.12.1) usa as APIs "A" do Windows (`FindFirstFileExA`),
+  e o MSVC não passa de 260 caracteres. Por isso tudo o que o Ninja vê (build do CMake,
+  C++ gerado e, se o caminho do kit não couber na página ANSI ou for longo, uma cópia do
+  kit) fica num cache curto: `%LOCALAPPDATA%\BlueStingerRecomp\build\<hash da saída>`
+  (ou `%ProgramData%`, ou `BS_BUILDER_CACHE`). A pasta de saída e a do Builder podem ter
+  qualquer caractere. O cache permite recompilação incremental (~10 s).
+- **Dependências do usuário**: Build Tools para Visual Studio com "Desenvolvimento para
+  desktop com C++" (MSVC x64, SDK do Windows, CMake/Ninja). Independência do Visual
+  Studio (clang-cl + SDK) fica para avaliar depois: o SDK do Windows e os headers do MSVC
+  não são redistribuíveis livremente.
+- **Distribuição** (`tools/dist/make_builder.ps1` → `dist/BlueStinger-Builder/`): os dois
+  executáveis, runtime do MSVC, licenças (MIT, SDL3 zlib, toml++ MIT), LEIA-ME e o kit
+  (~28 MB). O kit entra por allowlist (`git ls-files --cached --others
+  --exclude-standard`: nada que o `.gitignore` exclui). A montagem também recusa nomes de
+  arquivos do jogo e procura, em todos os arquivos, amostras do 1ST_READ.BIN/IP.BIN locais
+  e caminhos de desenvolvimento.
 
 ---
 
@@ -302,7 +415,7 @@ Registradas em 2026-10-13.
 | D4 | ARM7 do AICA | **Interpretador ARM7** no M6. A regra "sem interpretador" vale para o SH-4. Recompilar o `MANATEE.DRV` fica como otimização futura. |
 | D5 | Linguagem | **C++20 para tudo** (extrator, tradutor, runtime). Sem Python para o usuário final. |
 | D6 | Compilador | Clang-cl como alvo principal e MSVC sempre compilando. Enquanto o clang-cl não estiver instalado, o MSVC é usado. |
-| D7 | Distribuição | Em aberto até o M8. Até lá, o usuário compila. |
+| D7 | Distribuição | **Builder** (2026-10-14): o usuário recompila na própria máquina a partir do CDI, com janela Win32 nativa e kit de fontes compilado pelo CMake/Ninja do Visual Studio dele. Ver "Builder" na seção 6. |
 
 ## 9. Riscos
 

@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <map>
+#include <mutex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -84,25 +86,78 @@ const char* kDefaultMap = "UP = UP\nDOWN = DOWN\nLEFT = LEFT\nRIGHT = RIGHT\nSTA
                           "A = Z\nB = X\nX = A\nY = S\nLT = Q\nRT = W\n"
                           "ANALOG_UP = I\nANALOG_DOWN = K\nANALOG_LEFT = J\nANALOG_RIGHT = L\n";
 
+PadState stateFromActions(uint32_t act) {
+    PadState s;
+    s.buttons = uint16_t(act & 0xFFFF);
+    if (act & kActLT) s.ltrig = 255;
+    if (act & kActRT) s.rtrig = 255;
+    if (act & kActAL) s.joyx = 0;
+    if (act & kActAR) s.joyx = 255;
+    if (act & kActAU) s.joyy = 0;
+    if (act & kActAD) s.joyy = 255;
+    return s;
+}
+
+// "BOTAO = TECLA" por linha -> (nome da tecla em maiusculas, acao).
+std::vector<std::pair<std::string, uint32_t>> parseKeyMap(const std::string& mapping) {
+    std::vector<std::pair<std::string, uint32_t>> out;
+    std::istringstream in(mapping.empty() ? std::string(kDefaultMap) : mapping);
+    std::string        line;
+    int                n = 0;
+    while (std::getline(in, line)) {
+        ++n;
+        line = trim(line.substr(0, line.find('#')));
+        if (line.empty()) continue;
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) throw std::runtime_error("mapa de teclado, linha " + std::to_string(n));
+        const std::string act = upper(trim(line.substr(0, eq))), key = upper(trim(line.substr(eq + 1)));
+        const uint32_t    a   = actionFromName(act);
+        if (!a || !keyFromName(key))
+            throw std::runtime_error("mapa de teclado, linha " + std::to_string(n) + ": " + act + " = " + key);
+        out.push_back({key, a});
+    }
+    return out;
+}
+
 class Keyboard : public InputSource {
 public:
     std::vector<std::pair<int, uint32_t>> map;  // tecla virtual -> acao
 
     PadState read(int port, uint64_t) override {
-        PadState s;
-        if (port != 0) return s;
+        if (port != 0) return {};
         uint32_t act = 0;
         for (const auto& [vk, a] : map)
             if (GetAsyncKeyState(vk) & 0x8000) act |= a;
-        s.buttons = uint16_t(act & 0xFFFF);
-        if (act & kActLT) s.ltrig = 255;
-        if (act & kActRT) s.rtrig = 255;
-        if (act & kActAL) s.joyx = 0;
-        if (act & kActAR) s.joyx = 255;
-        if (act & kActAU) s.joyy = 0;
-        if (act & kActAD) s.joyy = 255;
-        return s;
+        return stateFromActions(act);
     }
+};
+
+class KeyEvents final : public KeyEventInput {
+public:
+    std::vector<std::pair<std::string, uint32_t>> map;
+
+    void key(const std::string& name, bool down) override {
+        const std::string     k = upper(name);
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (down) pressed_.insert(k);
+        else pressed_.erase(k);
+    }
+    void releaseAll() override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pressed_.clear();
+    }
+    PadState read(int port, uint64_t) override {
+        if (port != 0) return {};
+        uint32_t                    act = 0;
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [k, a] : map)
+            if (pressed_.count(k)) act |= a;
+        return stateFromActions(act);
+    }
+
+private:
+    std::mutex            mutex_;
+    std::set<std::string> pressed_;
 };
 
 // --- XInput ---
@@ -212,23 +267,14 @@ std::unique_ptr<InputSource> make_scripted_input(const std::string& text) {
 }
 
 std::unique_ptr<InputSource> make_keyboard_input(const std::string& mapping) {
-    auto               k = std::make_unique<Keyboard>();
-    std::istringstream in(mapping.empty() ? std::string(kDefaultMap) : mapping);
-    std::string        line;
-    int                n = 0;
-    while (std::getline(in, line)) {
-        ++n;
-        line = trim(line.substr(0, line.find('#')));
-        if (line.empty()) continue;
-        const size_t eq = line.find('=');
-        if (eq == std::string::npos) throw std::runtime_error("mapa de teclado, linha " + std::to_string(n));
-        const std::string act = upper(trim(line.substr(0, eq))), key = upper(trim(line.substr(eq + 1)));
-        const uint32_t    a   = actionFromName(act);
-        const int         vk  = keyFromName(key);
-        if (!a || !vk)
-            throw std::runtime_error("mapa de teclado, linha " + std::to_string(n) + ": " + act + " = " + key);
-        k->map.push_back({vk, a});
-    }
+    auto k = std::make_unique<Keyboard>();
+    for (const auto& [key, a] : parseKeyMap(mapping)) k->map.push_back({keyFromName(key), a});
+    return k;
+}
+
+std::unique_ptr<KeyEventInput> make_key_event_input(const std::string& mapping) {
+    auto k = std::make_unique<KeyEvents>();
+    k->map = parseKeyMap(mapping);
     return k;
 }
 

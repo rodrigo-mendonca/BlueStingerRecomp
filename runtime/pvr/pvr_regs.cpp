@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 
@@ -218,10 +219,12 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         // O render roda inteiro aqui (a CPU nao observa estados intermediarios); o
         // jogo so ve o resultado depois do fim de render sinalizado abaixo.
         {
+            const auto        t0 = std::chrono::steady_clock::now();
             const RenderStats st = pvr_render(c);
             if (std::getenv("BS_PVR_DEBUG"))
-                std::fprintf(stderr, "[render] #%d %ux%u tri=%u sprites=%u omitidos=%u\n", g_startCount,
-                             st.width, st.height, st.triangles, st.sprites, st.skipped);
+                std::fprintf(stderr, "[render] #%d %ux%u tri=%u sprites=%u omitidos=%u (%.2f ms)\n", g_startCount,
+                             st.width, st.height, st.triangles, st.sprites, st.skipped,
+                             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
         }
         // Fim de render: o hardware nao documenta a duracao; mesma estimativa do Flycast
         // (spg.cpp, scheduleRenderDone): min(450000 + bytes do TA * 100, 1500000) ciclos.

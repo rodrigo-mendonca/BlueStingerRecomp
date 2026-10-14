@@ -6,6 +6,7 @@
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
 #include "gdrom/gdrom.h"
+#include "pvr/holly_intc.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -95,6 +96,9 @@ void sh4_service(Sh4Context* c) {
     // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
     // sem depender de nova syscall (revisao Codex 2026-10-14)
     gdrom_poll(c);
+    // eventos do Holly/SPG (VBlank: video e ritmo do host) avancam com o tempo mesmo com
+    // interrupcoes bloqueadas (SR.BL); a entrega para a CPU continua em sh4_irq_check
+    holly_intc_sync(c->cycles);
     sh4_irq_check(c);
 }
 

@@ -23,10 +23,16 @@
 #include "pvr/vram.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <execution>
+#include <xmmintrin.h>
+#include <map>
+#include <tuple>
 #include <vector>
 
 namespace bs {
@@ -36,6 +42,20 @@ constexpr uint32_t R(uint32_t off) { return 0x005F8000 + off; }
 
 struct Color {
     float a = 0, r = 0, g = 0, b = 0;
+};
+
+// O PVR e outro hardware: o modo de ponto flutuante do SH-4 (FPSCR: arredondamento para
+// zero, FTZ/DAZ), que o runtime aplica na thread do jogo, nao vale no render. Toda conta do
+// render roda com o MXCSR padrao (mais proximo, sem FTZ/DAZ), na thread que chama e em cada
+// worker da resolucao paralela (cujo MXCSR o pool nao garante); o anterior e restaurado.
+std::atomic<bool> g_fpViolation{false};  // algum worker calculou fora do ambiente fixo
+
+struct RenderFpEnv {
+    unsigned saved = _mm_getcsr();
+    RenderFpEnv() { _mm_setcsr(0x1F80); }
+    ~RenderFpEnv() { _mm_setcsr(saved); }
+    RenderFpEnv(const RenderFpEnv&)            = delete;
+    RenderFpEnv& operator=(const RenderFpEnv&) = delete;
 };
 
 Color unpack(uint32_t c) {
@@ -275,32 +295,61 @@ public:
     // profundidade das listas opacas sao misturados do mais distante (menor 1/w) para o
     // mais proximo; empate: o primeiro submetido e o mais distante. Sem z-write.
     void resolveSorted(std::vector<Frag>& f) {
-        std::stable_sort(f.begin(), f.end(), [](const Frag& p, const Frag& q) {
-            return p.pixel != q.pixel ? p.pixel < q.pixel : (p.z != q.z ? p.z < q.z : p.seq < q.seq);
-        });
-        for (const Frag& g : f) color[g.pixel] = blend(g.tsp, g.c, unpack(color[g.pixel]));
+        forEachPixel(f, [](const Frag& p, const Frag& q) { return p.z != q.z ? p.z < q.z : p.seq < q.seq; },
+                     [&](const Frag* g, size_t n) {
+                         for (size_t k = 0; k < n; ++k) color[g[k].pixel] = blend(g[k].tsp, g[k].c, unpack(color[g[k].pixel]));
+                     });
+        f.clear();
     }
+
+    // Agrupa os fragmentos por pixel (ordenacao por contagem, linear no numero de
+    // fragmentos) e ordena cada grupo por `less`, uma ordem total: (z, ordem de submissao),
+    // e um poligono nao gera dois fragmentos no mesmo pixel. Mesmo resultado de uma
+    // ordenacao global, sem o custo dela com camadas translucidas de tela inteira.
+    template <class Less, class Fn> void forEachPixel(const std::vector<Frag>& f, Less less, Fn fn) {
+        if (f.empty()) return;
+        const size_t          pixels = size_t(w) * h;
+        std::vector<uint32_t> start(pixels + 1, 0);
+        for (const Frag& g : f) ++start[g.pixel + 1];
+        for (size_t i = 1; i <= pixels; ++i) start[i] += start[i - 1];
+        std::vector<uint32_t> next(start.begin(), start.end() - 1);
+        sorted_.resize(f.size());
+        for (const Frag& g : f) sorted_[next[g.pixel]++] = g;
+        // cada pixel e independente (fatia propria de sorted_, saida no proprio pixel): as
+        // linhas sao resolvidas em paralelo, com o mesmo resultado da ordem sequencial
+        std::vector<int> rows(static_cast<size_t>(h));
+        for (int y = 0; y < h; ++y) rows[size_t(y)] = y;
+        std::for_each(std::execution::par, rows.begin(), rows.end(), [&](int y) {
+            const RenderFpEnv fpEnv;  // MXCSR do worker e indefinido (revisao Codex 2026-10-14)
+            if ((_mm_getcsr() & ~0x3Fu) != 0x1F80) g_fpViolation.store(true);  // ver pvr_render_take_fp_violation
+            for (size_t p = size_t(y) * w, end = p + size_t(w); p < end; ++p) {
+                const uint32_t b = start[p], e = start[p + 1];
+                if (b == e) continue;
+                if (e - b > 1) std::sort(sorted_.begin() + b, sorted_.begin() + e, less);
+                fn(&sorted_[b], size_t(e - b));
+            }
+        });
+    }
+    std::vector<Frag> sorted_;
 
     // Punch-through (manual 3.4.3): ordenado por pixel da frente para tras, compare forcado
     // em >=; vale o fragmento mais proximo que passou no teste de alfa (os que falham ja
     // foram descartados e revelam a camada seguinte). Empate: o ultimo submetido, como no
     // >= de um z-buffer comum (a regra exata de empate nao foi verificada).
     void resolvePunchThrough(std::vector<Frag>& f) {
-        std::stable_sort(f.begin(), f.end(), [](const Frag& p, const Frag& q) {
-            return p.pixel != q.pixel ? p.pixel < q.pixel : (p.z != q.z ? p.z > q.z : p.seq > q.seq);
-        });
-        for (size_t k = 0; k < f.size(); ++k) {
-            if (k && f[k].pixel == f[k - 1].pixel) continue;
-            color[f[k].pixel] = pack(f[k].c);
-            // z-write disable e ignorado no punch-through (evidencia de compatibilidade:
-            // DEmul, Bust-A-Move 4; revisao Codex 2026-10-14; o manual nao diz)
-            depth[f[k].pixel] = f[k].z;
-        }
+        forEachPixel(f, [](const Frag& p, const Frag& q) { return p.z != q.z ? p.z > q.z : p.seq > q.seq; },
+                     [&](const Frag* g, size_t) {
+                         color[g->pixel] = pack(g->c);
+                         // z-write disable e ignorado no punch-through (evidencia de
+                         // compatibilidade: DEmul, Bust-A-Move 4; revisao Codex 2026-10-14)
+                         depth[g->pixel] = g->z;
+                     });
         f.clear();
     }
 
     void draw(const Prim& t, uint32_t list) {
         ++seq;
+        lastTex_ = nullptr;  // o TexInfo local de cada draw pode reutilizar o mesmo endereco
         const Vtx &a = t.v[0], &b = t.v[1], &c = t.v[2];
         const float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
         if (area == 0 || !std::isfinite(area)) return;
@@ -446,7 +495,17 @@ private:
         }
     }
 
-    static Color texel(const TexInfo& t, int x, int y, uint32_t tsp) {
+    // Texels ja decodificados neste render (a VRAM e a paleta nao mudam durante um render):
+    // preenchidos sob demanda, so os texels usados. Mesmo valor de pvr_texel.
+    struct TexCache {
+        std::vector<uint32_t> argb;
+        std::vector<uint8_t>  have;
+    };
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, TexCache> texCache_;
+    const TexInfo* lastTex_ = nullptr;
+    TexCache*      lastCache_ = nullptr;
+
+    Color texel(const TexInfo& t, int x, int y, uint32_t tsp) {
         const int  W = int(t.width), H = int(t.height);
         const bool clampU = (tsp >> 16) & 1, clampV = (tsp >> 15) & 1;
         const bool flipU = (tsp >> 18) & 1, flipV = (tsp >> 17) & 1;
@@ -458,13 +517,27 @@ private:
             }
             return ((v % n) + n) % n;
         };
-        return unpack(pvr_texel(t, uint32_t(wrap(x, W, clampU, flipU)), uint32_t(wrap(y, H, clampV, flipV))));
+        if (lastTex_ != &t) {
+            TexCache& e = texCache_[{t.tcw, t.width, t.height, t.stride}];
+            if (e.argb.empty()) {
+                e.argb.resize(size_t(t.width) * t.height);
+                e.have.assign(size_t(t.width) * t.height, 0);
+            }
+            lastTex_ = &t, lastCache_ = &e;
+        }
+        const uint32_t tx = uint32_t(wrap(x, W, clampU, flipU)), ty = uint32_t(wrap(y, H, clampV, flipV));
+        const size_t   i  = size_t(ty) * t.width + tx;
+        if (!lastCache_->have[i]) {
+            lastCache_->argb[i] = pvr_texel(t, tx, ty);
+            lastCache_->have[i] = 1;
+        }
+        return unpack(lastCache_->argb[i]);
     }
 
-    static Color shade(const Prim& t, const TexInfo& tex, float u, float v, const Color& col, const Color& off,
-                       bool texelHalf) {
-        const float h = texelHalf ? 0.5f : 0.f;  // HALF_OFFSET bit 2: centro do texel
-        const float fu = u * tex.width - h, fv = v * tex.height - h;
+    Color shade(const Prim& t, const TexInfo& tex, float u, float v, const Color& col, const Color& off,
+                bool texelHalf) {
+        const float half = texelHalf ? 0.5f : 0.f;  // HALF_OFFSET bit 2: centro do texel
+        const float fu = u * tex.width - half, fv = v * tex.height - half;
         Color       tx;
         if (((t.tsp >> 13) & 3) == 0) {  // ponto
             // Amostra exatamente na fronteira de texels (o texto do jogo cai assim): o texel
@@ -592,6 +665,7 @@ void writeBack(const Raster& r) {
 } // namespace
 
 RenderStats pvr_render(Sh4Context*) {
+    const RenderFpEnv fpEnv;  // ambiente fixo nesta thread (os workers instalam o seu)
     RenderStats    st;
     const uint32_t clip = pvr_reg(R(0x13C));  // TA_GLOB_TILE_CLIP
     st.width            = ((clip & 0x3F) + 1) * 32;
@@ -607,15 +681,34 @@ RenderStats pvr_render(Sh4Context*) {
     std::vector<Raster::Frag> frags;
     const bool                autosort = !(pvr_reg(R(0x098)) & 1);
     checkRegionSortModes(autosort);
+    // Diagnostico: BS_RENDER_PROFILE=1 mede as fases (ms) e conta fragmentos translucidos
+    static const bool prof = std::getenv("BS_RENDER_PROFILE") != nullptr;
+    using Clock            = std::chrono::steady_clock;
+    auto   tp              = Clock::now();
+    double ms[5]           = {};
+    auto   lap             = [&](int i) {
+        const auto n = Clock::now();
+        ms[i] += std::chrono::duration<double, std::milli>(n - tp).count();
+        tp = n;
+    };
+    lap(0);
     for (uint32_t list : {0u, 4u, 2u}) {
         r.frags = (list == 4 || (list == 2 && autosort)) ? &frags : nullptr;
         for (const Prim& t : parser.prims)
             if (t.list == list) r.draw(t, list);
         if (list == 4) r.resolvePunchThrough(frags);
+        lap(list == 0 ? 1 : (list == 4 ? 2 : 3));
     }
+    const size_t nfrags = frags.size();
     if (autosort) r.resolveSorted(frags);
+    lap(4);
     writeBack(r);
+    if (prof)
+        std::fprintf(stderr, "[perfil] parse %.2f opaca %.2f pt %.2f transl %.2f resolve %.2f ms; fragmentos %zu\n",
+                     ms[0], ms[1], ms[2], ms[3], ms[4], nfrags);
     return st;
 }
+
+bool pvr_render_take_fp_violation() { return g_fpViolation.exchange(false); }
 
 } // namespace bs

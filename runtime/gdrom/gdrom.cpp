@@ -106,8 +106,10 @@ bool readSectors(Sh4Context* c, uint32_t fad, uint32_t count, uint32_t dest) {
 }
 
 void execute(Sh4Context* c) {
-    std::fprintf(stderr, "[gdrom] comando %u params %08X %08X %08X %08X\n", g.command, g.params[0], g.params[1],
-                 g.params[2], g.params[3]);
+    static const bool logOn = std::getenv("BS_HLE_LOG") != nullptr;  // diagnostico (ver bios.cpp)
+    if (logOn)
+        std::fprintf(stderr, "[gdrom] comando %u params %08X %08X %08X %08X\n", g.command, g.params[0], g.params[1],
+                     g.params[2], g.params[3]);
     switch (g.command) {
     case kCmdInit:
     case kCmdReqSes:  // o reios tambem nao faz nada aqui

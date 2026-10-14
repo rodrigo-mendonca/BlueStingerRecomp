@@ -39,10 +39,10 @@ InputFile::InputFile(const std::filesystem::path& path) {
 #else
     f_ = std::fopen(path.c_str(), "rb");
 #endif
-    if (!f_) throw DiscError("nao foi possivel abrir " + path.string());
+    if (!f_) throw DiscError("nao foi possivel abrir " + pathText(path));
     std::error_code ec;
     size_ = std::filesystem::file_size(path, ec);
-    if (ec) throw DiscError("nao foi possivel obter o tamanho de " + path.string());
+    if (ec) throw DiscError("nao foi possivel obter o tamanho de " + pathText(path));
 }
 
 InputFile::~InputFile() {

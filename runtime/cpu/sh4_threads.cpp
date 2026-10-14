@@ -3,6 +3,7 @@
 #include "cpu/sh4_runtime.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -26,26 +27,40 @@ struct Thread {
     uint32_t redirect = 0;  // retomada por longjmp: ponto de retorno do setjmp
 };
 
-std::vector<Thread> g_threads;  // [0] = thread em que o jogo comecou
-size_t              g_current = 0;
-Sh4Context*         g_ctx     = nullptr;
+// Estado por thread do host: as threads do guest pertencem a thread do host que executa
+// o jogo (no executavel, a thread do GameHost; nos testes, cada um na sua).
+thread_local std::vector<Thread> g_threads;  // [0] = thread em que o jogo comecou
+thread_local size_t              g_current = 0;
+thread_local Sh4Context*         g_ctx     = nullptr;
 // Excecao (erro fatal do bs-diff, fim de trace) lancada numa fibra: nao pode atravessar
 // para outra pilha; volta para a thread 0 e e relancada la.
-std::exception_ptr  g_pending;
-std::vector<uint32_t> g_reentry;  // pontos de reentrada (retornos de setjmp), ordenados
+thread_local std::exception_ptr g_pending;
+thread_local bool               g_converted = false;  // ensureMain converteu a thread do host em fibra
+std::atomic<int>                g_liveFibers{0};  // fibras criadas e ainda nao apagadas (diagnostico)
+std::vector<uint32_t>           g_reentry;            // pontos de reentrada (retornos de setjmp), ordenados
 
 bool debugOn() {
     static const bool on = std::getenv("BS_IRQ_DEBUG") != nullptr;
     return on;
 }
 
-void ensureMain() {
+void ensureMain(Sh4Context* c) {
     if (!g_threads.empty()) return;
     Thread t;
     // FLOAT_SWITCH: XMM6-XMM15 sao preservados entre chamadas na ABI x64 e podem estar
     // vivos numa fibra suspensa (revisao Codex 2026-10-14)
-    t.fiber = ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
-    if (!t.fiber) t.fiber = GetCurrentFiber();  // a thread do host ja era fibra
+    // a thread do host ja pode ser fibra (de quem a criou); senao, e convertida aqui. Falha
+    // na conversao e erro (sem fibra nao ha troca de threads), nunca "ja era fibra"
+    // (revisao Codex 2026-10-14)
+    if (IsThreadAFiber()) {
+        t.fiber     = GetCurrentFiber();
+        g_converted = false;
+    } else {
+        t.fiber = ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
+        if (!t.fiber)
+            sh4_fatal(c, "nao foi possivel converter a thread do host em fibra", 0, uint32_t(GetLastError()));
+        g_converted = true;
+    }
     g_threads.push_back(t);
 }
 
@@ -106,6 +121,7 @@ void startThread(Sh4Context* c, uint32_t pc, uint32_t target) {
     t.fiber = CreateFiberEx(64 << 10, 8u << 20, FIBER_FLAG_FLOAT_SWITCH, fiberMain,
                             reinterpret_cast<void*>(uintptr_t(id)));
     if (!t.fiber) sh4_fatal(c, "nao foi possivel criar fibra para thread do guest", pc, target);
+    ++g_liveFibers;
     g_threads.push_back(t);
     if (debugOn()) std::fprintf(stderr, "[thread] nova thread %zu em %08X r15=%08X\n", id, target, sp);
     switchTo(c, id);
@@ -115,8 +131,28 @@ void startThread(Sh4Context* c, uint32_t pc, uint32_t target) {
 
 int sh4_thread_count() { return int(g_threads.size()); }
 
+int sh4_live_fibers() { return g_liveFibers.load(); }
+
+bool sh4_threads_shutdown() {
+    if (g_threads.empty()) return true;
+    if (g_current != 0) return false;  // so na fibra da thread 0 (a thread original do host)
+    // as fibras suspensas so tem quadros do codigo recompilado (sem destrutores pendentes)
+    for (size_t i = 1; i < g_threads.size(); ++i)
+        if (g_threads[i].fiber) {
+            DeleteFiber(g_threads[i].fiber);
+            --g_liveFibers;
+        }
+    // desfaz a conversao (libera o que ConvertThreadToFiberEx alocou); falha e relatada
+    const bool converted = !g_converted || ConvertFiberToThread();
+    g_threads.clear();
+    g_converted = false;
+    g_pending   = nullptr;
+    g_ctx       = nullptr;
+    return converted;
+}
+
 void sh4_rte_redirect(Sh4Context* c, uint32_t pc, uint32_t target) {
-    ensureMain();
+    ensureMain(c);
     g_ctx = c;
     const uint32_t sp = c->r[15];
     if (debugOn())
@@ -150,7 +186,7 @@ void sh4_rte_redirect(Sh4Context* c, uint32_t pc, uint32_t target) {
 //    thread: thread nova (contexto montado pelo jogo, com PR = entrada e pilha nova);
 //  - o resto (inclusive longjmp para quadro da propria thread) e erro fatal.
 void sh4_longjmp_redirect(Sh4Context* c, uint32_t pc, uint32_t target) {
-    ensureMain();
+    ensureMain(c);
     g_ctx = c;
     const uint32_t sp = c->r[15];
     if (debugOn())

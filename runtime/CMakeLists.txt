@@ -11,11 +11,13 @@ add_library(bs_runtime STATIC
   memory/sh4_dmac.cpp
   pvr/pvr_regs.cpp
   pvr/pvr_render.cpp
+  pvr/pvr_video.cpp
   pvr/pvr_texture.cpp
   pvr/holly_intc.cpp
   pvr/holly_sb.cpp
   maple/maple.cpp
   input/input.cpp
+  boot/native_boot.cpp
   pvr/vram.cpp
   pvr/ta.cpp
   aica/aica_regs.cpp
@@ -29,7 +31,4 @@ target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # leitura da imagem de disco do usuario (gdrom/image_source.cpp)
 target_link_libraries(bs_runtime PUBLIC bs_disc PRIVATE xinput)
 
-if(BS_BUILD_GAME)
-  # M4: SDL3 + Vulkan + generated/*.cpp
-  message(FATAL_ERROR "BS_BUILD_GAME ainda nao suportado (M4)")
-endif()
+# O executavel do jogo (BS_BUILD_GAME) fica em app/: o runtime nao depende de SDL3.

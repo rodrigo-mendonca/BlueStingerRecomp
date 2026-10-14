@@ -1,5 +1,7 @@
 #include "app/config.h"
 
+#include <fstream>
+#include <iterator>
 #include <stdexcept>
 #include <toml++/toml.hpp>
 
@@ -15,11 +17,18 @@ uint32_t u32(const toml::node* n, const char* what) {
 } // namespace
 
 GameConfig loadConfig(const std::filesystem::path& path) {
-    toml::table t;
+    // le pelo path (UTF-16 no Windows): parse_file(path.string()) falha com caracteres
+    // fora do ANSI no caminho
+    const std::u8string u8name = path.u8string();
+    const std::string   name(u8name.begin(), u8name.end());
+    std::ifstream       in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("config: nao foi possivel abrir " + name);
+    const std::string text((std::istreambuf_iterator<char>(in)), {});
+    toml::table       t;
     try {
-        t = toml::parse_file(path.string());
+        t = toml::parse(text, name);
     } catch (const toml::parse_error& e) {
-        throw std::runtime_error("config " + path.string() + ": " + std::string(e.description()));
+        throw std::runtime_error("config " + name + ": " + std::string(e.description()));
     }
     GameConfig c;
     c.base           = u32(t["load"]["base"].node(), "load.base");

@@ -419,7 +419,220 @@ erro no meio de um bloco, avanço sem syscall).
   STARTRENDER (`sr_*`, `nv_*`) estão contaminadas pela interferência descrita acima e não
   servem para comparar o PVR.
 
+### M4: executável nativo `bluestinger.exe` (2026-10-14, depois do commit `31a481e`)
+
+Arquitetura: ARCHITECTURE.md, seção 6, "Executável nativo". Uso:
+`bluestinger <imagem.cdi> [--flash f] [--map f] [--scale N] [--capture dir]`, ou
+`--headless <vblanks> [--dump f.bmp]` sem janela.
+
+**Boot nativo (só o CDI, sem snapshot nem BIOS)**, com o modo `BS_NATIVE_BOOT` do
+`bs-diff`:
+- trace de 3 000 chamadas **idêntico** ao do Flycast (as mesmas 3 diferenças aceitas);
+- checkpoint `8C1C6334` (chamada 2 097 270): registradores, FPU e VRAM **iguais**. As
+  508 236 palavras de RAM diferentes ficam **todas** em 0x0CDE0000-0x0D000000 (restos da
+  rotina de boot do IP.BIN, não reproduzidos e não lidos pelo jogo até ali);
+- sem a flash do Flycast (flash apagada), o jogo chega à tela "VMU not found" e, com
+  START, ao título e ao menu.
+
+**Mudança no poll central** (`holly_intc_sync` em `sh4_service`): sem ela, com SR.BL = 1
+no boot, o VBlank do host nunca andava (`GameHost` travado). Depois dela: os 3 000
+chamadas e o checkpoint continuam iguais; o 1º STARTRENDER continua no VBlank 18; o
+`boot_trace` (que cobre as primeiras interrupções e o marco STARTRENDER) passa.
+
+**Teste interativo real** (Release, janela SDL3, script em scratchpad): teclas
+enviadas por `PostMessage` (WM_KEYDOWN/UP) **só para a janela do jogo**. Uma 1ª tentativa
+com `SendInput` foi descartada: o Windows recusou dar o foco e a captura de tela pegou
+outra janela. Capturas por `PrintWindow` e pela tecla F12 (`--capture`, quadro do
+próprio jogo):
+- tela "VMU not found" → ENTER (START) → abertura com o logotipo → "PRESS START BUTTON"
+  com o texto de copyright → ENTER → menu **NEW GAME / LOAD GAME / OPTIONS** → setas
+  movem a seleção (baixo: LOAD GAME; baixo, cima: LOAD GAME de novo);
+- fechar a janela (WM_CLOSE): o processo encerra em 60-66 ms com código 0, nas três
+  execuções, com 4 threads do guest em fibras;
+- **XInput não testado fisicamente**: nenhum controle conectado nesta máquina
+  (`XInputGetState` em 0-3 sem sucesso). O caminho XInput -> Maple só tem os testes
+  unitários de serialização.
+
+**Encerramento e vazamentos**: contador de fibras vivas (`sh4_live_fibers`). O teste
+`game_host_stop_request_with_guest_thread` cria uma thread do guest numa fibra, para
+pelo gancho de VBlank e confere o contador de volta ao valor inicial; um segundo
+`GameHost` comeca do zero em outra thread. Erros (entrada que retorna, fatal do
+guest) são relatados por `GameHost::error()`.
+
+**Desempenho (Release, 16 núcleos lógicos)**. "Trabalho" = tempo de host por campo,
+sem a espera do ritmo; orçamento = 16,68 ms:
+
+| Situação | Resultado |
+|---|---|
+| Render da tela VMU / pós-START (2-304 triângulos) | 3-4 ms por render |
+| Render do título 3D (~7 000 triângulos) | 9-11 ms por render |
+| Cena do brilho na abertura do título (~2 milhões de fragmentos translúcidos, ~6,5 camadas de tela inteira) | antes: até 270 ms por render (geração 150 + resolução 70); depois: ~115 ms (geração ~89 + resolução ~26) |
+| Execução headless até o título (2 400 VBlanks) | trabalho médio 10,5 ms, máximo 127 ms, 583 campos acima do orçamento |
+| Janela, sessão até o menu (3 527 VBlanks) | média 13,2 ms, máximo 127 ms; 54,4 campos/s no último segundo (alvo 59,94) |
+
+- As quedas se concentram no carregamento (VBlanks 0-300) e nas camadas translúcidas da
+  abertura do título. No menu e no título parado, o jogo fica no ritmo.
+- Otimizações feitas, todas com o **mesmo resultado bit a bit**: agrupamento por pixel
+  (ordenação por contagem) no lugar da ordenação global, cache de texels por render
+  (preenchido sob demanda) e resolução das linhas em paralelo. A geração de fragmentos
+  continua sequencial.
+- **Bug de fidelidade encontrado no caminho**: o render herdava o modo de ponto
+  flutuante do SH-4 (arredondamento para zero + FTZ/DAZ que o runtime aplica na thread do
+  jogo). Apareceu porque a resolução paralela, em threads com o modo padrão, dava outro
+  resultado. Agora o render usa ambiente fixo (MXCSR 0x1F80). Teste
+  `render_independent_of_guest_fp_mode`. Em relação ao render antigo, 34 de 913 920 bytes
+  mudam num quadro do título, e duas execuções seguidas dão quadros idênticos.
+- Os logs `[hle]`/`[gdrom]` a cada syscall passaram a ser opcionais (`BS_HLE_LOG=1`),
+  porque pesavam no executável.
+
+**Limitações**:
+- sem áudio (AICA/ARM7 fora do M4);
+- sem VMU: o jogo avisa "VMU not found" e não salva;
+- abertura do título abaixo de 60 campos/s (rasterizador em software, geração
+  sequencial). Próximo passo provável: gerar fragmentos por faixas de tela em paralelo,
+  ou um renderer de GPU;
+- dither e empates de texel continuam questões abertas (seção do oráculo gráfico);
+- XInput sem teste físico;
+- ainda não comparado com o Flycast no título e no menu (Prioridade 2 desta etapa).
+
+**Depois da revisão do Codex (abaixo)**: 141 testes unitários e `boot_trace` passam;
+trace nativo de 3 000 chamadas idêntico; checkpoint `8C1C6334` igual fora dos restos do
+boot. Interativo repetido (Release): menu alcançado e navegado; encerramento em 52 ms,
+código 0; sessão de 3 568 VBlanks com trabalho médio de 12,95 ms, máximo de 146,7 ms e
+55,9 campos/s no último segundo.
+
+### Distribuição Preview `dist/BlueStinger-Preview` (2026-10-14)
+
+Montada por `tools/dist/make_preview.ps1` (Release; pasta temporária; troca só no fim,
+com restauração da anterior se a troca falhar). Conteúdo: `BlueStinger.exe`, runtime do
+MSVC app-local (`Microsoft.VC145.CRT` de `VCToolsRedistDir`: msvcp140*, vcruntime140*,
+concrt140), `LEIA-ME.txt`, `VERSAO.txt` (commit `git describe` + data), `licencas/` (MIT,
+SDL3 zlib). Nenhum dado do jogo; o executável contém código gerado da cópia do usuário,
+por isso a pasta é local e não publicável (`dist/` no `.gitignore`).
+
+Executável: subsistema gráfico (`/ENTRY:mainCRTStartup`), argumentos em UTF-16
+(`CommandLineToArgvW`), diálogo de arquivo na inicialização sem imagem, imagem validada
+(hash) antes de iniciar, `bluestinger.ini`/`bluestinger.log` ao lado do exe ou em
+`%LOCALAPPDATA%\BlueStingerRecomp` se a pasta não for gravável, `--version`.
+
+**Bug encontrado na montagem**: com o log redirecionado por `_wfreopen_s` (abre sem
+compartilhamento, `_SH_SECURE`), reabrir `stdout` no mesmo arquivo falhava, o primeiro
+`printf` disparava o handler de parâmetro inválido (0xC0000409) e o processo travava no
+WerFault. Diagnóstico pelo trace `BS_APP_TRACE` e pelo handler de falha. Correção:
+`_wfreopen` (compartilhado) para os dois fluxos.
+
+Verificações:
+- `tools/dist/test_preview.ps1` (fora do repositório: Preview copiada para
+  `...\Prévia Ação ç 日本 (teste)\`, imagem por hard link em `Jogos ç ã 日本\`, diretório
+  de trabalho = `%SystemRoot%`): **11 casos, 0 falhas**. Versão; headless 400 VBlanks com
+  dump; imagem inválida e inexistente recusadas (código ≠ 0); janela abre, roda a
+  59,9 campos/s e fecha com código 0; log ao lado do exe; ini lembra o caminho especial;
+  diálogo sem imagem, cancelar sai com 0; pasta somente leitura: log **e** ini (UTF-8) em
+  LOCALAPPDATA; imagem inválida na janela: mensagem e código 1.
+- `tools/dist/test_make_preview.ps1`: **5 casos, 0 falhas**. Instalação nova; troca
+  bloqueada (arquivo aberto na Preview anterior) sai com 1 e mantém a anterior; sobra
+  `.old` de troca interrompida volta a ser a Preview; raiz de volume e repositório
+  recusados como saída.
+- Busca binária na montagem: nenhum caminho do repositório, do build ou do perfil do
+  usuário nos `.exe`/`.dll` (ASCII e UTF-16); a montagem falha se aparecer.
+- Suíte completa depois das correções: 141 unitários, `boot_trace`, `real_disc`,
+  `codegen_exec_0/1` passam.
+- **Não verificado**: Windows limpo sem Visual Studio/redistribuível instalado (a pasta
+  leva o runtime do MSVC; a UCRT vem do Windows 10/11).
+
+### Builder: CDI → `BlueStinger.exe` na máquina do usuário (2026-10-14)
+
+Arquitetura: ARCHITECTURE.md, seção 6, "Builder" (D7). Escolhas do mantenedor: janela
+Win32 nativa; kit de fontes + CMake/Ninja do Visual Studio do usuário.
+
+**Fluxo real** (`bs-builder`, kit = repositório, saída nova em
+`saída ç 日本 (builder)` numa pasta temporária):
+- 4 038 funções, 12 arquivos, 980 666 linhas de C++ gerados em processo; 309 passos do
+  Ninja (runtime + SDL3 + código gerado). Pacote verificado (`--version` e boot headless
+  de 120 VBlanks) e instalado em **52-56 s** a partir do zero; incremental em **5-10 s**
+  (só `main_sdl.cpp`, que leva a data da compilação, e a ligação).
+- O exe instalado roda da própria pasta (`--version`; boot de 300 VBlanks). A janela do
+  Builder foi conferida por captura (progresso, status, log, "Abrir pasta"/"Jogar").
+
+**Problemas encontrados no caminho**:
+- Carimbo do build gravado em modo texto (`\n` → `\r\n`): nunca batia e todo build era
+  completo. Gravado em binário.
+- Saída com 135 caracteres: objetos do SDL3 chegavam a 255-259 caracteres, e um
+  `try_compile` do SDL (detecção de CPU) falhou com `MAX_PATH`.
+- O Ninja do VS (1.12.1) usa `FindFirstFileExA`: `ç` (cabe na página 1252) funciona,
+  `日本` vira `??` e o build incremental falha. O primeiro build passava porque nada tinha
+  sido consultado ainda.
+- Solução para os dois: tudo o que o Ninja vê vai para um cache curto e ANSI (build do
+  CMake, C++ gerado e, quando preciso, uma cópia do kit). Limite de 200 caracteres para a
+  saída, com mensagem clara.
+
+**Testes**:
+- `tests/unit/test_builder.cpp` (6 casos, sem compilador nem dados do jogo):
+  - aspas de linha de comando (ida e volta por `CommandLineToArgvW`);
+  - página ANSI; processos filhos: código, UTF-16, ambiente, inexistente, e cancelamento e
+    tempo limite que matam o neto (`ping`), conferido por lista de processos;
+  - `install_swap`: preserva ini/saves, rollback com arquivo em uso, recupera sobra
+    `.old-*`;
+  - entradas inválidas sem efeito colateral.
+- `tools/dist/test_builder.ps1` (distribuição copiada para `Builder ç 日本 (teste)`, CDI por
+  hard link em `Jogos ç ã 日本`): 15 casos.
+  - Sucesso: compilação completa a partir de saída nova (kit copiado para o cache);
+    exe responde e dá boot; segunda saída nova com C++ **idêntico** (reprodutível);
+    incremental (2 passos).
+  - Recusas: CDI inválido; sem compilador (mensagem de instalação); saída sem permissão;
+    saída longa demais; sem kit.
+  - Falhas sem destruir nada: falha de compilação (kit com erro de sintaxe) → código 1,
+    instalada intacta, sem pacote temporário; jogo aberto → troca recusada; cancelar pela
+    janela → código 3, instalada intacta.
+  - Janela até o fim com o ini do usuário preservado.
+  - 1ª execução: 14 ok. O caso "sem kit" falhou só porque o teste comparava com o hash de
+    antes do caso 11, que instalou uma versão nova (o Builder recusou corretamente).
+    Teste corrigido.
+- **Depois da revisão do Codex (abaixo)**: 8 testes unitários do Builder (149 no total, todos
+  passam); `test_builder.ps1` **15 casos, 0 falhas**. Builds completos de 51 s e
+  incremental de 5 s (2 passos). `ctest` completo passa (`boot_trace`, `unit`,
+  `real_disc`, `codegen_exec_0/1`). Preview remontada: `test_make_preview` 5/5;
+  `test_preview` 11/11 em 4 de 5 execuções. **Uma execução teve 2 falhas não
+  identificadas**: só a última linha foi capturada, e elas não se repetiram em 4 execuções
+  seguidas. O teste agora grava `resultado.txt` na pasta de teste para diagnosticar se
+  voltar.
+
 ## Revisões independentes (Codex)
+
+### 2026-10-14: Builder (núcleo, compilador, processos, janela, distribuição). Relatório em `reviews/codex-20261014-160223.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Restauração do rollback ignorada; a mensagem dizia "anterior mantida" mesmo sem ela | **Aceito** | A restauração é conferida (`BlueStinger.exe` no destino). Se falhar, a mensagem diz onde está a versão anterior e que ela volta sozinha (backup marcado) |
+| [ALTA] Cancelar durante a troca era ignorado e podia terminar como sucesso | **Aceito em parte** | A troca é o ponto sem volta. O cancelamento vale até o primeiro rename (`SwapCancelled`, testado). A janela desabilita "Cancelar" ao entrar em "instalando". Sucesso depois desse ponto é real (a versão nova está instalada) |
+| [ALTA] Falhas de `CreateJobObject`/`SetInformationJobObject`/`AssignProcessToJobObject`/`UpdateProcThreadAttribute` ignoradas | **Aceito** | Todas conferidas antes de `ResumeThread`; em falha, o filho suspenso é encerrado e o processo conta como não iniciado. Cancelamento: `TerminateJobObject` com `TerminateProcess` de reserva, e de novo no fim (netos tardios) |
+| [MÉDIA] Preservação de arquivos do usuário descartava qualquer DLL na raiz e tudo em `licencas` | **Aceito** | Lista do pacote (`.bs-package`) gravada em cada instalação. Na troca, só sai o que a lista anterior diz. Teste: DLL do usuário e `licencas/minha.txt` ficam; arquivo do pacote antigo sai |
+| [MÉDIA] Recuperação de `.old-*` escolhia por data da pasta, sem marca | **Aceito** | Marca `.bs-install` (instante FILETIME). Só backups marcados são recuperados (o mais recente) ou apagados. Teste com três sobras, uma sem marca, que fica intocada |
+| [MÉDIA] `longPathAware` ausente; kit longo consultado antes da cópia | **Aceito** | `longPathAware` nos dois executáveis; kit/SDL3 acima de 200 caracteres recusados antes de qualquer acesso, com mensagem |
+| [MÉDIA] Kit copiado sem allowlist | **Aceito** | `git ls-files --cached --others --exclude-standard`: tudo o que o `.gitignore` exclui (dados do jogo, `generated/`) fica fora. A checagem de amostras continua como segunda barreira |
+| [BAIXA] Pasta de pacote com nome de 32 bits, sem criação exclusiva; o guard podia apagar pasta alheia | **Aceito** | `CreateDirectoryW` exclusivo, sufixo de 64 bits, marca `.bs-stage`; o guard e a limpeza só apagam pastas marcadas. Trava `.bs-lock` (uma execução por saída) |
+| [BAIXA] `%`/`&`/`^` no caminho do `vcvars64.bat` interpretados pelo `cmd` | **Aceito** | Caminho via `BS_VCVARS_PATH`, **sem `call`**: o `call` faz uma segunda expansão de `%`, o que foi confirmado em teste. Teste com compilador falso em `bs tc %TEMP% & (x) ^`; com `call`, o teste falha |
+
+### 2026-10-14: distribuição Preview (main_sdl, montagem, testes). Relatório em `reviews/codex-20261014-152633.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Callback do diálogo do SDL escrevia em estado da pilha, sem sincronização; com `SDL_EVENT_QUIT` o estado morria antes do callback | **Aceito** | `SDL_dialog.h` documenta callback em outra thread. Estado em `shared_ptr` (o callback segura uma referência) com mutex |
+| [ALTA] `test_preview.ps1 -Work` apagava recursivamente qualquer pasta dada | **Aceito** | O teste usa só a subpasta `bs-preview-teste` com marca própria; sem a marca, recusa |
+| [ALTA] Troca da Preview sem rollback: falha entre as renomeações + nova tentativa podia perder a última cópia | **Aceito** | Sobra `.old` sem Preview é restaurada primeiro; backup com nome único; `try/catch` restaura; cópias antigas só saem depois da nova instalada; saída em raiz/repositório recusada. Teste `test_make_preview.ps1` |
+| [MÉDIA] Falha do diálogo tratada como cancelamento (código 0) | **Aceito** | `list == NULL` guarda `SDL_GetError()`; mensagem e código 1 |
+| [MÉDIA] Falhas de textura/apresentação davam janela preta com código 0 | **Aceito** | Criar a textura falha de vez; atualizar/limpar/apresentar falhando 120 quadros seguidos vira erro, código 1 |
+| [MÉDIA] Caminhos absolutos do build no exe (`__FILE__` dos `SDL_assert_release`) | **Aceito** | Confirmado por busca binária (8 ocorrências, todas do SDL). `SDL_ASSERTIONS=disabled`; a montagem agora procura caminhos de desenvolvimento e falha se achar |
+| [BAIXA] Caso somente leitura não testava o ini | **Aceito** | Novo caso com imagem válida na pasta somente leitura: ini UTF-8 em LOCALAPPDATA, nada na pasta |
+
+### 2026-10-14: executável nativo (GameHost, SDL3, fibras, boot nativo, poll, render paralelo). Relatório em `reviews/codex-20261014-143829.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Se a janela não abrisse, a fonte de entrada era destruída com a thread do jogo ainda lendo | **Aceito** | `main` agora pede a parada e espera o `GameHost` antes de trocar ou destruir a fonte, em todos os caminhos |
+| [MÉDIA] O MXCSR fixo só valia na thread que chama, não nos workers da resolução paralela | **Aceito** | `RenderFpEnv` instalado em cada worker. Teste `render_independent_of_worker_fp_mode`: suja o MXCSR das threads do pool e confere diretamente o ambiente dos workers. O hash da cena não é sensível ao arredondamento, por isso a checagem é direta. **Sensibilidade comprovada**: sem a proteção, o teste falha. Um 1º experimento parecia "passar sem a proteção" porque o `Copy-Item` manteve a data antiga do arquivo restaurado e o ninja não recompilou; corrigido atualizando a data |
+| [BAIXA] Falhas de `ConvertThreadToFiberEx`/`ConvertFiberToThread` não eram tratadas | **Aceito** | `IsThreadAFiber` antes de converter; falha na conversão é erro fatal; falha ao desconverter faz `sh4_threads_shutdown` devolver false, e o `GameHost` relata |
+| [BAIXA] Uma segunda sessão herdava o hardware (VRAM, SPG com tempo antigo, Maple, GD-ROM) | **Aceito** | `boot_prepare` volta todo o hardware modelado ao reset. Teste `boot_prepare_resets_hardware_between_sessions` (VRAM limpa; VBlank na nova sessão mesmo depois de uma sessão com 5×10¹⁰ ciclos). Trace nativo e checkpoint continuam iguais |
 
 ### 2026-10-14: modelo de tempo do GD-ROM. Relatório em `reviews/codex-20261014-111438.md`
 
@@ -548,5 +761,7 @@ Depois das correções: todos os testes passam, análise idêntica (3 883 funç�
 ## Em aberto
 
 - Instrução PC-relativa em delay slot (`mova`/`mov.x @(disp,PC)`): o decodificador calcula o alvo a partir do PC da própria instrução. A regra especial do manual para delay slot é tratada no M3.
-- D7 (distribuição), decidir no M8.
+- D7 decidido (Builder). Falta: Windows limpo sem Visual Studio instalado (só a mensagem
+  de "sem compilador" foi testada, por vswhere inexistente); independência do Visual
+  Studio (clang-cl + SDK); uma falha intermitente não identificada no `test_preview.ps1`.
 - clang-cl não está instalado nesta máquina. Por enquanto só o MSVC é testado.

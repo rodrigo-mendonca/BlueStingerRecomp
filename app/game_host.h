@@ -1,0 +1,87 @@
+#pragma once
+// Execucao do jogo recompilado numa thread propria, sem janela: boot nativo, ritmo do
+// Dreamcast (VBlank de 59,94 Hz), publicacao do quadro exibido a cada VBlank e
+// encerramento limpo. O front-end (SDL3, app/main_sdl.cpp) so apresenta quadros e entrega
+// eventos; a frequencia de apresentacao dele e independente da do jogo.
+#include "cpu/sh4_context.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <functional>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace bs {
+
+struct GameFrame {
+    std::vector<uint32_t> argb;  // ARGB8888
+    uint32_t              width = 0, height = 0;
+};
+
+// Desempenho medido na thread do jogo. "Trabalho" = tempo de host gasto emulando um campo
+// (entre dois VBlanks, sem contar a espera do ritmo); orcamento de um campo: 16,683 ms.
+struct GameStats {
+    uint64_t vblanks = 0;
+    double   workAvgMs = 0, workMaxMs = 0;  // media e maximo desde o inicio
+    uint64_t overBudget = 0;                // campos cujo trabalho passou do orcamento
+    double   fieldsPerSecond = 0;           // VBlanks por segundo de relogio (ultimo segundo)
+};
+
+struct GameOptions {
+    std::filesystem::path disc;   // imagem do usuario (CDI)
+    std::filesystem::path flash;  // flash de 128 KB opcional (sem: apagada, 0xFF)
+    // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
+    std::function<void()> registerFunctions;
+    // Prepara RAM e registradores. Padrao: boot nativo a partir de `disc`. Testes trocam.
+    std::function<void(Sh4Context&)> prepare;
+    bool     realtime    = true;  // segura o jogo em 59,94 VBlanks por segundo
+    uint64_t vblankLimit = 0;     // > 0: para sozinho depois desses VBlanks (headless)
+};
+
+class GameHost {
+public:
+    GameHost() = default;
+    ~GameHost();
+    GameHost(const GameHost&)            = delete;
+    GameHost& operator=(const GameHost&) = delete;
+
+    // Comeca a thread do jogo. Um GameHost por processo (o runtime tem estado global).
+    void start(GameOptions opt);
+    void requestStop();  // o jogo para no proximo VBlank
+    void join();         // espera a thread (que libera fibras e recursos dela)
+
+    bool        running() const { return running_.load(); }
+    uint64_t    vblanks() const { return vblanks_.load(); }
+    std::string error() const;  // vazio se terminou por pedido ou limite
+
+    // Copia o quadro mais recente se for novo (`seq` = ultimo numero visto, atualizado).
+    bool latestFrame(GameFrame& out, uint64_t& seq);
+    GameStats stats() const;
+
+private:
+    static void onVblank(void* self);
+    void        vblank();
+    void        threadMain();
+
+    GameOptions           opt_;
+    std::thread           thread_;
+    std::atomic<bool>     running_{false}, stop_{false};
+    std::atomic<uint64_t> vblanks_{0};
+    mutable std::mutex    mutex_;
+    GameFrame             frame_;
+    uint64_t              frameSeq_ = 0;
+    std::string           error_;
+    GameFrame             scratch_;
+    std::chrono::steady_clock::time_point epoch_;
+    uint64_t                              epochVblank_ = 0;
+    std::chrono::steady_clock::time_point workStart_, rateStart_;
+    uint64_t                              rateVblank_ = 0;
+    GameStats                             stats_;  // protegido por mutex_
+    double                                workSumMs_ = 0;
+};
+
+} // namespace bs

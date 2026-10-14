@@ -1,0 +1,4 @@
+#pragma once
+// GERADO pelo CMake (app/CMakeLists.txt) na configuracao: identificacao da compilacao.
+#define BS_VERSION    "@BS_VERSION@"
+#define BS_BUILD_DATE "@BS_BUILD_DATE@"

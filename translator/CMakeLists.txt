@@ -13,8 +13,12 @@ add_library(bs_translator STATIC
 )
 target_include_directories(bs_translator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-add_executable(bs-recomp app/main.cpp app/config.cpp)
-target_link_libraries(bs-recomp PRIVATE bs_translator tomlplusplus::tomlplusplus)
+# Analise + geracao como biblioteca: bs-recomp e o Builder.
+add_library(bs_recomp_lib STATIC app/config.cpp app/recomp.cpp)
+target_link_libraries(bs_recomp_lib PUBLIC bs_translator PRIVATE tomlplusplus::tomlplusplus)
+
+add_executable(bs-recomp app/main.cpp)
+target_link_libraries(bs-recomp PRIVATE bs_recomp_lib)
 
 add_executable(bs-disasm app/disasm_main.cpp)
 target_link_libraries(bs-disasm PRIVATE bs_translator)

@@ -18,9 +18,11 @@ add_executable(bs_unit_tests
   unit/test_longjmp.cpp
   unit/test_tmu.cpp
   unit/test_input.cpp
+  unit/test_app.cpp
+  unit/test_builder.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
-target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc)
+target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core)
 add_test(NAME unit COMMAND bs_unit_tests)
 
 # Usa a imagem do usuario se BS_DISC_IMAGE estiver definido; senao, SKIP.

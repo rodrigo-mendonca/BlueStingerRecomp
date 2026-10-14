@@ -1,0 +1,52 @@
+Blue Stinger (recompilado) - Preview para testes
+================================================
+
+O que e
+-------
+Versao nativa para Windows x64 do Blue Stinger (Dreamcast, NTSC-U T13001N V1.000),
+gerada por recompilacao estatica do codigo SH-4 do jogo para C++. Nao e um emulador:
+o codigo do jogo roda como codigo nativo, com um runtime proprio para o hardware.
+
+Esta pasta NAO contem dados do jogo. E preciso a sua propria imagem CDI do Blue Stinger
+NTSC-U. O executavel, porem, contem codigo gerado a partir da sua copia: use apenas
+localmente e nao publique esta pasta.
+
+Como executar
+-------------
+1. De dois cliques em BlueStinger.exe.
+2. Na primeira vez, escolha o arquivo .cdi do jogo. Ele fica lembrado em
+   bluestinger.ini (nesta pasta, ou em %LOCALAPPDATA%\BlueStingerRecomp se a pasta
+   for somente leitura).
+   Tambem da para passar a imagem na linha de comando:
+       BlueStinger.exe "D:\Jogos\Blue Stinger.cdi"
+3. A imagem e conferida antes de iniciar (so a versao NTSC-U V1.000 e aceita).
+
+Controles (teclado; controle XInput tambem funciona)
+---------------------------------------------------
+  START ............ Enter
+  Direcional ....... setas
+  A / B / X / Y .... Z / X / A / S
+  Gatilhos L / R ... Q / W
+  Analogico ........ I / J / K / L
+  Tela cheia ....... F11
+Mapa proprio: BlueStinger.exe --map meu_mapa.txt (linhas "BOTAO = TECLA").
+
+Registro
+--------
+bluestinger.log (na mesma pasta do bluestinger.ini). Anexe-o ao relatar problemas.
+
+Limitacoes conhecidas desta Preview
+-----------------------------------
+- Sem audio.
+- Sem VMU: o jogo avisa "VMU not found" e nao salva.
+- Testado ate o menu principal (NEW GAME / LOAD GAME / OPTIONS). Iniciar uma partida
+  ainda nao foi validado.
+- Renderizacao em software: quedas de ritmo em cenas com muitas camadas transparentes
+  (por exemplo, a abertura do titulo) e no carregamento.
+- Controle XInput sem teste com controle fisico.
+- Diferencas visuais pequenas em relacao ao hardware (sem dither; bordas de texto).
+
+Requisitos
+----------
+Windows 10 ou 11, x64. O runtime do Visual C++ ja vem nesta pasta.
+A versao e a data da compilacao estao em VERSAO.txt.

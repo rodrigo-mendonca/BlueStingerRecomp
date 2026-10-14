@@ -21,4 +21,14 @@ namespace bs {
 // Numero de threads do guest ja vistas (diagnostico e testes).
 int sh4_thread_count();
 
+// Encerramento: apaga as fibras das threads do guest e desfaz a conversao da thread do
+// host em fibra. Chamar na thread do host que executou o jogo, depois que a execucao
+// voltou para a thread 0 (p.ex. uma excecao de parada relancada nela). Devolve false se
+// chamado de outra fibra (nada e feito) ou se a conversao de volta para thread falhar.
+bool sh4_threads_shutdown();
+
+// Fibras de threads do guest criadas e ainda nao apagadas, em todo o processo (testes de
+// encerramento: deve voltar a 0 depois de sh4_threads_shutdown).
+int sh4_live_fibers();
+
 } // namespace bs

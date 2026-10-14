@@ -31,6 +31,10 @@ Ferramentas:
 - `bs-disasm game-data/1ST_READ.BIN 0x8C010000 <início> <n>`: disassembly.
 - `bs-recomp config/bluestinger_us.toml [--analyze-only]`: análise + C++ em `generated/`.
 - `tools/dev/compare_capstone.py`: decodificador vs. Capstone (venv opcional).
+- `bs-builder --disc <img.cdi> --out <pasta> --kit . --sdl3 build/msvc-release/_deps/sdl3-src`:
+  fluxo completo do Builder (CDI → BlueStinger.exe) a partir do repositório.
+- `tools/dist/make_preview.ps1`, `make_builder.ps1`: distribuições em `dist/`; testes
+  `test_preview.ps1`, `test_make_preview.ps1`, `test_builder.ps1 -Disc <img.cdi>`.
 
 ## Revisão com Codex (revisor independente)
 

@@ -33,3 +33,5 @@ CMakeUserPresets.json
 # snapshots de estado (memoria do jogo) para testes diferenciais
 /snapshots/
 __pycache__/
+# distribuicoes locais (binarios derivados da copia do usuario)
+/dist/

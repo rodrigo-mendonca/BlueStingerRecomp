@@ -10,6 +10,7 @@
 #include "hle/flashrom.h"
 
 #include <cstdio>
+#include <cstdlib>
 
 namespace bs {
 namespace {
@@ -21,7 +22,11 @@ constexpr uint32_t kGdrom    = 0x8C001006;
 constexpr uint32_t kMisc     = 0x8C001008;
 constexpr uint32_t kGdrom2   = 0x8C0010F0;
 
+// Diagnostico: BS_HLE_LOG=1 registra cada syscall (no jogo, o GD-ROM e consultado a cada
+// quadro: ligado sempre, o log pesava no ritmo do executavel).
 void log(const char* what, Sh4Context* c) {
+    static const bool on = std::getenv("BS_HLE_LOG") != nullptr;
+    if (!on) return;
     std::fprintf(stderr, "[hle] %s r4=%08X r5=%08X r6=%08X r7=%08X pr=%08X\n", what, c->r[4], c->r[5], c->r[6],
                  c->r[7], c->pr);
 }

@@ -13,6 +13,14 @@ namespace bs::disc {
 
 constexpr uint32_t kUserDataSize = 2048;
 
+// Caminho como texto UTF-8 para mensagens. path::string() no Windows converte para a
+// pagina de codigo ANSI e lanca excecao com caracteres fora dela (nomes com acentos ou
+// outros alfabetos): uma mensagem de erro nao pode virar outro erro.
+inline std::string pathText(const std::filesystem::path& p) {
+    const auto u8 = p.u8string();
+    return std::string(u8.begin(), u8.end());
+}
+
 struct DiscError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };

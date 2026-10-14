@@ -10,6 +10,7 @@
 
 #include "pvr/pvr_regs.h"
 #include "maple/maple.h"
+#include "pvr/pvr_video.h"
 
 #include <array>
 #include <cstdio>
@@ -32,7 +33,8 @@ uint32_t  canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 
 void update(uint64_t now) {
     if (now <= g_last) return;
-    if (pvr_spg_crossed(g_last, now, pvr_vblank_in_line())) reg(kIstNrm) |= kIstVblankIn;
+    const bool vblankIn = pvr_spg_crossed(g_last, now, pvr_vblank_in_line());
+    if (vblankIn) reg(kIstNrm) |= kIstVblankIn;
     if (pvr_spg_crossed(g_last, now, pvr_vblank_out_line())) reg(kIstNrm) |= kIstVblankOut;
     // fim de render agendado pelo STARTRENDER: bits 0 (video), 1 (ISP), 2 (TSP)
     if (const uint64_t due = pvr_render_done_due(); due && now >= due) {
@@ -45,6 +47,9 @@ void update(uint64_t now) {
         maple_dma_take();
     }
     g_last = now;
+    // host (apresentacao de quadros, ritmo): depois de atualizar o estado, porque o
+    // gancho pode interromper a execucao (encerramento)
+    if (vblankIn) pvr_video_vblank();
 }
 
 } // namespace

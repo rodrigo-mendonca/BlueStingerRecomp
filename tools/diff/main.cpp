@@ -30,6 +30,7 @@
 #include "gdrom/image_source.h"
 #include "hle/bios.h"
 #include "hle/flashrom.h"
+#include "boot/native_boot.h"
 #include "input/input.h"
 #include "cpu/sh4_threads.h"
 #include "pvr/pvr_regs.h"
@@ -133,25 +134,39 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     sh4_set_trace(onEnter);
     pvr_set_startrender_hook(onStartRender);
 
-    const Snapshot       in = Snapshot::load(entryPath);
     std::vector<uint8_t> ram(16u << 20);
     Sh4Context           c{};
     c.ram = ram.data();
-    in.apply(c);
-    c.ret_expect = c.pr;
-    c.next_event = 0;  // poll ativo desde o inicio: interrupcoes sao entregues como no jogo
-    // O snapshot nao tem ciclos nem registradores de hardware (CCR, porta A, PVR,
-    // Holly): tudo comeca do reset. Divergencia em funcao que leia hardware antes de
-    // escreve-lo pode vir disso, e nao do codigo recompilado.
-    std::fprintf(stderr, "aviso: estado de hardware e ciclos partem do reset (fora do snapshot)\n");
-    // RTC: a hora que o reios do Flycast gravou no boot (0x8C000078, configuracao de
-    // sistema da flash). O RTC do Flycast segue a hora do host e nunca coincide exatamente.
-    uint32_t bootTime;
-    std::memcpy(&bootTime, &ram[0x78], 4);
-    aica_rtc_set(bootTime, 0);
+    // BS_NATIVE_BOOT=<imagem>: estado de entrada pelo boot nativo (runtime/boot), sem o
+    // snapshot do Flycast (a <entrada> e ignorada); a hora do RTC e a do snapshot de
+    // referencia, se houver, para comparar com o mesmo trace.
+    const char* nativeImage = std::getenv("BS_NATIVE_BOOT");
+    if (nativeImage) {
+        uint32_t rtc = boot_rtc_now();
+        if (std::filesystem::exists(entryPath)) {
+            const Snapshot ref = Snapshot::load(entryPath);
+            std::memcpy(&rtc, &ref.ram[0x78], 4);
+        }
+        boot_prepare(c, boot_read_disc(nativeImage), rtc);  // RAM, CPU, PVR, RTC e vetores
+        std::fprintf(stderr, "boot nativo de %s\n", nativeImage);
+    } else {
+        const Snapshot in = Snapshot::load(entryPath);
+        in.apply(c);
+        c.ret_expect = c.pr;
+        c.next_event = 0;  // poll ativo desde o inicio: interrupcoes sao entregues como no jogo
+        // O snapshot nao tem ciclos nem registradores de hardware (CCR, porta A, PVR,
+        // Holly): tudo comeca do reset. Divergencia em funcao que leia hardware antes de
+        // escreve-lo pode vir disso, e nao do codigo recompilado.
+        std::fprintf(stderr, "aviso: estado de hardware e ciclos partem do reset (fora do snapshot)\n");
+        // RTC: a hora que o reios do Flycast gravou no boot (0x8C000078, configuracao de
+        // sistema da flash). O RTC do Flycast segue a hora do host e nunca coincide exatamente.
+        uint32_t bootTime;
+        std::memcpy(&bootTime, &ram[0x78], 4);
+        aica_rtc_set(bootTime, 0);
+    }
     // Registradores do PVR como o BIOS deixa na entrada do jogo (`snap 0x8C010000 --pvr`,
     // <entrada>.pvr): o boot le SPG_VBLANK antes de escreve-lo.
-    {
+    if (!nativeImage) {
         std::filesystem::path pvr = entryPath;
         pvr.replace_extension(".pvr");
         if (std::filesystem::exists(pvr)) {
@@ -163,7 +178,7 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
         }
     }
     // Syscalls do BIOS: os vetores do snapshot (reios) ja apontam para 0x8C001000+.
-    bios_hle_install(&c, false);
+    if (!nativeImage) bios_hle_install(&c, false);
     // Disco: BS_DISC_IMAGE (a mesma imagem que o Flycast usou para gerar o snapshot).
     if (const char* disc = std::getenv("BS_DISC_IMAGE")) gdrom_set_disc(open_disc_image(disc));
     // Entrada: so roteiro (deterministico) ou nenhuma. Entrada ao vivo (BS_INPUT=host)

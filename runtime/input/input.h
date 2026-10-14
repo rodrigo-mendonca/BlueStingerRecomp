@@ -54,6 +54,18 @@ std::unique_ptr<InputSource> make_scripted_input(const std::string& text);
 // Texto vazio: mapeamento padrao (ver input.cpp). So responde pela porta 0.
 std::unique_ptr<InputSource> make_keyboard_input(const std::string& mapping = "");
 
+// Teclado alimentado por eventos da janela (porta 0): o host informa tecla apertada ou
+// solta pelo nome (os mesmos nomes do mapa: letras, digitos, ENTER, SPACE, ESC, TAB, SHIFT,
+// CTRL, UP, DOWN, LEFT, RIGHT, BACKSPACE, F1..F12). Ao contrario de make_keyboard_input,
+// so ve o que chega a janela (nada com o foco em outro programa). Seguro entre threads:
+// eventos na thread da janela, leitura na thread do jogo.
+class KeyEventInput : public InputSource {
+public:
+    virtual void key(const std::string& name, bool down) = 0;
+    virtual void releaseAll() = 0;  // p.ex. ao perder o foco
+};
+std::unique_ptr<KeyEventInput> make_key_event_input(const std::string& mapping = "");
+
 // Primeiro controle XInput conectado (porta 0); sem controle, estado neutro.
 std::unique_ptr<InputSource> make_xinput_input();
 

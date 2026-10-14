@@ -1,0 +1,60 @@
+Blue Stinger Builder
+====================
+
+O que e
+-------
+O Builder transforma a SUA imagem CDI do Blue Stinger (Dreamcast, NTSC-U T13001N V1.000)
+num executavel nativo para Windows x64 (BlueStinger.exe). Ele recompila o codigo SH-4 do
+jogo para C++ e compila esse C++ junto com o runtime, aqui, no seu computador.
+
+Esta pasta NAO contem nada do jogo: so o Builder, o codigo-fonte do runtime (licenca MIT) e
+do SDL3 (licenca zlib). O jogo compilado contem codigo derivado da sua copia: use-o so
+localmente e nao o publique.
+
+Requisitos
+----------
+- Windows 10 ou 11, x64.
+- "Build Tools para Visual Studio" (gratuito) com a carga de trabalho
+  "Desenvolvimento para desktop com C++" (inclui o compilador MSVC x64, o SDK do Windows e
+  as ferramentas CMake do C++). Download: https://visualstudio.microsoft.com/downloads/
+  (secao "Ferramentas para Visual Studio"). Um Visual Studio 2022 ou mais novo com essa
+  carga de trabalho tambem serve.
+- A imagem CDI do Blue Stinger NTSC-U (V1.000). Outras versoes sao recusadas.
+- Cerca de 300 MB livres (jogo compilado + cache de compilacao).
+
+Como usar
+---------
+1. Abra BlueStingerBuilder.exe.
+2. Escolha a imagem .cdi e a pasta de saida.
+3. Clique em "Gerar BlueStinger.exe". A primeira compilacao leva de 1 a alguns minutos;
+   as seguintes reaproveitam o que ja foi compilado.
+4. No fim, "Jogar" inicia o jogo e "Abrir pasta" mostra a pasta BlueStinger.
+
+O que o Builder faz: confere a imagem (hash do executavel do jogo), le os arquivos de boot,
+analisa e gera o C++, compila com o seu Visual Studio, monta o pacote numa pasta temporaria,
+testa o executavel (inclusive um boot curto com a sua imagem) e so entao troca a versao
+instalada. Se qualquer etapa falhar ou for cancelada, a versao anterior continua intacta.
+
+Pastas
+------
+<saida>\BlueStinger\     o jogo (BlueStinger.exe, runtime do Visual C++, LEIA-ME, VERSAO)
+<saida>\.bs-build\       trabalho e builder.log (registro completo da ultima execucao)
+%LOCALAPPDATA%\BlueStingerRecomp\build\<codigo>\   cache de compilacao (pode ser apagado;
+                         a proxima execucao recompila tudo)
+Arquivos seus dentro de <saida>\BlueStinger (bluestinger.ini, log, saves) sao mantidos
+quando o jogo e recompilado.
+
+Linha de comando
+----------------
+  bs-builder.exe --disc "D:\Jogos\Blue Stinger.cdi" --out "D:\Jogos\BS" [--clean]
+Codigo de saida: 0 = sucesso; 1 = falha; 3 = cancelado. BS_BUILDER_VERBOSE=1 mostra tudo.
+
+Problemas comuns
+----------------
+- "Visual Studio / Build Tools nao encontrado": instale os Build Tools como acima.
+- "sem permissao de gravacao": escolha uma pasta sua (por exemplo em Documentos).
+- "caminho longo demais": escolha uma pasta de saida mais curta (ex.: C:\Jogos\BS).
+- "O jogo esta aberto?": feche o BlueStinger.exe antes de recompilar.
+- Antivirus: alguns analisam cada arquivo compilado e deixam a compilacao bem mais lenta.
+
+A versao e a data desta distribuicao estao em VERSAO.txt.
