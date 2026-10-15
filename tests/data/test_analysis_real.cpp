@@ -6,6 +6,7 @@
 
 #include "analysis/analysis.h"
 #include "app/config.h"
+#include "boot/disc_boot.h"
 #include "boot/native_boot.h"
 
 #include <cstdio>

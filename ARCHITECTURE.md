@@ -540,6 +540,27 @@ translator/app/recomp.*   análise + geração como biblioteca (bs-recomp e Buil
 
 ---
 
+### Port nativo, N0: fundação (2026-10-15)
+
+Detalhes, números e reprodução em `docs/N0-RELATORIO.md`.
+
+- `tools/dcmap`: mapa de regiões do hardware → subsistema que o substitui.
+- `bs-hwscan` (`translator/hwscan`) produz:
+  - o manifesto de acessos (estático + sonda);
+  - a identificação do SDK por camada e família, com evidências e confiança;
+  - a fronteira jogo/SDK declarada (`config/fronteiras_us.toml`);
+  - o fechamento, a dominância e as métricas com catraca (`config/metricas_base_us.toml`).
+- Runtime legado:
+  - `c->cur_fn` (salvo e restaurado por `BS_CALL`, por thread e nas interrupções);
+  - sonda `BS_HW_PROBE`;
+  - trace de ordem `BS_EVENT_TRACE`.
+  - Desligados, não mudam o comportamento.
+- `native/`: interfaces C++20 sem nada do Dreamcast (arquivos, tempo/eventos, controles,
+  saves, vídeo, áudio, render).
+- `transitional/`: handles de 32 bits com geração, adaptador `Sh4Context` ↔ nativo e
+  registro de provedores legado/nativo.
+- `legacy/`: o runtime atual com nome de alvo.
+
 ## 7. Validação
 
 - **Unitários (M2)**: decodificador exaustivo (todas as 65 536 palavras
@@ -567,10 +588,15 @@ Registradas em 2026-10-13.
 | D1 | Licença do projeto | **MIT** (arquivo `LICENSE`). Implementação do zero, sem código GPL. |
 | D2 | Versão-alvo | **NTSC-U V1.000 (T13001N)**, só essa por enquanto. |
 | D3 | Formatos de entrada | **Só CDI por enquanto.** A abstração `DiscImage` deixa GDI/CHD para depois sem retrabalho. |
-| D4 | ARM7 do AICA | **Interpretador ARM7** no M6. A regra "sem interpretador" vale para o SH-4. Recompilar o `MANATEE.DRV` fica como otimização futura. |
+| D4 | ARM7 do AICA | ~~Interpretador ARM7 no M6~~ **Substituída por D10** (2026-10-15): o produto não executa nem interpreta o ARM7. |
 | D5 | Linguagem | **C++20 para tudo** (extrator, tradutor, runtime). Sem Python para o usuário final. |
 | D6 | Compilador | Clang-cl como alvo principal e MSVC sempre compilando. Enquanto o clang-cl não estiver instalado, o MSVC é usado. |
 | D7 | Distribuição | **Builder** (2026-10-14): o usuário recompila na própria máquina a partir do CDI, com janela Win32 nativa e kit de fontes compilado pelo CMake/Ninja do Visual Studio dele. Ver "Builder" na seção 6. |
+| D8 | Port nativo | **`docs/PLANO-PORT-NATIVO.md` v2 aprovado como diretriz** (2026-10-15). Nada de emulação ou interpretação de CPU, BIOS ou dispositivos do Dreamcast na arquitetura final. C++20, Windows x64, editável e moddável. Autorização inicial só para o N0 (`docs/N0-RELATORIO.md`). |
+| D9 | GPU | **Direct3D 11** atrás de uma interface independente de backend (`native/render/render.h`, `IRenderDevice` + IR de comandos). |
+| D10 | Áudio | **XAudio2** (`IAudioOutput`), com reconstrução nativa da lógica do Manatee e dos bancos (`IAudioEngine`). O `MANATEE.DRV` só é analisado estaticamente. |
+| D11 | Vídeo | **Media Foundation** para vídeos convertidos pelo Builder (`IVideoPlayer`), desde que formato e fidelidade sejam validados. Senão, apresentar alternativas ao mantenedor. |
+| D12 | Módulos | `native/`, `legacy/` e `transitional/` são alvos CMake desde o N0. Os arquivos só mudam de lugar quando o subsistema migrar. A leitura de CDI saiu do produto (`bs_runtime_cdi`). |
 
 ## 9. Riscos
 

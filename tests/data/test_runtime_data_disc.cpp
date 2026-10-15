@@ -5,6 +5,7 @@
 // temporaria, apagada no fim.
 #include "../unit/test.h"
 
+#include "boot/disc_boot.h"
 #include "boot/native_boot.h"
 #include "disc/cdi_image.h"
 #include "gdrom/data_source.h"

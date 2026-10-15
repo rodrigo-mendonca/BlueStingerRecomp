@@ -1,5 +1,5 @@
 #pragma once
-// Boot nativo: le o IP.BIN e o executavel de boot da imagem de disco do usuario e monta o
+// Boot nativo: le o IP.BIN e o executavel de boot dos dados do jogo e monta o
 // estado em que o BIOS entrega o controle ao jogo (RAM, registradores, PVR), sem BIOS nem
 // snapshot do Flycast. O codigo recompilado so vale para o executavel com o hash da
 // versao suportada; outro executavel e recusado.
@@ -18,12 +18,9 @@ struct BootFiles {
     std::string          product, version, title, versionId;
 };
 
-// Le os arquivos de boot. Lanca std::runtime_error (imagem invalida, executavel ausente
-// ou de versao nao suportada).
-BootFiles boot_read_disc(const std::filesystem::path& image);
-
-// O mesmo a partir dos dados preparados pelo Builder (runtime_data.h), sem o CDI. Lanca
-// disc::RuntimeDataError (dados ausentes/incompletos ou de outra versao).
+// Le os arquivos de boot dos dados preparados pelo Builder (runtime_data.h), sem o CDI.
+// Lanca disc::RuntimeDataError (dados ausentes/incompletos ou de outra versao). A leitura
+// direta da imagem de disco (boot_read_disc) fica fora do produto: boot/disc_boot.h.
 BootFiles boot_read_data(const std::filesystem::path& dir);
 
 // Estado na entrada do jogo (0xAC010000), como o BIOS o deixa: RAM (area do sistema,

@@ -44,6 +44,7 @@ struct Sh4Context {
     uint32_t ret_expect;  // endereco de retorno esperado pelo chamador (verificacao de rts)
     uint32_t ret_sp;      // R15 do chamador nesse ponto: identifica a thread do guest (sh4_threads)
     uint32_t redirect;    // longjmp pendente: ponto de reentrada (retorno de setjmp) a alcancar
+    uint32_t cur_fn;      // funcao do guest em execucao (BS_FN_ENTER/BS_CALL); so diagnostico (sonda N0)
 
     uint8_t* ram;         // 16 MB de RAM principal
     void*    owner;       // runtime dono deste contexto

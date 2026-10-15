@@ -7,6 +7,7 @@
 // SH-4 recebe como interrupcoes IRL de prioridade 6/4/2 e INTEVT 0x320/0x360/0x3A0
 // (0x200 + (15 - nivel) * 0x20).
 #include "cpu/sh4_intc.h"
+#include "debug/event_trace.h"
 
 #include "cpu/sh4_runtime.h"
 #include "pvr/holly_intc.h"
@@ -25,6 +26,7 @@ uint32_t g_intevt = 0;
 
 void take(Sh4Context* c, uint32_t intevt) {
     g_intevt     = intevt;
+    if (g_event_trace) event_trace(TraceEvent::Irq, c->cycles, intevt, c->pc);
     const uint32_t sr = sh4_get_sr(*c);
     c->ssr       = sr;
     c->spc       = c->pc;
@@ -33,12 +35,14 @@ void take(Sh4Context* c, uint32_t intevt) {
         std::fprintf(stderr, "[irq] aceita intevt=%03X spc=%08X ssr=%08X r15=%08X pr=%08X\n", intevt, c->spc, sr,
                      c->r[15], c->pr);
     sh4_set_sr(*c, sr | kSrMD | kSrRB | kSrBL);
-    const uint32_t saved = c->ret_expect, savedSp = c->ret_sp;
+    const uint32_t saved = c->ret_expect, savedSp = c->ret_sp, savedFn = c->cur_fn;
     c->ret_expect        = c->spc;  // o rte do tratador volta para SPC (BS_RTE confere)
     c->ret_sp            = c->sgr;  // com a pilha da thread interrompida
+    c->cur_fn            = 0;       // sonda: o despacho do tratador vem do runtime, nao da funcao interrompida
     sh4_dispatch(c, c->spc, c->vbr + 0x600);
     c->ret_expect = saved;
     c->ret_sp     = savedSp;
+    c->cur_fn     = savedFn;
 }
 
 // Entrega a interrupcao pendente de maior prioridade, se SR permitir.

@@ -6,8 +6,11 @@
 #include "cpu/sh4_runtime.h"
 
 // Entrada de funcao: rastreabilidade endereco SH-4 <-> funcao C++ (custo: um teste).
+// c->cur_fn (funcao corrente, salva/restaurada por BS_CALL) so e lido por diagnostico: a sonda
+// de hardware do N0 (debug/hw_probe) atribui cada acesso a funcao do guest que o fez.
 #define BS_FN_ENTER(addr)                                    \
     do {                                                     \
+        c->cur_fn = (addr);                                  \
         if (::bs::g_sh4_trace) ::bs::g_sh4_trace(c, (addr)); \
     } while (0)
 // Ciclos estimados de um trecho linear.
@@ -34,11 +37,13 @@
     do {                                            \
         const uint32_t saved_ret_ = c->ret_expect;  \
         const uint32_t saved_sp_  = c->ret_sp;      \
+        const uint32_t saved_fn_  = c->cur_fn;      \
         c->ret_expect             = (ret);          \
         c->ret_sp                 = c->r[15];       \
         call_expr;                                  \
         c->ret_expect = saved_ret_;                 \
         c->ret_sp     = saved_sp_;                  \
+        c->cur_fn     = saved_fn_;                  \
         if (c->redirect) return;                    \
         BS_POLL(ret);                               \
     } while (0)
@@ -50,12 +55,14 @@
     do {                                                \
         const uint32_t saved_ret_ = c->ret_expect;      \
         const uint32_t saved_sp_  = c->ret_sp;          \
+        const uint32_t saved_fn_  = c->cur_fn;          \
         const uint32_t call_sp_   = c->r[15];           \
         c->ret_expect             = (ret);              \
         c->ret_sp                 = call_sp_;           \
         call_expr;                                      \
         c->ret_expect = saved_ret_;                     \
         c->ret_sp     = saved_sp_;                      \
+        c->cur_fn     = saved_fn_;                      \
         if (c->redirect) {                              \
             if (c->r[15] == call_sp_) goto bs_reenter_; \
             return;                                     \

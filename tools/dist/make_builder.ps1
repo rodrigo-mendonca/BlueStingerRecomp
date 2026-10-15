@@ -61,7 +61,8 @@ Copy-Item (Join-Path $crt.FullName "*.dll") $stage
 $kit = Join-Path $stage "kit"
 # allowlist: so arquivos que o git versiona ou versionaria (rastreados + novos nao ignorados).
 # O que o .gitignore exclui (game-data, generated, ISO, ...) nunca entra (revisao Codex).
-$kitEntries = @("CMakeLists.txt", "LICENSE", "app", "runtime", "tools/extractor", "tools/dist/LEIA-ME.txt", "config")
+$kitEntries = @("CMakeLists.txt", "LICENSE", "app", "runtime", "tools/extractor", "tools/dist/LEIA-ME.txt", "config",
+                "tools/dcmap", "native", "legacy", "transitional")
 $kitList = @(git -C $repo -c core.quotepath=off ls-files --cached --others --exclude-standard -- @kitEntries)
 if ($LASTEXITCODE -ne 0 -or $kitList.Count -lt 20) { Fail "git ls-files falhou ou listou poucos arquivos ($($kitList.Count))" }
 foreach ($rel in $kitList) {

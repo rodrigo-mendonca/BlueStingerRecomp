@@ -16,6 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | **N0 implementado** (2026-10-15, sem commit): ver "N0: fundação do port nativo" e `docs/N0-RELATORIO.md`. Aguarda revisão e aprovação antes do N1. |
 
 ## Versão suportada
 
@@ -867,6 +868,113 @@ própria dos pontos pedidos:
 - **Totais**: 159 testes unitários; `ctest` 7/7 (com `runtime_data` e `analysis_real` no
   CDI real); `test_builder` 18/18; `test_preview` 9/9; `test_gameplay` 4/4;
   `test_projeto` 7/7.
+
+### N0: fundação do port nativo (2026-10-15)
+
+Autorização do mantenedor: plano v2 aprovado, **só o N0**. Commit autorizado e feito antes:
+`c1ab476`. O N0 está sem commit. Números, método e reprodução estão em
+`docs/N0-RELATORIO.md`.
+
+**Verificado (método):**
+- **Manifesto de hardware** (`bs-hwscan`, propagação de constantes por função sobre a
+  análise do tradutor):
+  - 625 referências estáticas (235 acessos, 390 constantes), **0 em funções do jogo**;
+  - sonda dinâmica (`BS_HW_PROBE`, roteiro NEW GAME, 8 000 VBlanks, build release):
+    1 592 acessos distintos, **0 do jogo**;
+  - falsos positivos conferidos no disassembly: `0xFF000000`/`0x80704820` como cor em
+    `8C0623C0`; `0xE0000000` guardado numa estrutura em `8C058720`.
+- **Identificação do SDK:**
+  - camada para 4 000 de 4 083 funções: jogo 1 365, SDK 2 635;
+  - família com evidência e confiança para 1 100: CRI 465, Shinobi 298, `sd` 82, Kamui 79,
+    Ninja 69, runtime C 23, BIOS 16, jogo por nome 68;
+  - 46 banners de módulo;
+  - assinaturas conferidas no disassembly: `__sdivsi3` (`8C08CF5C`), `rand` (`8C08D5D0`),
+    `njSin`/`njCos` com ângulo de 16 bits (`8C16FE00`/`8C16FE48`), funções de matriz do
+    Ninja (`8C1713A4`, `8C170DC8`).
+- **Fronteira e fechamento:**
+  - a fronteira declarada (`config/fronteiras_us.toml`) tem 267 entradas: 250 diretas e
+    17 indiretas, 45 observadas pela sonda;
+  - fechamento com 0 violações, estático e com a sonda;
+  - sem as arestas observadas sobravam 8 alvos indiretos (matemática/runtime C chamados por
+    ponteiro), e por isso a fronteira declarada junta os dois.
+- **Métricas:**
+  - o código gerado reproduz a seção 1.1 do plano: `BS_POLL` 2 287, `sh4_dispatch` 2 601,
+    FPU 71 999, `BS_CALL` 14 987;
+  - a catraca está em `config/metricas_base_us.toml`.
+- **Custo dos slots** (`BS_MODS` em todas as chamadas), alternado, 4 000 VBlanks: normal
+  20,20/20,09 ms por campo; slots 20,13/20,04. Sem diferença mensurável.
+- **Ordem de eventos** (`BS_EVENT_TRACE`, `tools/dist/test_ordem.ps1`, 3 000 VBlanks):
+  - duas execuções com trace idêntico (8/8);
+  - IRL 0x320 ×9 002, 0x360 ×2 982;
+  - 3 threads do guest, 14 880 trocas, 11 902 longjmp, rotina adiada `8C17DE4C` ×2 535.
+- **CDI fora do produto:** o alvo `bs_runtime_cdi` saiu do runtime. `n0_produto_sem_cdi`
+  confere o mapa do linker, e o caso negativo foi conferido à mão (mapa falso com `CdiImage`
+  → falha). A Preview remontada também não tem `CdiImage`.
+- **Comportamento inalterado, provado por diferencial determinístico:**
+  - build anterior ao N0 (`c1ab476`, worktree separada, mesmo `generated/`) × build final,
+    com o roteiro NEW GAME e dados de execução novos (`bs-extract --runtime`, conferidos setor
+    a setor);
+  - quadro final depois de exatamente N VBlanks (`--headless N --dump`), duas execuções de
+    cada;
+  - **idêntico bit a bit** em N = 1 500 / 3 000 / 4 500 / 6 000 (SHA-256 7C63431E…,
+    32CBE992…, 29508FDD…, B49D68E2…).
+  - Observação de método: `--dump-every` amostra de forma assíncrona (thread principal com
+    `Sleep(1)`). O mesmo build contra ele mesmo já difere nos nomes e em 1 quadro, então não
+    serve como medida. Comparando por nome, antes × depois deu 43 iguais e 0 diferentes.
+  - O trace de ordem do build final tem o mesmo SHA-256 de antes das correções da revisão
+    (`5047B269…`).
+- **Store queues** (`analysis/hwscan/sq_provavel.tsv`):
+  - as 260 funções com `pref` não resolvido e literal `0xE0000000` são todas do SDK, nenhuma
+    do jogo; 41 enviaram por SQ no roteiro;
+  - a sonda achou mais 12 funções com SQ que montam o endereço sem o literal (SDK ou sem
+    camada);
+  - destinos: FIFO do TA (26,1 M envios) e RAM (34,0 M). O jogo não usou SQ.
+- **Reprodutibilidade:** regenerar `config/fronteiras_us.toml` (com a sonda) e
+  `config/metricas_base_us.toml` dá arquivos idênticos byte a byte aos versionados: 267
+  entradas, 45 observadas.
+- **Risco mantido:** 1 443 alvos indiretos não resolvidos (`fechamento.indireto_nao_resolvido`,
+  com catraca). **Não** contam como cobertura comprovada.
+
+**Testes:**
+- 182 unitários (22 novos do N0, 5 deles da revisão);
+- `ctest` 11/11, com `real_disc`, `runtime_data` e `analysis_real` no CDI real e os novos
+  `n0_native_api`, `n0_native_limpo`, `n0_fechamento` (com caso negativo) e
+  `n0_produto_sem_cdi`.
+- Suítes de distribuição: rodadas duas vezes, antes e depois das correções da revisão. Na rodada final (código final,
+2026-10-15 08:19):
+  - `make_builder` e `make_preview` (Preview remontada pelo Builder com o kit novo) ok;
+  - `test_preview` 9/9; `test_gameplay` 4/4; `test_builder` 18/18;
+  - `test_projeto` 9/9: projeto editável, recompilar sem o CDI, mod C++, edição do gerado,
+    mod de arquivo, mod grande demais, remoção, reexportação.
+
+**Revisão do Codex:** Feita em 2026-10-15 (`reviews/codex-20261015-020129.md`, somente leitura, sem rodar
+build). Seis achados, **todos aceitos**, cada um com teste que o reproduz:
+
+| Gravidade | Achado | Decisão e correção |
+|---|---|---|
+| ALTA | O fechamento excluía as 1 615 funções do SDK com endereço só em dado; "0 violações" não as provava | Aceito. Elas viram `indireto_nao_resolvido` em `fechamento.tsv`: são alvos possíveis de chamada indireta do jogo, sem prova. A métrica `fechamento.indireto_nao_resolvido` (1 443 fora da fronteira) entrou na catraca, e o relatório foi corrigido ("nenhum caminho provado; fechamento ainda não completo"). Teste `n0_closure_reports_data_only_indirect_targets`. |
+| MÉDIA | `pref` de endereço calculado não entrava no alcance de hardware: entradas com SQ caíam em "sem hw" | Aceito. Função com `pref` não resolvido e literal `0xE0000000` conta como render (SQ provável: 260 funções, métrica `pref.sq_provavel.funcoes`). Teste `n0_unresolved_pref_with_sq_literal_reaches_render`. |
+| MÉDIA | `fmov` de memória fixado em 4 bytes, mas FPSCR.SZ=1 transfere 8 e incrementa 8 (manual SH-4; `sh4_ops.h`) | Aceito. O acesso é registrado com 8 bytes (pré-decremento em base-8) e o pós/pré-incremento invalida a base. Teste `n0_scan_fmov_size_depends_on_fpscr_sz`. |
+| MÉDIA | Voltar ao legado apagava um mod do usuário instalado antes | Aceito. O registro guarda o provedor anterior e o restaura; um mod instalado durante o nativo fica. Novo `sh4_lookup_generated` (aditivo). Teste `transitional_boundary_registry_preserves_user_mod`. |
+| MÉDIA | Depois de 4 095 gerações o handle antigo voltava a valer | Aceito. O índice com a geração esgotada é aposentado. Teste `transitional_handle_table_retires_exhausted_index`. |
+| MÉDIA | `IClock` em 60 Hz inteiro, mas o campo NTSC é 1001/60000 s (`game_host.cpp`, `pvr_regs.cpp`) | Aceito. `time::Rate` racional (60000/1001) com `frame_ns` exato: 60 000 campos = 1 001 s (`static_assert` em `n0_native_api`). |
+
+Pontos que o Codex conferiu sem problema:
+- delay slot antes do clobber de chamada;
+- `MOVW_PC` com sinal; `OR`/`AND #imm` só em r0;
+- deslocamentos por tamanho; `mov.l @r1+,r1`;
+- **nenhum `MOV*_GBR` no binário** (a falta de GBR no scanner não deixa falso negativo nesta
+  imagem);
+- `cur_fn` em chamadas, interrupções e fibras; reset do contador de VBlank;
+- `ram_offset` só área 3; separação do CDI no mapa;
+- interfaces viáveis com D3D11/XAudio2/Media Foundation.
+
+Não verificado pelo Codex (registrado no relatório):
+- a premissa "SDK não chama jogo diretamente, exceto a partida", fora das arestas
+  identificadas;
+- cobertura além da 1ª área.
+
+Depois das correções: 182 unitários, `ctest` 11/11. A fronteira e a base foram regeradas.
 
 ## Revisões independentes (Codex)
 

@@ -23,3 +23,19 @@ target_link_libraries(bs-recomp PRIVATE bs_recomp_lib)
 
 add_executable(bs-disasm app/disasm_main.cpp)
 target_link_libraries(bs-disasm PRIVATE bs_translator)
+
+# N0: varredura de dependencias de hardware (manifesto, grafo, bibliotecas, metricas).
+add_library(bs_hwscan STATIC
+  hwscan/hwscan.cpp
+  hwscan/sdkid.cpp
+  hwscan/closure.cpp
+  hwscan/metrics.cpp
+  hwscan/boundary_io.cpp
+  hwscan/pipeline.cpp
+  hwscan/probe.cpp
+)
+target_include_directories(bs_hwscan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/hwscan)
+target_link_libraries(bs_hwscan PUBLIC bs_translator bs_dcmap bs_recomp_lib PRIVATE tomlplusplus::tomlplusplus)
+
+add_executable(bs-hwscan hwscan/main.cpp)
+target_link_libraries(bs-hwscan PRIVATE bs_hwscan)

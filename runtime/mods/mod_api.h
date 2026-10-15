@@ -41,6 +41,9 @@ void set_slots(const Slot* slots, size_t count);
 // Troca a funcao do endereco SH-4 `addr` (chamadas diretas e indiretas). false se o
 // endereco nao e uma funcao recompilada.
 bool    replace(uint32_t addr, Sh4Func fn);
+// true se as chamadas diretas a `addr` passam por slot (build BS_MODS): replace() entao vale
+// para elas tambem; sem slot, so as indiretas mudam.
+bool    has_slot(uint32_t addr);
 // A funcao gerada original (para chamar de dentro da substituta). nullptr se nao existe.
 Sh4Func original(uint32_t addr);
 void    call_original(uint32_t addr, Sh4Context* c);  // fatal se nao existe

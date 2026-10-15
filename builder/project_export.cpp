@@ -13,8 +13,11 @@ namespace fs = std::filesystem;
 
 namespace bs::builder {
 
-const wchar_t* const kKitEntries[8] = {L"CMakeLists.txt", L"LICENSE", L"VERSION", L"app", L"runtime",
-                                       L"tools/extractor", L"tools/dist/LEIA-ME.txt", L"config"};
+// N0: tools/dcmap (mapa de regioes, usado pela sonda do runtime), native, legacy e transitional
+// sao alvos do CMake raiz e entram no kit.
+const wchar_t* const kKitEntries[12] = {L"CMakeLists.txt", L"LICENSE", L"VERSION", L"app", L"runtime",
+                                        L"tools/extractor", L"tools/dist/LEIA-ME.txt", L"config",
+                                        L"tools/dcmap", L"native", L"legacy", L"transitional"};
 
 namespace {
 

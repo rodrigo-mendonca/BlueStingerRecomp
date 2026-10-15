@@ -1,0 +1,2180 @@
+# Fronteira declarada entre o jogo e o SDK/hardware (N0, docs/N0-RELATORIO.md).
+# Gerada por bs-hwscan --fronteira-gerar; conferida por bs-hwscan --fronteira (teste
+# n0_fechamento). Uma chamada do jogo para fora desta lista e uma violacao.
+# provedor: "legado" (runtime atual) ou "nativo" (subsistema N1-N9 ja migrado).
+
+[[fronteira]]
+endereco = 0x8C010332
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C0103A0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 20
+
+[[fronteira]]
+endereco = 0x8C0105A0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C010660
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["arquivos", "tempo", "sistema"]
+provedor = "legado"
+chamadas = 12
+observada = true
+
+[[fronteira]]
+endereco = 0x8C0106F6
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 17
+
+[[fronteira]]
+endereco = 0x8C01073A
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 12
+
+[[fronteira]]
+endereco = 0x8C01077E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C010860
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 11
+
+[[fronteira]]
+endereco = 0x8C010878
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C010890
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 46
+
+[[fronteira]]
+endereco = 0x8C0108A0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 28
+
+[[fronteira]]
+endereco = 0x8C0108BE
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 28
+
+[[fronteira]]
+endereco = 0x8C0108D6
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 22
+
+[[fronteira]]
+endereco = 0x8C0108EE
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 55
+
+[[fronteira]]
+endereco = 0x8C010918
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 83
+
+[[fronteira]]
+endereco = 0x8C010960
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 138
+
+[[fronteira]]
+endereco = 0x8C010A00
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C010A26
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 13
+
+[[fronteira]]
+endereco = 0x8C010A50
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 25
+
+[[fronteira]]
+endereco = 0x8C010A76
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 24
+
+[[fronteira]]
+endereco = 0x8C010ACC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C010B40
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 25
+
+[[fronteira]]
+endereco = 0x8C010C36
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 28
+
+[[fronteira]]
+endereco = 0x8C010D20
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 20
+
+[[fronteira]]
+endereco = 0x8C010D3E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 41
+
+[[fronteira]]
+endereco = 0x8C010D54
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 32
+
+[[fronteira]]
+endereco = 0x8C010DC0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C010DEC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C010E42
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 17
+
+[[fronteira]]
+endereco = 0x8C010EB8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 16
+
+[[fronteira]]
+endereco = 0x8C010F00
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08B9E0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["controles", "render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08BA06
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["controles", "render"]
+provedor = "legado"
+chamadas = 34
+
+[[fronteira]]
+endereco = 0x8C08BA30
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["controles", "render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08BB40
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["arquivos", "tempo", "controles", "audio", "render", "sistema"]
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08BC92
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C08BDEC
+tipo = "direta"
+familia = "cri"
+subsistemas = ["tempo"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08C074
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08C07A
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08C112
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08C1FC
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08C636
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08C696
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C08C818
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08C8D4
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08CA34
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08CA5C
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08CC58
+tipo = "direta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08CF08
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 5
+
+[[fronteira]]
+endereco = 0x8C08CF40
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 7
+
+[[fronteira]]
+endereco = 0x8C08CF5C
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 243
+
+[[fronteira]]
+endereco = 0x8C08D010
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C08D0B8
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C08D108
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 61
+
+[[fronteira]]
+endereco = 0x8C08D1D0
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08D1DC
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 112
+
+[[fronteira]]
+endereco = 0x8C08D274
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08D334
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 11
+
+[[fronteira]]
+endereco = 0x8C08D36C
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08D3BC
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08D3CC
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 69
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D41C
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C08D428
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08D484
+tipo = "indireta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D4D4
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08D530
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 5
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D574
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 16
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D58C
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08D5AC
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C08D5D0
+tipo = "direta"
+familia = "runtime_c"
+subsistemas = []
+provedor = "legado"
+chamadas = 215
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D5FC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 10
+
+[[fronteira]]
+endereco = 0x8C08D638
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 8
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D658
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 10
+observada = true
+
+[[fronteira]]
+endereco = 0x8C08D66C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C08D67C
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+
+[[fronteira]]
+endereco = 0x8C157F60
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+observada = true
+
+[[fronteira]]
+endereco = 0x8C157F6C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["arquivos", "tempo", "audio", "render", "sistema"]
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C157FC4
+tipo = "direta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "render", "sistema"]
+provedor = "legado"
+nome = "mwPlyCreateSofdec"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1580E4
+tipo = "indireta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "render", "sistema"]
+provedor = "legado"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15814A
+tipo = "indireta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "sistema"]
+provedor = "legado"
+nome = "mwPlyStartFname"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C158250
+tipo = "indireta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "sistema"]
+provedor = "legado"
+nome = "mwSfdStop"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C1582C0
+tipo = "indireta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+nome = "mwSfdGetStat"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C158B70
+tipo = "direta"
+familia = "cri"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+nome = "mwPlyInitSofdec"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C158D42
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C158D92
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C158DAE
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C158E78
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C158E98
+tipo = "direta"
+familia = "cri"
+subsistemas = ["tempo"]
+provedor = "legado"
+nome = "PlyInitWav"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C158FC4
+tipo = "direta"
+familia = "cri"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+nome = "PlyCreateWav"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C159134
+tipo = "indireta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "sistema"]
+provedor = "legado"
+nome = "PlyWavDestroy"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C1591C8
+tipo = "indireta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "sistema"]
+provedor = "legado"
+nome = "PlyWavStartFname"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C1592A0
+tipo = "indireta"
+familia = "cri"
+subsistemas = ["arquivos", "tempo", "audio", "sistema"]
+provedor = "legado"
+nome = "PlyWavStop"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C159340
+tipo = "indireta"
+familia = "cri"
+subsistemas = []
+provedor = "legado"
+nome = "PlyWavGetStat"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15B626
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["arquivos", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15B644
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["arquivos", "tempo"]
+provedor = "legado"
+chamadas = 5
+
+[[fronteira]]
+endereco = 0x8C15B680
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 5
+
+[[fronteira]]
+endereco = 0x8C15B774
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["arquivos", "sistema"]
+provedor = "legado"
+chamadas = 5
+
+[[fronteira]]
+endereco = 0x8C15BF60
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15BFE8
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15C016
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["arquivos"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15C02E
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15C668
+tipo = "indireta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15C81A
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 11
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15C8D6
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 33
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15CBDE
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15D17C
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["tempo"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15D534
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15D5A0
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15D818
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15D844
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15D91C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15D980
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C15DA7C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15DB64
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15DBAC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15DC40
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15DCC0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 5
+
+[[fronteira]]
+endereco = 0x8C15DD40
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15DDA4
+tipo = "direta"
+familia = "som_sd"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+nome = "sd_multi_unit_download_"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15DF44
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15E038
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15E088
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15E11C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15E19C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15E208
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15E26C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E2B8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E308
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15E3F0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15E478
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E534
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["audio", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E5BC
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E6D8
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["controles", "render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E73C
+tipo = "direta"
+familia = "shinobi"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E85C
+tipo = "direta"
+familia = "shinobi"
+subsistemas = ["sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E880
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C15E8A6
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C15E8BC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["saves", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C15E92C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["saves", "sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C15E9C4
+tipo = "direta"
+familia = "bios"
+subsistemas = ["sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C15E9FC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["arquivos", "tempo", "sistema"]
+provedor = "legado"
+chamadas = 6
+
+[[fronteira]]
+endereco = 0x8C15EA4E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+
+[[fronteira]]
+endereco = 0x8C15EA7A
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 10
+
+[[fronteira]]
+endereco = 0x8C15ECF0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15ED42
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15EE02
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C15EE44
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 24
+
+[[fronteira]]
+endereco = 0x8C15EEAA
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15EF0C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 19
+
+[[fronteira]]
+endereco = 0x8C15EF72
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 19
+
+[[fronteira]]
+endereco = 0x8C15EFCE
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15F856
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 5
+observada = true
+
+[[fronteira]]
+endereco = 0x8C15F8B8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 22
+
+[[fronteira]]
+endereco = 0x8C15F948
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15F980
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C15F98E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C1601FE
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C160214
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C160C12
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+observada = true
+
+[[fronteira]]
+endereco = 0x8C161408
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C161440
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16144E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C161722
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+
+[[fronteira]]
+endereco = 0x8C161738
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C161BA0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C161F86
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C161FCC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16201E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+observada = true
+
+[[fronteira]]
+endereco = 0x8C1620DE
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C162120
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 24
+
+[[fronteira]]
+endereco = 0x8C162186
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C1621E8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 19
+
+[[fronteira]]
+endereco = 0x8C16224E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 19
+
+[[fronteira]]
+endereco = 0x8C1622AA
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C162DFE
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+
+[[fronteira]]
+endereco = 0x8C162E20
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C162E60
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C163108
+tipo = "indireta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+
+[[fronteira]]
+endereco = 0x8C163168
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+observada = true
+
+[[fronteira]]
+endereco = 0x8C166AC8
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C166E14
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 5
+
+[[fronteira]]
+endereco = 0x8C168FC4
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C168FF4
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C169024
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1692A0
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1692BC
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1692CC
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 14
+observada = true
+
+[[fronteira]]
+endereco = 0x8C16938C
+tipo = "direta"
+familia = "ninja"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16C4F4
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16CED8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 13
+observada = true
+
+[[fronteira]]
+endereco = 0x8C16E79C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16E850
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16EE64
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16F14C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16F2CC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16F300
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16F364
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 7
+
+[[fronteira]]
+endereco = 0x8C16F36C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 7
+
+[[fronteira]]
+endereco = 0x8C16F924
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+
+[[fronteira]]
+endereco = 0x8C16FBD8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16FBE8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16FBF8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FC64
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FCC8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16FD20
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16FD80
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C16FDA8
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FDE0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FDF0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FE00
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 104
+observada = true
+
+[[fronteira]]
+endereco = 0x8C16FE24
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16FE48
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 102
+observada = true
+
+[[fronteira]]
+endereco = 0x8C16FE54
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 36
+observada = true
+
+[[fronteira]]
+endereco = 0x8C16FE84
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FE94
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 20
+observada = true
+
+[[fronteira]]
+endereco = 0x8C16FEF0
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C16FF5C
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C16FF88
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C170034
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C17083C
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C170A10
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 26
+
+[[fronteira]]
+endereco = 0x8C170A54
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 8
+
+[[fronteira]]
+endereco = 0x8C170AE8
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 26
+
+[[fronteira]]
+endereco = 0x8C170B60
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 22
+
+[[fronteira]]
+endereco = 0x8C170D34
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 25
+
+[[fronteira]]
+endereco = 0x8C170DC8
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 33
+
+[[fronteira]]
+endereco = 0x8C170E64
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 17
+
+[[fronteira]]
+endereco = 0x8C170F00
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C171284
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 8
+
+[[fronteira]]
+endereco = 0x8C171330
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 4
+
+[[fronteira]]
+endereco = 0x8C1713A4
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 52
+observada = true
+
+[[fronteira]]
+endereco = 0x8C17140C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 20
+
+[[fronteira]]
+endereco = 0x8C171478
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 3
+
+[[fronteira]]
+endereco = 0x8C17149C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1714CC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 13
+
+[[fronteira]]
+endereco = 0x8C1714D2
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C1714DC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 38
+observada = true
+
+[[fronteira]]
+endereco = 0x8C172432
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C172576
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+observada = true
+
+[[fronteira]]
+endereco = 0x8C172584
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C172D22
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173044
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "render", "sistema"]
+provedor = "legado"
+chamadas = 1
+observada = true
+
+[[fronteira]]
+endereco = 0x8C1730D4
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173150
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173500
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "sistema"]
+provedor = "legado"
+chamadas = 37
+observada = true
+
+[[fronteira]]
+endereco = 0x8C17369A
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1736A0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["tempo", "render", "sistema"]
+provedor = "legado"
+chamadas = 8
+
+[[fronteira]]
+endereco = 0x8C173AE6
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173B9E
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+observada = true
+
+[[fronteira]]
+endereco = 0x8C173BE0
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173C58
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["render", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173D08
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["arquivos", "tempo", "sistema"]
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173DB4
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 11
+observada = true
+
+[[fronteira]]
+endereco = 0x8C173E2C
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173E42
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173E6A
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C173E90
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = ["arquivos", "tempo", "render", "sistema"]
+provedor = "legado"
+chamadas = 18
+
+[[fronteira]]
+endereco = 0x8C173EDA
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 43
+
+[[fronteira]]
+endereco = 0x8C173F18
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 10
+
+[[fronteira]]
+endereco = 0x8C174098
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1740DC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+
+[[fronteira]]
+endereco = 0x8C174148
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C174180
+tipo = "direta"
+familia = "ninja"
+subsistemas = []
+provedor = "legado"
+chamadas = 1
+
+[[fronteira]]
+endereco = 0x8C1741BC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2
+
+[[fronteira]]
+endereco = 0x8C1741D4
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+
+[[fronteira]]
+endereco = 0x8C1741EC
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 6
+
+[[fronteira]]
+endereco = 0x8C174308
+tipo = "direta"
+familia = "desconhecida"
+subsistemas = []
+provedor = "legado"
+chamadas = 2

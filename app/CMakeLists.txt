@@ -46,6 +46,8 @@ if(BS_BUILD_GAME AND TARGET bs_generated)
     message(STATUS "mods: ${BS_MOD_SOURCES}")
   endif()
   if(MSVC)
-    target_link_options(bluestinger PRIVATE /ENTRY:mainCRTStartup)
+    # mapa do linker (so no diretorio de build; o Builder copia apenas o .exe): o teste
+    # n0_produto_sem_cdi confere que a leitura de CDI nao entrou no produto
+    target_link_options(bluestinger PRIVATE /ENTRY:mainCRTStartup "/MAP:$<TARGET_FILE_DIR:bluestinger>/bluestinger.map")
   endif()
 endif()

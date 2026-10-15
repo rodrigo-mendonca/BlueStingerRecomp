@@ -7,6 +7,7 @@
 // Os eventos sao avaliados de forma preguicosa: a cada acesso, os cruzamentos de
 // linha entre o ultimo acesso e `c->cycles` acendem os bits correspondentes.
 #include "pvr/holly_intc.h"
+#include "debug/event_trace.h"
 
 #include "pvr/pvr_regs.h"
 #include "maple/maple.h"
@@ -31,10 +32,13 @@ uint64_t                        g_last = 0;
 uint32_t& reg(uint32_t a) { return g_regs[(a - kBase) / 4]; }
 uint32_t  canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 
+uint64_t g_vblanks = 0;  // contagem de VBlank-In (trace de ordem)
+
 void update(uint64_t now) {
     if (now <= g_last) return;
     const bool vblankIn = pvr_spg_crossed(g_last, now, pvr_vblank_in_line());
     if (vblankIn) reg(kIstNrm) |= kIstVblankIn;
+    if (vblankIn && g_event_trace) event_trace(TraceEvent::VBlank, now, uint32_t(++g_vblanks));
     if (pvr_spg_crossed(g_last, now, pvr_vblank_out_line())) reg(kIstNrm) |= kIstVblankOut;
     // fim de render agendado pelo STARTRENDER: bits 0 (video), 1 (ISP), 2 (TSP)
     if (const uint64_t due = pvr_render_done_due(); due && now >= due) {
@@ -71,7 +75,8 @@ uint32_t holly_irl_level(uint64_t cycles) {
 
 void holly_intc_reset(uint64_t cycles) {
     g_regs.fill(0);
-    g_last = cycles;
+    g_last    = cycles;
+    g_vblanks = 0;
 }
 
 bool holly_intc_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {

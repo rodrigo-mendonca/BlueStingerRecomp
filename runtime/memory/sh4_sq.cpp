@@ -7,6 +7,8 @@
 // O boot do jogo escreve vertices/matrizes (floats) e os envia assim.
 #include "memory/sh4_sq.h"
 
+#include "debug/hw_probe.h"
+
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 #include "pvr/ta.h"
@@ -61,6 +63,7 @@ bool sh4_sq_write(uint32_t a, unsigned size, uint32_t v) {
 void sh4_sq_flush(Sh4Context* c, uint32_t addr) {
     const uint32_t* q      = g_sq[(addr >> 5) & 1];
     const uint32_t  target = sh4_sq_target(addr);
+    if (g_hw_probe) hw_probe_access(c, target, 32, ProbeKind::StoreQueue);
     if ((target & 0x1C000000) == 0x0C000000) {  // area 3: RAM
         for (int i = 0; i < 8; ++i) sh4_write32(c, target + 4 * i, q[i]);
         return;

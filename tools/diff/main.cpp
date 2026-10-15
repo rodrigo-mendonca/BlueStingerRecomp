@@ -30,6 +30,7 @@
 #include "gdrom/image_source.h"
 #include "hle/bios.h"
 #include "hle/flashrom.h"
+#include "boot/disc_boot.h"
 #include "boot/native_boot.h"
 #include "input/input.h"
 #include "cpu/sh4_threads.h"

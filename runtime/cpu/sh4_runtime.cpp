@@ -5,6 +5,7 @@
 
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
+#include "debug/hw_probe.h"
 #include "gdrom/gdrom.h"
 #include "pvr/holly_intc.h"
 
@@ -61,9 +62,19 @@ Sh4Func sh4_lookup(uint32_t addr) {
     return h != g_hle.end() ? h->second : nullptr;
 }
 
+Sh4Func sh4_lookup_generated(uint32_t addr) {
+    const uint32_t p  = sh4_phys(addr);
+    const auto*    it = std::lower_bound(g_table, g_table + g_count, p,
+                                         [](const Sh4FuncEntry& e, uint32_t v) { return e.addr < v; });
+    if (it != g_table + g_count && it->addr == p) return it->fn;
+    const auto h = g_hle.find(p);
+    return h != g_hle.end() ? h->second : nullptr;
+}
+
 void sh4_register_hle(uint32_t addr, Sh4Func fn) { g_hle[sh4_phys(addr)] = fn; }
 
 void sh4_dispatch(Sh4Context* c, uint32_t from_pc, uint32_t target) {
+    if (g_hw_probe) hw_probe_dispatch(c, target);
     if (Sh4Func f = sh4_lookup(target)) {
         f(c);
         return;

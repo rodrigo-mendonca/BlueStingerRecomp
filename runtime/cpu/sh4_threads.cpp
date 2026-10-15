@@ -1,6 +1,7 @@
 #include "cpu/sh4_threads.h"
 
 #include "cpu/sh4_runtime.h"
+#include "debug/event_trace.h"
 
 #include <algorithm>
 #include <atomic>
@@ -25,6 +26,7 @@ struct Thread {
     int      depth = 0;  // continuacoes aninhadas na pilha desta fibra
     uint32_t entry = 0;  // thread nova: primeira instrucao
     uint32_t redirect = 0;  // retomada por longjmp: ponto de retorno do setjmp
+    uint32_t curFn = 0;     // c->cur_fn ao suspender (sonda N0: atribuicao por thread)
 };
 
 // Estado por thread do host: as threads do guest pertencem a thread do host que executa
@@ -66,18 +68,21 @@ void ensureMain(Sh4Context* c) {
 
 // Suspende a thread atual (retomada em resumePc/resumeSp) e passa a `next`.
 void switchTo(Sh4Context* c, size_t next) {
+    if (g_event_trace) event_trace(TraceEvent::ThreadSwitch, c->cycles, uint32_t(g_current), uint32_t(next));
     Thread& cur   = g_threads[g_current];
     cur.suspended = true;
     cur.resumePc  = c->ret_expect;
     cur.resumeSp  = c->ret_sp;
     cur.retExpect = c->ret_expect;
     cur.retSp     = c->ret_sp;
+    cur.curFn     = c->cur_fn;
     const size_t self = g_current;
     g_current         = next;
     Thread& n         = g_threads[next];
     n.suspended       = false;
     c->ret_expect     = n.retExpect;
     c->ret_sp         = n.retSp;
+    c->cur_fn         = n.curFn;
     SwitchToFiber(n.fiber);
     // retomada: alguem fez rte para resumePc/resumeSp desta thread (ou uma fibra que
     // terminou com erro devolveu o controle a thread 0)
@@ -87,6 +92,7 @@ void switchTo(Sh4Context* c, size_t next) {
     sh4_apply_host_fp_mode(c->fpscr);
     c->ret_expect = g_threads[self].retExpect;
     c->ret_sp     = g_threads[self].retSp;
+    c->cur_fn     = g_threads[self].curFn;
     // retomada por longjmp: os quadros sobem ate o que chamou o setjmp (BS_CALL_REENTRANT)
     c->redirect = std::exchange(g_threads[self].redirect, 0u);
     if (g_pending) std::rethrow_exception(std::exchange(g_pending, nullptr));
@@ -124,6 +130,7 @@ void startThread(Sh4Context* c, uint32_t pc, uint32_t target) {
     ++g_liveFibers;
     g_threads.push_back(t);
     if (debugOn()) std::fprintf(stderr, "[thread] nova thread %zu em %08X r15=%08X\n", id, target, sp);
+    if (g_event_trace) event_trace(TraceEvent::ThreadNew, c->cycles, uint32_t(id), target);
     switchTo(c, id);
 }
 
@@ -168,6 +175,7 @@ void sh4_rte_redirect(Sh4Context* c, uint32_t pc, uint32_t target) {
     if (sp == c->ret_sp) {  // mesma thread: continuacao (rotina adiada da interrupcao)
         Thread& cur = g_threads[g_current];
         if (cur.depth >= 64) sh4_fatal(c, "continuacoes de rte aninhadas demais", pc, target);
+        if (g_event_trace) event_trace(TraceEvent::RteContinue, c->cycles, target);
         ++cur.depth;
         sh4_dispatch(c, pc, target);
         --g_threads[g_current].depth;
@@ -198,6 +206,7 @@ void sh4_longjmp_redirect(Sh4Context* c, uint32_t pc, uint32_t target) {
         if (n == 0) sh4_fatal(c, "longjmp para retorno de setjmp sem thread suspensa com esse R15", pc, target);
         if (n > 1) sh4_fatal(c, "longjmp ambiguo: mais de uma thread suspensa com esse R15", pc, target);
         g_threads[found].redirect = target;
+        if (g_event_trace) event_trace(TraceEvent::Longjmp, c->cycles, target, uint32_t(found));
         switchTo(c, found);
         return;
     }

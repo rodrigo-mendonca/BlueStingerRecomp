@@ -5,6 +5,7 @@
 #include "cpu/sh4_runtime.h"
 #include "aica/aica_regs.h"
 #include "cpu/sh4_intc.h"
+#include "debug/hw_probe.h"
 #include "memory/sh4_ccn.h"
 #include "memory/sh4_dmac.h"
 #include "memory/sh4_port.h"
@@ -65,32 +66,38 @@ bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
 } // namespace
 
 uint8_t sh4_read8_slow(Sh4Context* c, uint32_t a) {
+    if (g_hw_probe) hw_probe_access(c, a, 1, ProbeKind::Read);
     if (uint32_t v; hwRead(c, a, 1, v)) return uint8_t(v);
     unmapped("read8", a, 0);
     return 0;
 }
 uint16_t sh4_read16_slow(Sh4Context* c, uint32_t a) {
+    if (g_hw_probe) hw_probe_access(c, a, 2, ProbeKind::Read);
     if (a & 1) sh4_address_error(c, a, false);
     if (uint32_t v; hwRead(c, a, 2, v)) return uint16_t(v);
     unmapped("read16", a, 0);
     return 0;
 }
 uint32_t sh4_read32_slow(Sh4Context* c, uint32_t a) {
+    if (g_hw_probe) hw_probe_access(c, a, 4, ProbeKind::Read);
     if (a & 3) sh4_address_error(c, a, false);
     if (uint32_t v; hwRead(c, a, 4, v)) return v;
     unmapped("read32", a, 0);
     return 0;
 }
 void sh4_write8_slow(Sh4Context* c, uint32_t a, uint8_t v) {
+    if (g_hw_probe) hw_probe_access(c, a, 1, ProbeKind::Write);
     if (hwWrite(c, a, 1, v)) return;
     unmapped("write8", a, v);
 }
 void sh4_write16_slow(Sh4Context* c, uint32_t a, uint16_t v) {
+    if (g_hw_probe) hw_probe_access(c, a, 2, ProbeKind::Write);
     if (a & 1) sh4_address_error(c, a, true);
     if (hwWrite(c, a, 2, v)) return;
     unmapped("write16", a, v);
 }
 void sh4_write32_slow(Sh4Context* c, uint32_t a, uint32_t v) {
+    if (g_hw_probe) hw_probe_access(c, a, 4, ProbeKind::Write);
     if (a & 3) sh4_address_error(c, a, true);
     if (hwWrite(c, a, 4, v)) return;
     unmapped("write32", a, v);

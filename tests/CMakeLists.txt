@@ -22,9 +22,11 @@ add_executable(bs_unit_tests
   unit/test_builder.cpp
   unit/test_runtime_data.cpp
   unit/test_mods.cpp
+  unit/test_n0.cpp
+  unit/test_transitional.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
-target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core)
+target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core bs_hwscan bs_transitional)
 add_test(NAME unit COMMAND bs_unit_tests)
 
 # Usa a imagem do usuario se BS_DISC_IMAGE estiver definido; senao, SKIP.
@@ -36,13 +38,13 @@ set_tests_properties(real_disc PROPERTIES SKIP_RETURN_CODE 77)
 
 # Dados de execucao (o jogo sem o CDI) a partir da imagem real; SKIP sem BS_DISC_IMAGE.
 add_executable(bs_runtime_data_test data/test_runtime_data_disc.cpp)
-target_link_libraries(bs_runtime_data_test PRIVATE bs_runtime)
+target_link_libraries(bs_runtime_data_test PRIVATE bs_runtime bs_runtime_cdi)
 add_test(NAME runtime_data COMMAND bs_runtime_data_test WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(runtime_data PROPERTIES SKIP_RETURN_CODE 77)
 
 # Analise do executavel real (regressao do NEW GAME); SKIP sem BS_DISC_IMAGE.
 add_executable(bs_analysis_real_test data/test_analysis_real.cpp)
-target_link_libraries(bs_analysis_real_test PRIVATE bs_recomp_lib bs_runtime)
+target_link_libraries(bs_analysis_real_test PRIVATE bs_recomp_lib bs_runtime bs_runtime_cdi)
 add_test(NAME analysis_real COMMAND bs_analysis_real_test WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(analysis_real PROPERTIES SKIP_RETURN_CODE 77)
 
@@ -62,3 +64,22 @@ foreach(inline 0 1)
   target_link_libraries(bs_codegen_exec_${inline} PRIVATE bs_runtime)
   add_test(NAME codegen_exec_${inline} COMMAND bs_codegen_exec_${inline})
 endforeach()
+
+# N0: interfaces nativas compilam sozinhas e nao dependem do Dreamcast.
+add_test(NAME n0_native_api COMMAND bs_native_api_check)
+add_test(NAME n0_native_limpo COMMAND ${CMAKE_COMMAND} -DROOT=${PROJECT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/n0/check_native_clean.cmake)
+
+# N0: fechamento da fronteira declarada e catraca das metricas sobre o 1ST_READ.BIN real
+# (game-data/, de bs-extract); SKIP sem ele. Falha se o jogo passar a chamar o SDK fora de
+# config/fronteiras_us.toml, acessar hardware, ou se uma metrica de dependencia piorar.
+add_test(NAME n0_fechamento
+         COMMAND ${CMAKE_COMMAND} -DHWSCAN=$<TARGET_FILE:bs-hwscan> -DROOT=${PROJECT_SOURCE_DIR}
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/n0_hwscan -P ${CMAKE_CURRENT_SOURCE_DIR}/n0/run_fechamento.cmake)
+set_tests_properties(n0_fechamento PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
+
+# N0: a leitura de CDI fica fora do produto (alvo bs_runtime_cdi); conferido no mapa do linker.
+if(TARGET bluestinger AND MSVC)
+  add_test(NAME n0_produto_sem_cdi
+           COMMAND ${CMAKE_COMMAND} -DMAP=$<TARGET_FILE_DIR:bluestinger>/bluestinger.map
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/n0/check_product_map.cmake)
+endif()

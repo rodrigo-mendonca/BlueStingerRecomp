@@ -58,6 +58,8 @@ bool replace(uint32_t addr, Sh4Func fn) {
     return true;
 }
 
+bool has_slot(uint32_t addr) { return find(addr) != nullptr; }
+
 Sh4Func original(uint32_t addr) {
     if (const Slot* s = find(addr)) return s->original;
     return nullptr;

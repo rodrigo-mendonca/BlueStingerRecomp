@@ -1,6 +1,7 @@
 #include "builder_core.h"
 
 #include "app/recomp.h"
+#include "boot/disc_boot.h"
 #include "boot/native_boot.h"
 #include "child_process.h"
 #include "project_export.h"
@@ -246,7 +247,9 @@ void syncTree(const fs::path& from, const fs::path& to) {
 std::string check_kit(const fs::path& kit, const fs::path& sdl3) {
     std::error_code ec;
     for (const wchar_t* f : {L"CMakeLists.txt", L"LICENSE", L"config/bluestinger_us.toml", L"app/CMakeLists.txt",
-                             L"runtime/CMakeLists.txt", L"tools/extractor/CMakeLists.txt", L"tools/dist/LEIA-ME.txt"})
+                             L"runtime/CMakeLists.txt", L"tools/extractor/CMakeLists.txt", L"tools/dist/LEIA-ME.txt",
+                             L"tools/dcmap/CMakeLists.txt", L"native/CMakeLists.txt", L"legacy/CMakeLists.txt",
+                             L"transitional/CMakeLists.txt"})
         if (!fs::is_regular_file(kit / f, ec)) return "kit de fontes incompleto: falta " + path_text(kit / f);
     if (!fs::is_regular_file(sdl3 / L"CMakeLists.txt", ec))
         return "fontes do SDL3 nao encontradas em " + path_text(sdl3);
