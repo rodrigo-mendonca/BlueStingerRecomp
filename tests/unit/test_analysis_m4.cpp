@@ -140,3 +140,36 @@ BS_TEST(analysis_pointer_candidate_rejects_push_off_stack) {
     BS_CHECK(!a.functions.count(0x8C010010));
     BS_CHECK(a.stats.dead_ends == 0);
 }
+
+// Regressao do NEW GAME (PC 8C1953E2 desviava para 8C194580, "rts; mov #0,r0", metodo de uma
+// vtable em 8C1DBF58 que o analisador nao conhecia): numa tabela de ponteiros em dado com
+// >= 3 entradas e >= 2 funcoes ja conhecidas, as outras entradas viram funcoes mesmo sendo
+// folhas de 2 instrucoes. Sem a evidencia da tabela (1 conhecida), nada muda.
+BS_TEST(analysis_pointer_table_finds_short_methods) {
+    auto prog = [](bool twoKnown) {
+        return image({
+            0xB006, 0x0009,  // 8C010000 bsr F1 (8C010010); nop
+            0xB006, 0x0009,  // 8C010004 bsr F2 (8C010014); nop
+            0x000B, 0x0009,  // 8C010008 rts; nop
+            0x0009, 0x0009,  // 8C01000C padding
+            0x000B, 0xE001,  // 8C010010 F1: rts; mov #1,r0
+            0x000B, 0xE002,  // 8C010014 F2: rts; mov #2,r0
+            0x000B, 0xE000,  // 8C010018 S1: rts; mov #0,r0 (so na tabela)
+            0x000B, 0xE005,  // 8C01001C S2: rts; mov #5,r0 (so na tabela)
+            // 8C010020 tabela: F1, S1, F2|S2, S2
+            0x0010, 0x8C01, 0x0018, 0x8C01, uint16_t(twoKnown ? 0x0014 : 0x001C), 0x8C01, 0x001C, 0x8C01,
+            0xFFFF, 0xFFFF,  // fim da tabela
+        });
+    };
+    analysis::Config cfg;
+    cfg.entry              = kBase;
+    cfg.pointer_candidates = false;
+    cfg.data_pointers      = true;
+    const auto a = analysis::analyze(prog(true), cfg);
+    BS_CHECK(a.functions.count(0x8C010018) && a.functions.at(0x8C010018).origin == analysis::Origin::PointerTable);
+    BS_CHECK(a.functions.count(0x8C01001C));
+    BS_CHECK(a.stats.dead_ends == 0 && a.stats.orphans == 0);
+    // so uma funcao conhecida na tabela: sem evidencia suficiente, as folhas curtas ficam de fora
+    const auto b = analysis::analyze(prog(false), cfg);
+    BS_CHECK(!b.functions.count(0x8C010018) && !b.functions.count(0x8C01001C));
+}

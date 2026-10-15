@@ -1,25 +1,20 @@
-Blue Stinger (recompilado) - Preview para testes
-================================================
+Blue Stinger (recompilado)
+==========================
 
 O que e
 -------
-Versao nativa para Windows x64 do Blue Stinger (Dreamcast, NTSC-U T13001N V1.000),
-gerada por recompilacao estatica do codigo SH-4 do jogo para C++. Nao e um emulador:
-o codigo do jogo roda como codigo nativo, com um runtime proprio para o hardware.
+Versao nativa para Windows x64 do Blue Stinger (Dreamcast, NTSC-U T13001N V1.000), gerada
+na sua maquina pelo Blue Stinger Builder: o codigo SH-4 do jogo foi recompilado para C++ e
+compilado com o runtime nativo. Nao e um emulador.
 
-Esta pasta NAO contem dados do jogo. E preciso a sua propria imagem CDI do Blue Stinger
-NTSC-U. O executavel, porem, contem codigo gerado a partir da sua copia: use apenas
-localmente e nao publique esta pasta.
+Esta pasta e a SUA instalacao privada: o executavel contem codigo derivado da sua copia do
+jogo, e a pasta data\ contem os arquivos do seu disco. Use apenas localmente e nao publique.
 
 Como executar
 -------------
-1. De dois cliques em BlueStinger.exe.
-2. Na primeira vez, escolha o arquivo .cdi do jogo. Ele fica lembrado em
-   bluestinger.ini (nesta pasta, ou em %LOCALAPPDATA%\BlueStingerRecomp se a pasta
-   for somente leitura).
-   Tambem da para passar a imagem na linha de comando:
-       BlueStinger.exe "D:\Jogos\Blue Stinger.cdi"
-3. A imagem e conferida antes de iniciar (so a versao NTSC-U V1.000 e aceita).
+De dois cliques em BlueStinger.exe. O CDI NAO e mais necessario: o jogo usa a pasta data\
+(preparada pelo Builder a partir do seu CDI e conferida setor a setor). A pasta inteira pode
+ser movida para outro lugar.
 
 Controles (teclado; controle XInput tambem funciona)
 ---------------------------------------------------
@@ -31,20 +26,24 @@ Controles (teclado; controle XInput tambem funciona)
   Tela cheia ....... F11
 Mapa proprio: BlueStinger.exe --map meu_mapa.txt (linhas "BOTAO = TECLA").
 
-Registro
---------
-bluestinger.log (na mesma pasta do bluestinger.ini). Anexe-o ao relatar problemas.
+Dados e problemas
+-----------------
+- BlueStinger.exe --verify-data confere o SHA-256 de todos os arquivos de data\.
+- Se faltar algum arquivo de data\, o jogo diz qual e como resolver (gerar de novo com o
+  Builder). Nao edite os arquivos de data\: eles sao gerenciados pelo Builder.
+- Registro: bluestinger.log nesta pasta (ou em %LOCALAPPDATA%\BlueStingerRecomp se a pasta
+  for somente leitura). Anexe-o ao relatar problemas.
+- Versao anterior: o Builder guarda a instalacao anterior em BlueStinger.anterior (ao lado
+  desta pasta). Para voltar, renomeie as pastas.
 
-Limitacoes conhecidas desta Preview
------------------------------------
+Limitacoes conhecidas
+---------------------
 - Sem audio.
 - Sem VMU: o jogo avisa "VMU not found" e nao salva.
-- Testado ate o menu principal (NEW GAME / LOAD GAME / OPTIONS). Iniciar uma partida
-  ainda nao foi validado.
-- Renderizacao em software: quedas de ritmo em cenas com muitas camadas transparentes
-  (por exemplo, a abertura do titulo) e no carregamento.
+- Renderizacao em software: quedas de ritmo em cenas com muitas camadas transparentes.
 - Controle XInput sem teste com controle fisico.
 - Diferencas visuais pequenas em relacao ao hardware (sem dither; bordas de texto).
+- A partida (NEW GAME) esta em validacao; veja STATUS.md do projeto.
 
 Requisitos
 ----------

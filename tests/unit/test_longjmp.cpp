@@ -273,7 +273,7 @@ BS_TEST(codegen_setjmp_return_is_reentry_label) {
     opt.setjmp_funcs  = {0x8C010010};
     opt.longjmp_funcs = {0x8C010014};
     const std::string m = codegen::emitFunction(img, a, a.functions.at(0x8C010000), opt);
-    BS_CHECK(m.find("BS_CALL_REENTRANT(f_8C010010(c), 0x8C010004u)") != std::string::npos);
+    BS_CHECK(m.find("BS_CALL_REENTRANT(BSG_FN(8C010010)(c), 0x8C010004u)") != std::string::npos);
     BS_CHECK(m.find("L_8C010004:;") != std::string::npos);
     BS_CHECK(m.find("case 0x8C010004u: c->redirect = 0; goto L_8C010004;") != std::string::npos);
     BS_CHECK(m.find("default: return;") != std::string::npos);

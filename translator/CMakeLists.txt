@@ -15,6 +15,7 @@ target_include_directories(bs_translator PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Analise + geracao como biblioteca: bs-recomp e o Builder.
 add_library(bs_recomp_lib STATIC app/config.cpp app/recomp.cpp)
+target_include_directories(bs_recomp_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(bs_recomp_lib PUBLIC bs_translator PRIVATE tomlplusplus::tomlplusplus)
 
 add_executable(bs-recomp app/main.cpp)

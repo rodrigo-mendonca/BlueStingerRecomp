@@ -31,6 +31,7 @@
 #include "pvr/pvr_regs.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
+#include "runtime_data.h"
 #include "util/hash.h"
 
 #include <cstring>
@@ -76,6 +77,32 @@ BootFiles boot_read_disc(const std::filesystem::path& image) {
     } catch (const disc::DiscError& err) {
         throw std::runtime_error(std::string("imagem de disco: ") + err.what());
     }
+    return f;
+}
+
+BootFiles boot_read_data(const std::filesystem::path& dir) {
+    BootFiles         f;
+    disc::RuntimeDisc data(dir);  // lanca RuntimeDataError com a mensagem para o usuario
+    try {
+        f.ipBin              = data.ipBin();
+        const disc::IpBin ip = disc::parseIpBin(f.ipBin.data(), f.ipBin.size());
+        f.product = ip.product, f.version = ip.version, f.title = ip.title;
+        const std::vector<uint8_t> raw = data.readFile(ip.boot_file);
+        for (int pass = 0; pass < 2 && f.versionId.empty(); ++pass) {
+            std::vector<uint8_t> bytes = pass ? disc::descramble(raw) : raw;
+            const std::string    h     = util::sha256Hex(bytes.data(), bytes.size());
+            for (const auto& v : kKnownVersions)
+                if (h == v.boot_sha256) {
+                    f.versionId = v.id;
+                    f.firstRead = std::move(bytes);
+                }
+        }
+    } catch (const disc::DiscError& err) {
+        throw disc::RuntimeDataError(std::string("dados do jogo: ") + err.what());
+    }
+    if (f.versionId.empty())
+        throw disc::RuntimeDataError("os dados do jogo nao sao da versao recompilada (hash do executavel de boot "
+                                     "diferente). Gere a instalacao de novo com o Builder.");
     return f;
 }
 

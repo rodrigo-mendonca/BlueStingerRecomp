@@ -597,7 +597,322 @@ Win32 nativa; kit de fontes + CMake/Ninja do Visual Studio do usuário.
   seguidas. O teste agora grava `resultado.txt` na pasta de teste para diagnosticar se
   voltar.
 
+### Independência do CDI (2026-10-14, depois do commit `a5a1fe4`)
+
+Exigência: o CDI só serve para a conversão. Arquitetura: ARCHITECTURE.md, "Independência do
+CDI".
+
+- **Preparação** (`bs-extract --runtime`, e o Builder): 2 092 arquivos (708 MB) e 71
+  setores de sistema (0,1 MB) em 8,2 s.
+- **Equivalência setor a setor**: todos os ~360 mil setores das duas faixas de dados são
+  idênticos à imagem (1,3 s).
+- **Mesma imagem na tela**: o quadro do VBlank 2 000 é idêntico (mesmo hash) lendo o CDI
+  (Preview anterior) e lendo `data\` (executável novo).
+- **Teste `runtime_data`** (CDI real, ctest):
+  - prepara e confere todos os setores e o SHA-256 dos arquivos;
+  - `boot_read_data` é igual a `boot_read_disc`;
+  - faixas e setores da fonte do GD-ROM são iguais aos do CDI;
+  - um arquivo alterado é detectado.
+- **Unitários** (`test_runtime_data.cpp`, sem dados do jogo):
+  - composição dos setores (meta > arquivo > zeros; faixa de áudio; fora das faixas);
+  - último setor completado com zeros;
+  - mensagens claras: dados ausentes, arquivo ausente, tamanho diferente, formato,
+    caminho perigoso (`..`, nomes de dispositivo do Windows), arquivo apagado com o jogo
+    rodando;
+  - mods de arquivo.
+- **`test_builder.ps1`** (casos novos):
+  - jogo instalado dá boot com o **CDI renomeado** (inacessível);
+  - instalação **movida** para outra pasta (`movido ç 日本`): boot e `--verify-data`;
+  - nenhum caminho do CDI, do repositório ou do perfil do usuário nos arquivos instalados;
+  - arquivo de dados ausente: mensagem com o nome do arquivo e o Builder.
+- **`test_preview.ps1`** (9 casos):
+  - Preview gerada pelo próprio Builder;
+  - `--verify-data`;
+  - headless sem CDI em caminho especial;
+  - CDI na linha de comando: recusado com explicação;
+  - janela abre e fecha;
+  - sem `data\`: mensagem no headless e caixa de mensagem com código 1 na janela;
+  - pasta somente leitura.
+
+### NEW GAME e primeira área jogável (2026-10-14)
+
+**Causa do erro relatado** (`desvio indireto ... PC=8C1953E2 (valor 8C194B80)`):
+- `8C1953E2` é `jsr @r3` com `r3 = @(r0,r11)`: método de objeto, entrada 1 de uma tabela
+  de métodos.
+- Reproduzido headless (roteiro de entrada) com o valor `8C194580`. O valor vem de memória
+  e muda entre execuções. `8C194B80` cai no meio da função `8C194B6C`, depois do prólogo.
+- `8C194580` é `rts; mov #0,r0`, referenciado só pela vtable em `8C1DBF58` (logo depois do
+  texto de copyright da CRI). A vtable tem 8 métodos curtos desconhecidos e 5 conhecidos.
+- O analisador recusava folhas de 2 instruções vindas de ponteiro em dado.
+
+**Correção geral**: regra de tabelas de ponteiros (ARCHITECTURE.md). Resultado: +45
+funções (44 stubs de 2 instruções), 0 fins mortos, 0 órfãs, nenhuma removida; amostras
+conferidas no disassembly.
+
+**Testes**:
+- `analysis_pointer_table_finds_short_methods`: sintético, com caso negativo (1 conhecida
+  só). **Sensibilidade comprovada**: sem a regra, o teste falha.
+- `analysis_real`: binário real; toda a vtable `8C1DBF58..88` e `8C194580` com origem
+  `pointer_table`; 0 fins mortos/órfãs.
+
+**Comparação com o Flycast**: não feita nesta etapa. O oráculo não recebe entrada de
+controle (STATUS, controles), então não chega ao NEW GAME. A divergência foi resolvida por
+análise estática e pelo disassembly do binário original.
+
+**Bloqueios seguintes e correções**:
+1. `conversor YUV do TA ainda nao implementado` (PC `8C1C1E38`, escrita em `0x10800000`):
+   conversor YUV implementado (ARCHITECTURE.md). Teste `ta_yuv_converter_macroblocks_to_vram`
+   (420 em textura única, 422 em texturas 16x16, contador, interrupção, reinício).
+2. Personagem e objetos sem textura: TCW `480670C0`/`500687D0` (VQ 565/4444). VQ e mipmap
+   implementados. Testes `texture_vq_and_mipmap_offsets`, `texture_yuv422_linear`. Os
+   hashes antigos do rasterizador continuam iguais.
+
+**Partida real** (Preview sem CDI, roteiro versionado `tools/dist/roteiros/newgame_area1.txt`):
+- **Sequência**: VMU, Activision, Climax, título, menu, NEW GAME, vídeo (curto, ver
+  abaixo), prólogo em tempo real (porto, helicóptero, explosão, Eliot caído, a Nephilim),
+  depois a **primeira área jogável** (cais da Dinosaur Island, portão C-GATE, HUD
+  "ELIOT" com a barra de vida) a partir do VBlank ~5 400.
+- **Controle**:
+  - frente/esquerda/direita/trás movem o Eliot, e a câmera acompanha (atrás dele, afastando
+    ao andar);
+  - A (ação) não trava nada; o efeito dele nesta área não foi identificado;
+  - 7 300 VBlanks sem erro.
+- **`test_gameplay.ps1`** (4 casos):
+  - 7 300 VBlanks sem erro e sem CDI;
+  - barra de vida do HUD (557 pixels verdes);
+  - o movimento muda a cena (diferenças 152 e 142);
+  - **sem controle, a cena fica parada** (3,8): o movimento vem da entrada.
+
+**Em aberto**:
+- **Vídeo NEWGAME.SFD** (193 MB): mostra cinza com faixas horizontais por ~150 campos e o
+  jogo segue para o prólogo. O Sofdec lê só ~15 blocos (~0,8 MB) do arquivo e para.
+  - Croma exatamente 128 em todos os macroblocos e luma com só variação vertical.
+  - Os setores lidos são idênticos à imagem.
+  - **Hipótese, não verificada**: o player sincroniza pelo relógio do áudio (ADX no AICA,
+    driver MANATEE.DRV no ARM7, marco M6) e aborta sem ele.
+  - Os semânticos de FPU usados pelo IDCT (`fschg`/`fmov` 64 bits/`ftrv`) foram conferidos
+    contra o manual.
+- Sem áudio e sem VMU (inalterado). A partida sem som é jogável.
+
+### Partida longa e investigação do NEWGAME.SFD (2026-10-14, noite)
+
+**Exploração longa** (Preview sem CDI, roteiro versionado
+`tools/dist/roteiros/newgame_exploracao.txt`, 20 000 leituras de controle, captura a cada
+100 VBlanks):
+- **20 000 VBlanks** (~5,5 min de jogo) **sem erro**, código 0.
+- Trabalho médio de 29,9 ms por campo (~35 campos/s, abaixo do tempo real; desempenho do
+  rasterizador continua pendente). Pico de 1,23 s (provável carregamento).
+- **Movimento e câmera**: o Eliot percorre o cais para frente, para os lados e para trás, e
+  chega à ponta do cais diante do mar. A câmera acompanha atrás dele.
+- **Ociosidade**: parado, ele faz animações de espera (coça a cabeça, se alonga). A lógica
+  do jogo continua rodando.
+- **Não confirmado**:
+  - A, B, X e Y nesses pontos não mostraram efeito visível (pode não haver o que interagir
+    ali);
+  - em 6 900-7 800 ele corre no lugar, aparentemente contra um obstáculo.
+  - Sem comparação com o oráculo (que não recebe entrada), não dá para dizer se algum
+    desses dois casos é divergência.
+
+**Carregamentos e ritmo** (mesma exploração com `BS_FIELD_LOG=1`):
+- **Carregamentos**: não aparecem como picos. O GD-ROM devolve na hora, e nenhum campo
+  passou de 160 ms. O pico de 1,23 s da 1ª execução não se repetiu (provável soluço do
+  host).
+- **Ritmo**: o jogo renderiza **um campo a cada dois** (30 quadros/s). Na área jogável, cada
+  campo com render leva ~45-55 ms (média 44-59 ms por faixa de 2 000 VBlanks), o que dá
+  ~17 quadros/s contra 30. O gargalo é o rasterizador por software.
+- **Picos de 100-160 ms**: só nas cenas com muitas camadas translúcidas, que são o brilho
+  do título (VBlank 1 233-1 325) e o fogo/fumaça da explosão no prólogo (2 872-2 896 e
+  3 136-3 208).
+
+**NEWGAME.SFD: fatos comprovados**:
+1. Só existem os comandos 16/17 (leitura PIO/DMA) do GD-ROM. Os setores lidos do SFD são
+   idênticos à imagem (equivalência setor a setor).
+2. O jogo lê `BSDATA/MANATEE.DRV` (driver do ARM7) para 0x0CE80500 e `BS_SND.MLT` para
+   0x0CCD9D00.
+3. `BS_AICA_TRACE`: a CPU escreve 457 753 palavras não "SEGA" na RAM de som, ou seja, o
+   driver e os dados são copiados pela CPU.
+4. `BS_SB_LOG`: o DMA do G2 (`SB_AD*`) só é configurado (valores de inicialização do
+   Katana), nunca disparado (`SB_ADST` = 0).
+5. A área de trabalho do driver (0x00813400 com 2 280 leituras, cerca de uma por campo;
+   0x00813A00/18 com 253 cada; 0x008138xx) é lida por uma rotina genérica de leitura da RAM
+   de som (PR = `8C08EC4A`). Ela **nunca muda** (preenchimento "SEGA"), porque o ARM7 não
+   roda.
+6. Oráculo (comando novo `mem` do `flycast_oracle.py`): o stub GDB do Flycast lê a RAM de
+   som (controle: `EAFFFFFE` em 0x00800000).
+   - Na 50ª e na 1 500ª passagem por `8C08EC4A`, o Flycast tem a RAM de som ainda com o
+     stub do ARM (`EAFFFFFE`) e a área do driver zerada.
+   - O nosso, na 50ª leitura de 0x00813400, já tem o vetor do driver (`EA00003E...`) e
+     "SEGA" na área.
+   - **Os pontos não estão alinhados**: o contador de passagens não mede a mesma coisa nos
+     dois, porque no Flycast a rotina roda muitas vezes antes de o driver ser copiado.
+     **Ainda não é a primeira divergência comprovada.**
+
+**Conclusão parcial**:
+- A dependência do driver de som (ARM7 + AICA) está comprovada na inicialização do som.
+- A ligação com o fim precoce do vídeo **não** está comprovada.
+- Nenhuma correção foi implementada (seria fictícia sem o ARM7: fingir respostas do
+  driver).
+
+7. Âncora tentada: "primeira passagem pela rotina de escrita na RAM de som (retorno
+   `8C08EF96`, onde o nosso grava o 1º vetor do driver, ciclo 58,8 M)" com o novo
+   `--depois` do `mem`. Não serve: a mesma rotina também faz o preenchimento "SEGA" antes.
+   - No Flycast, na 1ª e na 500ª leitura depois dela, a base da RAM de som ainda é o stub e
+     a área do driver está **zerada** (não "SEGA"), ou seja, antes do preenchimento.
+   - Uma âncora precisa de condição (endereço + valor escrito), que o stub GDB não oferece
+     diretamente.
+   - O `flycast_oracle.py` teve um `ConnectionResetError` intermitente ao abrir sessões
+     seguidas (resultado descartado).
+
+8. **Âncora válida e primeira divergência comprovada**:
+   - O reset do ARM7, a cópia do driver e a liberação do ARM7 (escrita 0x300 em
+     0x00702C00, ciclo 58,99 M) acontecem dentro de uma rotina de inicialização de som que
+     retorna para `8C02A288`. Achada pela pilha do SH-4 no momento da escrita (diagnóstico
+     novo).
+   - A 1ª passagem por `8C02A288` é a âncora (o stub GDB não aceita watchpoints `Z2`/`Z1`,
+     resposta vazia).
+   - Controle: nessa âncora, a base da RAM de som é **igual** nos dois (`EA00003E EA00008A
+     EA000089 EA000088`, os vetores do driver).
+   - **Divergência**: a área do driver em 0x00813400:
+
+     | | Na âncora | 300 leituras depois |
+     |---|---|---|
+     | Flycast | `00000000 00000000 00018000 00000000 / 0000001A ...` | `00000000 00000000 00018000 00000000 / 0000001E 00000000 0000001E 00000000` |
+     | Nosso | "SEGA" (41474553) em todas as palavras | "SEGA" em todas as palavras, e assim fica até o VBlank 2 300 |
+
+     No Flycast o driver já inicializou a área e um contador anda; 0x00813A00 está zerada
+     lá e com "SEGA" aqui.
+   - **Causa**: o ARM7 não executa o MANATEE.DRV. O driver é copiado corretamente (vetores
+     iguais), mas nada roda nele.
+   - **Correção**: só com a emulação do ARM7 e do AICA (plano em ARCHITECTURE.md, aguarda
+     aprovação). Simular respostas do driver seria uma solução fictícia, e não foi feito.
+   - A ligação com o fim do vídeo continua **não comprovada**. Este é o primeiro ponto
+     divergente do subsistema de som.
+   - `flycast_oracle.py`: o `ConnectionResetError` intermitente aparece depois de a leitura
+     já ter sido impressa (fim da sessão), então não afeta os valores. A conexão agora tenta
+     de novo em caso de reset/recusa.
+
+**Próximo passo**:
+- Com o ARM7 rodando, conferir que a área do driver fica igual à do oráculo nessa âncora.
+- Então ver se o vídeo vai até o fim.
+- Depois, localizar no Sofdec a decisão que encerra o vídeo, com uma pilha de chamadas
+  sombra (o observador `BS_FN_ENTER` só vê entradas).
+
+Plano de áudio (AICA, ARM7, Manatee): ARCHITECTURE.md, "Plano de áudio nativo" (proposta,
+aguarda aprovação).
+
+### Mods e projeto C++ editável (2026-10-14)
+
+Arquitetura: ARCHITECTURE.md, "Mods e projeto C++ editável".
+
+- **Unitários**:
+  - `mods_replace_direct_and_indirect_calls`: slot (direta), despacho (indireta),
+    `call_original`, `reset`, registro e `init_all` do `BS_MOD`;
+  - `runtime_data_asset_overrides`: mesmo tamanho, menor (zeros), o último setor vem do
+    mod e não da meta, maior recusado.
+  - Os testes de codegen agora esperam `BSG_FN(...)`.
+- **Fluxo real** (CLI):
+  - `--projeto` exportou o projeto com `mapa_funcoes.tsv` (4 083 funções). Exemplo:
+    `0x8C194580 → f_8C194580 → funcs_008.cpp → pointer_table → 2`.
+  - Com o exemplo de mod e uma alteração controlada no C++ gerado (marcador em
+    `f_8C010000`), `--de-projeto` recompilou **sem o CDI** em 20 s (incremental).
+  - O jogo instalado mostrou `[mods] iniciando exemplo_contador`,
+    `[edicao controlada] entrada do jogo` e `[mod exemplo] primeira chamada de 8C194580`.
+    A substituição pegou justamente a função do erro do NEW GAME, chamada por ponteiro.
+- **`test_projeto.ps1`** (9 casos, distribuição do Builder; os 2 últimos acrescentados na noite de 2026-10-14):
+  - exporta;
+  - recompila do projeto com o CDI inacessível;
+  - mod em C++ ativo;
+  - alteração no gerado ativa;
+  - mod de arquivo carregado: cópia idêntica, porque alterar `CNF00.NT` (arquivo de
+    configuração) muda o comportamento do jogo e a 1ª tentativa do teste falhou por isso;
+  - mod de arquivo grande demais: mensagem clara;
+  - reexportar preserva `mods/` e guarda o `generated/` editado;
+  - mod removido: o efeito some depois de recompilar (o cache espelha `mods/`);
+  - reexportar mantém uma edição mais nova em `runtime/`.
+- Unitário `mods_replace_order_restore_and_no_slots`: substituições seguidas (vale a
+  última), `replace(addr, nullptr)` restaura, build sem slots só muda as indiretas.
+
+### Revisão do Codex nesta etapa
+
+**Não realizada**: `codex exec` retornou "You've hit your usage limit ... try again at
+11:14 PM". O script `codex_review.ps1` agora mostra o motivo da falha. No lugar, revisão
+própria dos pontos pedidos:
+- reconstrução de setores (sobreposição, último setor, mods);
+- caminhos vindos do disco/manifesto: acrescentada a recusa de nomes de dispositivo do
+  Windows, com teste;
+- regra de tabelas de ponteiros (caso negativo testado);
+- slots de mods (chamadas diretas, tail calls, tabelas locais, reentrada);
+- hard links de dados: arquivos nunca reescritos no lugar; o Builder confere o SHA-256
+  antes de reaproveitar.
+
+**Pendente**: repetir a revisão do Codex quando o limite liberar.
+
+**Achados da verificação final**:
+- **Rollback** (`.anterior`): ocupada por uma pasta sem a marca do Builder (a Preview antiga,
+  montada pelo script anterior), a versão anterior ficava como `.old-*` e seria apagada na
+  execução seguinte. Agora ela vai para `<destino>.anterior-<data>`, e nada sem a marca é
+  apagado. Teste no `builder_install_swap_recovery_and_cancel`. Em `dist/`, as pastas
+  foram só renomeadas: `BlueStinger-Preview.legado-cdi` (Preview que lia o CDI, 16:15) e
+  `BlueStinger-Preview.anterior` (20:17).
+- **Intermitente, não reproduzida**: uma execução do `test_builder` (caso "jogo aberto")
+  parou em "verificando o executavel": `--version` com código 0 e sem a linha de versão.
+  O resultado foi seguro (erro, instalada intacta). Mais tarde:
+  - o cenário isolado passou 3/3;
+  - o teste de estresse `builder_run_process_short_lived_output_is_never_lost` passou: 300
+    processos curtos por execução, 3 execuções em repouso e 3 com dois jogos rodando em
+    paralelo, sem nenhuma saída perdida.
+  - A verificação agora tenta `--version` duas vezes, registra no log quando a 1ª falha e
+    põe a saída capturada na mensagem.
+  - Depois disso, `test_builder` 18/18.
+- **Totais**: 159 testes unitários; `ctest` 7/7 (com `runtime_data` e `analysis_real` no
+  CDI real); `test_builder` 18/18; `test_preview` 9/9; `test_gameplay` 4/4;
+  `test_projeto` 7/7.
+
 ## Revisões independentes (Codex)
+
+### 2026-10-15: mudanças pendentes desde a5a1fe4 (dados sem CDI, Builder, NEW GAME, YUV/VQ, mods). Relatório em `reviews/codex-20261015-002752.md`
+
+Escopo e riscos em `reviews/relatorio-pendente-20261014.md`. O Codex confirmou como corretos:
+- a vtable de NEW GAME (bytes em 8C1DBF58 e 8C194580);
+- `BSG_FN` em chamadas diretas, tail calls e resolvidas;
+- a ordem de reconstrução dos setores;
+- o LRU de 16 arquivos;
+- os deslocamentos de mipmap (tabela do manual, p. 148);
+- UYVY e os coeficientes YUV (seção 3.6.1.2).
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] `disc_meta.*` sem SHA-256: com hard links, alteração do mesmo tamanho passava pelo reaproveitamento e pelo `--verify-data` | **Aceito** | Formato de dados **2**: o manifesto tem o SHA-256 de `disc_meta.idx/.bin`, conferido primeiro em `check_runtime_files`. O teste `runtime_data` (CDI real) altera 1 byte de `disc_meta.bin` e exige a detecção. Dados no formato 1 são recusados com mensagem, e o Builder prepara de novo (marca muda) |
+| [ALTA] Falha ao arquivar a versão anterior (`rename` com `ec` ignorado) e sucesso relatado | **Aceito** | `archivePrevious`: uma `.anterior` nossa só sai depois que a nova entra (vai para um nome temporário e volta se der errado); falha lança dizendo onde a anterior ficou; nomes `.anterior-<data>-<aleatório>` únicos; sobras `.old-*` marcadas são **arquivadas, não apagadas**. Teste com `.anterior` presa (arquivo em uso) |
+| [MÉDIA] YUV422: macrobloco são duas metades 16x8 (U, V, Y esq., Y dir.), não U128/V128/Y256 | **Aceito** | Evidência: exemplo yuv422 do KallistiOS. Conversor corrigido. O teste agora tem padrão diferente nas 6 regiões e confere pixels das duas metades (o anterior montava o layout errado e não distinguia) |
+| [MÉDIA] Gravação de `data.ok` sem conferência | **Aceito** | Arquivo temporário, `close`, teste do stream e `rename`; falha é erro da etapa |
+| [BAIXA] `mods::reset()` não desfazia substituições de endereços sem slot (HLE) | **Aceito** | Conjunto de todos os endereços substituídos, limpo inteiro no `reset`. Teste com endereço HLE |
+| [BAIXA] `mem` do oráculo quebrava com tamanho não múltiplo de 4 | **Aceito** | Exige múltiplo de 4 |
+
+Depois das correções:
+- 160 unitários e `ctest` 7/7 (com o CDI real);
+- distribuições remontadas (dados no formato 2);
+- `test_builder` 18/18, `test_preview` 9/9, `test_gameplay` 4/4, `test_projeto` 9/9.
+
+### 2026-10-15: plano do port nativo (planejamento). Relatório em `reviews/codex-20261015-003938.md`
+
+Nova diretriz do mantenedor: port nativo sem simulação de hardware no executável final.
+- A v1 de `docs/PLANO-PORT-NATIVO.md` foi revisada pelo Codex: 6 achados altos e 5 médios,
+  **todos aceitos** e incorporados na v2 (tabela na seção 9 do plano).
+- Principais mudanças:
+  - manifesto de acessos a hardware com prova de fechamento (o Codex achou 439 cargas da
+    faixa de store queue em 288 funções, além de Holly/AICA/VRAM/DMAC);
+  - duas evidências por função identificada do SDK;
+  - fronteiras em três camadas com slots sempre ativos;
+  - modelo de interoperabilidade antes de N1;
+  - N2 dividida em a/b/c;
+  - IR de render na N7a;
+  - critério final operacional em vez de "100% das funções";
+  - portões por contrato normalizado e matriz de cobertura até a campanha;
+  - riscos legais e de licenças com revisão jurídica antes de distribuir.
+- Métrica corrigida: 71 999 operações de FPU (`bs::op::F*`); a v1 dizia ~115 mil porque
+  contava comentários.
+- **O plano aguarda aprovação**; nenhuma mudança estrutural foi feita.
 
 ### 2026-10-14: Builder (núcleo, compilador, processos, janela, distribuição). Relatório em `reviews/codex-20261014-160223.md`
 
@@ -764,4 +1079,8 @@ Depois das correções: todos os testes passam, análise idêntica (3 883 funç�
 - D7 decidido (Builder). Falta: Windows limpo sem Visual Studio instalado (só a mensagem
   de "sem compilador" foi testada, por vswhere inexistente); independência do Visual
   Studio (clang-cl + SDK); uma falha intermitente não identificada no `test_preview.ps1`.
+- Vídeo NEWGAME.SFD termina cedo (hipótese: relógio do áudio, M6). Áudio e VMU.
+- Mods de arquivo maiores que o original (realocar LBA + registro de diretório).
+- Revisão do Codex desta etapa (limite de uso atingido em 2026-10-14).
+- `--version` sem saída na verificação do Builder: intermitente, não reproduzido.
 - clang-cl não está instalado nesta máquina. Por enquanto só o MSVC é testado.

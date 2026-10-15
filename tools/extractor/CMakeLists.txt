@@ -6,6 +6,7 @@ add_library(bs_disc STATIC
   disc/scramble.cpp
   util/hash.cpp
   extract.cpp
+  runtime_data.cpp
 )
 target_include_directories(bs_disc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 if(MSVC)

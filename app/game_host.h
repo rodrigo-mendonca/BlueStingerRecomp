@@ -32,11 +32,13 @@ struct GameStats {
 };
 
 struct GameOptions {
-    std::filesystem::path disc;   // imagem do usuario (CDI)
+    // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
+    std::filesystem::path data;
     std::filesystem::path flash;  // flash de 128 KB opcional (sem: apagada, 0xFF)
+    std::filesystem::path modAssets;  // mods de arquivos (mods\assets), opcional
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
     std::function<void()> registerFunctions;
-    // Prepara RAM e registradores. Padrao: boot nativo a partir de `disc`. Testes trocam.
+    // Prepara RAM e registradores. Padrao: boot nativo a partir de `data`. Testes trocam.
     std::function<void(Sh4Context&)> prepare;
     bool     realtime    = true;  // segura o jogo em 59,94 VBlanks por segundo
     uint64_t vblankLimit = 0;     // > 0: para sozinho depois desses VBlanks (headless)

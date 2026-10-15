@@ -90,6 +90,7 @@ public:
                     addEntry(t, Origin::DataPointer, 0);
                     ++added;
                 }
+            if (cfg_.data_pointers) added += fromPointerTables();
             if (!added) break;
             discover();
         }
@@ -500,6 +501,49 @@ private:
         return false;
     }
 
+    // Tabelas de ponteiros para codigo em dado (vtables, tabelas de callbacks): sequencias de
+    // palavras alinhadas, fora do codigo, que apontam para dentro da imagem. Numa sequencia
+    // com pelo menos 3 entradas, 2 delas ja funcoes conhecidas, as demais entradas viram
+    // funcoes com evidencia mais fraca no corpo: basta um desvio incondicional com slot
+    // valido (inclusive "rts; mov #k,r0", folha de 2 instrucoes que o criterio isolado de
+    // ponteiro em dado recusa), alem de fronteira de funcao e corpo de codigo. Caso
+    // motivador: vtable em 8C1DBF58 (depois do texto de copyright da CRI) com metodos
+    // "return k" em 8C194580/84/A6..BA; o NEW GAME chamava 8C194580 pelo despacho.
+    size_t fromPointerTables() {
+        size_t added = 0;
+        auto   isCodePtr = [&](uint32_t a) {
+            if (visited_.count(a) && !out_.data.count(a)) return 0u;  // palavra dentro de codigo
+            const uint32_t t = img_.normalize(img_.read32(a));
+            return t && (t & 1) == 0 && img_.contains(t, 2) ? t : 0u;
+        };
+        for (uint32_t a = img_.base; img_.contains(a, 4);) {
+            if (!isCodePtr(a)) {
+                a += 4;
+                continue;
+            }
+            uint32_t end = a;
+            size_t   known = 0;
+            std::vector<uint32_t> targets;
+            for (; img_.contains(end, 4); end += 4) {
+                const uint32_t t = isCodePtr(end);
+                if (!t) break;
+                targets.push_back(t);
+                known += entries_.count(t);
+            }
+            if (targets.size() >= 3 && known >= 2) {
+                for (uint32_t t : targets) {
+                    if (entries_.count(t) || out_.data.count(t) || !atBoundary(t)) continue;
+                    if (!looksLikeFunction(t) && !plausibleCode(t, 0, true)) continue;
+                    if (!bodyIsCode(t)) continue;
+                    addEntry(t, Origin::PointerTable, 0);
+                    ++added;
+                }
+            }
+            a = end;
+        }
+        return added;
+    }
+
     // Fronteira de funcao: logo depois de um desvio incondicional com delay slot,
     // de dado do pool ou de padding (nop).
     bool atBoundary(uint32_t t) const {
@@ -625,6 +669,7 @@ private:
             s.by_call += f.origin == Origin::Call;
             s.by_pointer += f.origin == Origin::Pointer;
             s.by_data_pointer += f.origin == Origin::DataPointer;
+        s.by_pointer_table += f.origin == Origin::PointerTable;
             s.by_config += f.origin == Origin::Config;
             s.instructions += f.insns.size() + f.slots.size();
             s.direct_indirects += f.direct.size();

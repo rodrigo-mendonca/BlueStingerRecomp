@@ -322,6 +322,161 @@ runtime/
   isso o binário compilado é derivado da cópia do usuário e não deve ser redistribuído.
   A forma de distribuição (D7) continua para o M8.
 
+### Independência do CDI: dados de execução (2026-10-14)
+
+Exigência do mantenedor: o CDI é **entrada do Builder**, nunca dependência do jogo. O
+executável não aceita mais imagem de disco; lê a pasta `data\` ao lado dele.
+
+```
+<instalação>\data\
+  disc.manifest   texto: formato, versão, faixas, arquivos (LBA, tamanho, SHA-256, caminho)
+  disc\<caminho>  os 2 092 arquivos do ISO9660, com os bytes exatamente como no disco
+  disc_meta.idx   LBAs dos setores que não vêm de arquivo (71 no NTSC-U): área do sistema
+  disc_meta.bin   (IP.BIN), descritores, diretórios, sobras não nulas do último setor
+```
+
+- **Camada própria** (`tools/extractor/runtime_data`, `runtime/gdrom/data_source`): o
+  GD-ROM HLE continua igual e pede setores a um `DiscSource`. O `RuntimeDisc` reconstrói
+  cada setor de dados: setor de sistema, senão o trecho do arquivo que o cobre (zeros
+  depois do fim), senão zeros. Assim o comportamento do jogo é preservado sem a
+  estrutura física do disco: não há faixas brutas, subcódigo nem setores de 2 336 bytes.
+- **Prova de equivalência**: na preparação, o Builder compara **todos** os setores das
+  faixas de dados (~360 mil) com a imagem (`verify_runtime_data`). O teste `runtime_data`
+  repete isso com o CDI real e confere que o boot a partir de `data\` é igual ao boot a
+  partir do CDI.
+- **Boot**: `boot_read_data` lê IP.BIN (meta) e 1ST_READ.BIN (arquivo) e exige o hash da
+  versão recompilada. Dados ausentes, incompletos ou de outro formato geram mensagem com
+  o arquivo que falta e o que fazer (gerar de novo com o Builder).
+- **No Builder**: preparado uma vez por saída em `.bs-build\data` (marca + SHA-256 de
+  cada arquivo para reaproveitar). Entra no pacote por **hard links** (sem copiar 708 MB;
+  cópia se o volume não aceitar). Arquivos de dados nunca são reescritos no lugar: uma
+  nova preparação cria pasta nova, então os links não misturam versões. A verificação do
+  executável montado roda `--verify-data` e o boot de teste **sem argumento de CDI**.
+
+### Analisador: tabelas de ponteiros (NEW GAME, 2026-10-14)
+
+O NEW GAME parava em `PC=8C1953E2`, um `jsr @r3` com `r3` lido de uma tabela de métodos
+de objeto. O destino `8C194580` (`rts; mov #0,r0`) só aparece no binário como dado, na
+vtable em `8C1DBF58`. Duas regras anti-falso-positivo o recusavam: folha de 2
+instruções e "`rts` sozinho só com `nop` no slot". A correção é geral: **sequências de
+palavras em dado que apontam para dentro da imagem** (pelo menos 3 entradas, pelo menos 2
+já funções conhecidas) são tabelas de ponteiros, e suas outras entradas viram funções
+com evidência mais fraca no corpo. Continuam exigidos a fronteira de função, o corpo de
+código e o desvio incondicional com slot válido. Resultado: 45 funções novas (44 stubs de
+2 instruções), 0 fins mortos, 0 órfãs. O valor do desvio muda entre execuções
+(`8C194B80` no relato, `8C194580` aqui) porque vem de memória.
+
+### PowerVR2: conversor YUV, VQ e mipmap (2026-10-14)
+
+- **Conversor YUV do TA** (`runtime/pvr/ta.cpp`): macroblocos YUV420 (384 bytes: U 8x8,
+  V 8x8, Y 4×8x8) ou YUV422 (512) enviados a `0x10800000` viram textura UYVY na VRAM em
+  `TA_YUV_TEX_BASE` (uma textura de (U+1)·16 × (V+1)·16 ou uma 16x16 por macrobloco).
+  `TA_YUV_TEX_CNT` conta, e o fim do quadro acende ISTNRM bit 6. Escrever BASE/CTRL
+  recomeça a conversão.
+- **Texturas**: YUV422 linear (coeficientes do PowerVR2), **VQ** (codebook 256 × 2x2 + um
+  índice por bloco, twiddled) e **mipmap** (amostra o maior nível; deslocamentos 16 bits
+  `6 + 2T`, paleta 8 bpp `3 + T`, VQ `1 + ((W/2)² - 1)/3`). Faltam YUV twiddled, bump e
+  paleta 4 bpp com mipmap (registrados por TCW e omitidos).
+
+### Mods e projeto C++ editável (2026-10-14)
+
+Objetivo de longo prazo do mantenedor: controle do código para mods. O código gerado é a
+tradução fiel das instruções SH-4 (não um código-fonte "como o original"). Por isso os
+pontos de extensão ficam na fronteira das funções e dos arquivos, sem exigir edição das
+milhares de funções geradas.
+
+- **Funções** (`runtime/mods/mod_api.h`): `BS_MOD(nome) { bs::mods::replace(endereço,
+  função); }`, `call_original`, `reset`. O codegen emite toda chamada entre funções
+  geradas (diretas, tail calls, tabelas de salto locais) pela macro `BSG_FN(addr)`. No
+  build normal ela é a chamada direta (sem custo). Com `BS_MODS=ON`, é a chamada pelo
+  slot da função (`slot_XXXXXXXX`, ponteiro global), e `replace` troca o slot e registra a
+  substituição para os desvios indiretos (`sh4_override`, consultado antes da tabela
+  gerada).
+- **Arquivos** (`<instalação>\mods\assets\<caminho do disco>`): o `RuntimeDisc` lê o mod
+  no lugar do arquivo original (inclusive no último setor, que no disco vem da meta).
+  Precisa caber no espaço original: maior é recusado com mensagem. Realocar arquivos
+  maiores (novo LBA + registro de diretório) fica para depois.
+- **Projeto editável** (`builder/project_export`, `bs-builder --projeto`):
+  - O que contém: fontes do runtime/app/leitor, SDL3, C++ gerado, `mapa_funcoes.tsv`
+    (endereço → `f_XXXXXXXX` → arquivo → origem → tamanho), `mods/` com exemplo,
+    `LEIA-ME-PROJETO.md` (estrutura, API, limitações) e `compilar.cmd`.
+  - Fica numa pasta privada do dono do CDI, nunca no repositório nem na distribuição do
+    Builder.
+  - Reexportar não toca em `mods/`, não sobrescreve edições mais novas em `runtime/`/`app/`
+    e guarda o `generated/` anterior em `generated.anterior-<data>`.
+  - `bs-builder --de-projeto` compila o projeto com os mods pelo mesmo fluxo verificado
+    (sem CDI se os dados já estão preparados) e copia `mods/assets` para a instalação.
+
+### Plano de áudio nativo: AICA, ARM7 e Manatee (SUBSTITUÍDO em 2026-10-15)
+
+> **Substituído** pela diretriz do port nativo (2026-10-15): o executável final não pode
+> executar nem interpretar o ARM7, nem simular a AICA. O plano vigente é
+> `docs/PLANO-PORT-NATIVO.md` (etapa N6: motor de som nativo que lê o `BS_SND.MLT`; o
+> `MANATEE.DRV` só é analisado estaticamente). O texto abaixo fica como registro da
+> medição e das alternativas descartadas.
+
+**Situação medida** (2026-10-14, `BS_AICA_TRACE`):
+- O jogo lê do disco `BSDATA/MANATEE.DRV` (33 KB, driver de som do ARM7) e `BS_SND.MLT`
+  (1,7 MB, banco de sons) e os copia **pela CPU** para a RAM de som (457 753 palavras
+  escritas). O DMA do G2 (`SB_AD*`) só é configurado, nunca disparado.
+- Depois, o SH-4 consulta a área de trabalho do driver (0x00813400, 0x00813A00/18...) a
+  cada campo, por uma rotina genérica de leitura da RAM de som (retorno em `8C08EC4A`).
+  Sem o ARM7, essa área nunca muda (fica com o preenchimento "SEGA" que o próprio jogo
+  grava).
+- O jogo segue sem som, e o vídeo NEWGAME.SFD termina cedo. A ligação entre as duas coisas
+  ainda não está provada (STATUS.md).
+
+**Peças** (todas novas em `runtime/aica/`; nada de GPL, Flycast só como referência de
+comportamento e como oráculo):
+1. **ARM7DI** (ARMv4, só modo ARM; D4 já decidiu interpretador): registradores com bancos
+   por modo, CPSR/SPSR, processamento de dados com shifter e flags, LDR/STR/LDM/STM,
+   MUL/MLA, desvios, MRS/MSR, SWI, IRQ/FIQ. Mapa: 0x000000-0x1FFFFF RAM de som,
+   0x800000+ registradores do AICA. Recompilar estaticamente o MANATEE.DRV fica como
+   otimização depois (o mesmo fluxo do SH-4, num binário de 33 KB).
+2. **Registradores do AICA**:
+   - 64 canais × 0x80 bytes;
+   - registradores comuns (0x2800+): volume mestre, monitor MSLC/CA (posição do canal),
+     timers A/B/C, interrupções SCIEB/SCIPD/SCIRE (para o ARM) e MCIEB/MCIPD/MCIRE (para
+     o SH-4), reset do ARM em 0x2C00 (hoje só guardado);
+   - RTC (já existe).
+3. **Síntese**: PCM 16/8 bits e ADPCM Yamaha, laço, envelope AEG
+   (attack/decay1/decay2/release), FEG/filtro, LFO de pitch/amplitude, volume/pan, mistura
+   a 44,1 kHz.
+4. **DSP** (efeitos, microprograma de 128 passos): segunda fase. O som sai seco antes dela.
+5. **Interrupções**: AICA → SH-4 pelo Holly (ISTEXT), SH-4 → ARM pelo MCIPD.
+6. **Tempo**: o ARM e a síntese andam no poll central (`sh4_service`) em fatias de ciclos
+   do SH-4. Assim a execução é determinística (testes, roteiros) e independente do host.
+7. **Saída**: o runtime produz amostras num buffer circular. O `app/` entrega ao SDL3
+   (stream de áudio). O headless pode gravar WAV (testes).
+8. **G2 DMA** (`SB_ADST`...): o Blue Stinger não usa nesta fase, mas fica simples
+   implementar junto.
+
+**Reaproveitado do runtime atual**:
+- scheduler/poll central e sincronização de eventos (`holly_intc_sync`);
+- controlador de interrupções do Holly;
+- despacho de memória (`aica_reg_read/write`) e RAM de som;
+- GameHost (ritmo, thread) e a camada SDL3 do `app/`;
+- framework de testes, `bs-diff` e o oráculo. O stub GDB do Flycast lê a RAM de som (lido
+  `EAFFFFFE` em 0x00800000), então dá para comparar a área do driver.
+
+**Testes necessários**:
+- ARM7: um teste por classe de instrução (flags, shifts com carry, modos de endereçamento,
+  LDM/STM com writeback e base na lista, trocas de modo e exceções), com valores escritos à
+  mão a partir do manual ARM.
+- AICA: decodificação ADPCM com vetores conhecidos, laço e pontos de fim, tabela de tempos
+  do AEG, mistura/pan; hash de WAV curto gerado headless (regressão).
+- Integração: o driver sobe (área de trabalho deixa de ser "SEGA" e passa a ter o formato
+  do oráculo num ponto de parada alinhado). O alinhamento ainda não existe: a contagem de
+  passagens pela rotina de leitura difere entre os dois, ver STATUS.md.
+- Ponta a ponta: música do título e efeitos no WAV (não silêncio, sem estouro); vídeo
+  NEWGAME.SFD até o fim, se a dependência for confirmada.
+
+**Sequência sugerida** (M6):
+- 6a: registradores + ARM7 + driver subindo, comparado ao oráculo;
+- 6b: canais, mistura e saída SDL3;
+- 6c: DSP;
+- 6d: desempenho (recompilação do driver ARM, se o interpretador pesar).
+
 ### Distribuição Preview (2026-10-14)
 
 `tools/dist/make_preview.ps1` monta `dist/BlueStinger-Preview/` (uso local, não

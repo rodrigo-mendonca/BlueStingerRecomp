@@ -1,6 +1,6 @@
 # Builder: do CDI do usuario ao BlueStinger.exe nativo (extracao, analise, geracao,
 # compilacao com o compilador do usuario, verificacao e instalacao). Nao contem nada do jogo.
-add_library(bs_builder_core STATIC builder_core.cpp toolchain.cpp child_process.cpp)
+add_library(bs_builder_core STATIC builder_core.cpp toolchain.cpp child_process.cpp project_export.cpp)
 target_include_directories(bs_builder_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(bs_builder_core PUBLIC bs_recomp_lib bs_runtime)
 

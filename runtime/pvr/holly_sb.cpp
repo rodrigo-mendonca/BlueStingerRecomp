@@ -66,6 +66,12 @@ bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     static int        n     = 0;
     if (debug && p == 0x005F6808 && n++ < 20)
         std::fprintf(stderr, "[sb] C2DST=%08X C2DSTAT=%08X C2DLEN=%08X\n", v, g_regs[0], g_regs[1]);
+    // Diagnostico: BS_SB_LOG=1 registra as escritas nos registradores de DMA do G2
+    // (0x005F7800-0x005F78FF: AICA, ext1, ext2, dev), ainda sem modelo
+    static const bool g2log = std::getenv("BS_SB_LOG") != nullptr;
+    static int        g2n   = 0;
+    if (g2log && p >= 0x005F7800 && p < 0x005F7900 && g2n++ < 400)
+        std::fprintf(stderr, "[sb] G2 escrita %08X = %08X (ciclo %llu)\n", p, v, (unsigned long long)c->cycles);
     // SB_C2DST = 1: DMA do canal 2 (SH-4 DMAC) de SB_C2DLEN bytes para SB_C2DSTAT. No fim,
     // C2DSTAT avanca, C2DLEN e C2DST zeram e ISTNRM bit 19 (fim do DMA do PVR) acende;
     // a interrupcao e avaliada no proximo poll (next_event = 0).

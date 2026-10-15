@@ -70,9 +70,44 @@ $log1 = [IO.File]::ReadAllText((Join-Path $out1 ".bs-build\builder.log"), [Text.
 Check "kit copiado para o cache (caminho fora do ANSI)" ($log1 -match "copiando o kit para") ""
 $v = Run $exe1 @("--version")
 Check "jogo instalado responde" ($v.Code -eq 0 -and $v.Out -match "Blue Stinger \(recompilado\)") $v.Out.Trim()
-$h = Run $exe1 @($cdi, "--headless", "300") 600000
-Check "jogo instalado da boot (300 VBlanks)" ($h.Code -eq 0 -and $h.Out -match "VBlanks: 300;") ""
 $installed = Hash $exe1
+
+# 1b. independencia do CDI: imagem inacessivel (renomeada) e instalacao movida para outra pasta
+$hidden = "$cdi.inacessivel"
+Rename-Item -LiteralPath $cdi -NewName ([IO.Path]::GetFileName($hidden))
+try {
+    $h = Run $exe1 @("--headless", "300") 600000
+    Check "sem o CDI: jogo instalado da boot (300 VBlanks)" ($h.Code -eq 0 -and $h.Out -match "VBlanks: 300;") ""
+    $movedRoot = Join-Path $Work "movido ç 日本"
+    New-Item -ItemType Directory -Path $movedRoot | Out-Null
+    $moved = Join-Path $movedRoot "BlueStinger"
+    Move-Item -LiteralPath (Join-Path $out1 "BlueStinger") -Destination $moved
+    try {
+        $h = Run (Join-Path $moved "BlueStinger.exe") @("--headless", "300") 600000
+        $vd = Run (Join-Path $moved "BlueStinger.exe") @("--verify-data") 600000
+        Check "instalacao movida, sem o CDI: boot e dados conferidos" ($h.Code -eq 0 -and $h.Out -match "VBlanks: 300;" -and $vd.Code -eq 0) "boot $($h.Code), verify-data $($vd.Code)"
+        # nenhum caminho do CDI nem da maquina de desenvolvimento nos arquivos do jogo
+        $needles = @($cdi, $Disc, $repo) | ForEach-Object { $_, $_.Replace('\', '/') }
+        $leak = @()
+        foreach ($f in Get-ChildItem -LiteralPath $moved -File) {
+            $bytes = [IO.File]::ReadAllBytes($f.FullName)
+            foreach ($t in [Text.Encoding]::UTF8.GetString($bytes), [Text.Encoding]::Unicode.GetString($bytes)) {
+                foreach ($n in $needles) { if ($t.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $leak += "$($f.Name): $n" } }
+            }
+        }
+        Check "nenhum caminho do CDI ou do desenvolvimento na instalacao" ($leak.Count -eq 0) ($leak | Select-Object -Unique | Select-Object -First 3)
+        # arquivo de dados ausente: mensagem clara (qual arquivo, o que fazer)
+        $victim = Join-Path $moved "data\disc\BSDATA\CDG000.NJ"
+        Rename-Item -LiteralPath $victim -NewName "CDG000.NJ.fora"
+        $h = Run (Join-Path $moved "BlueStinger.exe") @("--headless", "60") 120000
+        Rename-Item -LiteralPath "$victim.fora" -NewName "CDG000.NJ"
+        Check "dado ausente: mensagem clara" ($h.Code -ne 0 -and $h.Out -match "CDG000.NJ \(ausente\)" -and $h.Out -match "Builder") (($h.Out -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
+    } finally {
+        Move-Item -LiteralPath $moved -Destination (Join-Path $out1 "BlueStinger")
+    }
+} finally {
+    Rename-Item -LiteralPath $hidden -NewName ([IO.Path]::GetFileName($cdi))
+}
 
 # 2. reprodutivel: outra saida nova gera o mesmo C++
 $r = Run $cli @("--disc", $cdi, "--out", $out2)
@@ -119,7 +154,7 @@ $r = Run $cli @("--disc", $cdi, "--out", $out1, "--kit", $bad)
 Check "falha de compilacao: erro, instalada intacta" ($r.Code -eq 1 -and $r.Out -match 'falhou em "compilando"' -and (Hash $exe1) -eq $installed -and (NoStage $out1)) (FailLine $r)
 
 # 9. jogo aberto: a troca falha e a instalada continua
-$game = Start-Process -FilePath $exe1 -ArgumentList "`"$cdi`" --headless 1000000" -PassThru -WindowStyle Hidden
+$game = Start-Process -FilePath $exe1 -ArgumentList "--headless 1000000" -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 2
 $r = Run $cli @("--disc", $cdi, "--out", $out1)
 Stop-Process -Id $game.Id -Force; $game.WaitForExit()

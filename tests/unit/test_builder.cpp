@@ -127,6 +127,22 @@ std::vector<DWORD> pingPids() {
     return r;
 }
 
+// Processo que sai logo depois de escrever (como "BlueStinger.exe --version"): a saida nunca
+// pode se perder, mesmo com muitas execucoes seguidas (falha intermitente vista no
+// test_builder: codigo 0 sem a linha de versao).
+BS_TEST(builder_run_process_short_lived_output_is_never_lost) {
+    int lost = 0;
+    for (int i = 0; i < 300; ++i) {
+        std::string first;
+        const auto  r = run_process(L"cmd.exe /d /c \"echo linha unica\"", {}, {}, [&](const std::string& l) {
+            if (first.empty()) first = l;
+        });
+        if (r.exitCode != 0 || first != "linha unica") ++lost;
+    }
+    BS_CHECK(lost == 0);
+    if (lost) std::fprintf(stderr, "  saidas perdidas: %d de 300\n", lost);
+}
+
 BS_TEST(builder_run_process_cancel_and_timeout_kill_tree) {
     using clock = std::chrono::steady_clock;
     const std::vector<DWORD> before = pingPids();
@@ -176,9 +192,10 @@ BS_TEST(builder_install_swap_keeps_user_files_and_rolls_back) {
     BS_CHECK(readFile(dest / L"saves" / L"vmu.bin") == "save");
     BS_CHECK(readFile(dest / L"licencas" / L"minha.txt") == "fica" && readFile(dest / L"minha.dll") == "fica");
     BS_CHECK(!fs::exists(dest / L"licencas" / L"so_v1.txt"));
+    // a versao anterior fica para rollback; nenhuma outra sobra
     size_t dirs = 0;
     for (const auto& e : fs::directory_iterator(tmp.p)) dirs += e.is_directory();
-    BS_CHECK(dirs == 1);
+    BS_CHECK(dirs == 2 && readFile(tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe") == "v1");
 
     // jogo aberto (arquivo em uso sem compartilhar exclusao): a troca falha e a v2 continua
     const fs::path s3 = stage("v3");
@@ -231,7 +248,47 @@ BS_TEST(builder_install_swap_recovery_and_cancel) {
     cancel = false;
     install_swap(s1, dest, isPkg, &cancel);
     BS_CHECK(readFile(dest / L"BlueStinger.exe") == "nova" && !fs::exists(s1));
+    BS_CHECK(readFile(tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe") == "recente");
     BS_CHECK(fs::exists(tmp.p / L"BlueStinger.old-cccc"));  // nunca apagamos o que nao e nosso
+
+    // .anterior ocupada por algo sem a nossa marca: fica intacta; a versao anterior vai para
+    // .anterior-<data> (e nao some na proxima execucao)
+    fs::remove_all(tmp.p / L"BlueStinger.anterior");
+    writeFile(tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe", "alheia");
+    const fs::path s2 = tmp.p / L"BlueStinger.new-2";
+    writeFile(s2 / L"BlueStinger.exe", "mais nova");
+    install_swap(s2, dest, isPkg);
+    BS_CHECK(readFile(dest / L"BlueStinger.exe") == "mais nova");
+    BS_CHECK(readFile(tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe") == "alheia");
+    size_t kept = 0;
+    for (const auto& e : fs::directory_iterator(tmp.p))
+        if (e.path().filename().native().rfind(L"BlueStinger.anterior-", 0) == 0)
+            kept += readFile(e.path() / L"BlueStinger.exe") == "nova";
+    BS_CHECK(kept == 1);
+
+    // .anterior nossa, mas presa (arquivo aberto sem compartilhar exclusao): nao da para tira-la
+    // do caminho; a versao anterior vai para um nome unico e nada se perde
+    fs::remove_all(tmp.p / L"BlueStinger.anterior");
+    writeFile(tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe", "presa");
+    writeFile(tmp.p / L"BlueStinger.anterior" / std::wstring(kInstallMarker), "1\n");
+    HANDLE lock = CreateFileW((tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe").c_str(), GENERIC_READ,
+                              FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    const fs::path s3 = tmp.p / L"BlueStinger.new-3";
+    writeFile(s3 / L"BlueStinger.exe", "terceira");
+    bool threw = false;
+    try {
+        install_swap(s3, dest, isPkg);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    CloseHandle(lock);
+    BS_CHECK(!threw && readFile(dest / L"BlueStinger.exe") == "terceira");
+    BS_CHECK(readFile(tmp.p / L"BlueStinger.anterior" / L"BlueStinger.exe") == "presa");
+    size_t archived = 0;
+    for (const auto& e : fs::directory_iterator(tmp.p))
+        if (e.path().filename().native().rfind(L"BlueStinger.anterior-", 0) == 0)
+            archived += readFile(e.path() / L"BlueStinger.exe") == "mais nova";
+    BS_CHECK(archived == 1);
 }
 
 // Compilador falso: vcvars64.bat num caminho com % & ( ) ^ (o cmd expandiria %TEMP% e

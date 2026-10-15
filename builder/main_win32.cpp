@@ -33,7 +33,7 @@ namespace {
 enum : UINT { WM_BUILD_LOG = WM_APP + 1, WM_BUILD_PROGRESS, WM_BUILD_DONE };
 enum : int {
     ID_DISC = 100, ID_DISC_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_CLEAN, ID_BUILD, ID_CANCEL, ID_OPEN, ID_PLAY,
-    ID_PROGRESS, ID_STATUS, ID_LOG
+    ID_PROGRESS, ID_STATUS, ID_LOG, ID_EXPORT, ID_FROMPROJ
 };
 
 const wchar_t* const kTitle = L"Blue Stinger Builder";
@@ -46,7 +46,7 @@ struct Progress {
 
 struct App {
     HWND               wnd = nullptr;
-    HWND               disc, discBrowse, out, outBrowse, clean, build, cancel, open, play, progress, status, log;
+    HWND               disc, discBrowse, out, outBrowse, clean, exportProj, fromProj, build, cancel, open, play, progress, status, log;
     HFONT              font = nullptr;
     std::vector<HWND>  labels;
     fs::path           kit, sdl3;
@@ -156,7 +156,7 @@ std::wstring browse(bool folder, const std::wstring& current) {
 
 void setRunning(bool r) {
     g.running = r;
-    for (HWND h : {g.disc, g.discBrowse, g.out, g.outBrowse, g.clean, g.build}) EnableWindow(h, !r);
+    for (HWND h : {g.disc, g.discBrowse, g.out, g.outBrowse, g.clean, g.exportProj, g.fromProj, g.build}) EnableWindow(h, !r);
     EnableWindow(g.cancel, r);
     const bool done = !r && g.last.ok;
     EnableWindow(g.open, done);
@@ -170,7 +170,11 @@ void startBuild() {
     req.kitDir = g.kit;
     req.sdl3Dir = g.sdl3;
     req.clean  = SendMessageW(g.clean, BM_GETCHECK, 0, 0) == BST_CHECKED;
-    if (req.disc.empty() || req.outDir.empty()) {
+    // projeto C++ editavel: sempre em <saida>\projeto (exportar, ou compilar a partir dele com os mods)
+    const bool fromProj = SendMessageW(g.fromProj, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (SendMessageW(g.exportProj, BM_GETCHECK, 0, 0) == BST_CHECKED && !fromProj) req.exportProject = req.outDir / L"projeto";
+    if (fromProj) req.fromProject = req.outDir / L"projeto";
+    if ((req.disc.empty() && !fromProj) || req.outDir.empty()) {
         if (g.autoMode) {
             g.exitCode = 2;
             DestroyWindow(g.wnd);
@@ -251,6 +255,10 @@ void layout() {
     MoveWindow(g.outBrowse, W - m - btn, y, btn, h, TRUE);
     y += h + gap;
     MoveWindow(g.clean, m, y, W - 2 * m, h, TRUE);
+    y += h;
+    MoveWindow(g.exportProj, m, y, W - 2 * m, h, TRUE);
+    y += h;
+    MoveWindow(g.fromProj, m, y, W - 2 * m, h, TRUE);
     y += h + gap;
     const int bw = s(170);
     MoveWindow(g.build, m, y, bw, s(30), TRUE);
@@ -285,6 +293,8 @@ LRESULT CALLBACK wndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         g.out       = make(L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | WS_BORDER, ID_OUT);
         g.outBrowse = make(L"BUTTON", L"Procurar...", WS_TABSTOP, ID_OUT_BROWSE);
         g.clean     = make(L"BUTTON", L"Recompilar do zero (descarta a compilação incremental)", WS_TABSTOP | BS_AUTOCHECKBOX, ID_CLEAN);
+        g.exportProj = make(L"BUTTON", L"Exportar também o projeto C++ editável (pasta projeto, para mods)", WS_TABSTOP | BS_AUTOCHECKBOX, ID_EXPORT);
+        g.fromProj   = make(L"BUTTON", L"Compilar a partir do projeto editável (com os mods; CDI opcional)", WS_TABSTOP | BS_AUTOCHECKBOX, ID_FROMPROJ);
         g.build     = make(L"BUTTON", L"Gerar BlueStinger.exe", WS_TABSTOP | BS_DEFPUSHBUTTON, ID_BUILD);
         g.cancel    = make(L"BUTTON", L"Cancelar", WS_TABSTOP, ID_CANCEL);
         g.open      = make(L"BUTTON", L"Abrir pasta", WS_TABSTOP, ID_OPEN);
@@ -331,11 +341,9 @@ LRESULT CALLBACK wndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             SetWindowTextW(g.status, L"Cancelando...");
             break;
         case ID_OPEN: ShellExecuteW(w, L"open", g.last.installDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL); break;
-        case ID_PLAY: {
-            const std::wstring args = quote_arg(fs::absolute(text(g.disc)).native());
-            ShellExecuteW(w, L"open", g.last.exe.c_str(), args.c_str(), g.last.installDir.c_str(), SW_SHOWNORMAL);
+        case ID_PLAY:  // o jogo instalado usa os proprios dados (data\): sem o CDI
+            ShellExecuteW(w, L"open", g.last.exe.c_str(), nullptr, g.last.installDir.c_str(), SW_SHOWNORMAL);
             break;
-        }
         }
         return 0;
     case WM_BUILD_LOG: {

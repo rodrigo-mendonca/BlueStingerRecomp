@@ -1,0 +1,25 @@
+# NEW GAME ate a primeira area jogavel e movimento basico. Formato: <n-esima leitura do controle> <botoes|->
+# 200: sai da tela VMU; 1200: titulo; 1600: menu; 2000: NEW GAME (o video e o prologo correm sem toque)
+200 START
+230 -
+1200 START
+1230 -
+1600 START
+1630 -
+2000 START
+2030 -
+# area jogavel (~5400): frente, esquerda, frente, direita, frente, acao, tras
+5600 UP
+5900 -
+5950 LEFT
+6050 -
+6100 UP
+6400 -
+6450 RIGHT
+6600 -
+6650 UP
+6900 -
+6950 A
+6960 -
+7000 DOWN
+7200 -

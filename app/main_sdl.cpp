@@ -1,15 +1,17 @@
-// bluestinger: executavel nativo. Janela, apresentacao, dialogo de arquivo e eventos pelo
-// SDL3 (so neste arquivo); o jogo roda no GameHost (outra thread), a partir da imagem de
-// disco do usuario. Nenhum dado do jogo vem embutido: o executavel le o CDI ao iniciar.
+// bluestinger: executavel nativo. Janela, apresentacao e eventos pelo SDL3 (so neste
+// arquivo); o jogo roda no GameHost (outra thread). Os dados do jogo vem da pasta data/
+// ao lado do executavel, preparada pelo Builder a partir do CDI do usuario: o jogo NAO le
+// o CDI (nem precisa dele depois da conversao).
 //
-//   bluestinger [imagem.cdi] [--flash <arquivo>] [--map <arquivo>] [--scale N] [--capture <dir>]
-//   bluestinger <imagem.cdi> --headless <vblanks> [--dump <arquivo.bmp>]   (sem janela)
+//   bluestinger [--data <pasta>] [--flash <arquivo>] [--map <arquivo>] [--scale N] [--capture <dir>]
+//   bluestinger [--data <pasta>] --headless <vblanks> [--dump <arquivo.bmp>]   (sem janela)
+//   bluestinger [--data <pasta>] --verify-data   (confere o SHA-256 de todos os arquivos)
 //   bluestinger --version
-// Sem imagem na linha de comando, a janela pede o arquivo (dialogo do Windows) e lembra o
-// ultimo escolhido em bluestinger.ini. Caminhos em UTF-16/UTF-8 (nomes com acentos ou
-// outros alfabetos funcionam). Subsistema grafico: sem console, o log vai para
-// bluestinger.log ao lado do executavel (ou em %LOCALAPPDATA%\BlueStingerRecomp).
+// Caminhos em UTF-16/UTF-8 (nomes com acentos ou outros alfabetos funcionam). Subsistema
+// grafico: sem console, o log vai para bluestinger.log ao lado do executavel (ou em
+// %LOCALAPPDATA%\BlueStingerRecomp).
 #include "boot/native_boot.h"
+#include "runtime_data.h"
 #include "bs_version.h"
 #include "disc/disc_image.h"
 #include "funcs.h"
@@ -41,14 +43,16 @@ namespace {
 const char* kTitle = "Blue Stinger (recompilado)";
 
 struct Args {
-    fs::path disc, flash, map, dump, capture;
-    uint64_t headless = 0;
-    int      scale    = 2;
-    bool     version  = false;
+    fs::path gameData, flash, map, dump, capture;
+    fs::path positional;  // argumento solto (antes: a imagem CDI) -> mensagem explicando
+    uint64_t headless   = 0;
+    uint64_t dumpEvery  = 0;  // headless: quadro a cada N VBlanks em --capture
+    int      scale      = 2;
+    bool     version    = false;
+    bool     verifyData = false;
 };
 
 std::string utf8(const fs::path& p) { return bs::disc::pathText(p); }
-fs::path    fromUtf8(const std::string& s) { return fs::path(std::u8string(s.begin(), s.end())); }
 
 std::string narrow(const std::wstring& w) {
     if (w.empty()) return {};
@@ -73,15 +77,16 @@ bool parseArgs(Args& a) {
         else if (s == L"--map" && (v = next())) a.map = *v;
         else if (s == L"--dump" && (v = next())) a.dump = *v;
         else if (s == L"--capture" && (v = next())) a.capture = *v;
+        else if (s == L"--dump-every" && (v = next())) a.dumpEvery = std::wcstoull(v->c_str(), nullptr, 10);
         else if (s == L"--headless" && (v = next())) a.headless = std::wcstoull(v->c_str(), nullptr, 10);
         else if (s == L"--scale" && (v = next())) a.scale = _wtoi(v->c_str());
+        else if (s == L"--data" && (v = next())) a.gameData = *v;
         else if (s == L"--version") a.version = true;
-        else if (!s.empty() && s[0] != L'-' && a.disc.empty()) a.disc = s;
+        else if (s == L"--verify-data") a.verifyData = true;
+        else if (!s.empty() && s[0] != L'-' && a.positional.empty()) a.positional = s;
         else return false;
     }
-    if (a.disc.empty())
-        if (const wchar_t* e = _wgetenv(L"BS_DISC_IMAGE")) a.disc = e;
-    return a.scale >= 1 && a.scale <= 8 && (a.headless == 0 || !a.disc.empty());
+    return a.scale >= 1 && a.scale <= 8;
 }
 
 std::wstring widen(const std::string& s) {
@@ -102,9 +107,9 @@ fs::path exeDir() {
     return fs::path(buf).parent_path();
 }
 
-// Pasta de dados do usuario: ao lado do executavel se der para gravar la; senao
-// %LOCALAPPDATA%\BlueStingerRecomp.
-fs::path dataDir() {
+// Pasta dos arquivos do usuario (log): ao lado do executavel se der para gravar la; senao
+// %LOCALAPPDATA%\BlueStingerRecomp. (Os dados do jogo ficam em data/, so leitura.)
+fs::path userDir() {
     const fs::path  here  = exeDir();
     const fs::path  probe = here / L".bluestinger_teste_escrita";
     std::error_code ec;
@@ -163,21 +168,6 @@ void setupCrashLog() {
         std::fflush(stderr);
         std::abort();
     });
-}
-
-fs::path readLastDisc(const fs::path& dir) {
-    std::ifstream f(dir / L"bluestinger.ini", std::ios::binary);
-    std::string   line;
-    while (std::getline(f, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.rfind("cdi=", 0) == 0) return fromUtf8(line.substr(4));
-    }
-    return {};
-}
-
-void saveLastDisc(const fs::path& dir, const fs::path& disc) {
-    std::ofstream f(dir / L"bluestinger.ini", std::ios::binary | std::ios::trunc);
-    f << "# Blue Stinger (recompilado): ultima imagem de disco usada\ncdi=" << utf8(disc) << "\n";
 }
 
 std::string readFile(const fs::path& path) {
@@ -243,49 +233,12 @@ void errorBox(SDL_Window* parent, const std::string& msg) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kTitle, msg.c_str(), parent);
 }
 
-// Dialogo de abertura do SDL (assincrono): espera a resposta processando eventos.
-// O callback pode rodar em outra thread e depois de um pedido de fechar: o estado e
-// compartilhado (a ultima referencia o libera) e protegido por mutex (revisao Codex).
-struct DiscChoice {
-    fs::path    path;   // vazio = cancelado ou erro
-    std::string error;  // falha do proprio dialogo (SDL distingue de cancelar)
-};
-
-DiscChoice chooseDisc(SDL_Window* window, const fs::path& start) {
-    struct State {
-        std::mutex m;
-        bool       done = false;
-        DiscChoice result;
-    };
-    auto st = std::make_shared<State>();
-    static const SDL_DialogFileFilter filters[] = {{"Imagem de disco CDI", "cdi"}, {"Todos os arquivos", "*"}};
-    const std::string                 startDir   = start.empty() ? std::string() : utf8(start.parent_path());
-    SDL_ShowOpenFileDialog(
-        [](void* ud, const char* const* list, int) {
-            std::unique_ptr<std::shared_ptr<State>> ref(static_cast<std::shared_ptr<State>*>(ud));
-            State&                                  s = **ref;
-            std::lock_guard                         lock(s.m);
-            if (!list) s.result.error = std::string("dialogo de arquivo falhou: ") + SDL_GetError();
-            else if (list[0]) s.result.path = fromUtf8(list[0]);
-            s.done = true;
-        },
-        new std::shared_ptr<State>(st), window, filters, 2, startDir.empty() ? nullptr : startDir.c_str(), false);
-    for (;;) {
-        {
-            std::lock_guard lock(st->m);
-            if (st->done) return st->result;
-        }
-        SDL_Event e;
-        while (SDL_PollEvent(&e))
-            if (e.type == SDL_EVENT_QUIT) return {};  // o callback ainda pode vir: o estado continua vivo
-        SDL_Delay(10);
-    }
-}
-
-// Imagem valida = executavel de boot com o hash da versao recompilada (NTSC-U V1.000).
-bool validateDisc(const fs::path& disc, std::string& err) {
+// Dados do jogo validos = manifesto e arquivos presentes, executavel de boot com o hash da
+// versao recompilada. A mensagem diz o que falta e como gerar de novo.
+bool validateData(const fs::path& dir, std::string& err) {
     try {
-        bs::boot_read_disc(disc);
+        bs::boot_read_data(dir);
+        bs::disc::RuntimeDisc check(dir, exeDir() / L"mods" / L"assets");  // mods de arquivo cabem?
         return true;
     } catch (const std::exception& e) {
         err = e.what();
@@ -294,6 +247,22 @@ bool validateDisc(const fs::path& disc, std::string& err) {
 }
 
 int runHeadless(bs::GameHost& host, const Args& a) {
+    // diagnostico: quadros periodicos (--dump-every N --capture <dir>), sem afetar o jogo
+    if (a.dumpEvery && !a.capture.empty()) {
+        std::error_code ec;
+        fs::create_directories(a.capture, ec);
+        uint64_t      next = a.dumpEvery, seq = 0;
+        bs::GameFrame f;
+        while (host.running()) {
+            if (host.vblanks() >= next && host.latestFrame(f, seq)) {
+                char name[32];
+                std::snprintf(name, sizeof name, "v%06llu.bmp", (unsigned long long)host.vblanks());
+                writeBmp(a.capture / name, f);
+                next = host.vblanks() / a.dumpEvery * a.dumpEvery + a.dumpEvery;
+            }
+            Sleep(1);
+        }
+    }
     host.join();
     bs::GameFrame f;
     uint64_t      seq = 0;
@@ -413,7 +382,8 @@ bs::KeyEventInput* setupInput(const Args& a) {
 
 bs::GameOptions gameOptions(const Args& a) {
     bs::GameOptions opt;
-    opt.disc              = a.disc;
+    opt.data              = a.gameData;
+    opt.modAssets         = exeDir() / L"mods" / L"assets";  // mods de arquivos (opcional)
     opt.flash             = a.flash;
     opt.registerFunctions = [] { bsg::register_functions(); };
     opt.realtime          = a.headless == 0;
@@ -422,14 +392,20 @@ bs::GameOptions gameOptions(const Args& a) {
 }
 
 const char* kUsage =
-    "uso: bluestinger [imagem.cdi] [--flash <arquivo>] [--map <arquivo>] [--scale N] [--capture <dir>]\n"
-    "     bluestinger <imagem.cdi> --headless <vblanks> [--dump <arquivo.bmp>]\n"
-    "     bluestinger --version\n";
+    "uso: bluestinger [--data <pasta>] [--flash <arquivo>] [--map <arquivo>] [--scale N] [--capture <dir>]\n"
+    "     bluestinger [--data <pasta>] --headless <vblanks> [--dump <arquivo.bmp>] [--dump-every N --capture <dir>]\n"
+    "     bluestinger [--data <pasta>] --verify-data\n"
+    "     bluestinger --version\n"
+    "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n";
+
+const char* kNoCdi =
+    "O jogo nao le mais o CDI: os dados ficam na pasta data\\ ao lado do executavel, preparada\n"
+    "pelo Blue Stinger Builder a partir do seu CDI. Rode o executavel sem argumentos.";
 
 int mainHeadless(Args& a) {
     std::string err;
-    if (!validateDisc(a.disc, err)) {
-        std::fprintf(stderr, "erro: imagem invalida (%s): %s\n", utf8(a.disc).c_str(), err.c_str());
+    if (!validateData(a.gameData, err)) {
+        std::fprintf(stderr, "erro: %s\n", err.c_str());
         return 1;
     }
     setupInput(a);
@@ -442,7 +418,29 @@ int mainHeadless(Args& a) {
     return rc;
 }
 
-int mainWindow(Args& a, const fs::path& data) {
+int mainVerifyData(const Args& a) {
+    std::string err;
+    if (!validateData(a.gameData, err)) {
+        std::fprintf(stderr, "erro: %s\n", err.c_str());
+        return 1;
+    }
+    const std::string bad = bs::disc::check_runtime_files(a.gameData);
+    if (!bad.empty()) {
+        std::fprintf(stderr, "erro: %s\n", bad.c_str());
+        return 1;
+    }
+    std::printf("dados do jogo conferidos: %s\n", utf8(a.gameData).c_str());
+    return 0;
+}
+
+int mainWindow(Args& a) {
+    // dados validados antes de abrir a janela: sem eles, so a mensagem
+    std::string err;
+    if (!validateData(a.gameData, err)) {
+        std::fprintf(stderr, "erro: %s\n", err.c_str());
+        nativeBox("Os dados do jogo nao puderam ser carregados.\n\n" + err, MB_ICONERROR);
+        return 1;
+    }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         const std::string msg = std::string("nao foi possivel iniciar o video: ") + SDL_GetError();
         std::fprintf(stderr, "erro: %s\n", msg.c_str());
@@ -464,35 +462,10 @@ int mainWindow(Args& a, const fs::path& data) {
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
-    // imagem de disco: linha de comando ou dialogo; validada antes de iniciar o jogo
-    const bool fromArgs = !a.disc.empty();
-    int        rc       = 0;
-    for (;;) {
-        if (a.disc.empty()) {
-            const DiscChoice c = chooseDisc(window, readLastDisc(data));
-            if (!c.error.empty()) {  // falha nao e cancelamento: mensagem e codigo de erro
-                errorBox(window, c.error);
-                rc = 1;
-                break;
-            }
-            a.disc = c.path;
-            if (a.disc.empty()) break;  // cancelado
-        }
-        std::string err;
-        if (validateDisc(a.disc, err)) break;
-        errorBox(window, "Esta imagem nao pode ser usada:\n" + utf8(a.disc) + "\n\n" + err +
-                             "\n\nE preciso a imagem CDI do Blue Stinger NTSC-U (T13001N V1.000).");
-        if (fromArgs) {
-            rc = 1;
-            a.disc.clear();
-            break;
-        }
-        a.disc.clear();  // escolher de novo
-    }
-    if (!a.disc.empty()) {
-        saveLastDisc(data, a.disc);
-        bs::KeyEventInput* keys = setupInput(a);
-        bs::GameHost       host;
+    int                rc   = 0;
+    bs::KeyEventInput* keys = setupInput(a);
+    {
+        bs::GameHost host;
         host.start(gameOptions(a));
         if (keys) rc = runWindow(host, keys, a, window, renderer);
         else {
@@ -503,8 +476,8 @@ int mainWindow(Args& a, const fs::path& data) {
         // os caminhos (revisao Codex 2026-10-14)
         host.requestStop();
         host.join();
-        bs::input_set_source(nullptr);
     }
+    bs::input_set_source(nullptr);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -514,8 +487,7 @@ int mainWindow(Args& a, const fs::path& data) {
 } // namespace
 
 int main(int, char**) {
-    const fs::path data = dataDir();
-    setupLog(data);
+    setupLog(userDir());
     setupCrashLog();
     Args a;
     if (!parseArgs(a)) {
@@ -527,9 +499,16 @@ int main(int, char**) {
         std::printf("Blue Stinger (recompilado) %s, compilado em %s\n", BS_VERSION, BS_BUILD_DATE);
         return 0;
     }
-    std::fprintf(stderr, "%s %s (%s)\n", kTitle, BS_VERSION, BS_BUILD_DATE);
+    if (!a.positional.empty()) {  // antes era a imagem CDI: explica em vez de ignorar
+        std::fprintf(stderr, "erro: argumento %s nao e usado.\n%s\n", utf8(a.positional).c_str(), kNoCdi);
+        if (!a.headless && !a.verifyData) nativeBox(kNoCdi, MB_ICONINFORMATION);
+        return 2;
+    }
+    if (a.gameData.empty()) a.gameData = exeDir() / L"data";
+    std::fprintf(stderr, "%s %s (%s); dados: %s\n", kTitle, BS_VERSION, BS_BUILD_DATE, utf8(a.gameData).c_str());
     try {
-        return a.headless ? mainHeadless(a) : mainWindow(a, data);
+        if (a.verifyData) return mainVerifyData(a);
+        return a.headless ? mainHeadless(a) : mainWindow(a);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "erro: %s\n", e.what());
         if (!a.headless) nativeBox(e.what(), MB_ICONERROR);

@@ -20,12 +20,19 @@
 
 namespace bs::builder {
 
-enum class Step { Validate, Toolchain, Extract, Recompile, Configure, Compile, Package, Verify, Install, Done };
+enum class Step { Validate, Toolchain, Extract, Recompile, Configure, Compile, Package, Verify, Export, Install, Done };
 const char* step_name(Step s);
 
 struct Request {
     std::filesystem::path disc;    // imagem CDI do usuario
     std::filesystem::path outDir;  // pasta de saida (criada se nao existir)
+    std::wstring          installName = L"BlueStinger";  // subpasta do jogo em outDir
+    std::string           versionLabel;  // vazio = arquivo VERSION do kit (ou "dev")
+    // Projeto C++ editavel (project_export.h): exportar depois de compilar e verificar;
+    // ou compilar A PARTIR de um projeto (com os mods; o CDI so e preciso se os dados ainda
+    // nao foram preparados nesta saida).
+    std::filesystem::path exportProject;
+    std::filesystem::path fromProject;
     std::filesystem::path kitDir;  // fontes do runtime + jogo (MIT/zlib), config e textos
     std::filesystem::path sdl3Dir; // fontes do SDL3; vazio = <kit>\third_party\SDL3
     std::filesystem::path vswhere, vcvars;  // localizacao do compilador (vazio = automatica)
@@ -70,6 +77,8 @@ struct SwapCancelled : std::runtime_error {
 // - `cancel` vale ate o primeiro rename (lanca SwapCancelled); depois, a troca termina.
 // - Se a troca falhar, `dest` anterior e restaurado e a funcao lanca (a mensagem diz onde
 //   esta a versao anterior se nem a restauracao der certo).
+// - Com sucesso, a versao anterior fica em `<dest>.anterior` (rollback: renomear de
+//   volta); uma `.anterior` mais antiga, marcada por nos, sai.
 void install_swap(const std::filesystem::path& stage, const std::filesystem::path& dest,
                   const std::function<bool(const std::filesystem::path& relative)>& isPackageFile,
                   const std::atomic<bool>* cancel = nullptr);

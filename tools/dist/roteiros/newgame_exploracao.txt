@@ -1,0 +1,63 @@
+# NEW GAME + exploracao longa da primeira area (20 000 leituras): botoes, caminhadas longas,
+# combinacoes e um trecho parado no fim (estabilidade). Mesmo inicio de newgame_area1.txt.
+200 START
+230 -
+1200 START
+1230 -
+1600 START
+1630 -
+2000 START
+2030 -
+# botoes isolados na area jogavel
+5600 A
+5610 -
+5700 B
+5710 -
+5800 X
+5810 -
+5900 Y
+5910 -
+6000 START
+6010 -
+6200 START
+6210 -
+# caminhada longa para frente (em direcao ao portao C-GATE)
+6400 UP
+7600 -
+# acao perto do portao
+7650 A
+7660 -
+7750 A
+7760 -
+# esquerda, frente, direita, frente
+7900 LEFT
+8100 -
+8150 UP
+9000 -
+9050 RIGHT
+9400 -
+9450 UP
+10500 -
+# combinacoes (frente + acao, frente + B)
+10600 UP+A
+10900 -
+11000 UP+B
+11300 -
+# volta (tras) e meia-volta
+11400 DOWN
+12400 -
+12500 LEFT
+12900 -
+12950 UP
+14500 -
+# acoes repetidas
+14600 A
+14610 -
+14700 A
+14710 -
+14800 X
+14810 -
+14900 Y
+14910 -
+# parado ate o fim (estabilidade)
+15000 -

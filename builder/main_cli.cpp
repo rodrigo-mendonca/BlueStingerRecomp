@@ -1,6 +1,9 @@
 // bs-builder: o fluxo completo do Builder pela linha de comando (automacao e testes).
 //   bs-builder --disc <imagem.cdi> --out <pasta> [--kit <pasta>] [--sdl3 <pasta>]
 //              [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean] [--verify-vblanks N]
+//              [--name <subpasta>]   (padrao BlueStinger; o jogo instalado nao precisa do CDI)
+//              [--projeto <pasta>]   exporta tambem o projeto C++ editavel (project_export.h)
+//   bs-builder --de-projeto <pasta> --out <pasta> [--disc <cdi>]   compila um projeto editado
 // Codigo de saida: 0 = BlueStinger.exe instalado e verificado; 1 = falha; 2 = uso;
 // 3 = cancelado (Ctrl+C).
 #include "builder_core.h"
@@ -60,16 +63,22 @@ int main() {
         else if (a == L"--vcvars" && more) req.vcvars = args[++i];
         else if (a == L"--vswhere" && more) req.vswhere = args[++i];
         else if (a == L"--verify-vblanks" && more) req.verifyVblanks = unsigned(std::stoul(args[++i]));
+        else if (a == L"--name" && more) req.installName = args[++i];
+        else if (a == L"--version-label" && more) req.versionLabel = narrow(args[++i]);
+        else if (a == L"--projeto" && more) req.exportProject = args[++i];
+        else if (a == L"--de-projeto" && more) req.fromProject = args[++i];
         else if (a == L"--clean") req.clean = true;
         else {
             std::fprintf(stderr,
                          "uso: bs-builder --disc <imagem.cdi> --out <pasta> [--kit <pasta>] [--sdl3 <pasta>]\n"
-                         "                [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean]\n"
+                         "                [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean] [--name <subpasta>]\n"
+                         "                [--projeto <pasta>]      exporta o projeto C++ editavel\n"
+                         "  bs-builder --de-projeto <pasta> --out <pasta> [--disc <cdi>]   compila o projeto (mods)\n"
                          "                [--verify-vblanks N]\n");
             return 2;
         }
     }
-    if (req.disc.empty() || req.outDir.empty()) {
+    if ((req.disc.empty() && req.fromProject.empty()) || req.outDir.empty()) {
         std::fprintf(stderr, "uso: bs-builder --disc <imagem.cdi> --out <pasta> (veja --help)\n");
         return 2;
     }

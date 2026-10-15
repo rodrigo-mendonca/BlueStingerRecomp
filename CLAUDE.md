@@ -27,14 +27,18 @@ $env:BS_DISC_IMAGE="ISO/Blue Stinger.cdi"; ctest --preset msvc-debug   # + teste
 ```
 
 Ferramentas:
-- `bs-extract <img.cdi> game-data`: extrai e valida o hash.
+- `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:
+  dados de execução do jogo nativo (o jogo não lê o CDI), conferidos setor a setor.
 - `bs-disasm game-data/1ST_READ.BIN 0x8C010000 <início> <n>`: disassembly.
 - `bs-recomp config/bluestinger_us.toml [--analyze-only]`: análise + C++ em `generated/`.
 - `tools/dev/compare_capstone.py`: decodificador vs. Capstone (venv opcional).
 - `bs-builder --disc <img.cdi> --out <pasta> --kit . --sdl3 build/msvc-release/_deps/sdl3-src`:
   fluxo completo do Builder (CDI → BlueStinger.exe) a partir do repositório.
-- `tools/dist/make_preview.ps1`, `make_builder.ps1`: distribuições em `dist/`; testes
-  `test_preview.ps1`, `test_make_preview.ps1`, `test_builder.ps1 -Disc <img.cdi>`.
+- `tools/dist/make_preview.ps1 -Disc <img.cdi>` (pelo próprio Builder), `make_builder.ps1`: distribuições
+  em `dist/`; testes `test_preview.ps1`, `test_gameplay.ps1` (NEW GAME até a 1ª área),
+  `test_builder.ps1 -Disc <img.cdi>`, `test_projeto.ps1 -Disc <img.cdi>` (projeto editável e mods).
+- Diagnóstico do jogo: `bluestinger --headless N --dump-every K --capture <dir>` com
+  `BS_INPUT_SCRIPT=tools/dist/roteiros/newgame_area1.txt`.
 
 ## Revisão com Codex (revisor independente)
 

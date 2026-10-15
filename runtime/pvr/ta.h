@@ -24,4 +24,10 @@ uint32_t                     ta_bytes();          // bytes recebidos pela FIFO d
 // de textura (0x11000000, escreve na VRAM pelo caminho de 64 bits). 32 bytes por vez.
 bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data);
 
+// Conversor YUV (0x10800000): escrever TA_YUV_TEX_BASE ou TA_YUV_TEX_CTRL recomeca a
+// conversao com os valores atuais; TA_YUV_TEX_CNT le ta_yuv_count().
+void     ta_yuv_reset(uint32_t base, uint32_t ctrl);
+void     ta_yuv_write(Sh4Context* c, const uint32_t* data);  // 32 bytes de macrobloco
+uint32_t ta_yuv_count();
+
 } // namespace bs

@@ -42,8 +42,18 @@ void sh4_set_function_table(const Sh4FuncEntry* table, size_t count) {
     g_count = count;
 }
 
+// Substituicoes feitas por mods (runtime/mods): valem antes da tabela gerada.
+static std::unordered_map<uint32_t, Sh4Func> g_override;
+
+void sh4_override(uint32_t addr, Sh4Func fn) {
+    if (fn) g_override[sh4_phys(addr)] = fn;
+    else g_override.erase(sh4_phys(addr));
+}
+
 Sh4Func sh4_lookup(uint32_t addr) {
     const uint32_t p  = sh4_phys(addr);
+    if (!g_override.empty())
+        if (const auto o = g_override.find(p); o != g_override.end()) return o->second;
     const auto*    it = std::lower_bound(g_table, g_table + g_count, p,
                                          [](const Sh4FuncEntry& e, uint32_t v) { return e.addr < v; });
     if (it != g_table + g_count && it->addr == p) return it->fn;

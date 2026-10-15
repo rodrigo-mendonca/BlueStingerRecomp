@@ -25,6 +25,8 @@ add_library(bs_runtime STATIC
   hle/flashrom.cpp
   gdrom/gdrom.cpp
   gdrom/image_source.cpp
+  gdrom/data_source.cpp
+  mods/mod_api.cpp
   debug/snapshot.cpp
 )
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

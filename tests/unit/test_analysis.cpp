@@ -68,7 +68,7 @@ BS_TEST(codegen_emits_expected_constructs) {
     codegen::Options opt;
     const std::string s = codegen::emitFunction(img, a, a.functions.at(fx::kMain), opt);
     BS_CHECK(s.find("switch (::bs::sh4_phys(tgt))") != std::string::npos);
-    BS_CHECK(s.find("BS_CALL(f_8C01005C(c), 0x8C010012u)") != std::string::npos);  // bsr double
+    BS_CHECK(s.find("BS_CALL(BSG_FN(8C01005C)(c), 0x8C010012u)") != std::string::npos);  // bsr double
     BS_CHECK(s.find("BS_EXPECT_TARGET(0x8C01003Cu, tgt, 0x8C010060u)") != std::string::npos);
     BS_CHECK(s.find("c->r[1] = 0x0000012Cu;") != std::string::npos);  // pool inline (300)
     BS_CHECK(s.find("const uint32_t take = c->t;") != std::string::npos);  // bf/s

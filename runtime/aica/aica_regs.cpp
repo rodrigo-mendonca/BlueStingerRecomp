@@ -9,8 +9,15 @@
 // O RTC conta segundos desde 1950-01-01 e avanca um por segundo de CPU emulada.
 #include "aica/aica_regs.h"
 
+#include "cpu/sh4_mem.h"
+#include "cpu/sh4_runtime.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <map>
 #include <vector>
 
 namespace bs {
@@ -70,11 +77,90 @@ uint32_t aica_rtc_host_now() {
     return uint32_t(epoch1950 + int64_t(now) + int64_t(offset));
 }
 
+// Diagnostico (BS_AICA_TRACE=1): acessos da CPU a RAM de som por endereco, com o primeiro e o
+// ultimo valor e o ciclo; relatorio dos mais lidos no fim do processo. Serve para achar o que
+// o jogo espera do driver de som (ARM7) que ainda nao roda.
+namespace {
+struct RamStat {
+    uint64_t reads = 0, writes = 0, firstCycle = 0, lastCycle = 0;
+    uint32_t firstValue = 0, lastValue = 0, changes = 0;
+    uint32_t readers[4] = {};  // funcoes SH-4 que leram (as 4 primeiras)
+};
+uint32_t g_lastFn = 0;  // ultima funcao gerada que comecou (BS_FN_ENTER)
+uint32_t g_pr     = 0;  // PR no momento da leitura (retorno dentro de quem leu)
+void      onEnter(Sh4Context*, uint32_t entry) { g_lastFn = entry; }
+std::map<uint32_t, RamStat>* g_trace = nullptr;
+void traceReport() {
+    if (!g_trace) return;
+    std::vector<std::pair<uint32_t, RamStat>> v(g_trace->begin(), g_trace->end());
+    std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second.reads > b.second.reads; });
+    size_t   other = 0;
+    uint32_t lo = 0xFFFFFFFF, hi = 0;
+    for (const auto& [addr, s] : v)
+        if (s.writes && s.lastValue != 0x41474553) ++other, lo = std::min(lo, addr), hi = std::max(hi, addr);
+    std::fprintf(stderr, "[aica] RAM de som: %zu enderecos acessados pela CPU; %zu escritos com valor diferente de "
+                         "\"SEGA\" (%08X-%08X); mais lidos:\n",
+                 v.size(), other, other ? lo : 0, hi);
+    for (size_t i = 0; i < v.size() && i < 40; ++i) {
+        const auto& [addr, s] = v[i];
+        std::fprintf(stderr,
+                     "[aica]   %08X leituras %llu escritas %llu valor %08X -> %08X (mudou %u vezes) ciclos %llu-%llu "
+                     "PR na leitura %08X %08X %08X %08X\n",
+                     addr, (unsigned long long)s.reads, (unsigned long long)s.writes, s.firstValue, s.lastValue,
+                     s.changes, (unsigned long long)s.firstCycle, (unsigned long long)s.lastCycle, s.readers[0],
+                     s.readers[1], s.readers[2], s.readers[3]);
+    }
+}
+void trace(bool write, uint32_t p, uint32_t v, uint64_t cycles, uint32_t pr) {
+    static const bool on = std::getenv("BS_AICA_TRACE") != nullptr;
+    if (!on) return;
+    if (!g_trace) {
+        g_trace = new std::map<uint32_t, RamStat>();
+        std::atexit(traceReport);
+        if (!g_sh4_trace) sh4_set_trace(&onEnter);  // custo so com o diagnostico; nao tira outro observador
+    }
+    RamStat& s = (*g_trace)[p & ~3u];
+    if (!s.reads && !s.writes) s.firstValue = v, s.firstCycle = cycles;
+    if (s.reads + s.writes && v != s.lastValue) ++s.changes;
+    (write ? s.writes : s.reads)++;
+    // primeira escrita do driver (vetores do ARM em 0x00800000, diferente do preenchimento)
+    static bool driverSeen = false;
+    if (write && !driverSeen && (p & ~3u) == 0x00800000 && v != 0x41474553) {
+        driverSeen = true;
+        std::fprintf(stderr, "[aica] primeira escrita do driver em 00800000 = %08X (ciclo %llu, PR %08X, funcao %08X)\n", v,
+                     (unsigned long long)cycles, pr, g_lastFn);
+    }
+    // BS_AICA_DUMP_AT=N: na N-esima leitura deste endereco, mostra o inicio da RAM de som e a
+    // area lida (para comparar com o oraculo parado no mesmo ponto)
+    static const long dumpAt = std::getenv("BS_AICA_DUMP_AT") ? std::atol(std::getenv("BS_AICA_DUMP_AT")) : 0;
+    if (!write && dumpAt && s.reads == uint64_t(dumpAt) && (p & ~3u) == 0x00813400) {
+        for (uint32_t base : {0x00800000u, 0x00813400u, 0x00813A00u}) {
+            std::fprintf(stderr, "[aica] %08X:", base);
+            for (uint32_t i = 0; i < 8; ++i) {
+                uint32_t w;
+                std::memcpy(&w, &g_ram[(base + 4 * i) & (kAicaRamSize - 1)], 4);
+                std::fprintf(stderr, " %08X", w);
+            }
+            std::fprintf(stderr, "\n");
+        }
+    }
+    g_pr = pr;
+    if (!write)
+        for (uint32_t& r : s.readers)
+            if (r == g_pr || !r) {
+                r = g_pr;
+                break;
+            }
+    s.lastValue = v, s.lastCycle = cycles;
+}
+} // namespace
+
 bool aica_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);
     if (inRam(p)) {
         v = 0;
         std::memcpy(&v, &g_ram[p & (kAicaRamSize - 1)], size);
+        trace(false, p, v, c->cycles, c->pr);
         return true;
     }
     if (p == kCtrl && size == 4) v = g_ctrl;
@@ -89,10 +175,22 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (inRam(p)) {
         std::memcpy(&g_ram[p & (kAicaRamSize - 1)], &v, size);
+        trace(true, p, v, c->cycles, c->pr);
         return true;
     }
     if (size != 4) return false;
     if (p == kCtrl) {
+        if (std::getenv("BS_AICA_TRACE"))  // diagnostico: reset/liberacao do ARM7 (bit 0)
+            std::fprintf(stderr, "[aica] controle 00702C00 = %08X (ARM7 %s; ciclo %llu, PR %08X, funcao %08X)\n", v,
+                         (v & 1) ? "em reset" : "liberado", (unsigned long long)c->cycles, c->pr, g_lastFn);
+        if (std::getenv("BS_AICA_TRACE")) {  // pilha: enderecos de retorno salvos pelos chamadores
+            std::fprintf(stderr, "[aica]   pilha (r15=%08X):", c->r[15]);
+            for (uint32_t i = 0; i < 24; ++i) {
+                const uint32_t w = sh4_read32(c, c->r[15] + 4 * i);
+                if ((w & 0xFFF00000) == 0x8C000000) std::fprintf(stderr, " +%u:%08X", 4 * i, w);
+            }
+            std::fprintf(stderr, "\n");
+        }
         g_ctrl = v;
     } else if (p == kRtcEn) {
         g_rtcEnable = v & 1;

@@ -59,7 +59,9 @@ struct Config {
     bool                           data_pointers      = true;  // palavras de dados que apontam para inicio de funcao
 };
 
-enum class Origin : uint8_t { Entry, Call, Pointer, Config, DataPointer };
+// PointerTable: entrada de uma tabela de ponteiros para codigo em dado (vtable, tabela de
+// callbacks), aceita com evidencia da propria tabela (ver Analyzer::fromPointerTables).
+enum class Origin : uint8_t { Entry, Call, Pointer, Config, DataPointer, PointerTable };
 
 struct JumpTable {
     uint32_t              insn = 0;        // braf ou jmp
@@ -82,7 +84,7 @@ struct Function {
 };
 
 struct Stats {
-    size_t functions = 0, by_call = 0, by_pointer = 0, by_data_pointer = 0, by_config = 0;
+    size_t functions = 0, by_call = 0, by_pointer = 0, by_data_pointer = 0, by_config = 0, by_pointer_table = 0;
     size_t instructions = 0, unique_instructions = 0;
     size_t jump_tables = 0, jump_tables_heuristic = 0;
     size_t direct_indirects = 0, unresolved_indirects = 0, dead_ends = 0;

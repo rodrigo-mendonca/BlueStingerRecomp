@@ -185,13 +185,22 @@ def connect(a) -> Gdb:
             pass
         exe = a.flycast or FLYCAST
         a._proc = subprocess.Popen([exe, os.path.abspath(a.game or GAME)], cwd=os.path.dirname(exe))
-    try:
-        g = Gdb(port=a.port)
-        g.cmd("?")
-        return g
-    except BaseException:
-        finish(a, None)
-        raise
+    # Logo depois de uma sessao anterior, a primeira conexao as vezes cai (ConnectionResetError
+    # no Windows): tenta de novo algumas vezes antes de desistir.
+    last = None
+    for attempt in range(5):
+        try:
+            g = Gdb(port=a.port)
+            g.cmd("?")
+            return g
+        except (ConnectionResetError, ConnectionRefusedError, socket.timeout) as e:
+            last = e
+            time.sleep(2.0)
+        except BaseException:
+            finish(a, None)
+            raise
+    finish(a, None)
+    raise SystemExit(f"nao foi possivel conectar ao Flycast: {last}")
 
 
 def finish(a, g):
@@ -456,6 +465,22 @@ def cmd_first_diff(a):
     return 1 if stale else 0
 
 
+def cmd_mem(a):
+    """Para na N-esima execucao de unc e mostra len bytes de ddr (palavras de 32 bits)."""
+    if a.len % 4:
+        raise SystemExit("len precisa ser multiplo de 4 (palavras de 32 bits)")
+    g = connect(a)
+    if a.depois:  # ancora: passa uma vez por este endereco antes de contar `func`
+        run_to(g, a.depois, 1)
+    r = run_to(g, a.func, a.hit)
+    data = g.read(a.addr, a.len)
+    print("pc=%08X pr=%08X" % (r[R_PC], r[R_PR]))
+    for i in range(0, len(data), 16):
+        words = [struct.unpack_from("<I", data, i + j)[0] for j in range(0, min(16, len(data) - i), 4)]
+        print("%08X: %s" % (a.addr + i, " ".join("%08X" % w for w in words)))
+    finish(a, g)
+
+
 def cmd_regs(a):
     g = connect(a)
     r = g.regs()
@@ -500,9 +525,15 @@ def main():
     sf.add_argument("--seconds", type=float, default=180.0, help="tempo do host rodando livre antes da parada")
     sf.add_argument("--entry", help="grava antes o estado na entrada do jogo (mesma sessao)")
     sp.add_parser("regs")
+    m = sp.add_parser("mem", help="memoria na N-esima execucao de um endereco")
+    m.add_argument("func", type=lambda s: int(s, 0))
+    m.add_argument("addr", type=lambda s: int(s, 0))
+    m.add_argument("len", type=lambda s: int(s, 0))
+    m.add_argument("--hit", type=int, default=1)
+    m.add_argument("--depois", type=lambda s: int(s, 0), help="para antes uma vez neste endereco (ancora)")
     a = p.parse_args()
     try:
-        return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs, "snap-free": cmd_snap_free}[a.cmd](a) or 0
+        return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs, "snap-free": cmd_snap_free, "mem": cmd_mem}[a.cmd](a) or 0
     finally:
         finish(a, None)  # erro no meio do comando: nao deixar Flycast orfao
 

@@ -22,6 +22,10 @@ struct BootFiles {
 // ou de versao nao suportada).
 BootFiles boot_read_disc(const std::filesystem::path& image);
 
+// O mesmo a partir dos dados preparados pelo Builder (runtime_data.h), sem o CDI. Lanca
+// disc::RuntimeDataError (dados ausentes/incompletos ou de outra versao).
+BootFiles boot_read_data(const std::filesystem::path& dir);
+
 // Estado na entrada do jogo (0xAC010000), como o BIOS o deixa: RAM (area do sistema,
 // IP.BIN em 0x8C008000, executavel em 0x8C010000), registradores da CPU e do PVR,
 // vetores das syscalls HLE e a hora do RTC (`rtcSeconds`, desde 1950-01-01).

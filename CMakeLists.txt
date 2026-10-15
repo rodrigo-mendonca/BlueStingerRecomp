@@ -9,6 +9,10 @@ option(BS_BUILD_TESTS "Compilar testes" ON)
 option(BS_BUILD_GAME  "Compilar o executavel do jogo (requer generated/)" OFF)
 # OFF no kit do Builder: so runtime + jogo (sem tradutor, ferramentas de dev nem rede)
 option(BS_BUILD_TOOLS "Compilar tradutor, ferramentas de desenvolvimento e o Builder" ON)
+# Projeto editavel (mods): chamadas entre funcoes geradas passam por slots substituiveis e
+# os .cpp de BS_MODS_DIR entram no executavel (runtime/mods/mod_api.h).
+option(BS_MODS "Compilar com a camada de mods" OFF)
+set(BS_MODS_DIR "" CACHE PATH "Pasta com os mods (.cpp) do projeto editavel")
 
 if(MSVC)
   add_compile_options(/W4 /permissive- /utf-8)
@@ -29,6 +33,9 @@ if(EXISTS "${BS_GENERATED_DIR}/generated.cmake")
   add_library(bs_generated STATIC ${BS_GENERATED_SOURCES})
   target_include_directories(bs_generated PUBLIC "${BS_GENERATED_DIR}")
   target_link_libraries(bs_generated PUBLIC bs_runtime)
+  if(BS_MODS)
+    target_compile_definitions(bs_generated PUBLIC BS_MODS=1)
+  endif()
   if(MSVC)
     # substitui as opcoes herdadas (/W4) para nao gerar o aviso D9025
     set_property(TARGET bs_generated PROPERTY COMPILE_OPTIONS /bigobj /W1 /utf-8 /permissive-)

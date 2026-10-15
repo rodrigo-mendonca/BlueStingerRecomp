@@ -20,6 +20,9 @@ void          sh4_set_function_table(const Sh4FuncEntry* table, size_t count);
 // em 0x8C001000+. A tabela recompilada tem prioridade.
 void          sh4_register_hle(uint32_t addr, Sh4Func fn);
 Sh4Func       sh4_lookup(uint32_t addr);  // nullptr se desconhecido
+// Substitui (fn != nullptr) ou restaura (nullptr) a funcao de um endereco para os desvios
+// indiretos; usado pela camada de mods (runtime/mods), antes da tabela gerada.
+void          sh4_override(uint32_t addr, Sh4Func fn);
 inline uint32_t sh4_phys(uint32_t addr) { return addr & 0x1FFFFFFF; }
 
 // Chamada/salto indireto: procura `target` e executa. Endereco desconhecido vai

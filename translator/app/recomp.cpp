@@ -31,7 +31,7 @@ void writeReport(const analysis::Analysis& a, const fs::path& dir) {
     const auto& s = a.stats;
     std::ofstream r(dir / "report.txt", std::ios::trunc);
     r << "funcoes: " << s.functions << " (chamada " << s.by_call << ", ponteiro no pool " << s.by_pointer
-      << ", ponteiro em dados " << s.by_data_pointer << ", config "
+      << ", ponteiro em dados " << s.by_data_pointer << ", tabela de ponteiros " << s.by_pointer_table << ", config "
       << s.by_config << ")\n"
       << "instrucoes unicas alcancadas: " << s.unique_instructions << "\n"
       << "instrucoes emitidas (com duplicacao entre funcoes): " << s.instructions << "\n"
@@ -44,7 +44,7 @@ void writeReport(const analysis::Analysis& a, const fs::path& dir) {
 
     std::ofstream f(dir / "functions.tsv", std::ios::trunc);
     f << "entrada\torigem\tinstrucoes\tlabels\ttail_calls\tdiretos\tdespacho\tfins_mortos\tprimeiro_fim_morto\n";
-    static const char* kOrigin[] = {"entry", "call", "pointer", "config", "data_pointer"};
+    static const char* kOrigin[] = {"entry", "call", "pointer", "config", "data_pointer", "pointer_table"};
     for (const auto& [addr, fn] : a.functions)
         f << hex(addr) << '\t' << kOrigin[int(fn.origin)] << '\t' << fn.insns.size() + fn.slots.size() << '\t'
           << fn.labels.size() << '\t' << fn.tail_calls.size() << '\t' << fn.direct.size() << '\t'

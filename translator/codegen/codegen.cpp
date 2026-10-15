@@ -20,6 +20,14 @@ std::string hx(uint32_t v) {
     std::snprintf(b, sizeof(b), "0x%08Xu", v);
     return b;
 }
+// Chamada a uma funcao gerada: pela macro BSG_FN (funcs.h), direta no build normal e pelo
+// slot da funcao com BS_MODS (mods substituem funcoes sem editar o codigo gerado).
+std::string callee(uint32_t a) {
+    char b[24];
+    std::snprintf(b, sizeof(b), "BSG_FN(%08X)", a);
+    return b;
+}
+
 std::string fname(uint32_t a) {
     char b[16];
     std::snprintf(b, sizeof(b), "f_%08X", a);
@@ -186,7 +194,7 @@ private:
 
     std::string callTo(uint32_t pc, uint32_t t, uint32_t ret) const {
         const uint32_t nt = img_.normalize(t);
-        if (nt && a_.functions.count(nt)) return callMacro() + fname(nt) + "(c), " + hx(ret) + ");";
+        if (nt && a_.functions.count(nt)) return callMacro() + callee(nt) + "(c), " + hx(ret) + ");";
         return callMacro() + "::bs::sh4_dispatch(c, " + hx(pc) + ", " + hx(t) + "), " + hx(ret) + ");";
     }
 
@@ -219,7 +227,7 @@ private:
         case Op::BRA: {
             const uint32_t t = sh4::target(in, pc);
             s += "    " + slot(pc) + "\n";
-            if (f_.tail_calls.count(pc)) s += "    " + fname(t) + "(c); return;\n";
+            if (f_.tail_calls.count(pc)) s += "    " + callee(t) + "(c); return;\n";
             else s += "    " + jumpTo(t, pc) + "\n";
             return;
         }
@@ -234,7 +242,7 @@ private:
             s += "    { const uint32_t tgt = " + tgt + "; c->pr = " + hx(ret) + "; " + slot(pc) + "\n";
             if (auto it = f_.direct.find(pc); it != f_.direct.end()) {
                 s += "      BS_EXPECT_TARGET(" + hx(pc) + ", tgt, " + hx(it->second) + ");\n";
-                s += "      " + callMacro() + fname(it->second) + "(c), " + hx(ret) + "); }\n";
+                s += "      " + callMacro() + callee(it->second) + "(c), " + hx(ret) + "); }\n";
             } else {
                 s += "      " + callMacro() + "::bs::sh4_dispatch(c, " + hx(pc) + ", tgt), " + hx(ret) + "); }\n";
             }
@@ -254,7 +262,7 @@ private:
                 s += "      default: ::bs::sh4_dispatch(c, " + hx(pc) + ", tgt); return;\n      } }\n";
             } else if (auto it = f_.direct.find(pc); it != f_.direct.end()) {
                 s += "      BS_EXPECT_TARGET(" + hx(pc) + ", tgt, " + hx(it->second) + ");\n";
-                s += "      " + fname(it->second) + "(c); return; }\n";
+                s += "      " + callee(it->second) + "(c); return; }\n";
             } else {
                 s += "      ::bs::sh4_dispatch(c, " + hx(pc) + ", tgt); return; }\n";
             }
@@ -312,6 +320,10 @@ Result generate(const Image& img, const Analysis& a, const Options& opt) {
 
     std::string hdr = std::string(banner) + "#pragma once\n#include \"cpu/sh4_gen.h\"\n\nnamespace bsg {\n";
     for (const auto& [addr, f] : a.functions) hdr += "void " + fname(addr) + "(bs::Sh4Context* c);\n";
+    // mods (BS_MODS): cada funcao tem um slot; o codigo gerado chama pelo slot
+    hdr += "#if defined(BS_MODS) && BS_MODS\n";
+    for (const auto& [addr, f] : a.functions) hdr += "extern bs::Sh4Func slot_" + fname(addr).substr(2) + ";\n";
+    hdr += "#define BSG_FN(a) (*slot_##a)\n#else\n#define BSG_FN(a) f_##a\n#endif\n";
     hdr += "void register_functions();\n} // namespace bsg\n";
     writeIfChanged(opt.out_dir / "funcs.h", hdr);
 
@@ -340,7 +352,7 @@ Result generate(const Image& img, const Analysis& a, const Options& opt) {
     std::vector<std::pair<uint32_t, uint32_t>> table;
     for (const auto& [addr, f] : a.functions) table.push_back({addr & 0x1FFFFFFF, addr});
     std::sort(table.begin(), table.end());
-    std::string d = std::string(banner) + "#include \"funcs.h\"\n\nnamespace bsg {\nnamespace {\nconst bs::Sh4FuncEntry kTable[] = {\n";
+    std::string d = std::string(banner) + "#include \"funcs.h\"\n#if defined(BS_MODS) && BS_MODS\n#include \"mods/mod_api.h\"\n#endif\n\nnamespace bsg {\nnamespace {\nconst bs::Sh4FuncEntry kTable[] = {\n";
     for (auto [phys, addr] : table) d += "    {" + hx(phys) + ", &" + fname(addr) + "},\n";
     // Pontos de reentrada (retornos de setjmp): o runtime so retoma uma thread por
     // longjmp num deles, e so cria thread nova fora deles.
@@ -351,7 +363,12 @@ Result generate(const Image& img, const Analysis& a, const Options& opt) {
     }
     d += "};\nconst uint32_t kReentry[] = {";
     for (uint32_t p : reentry) d += hx(p) + ", ";
-    d += "0};\n} // namespace\n\nvoid register_functions() {\n    bs::sh4_set_function_table(kTable, sizeof(kTable) / sizeof(kTable[0]));\n"
+    d += "0};\n} // namespace\n\n#if defined(BS_MODS) && BS_MODS\n";
+    for (auto [phys, addr] : table) d += "bs::Sh4Func slot_" + fname(addr).substr(2) + " = &" + fname(addr) + ";\n";
+    d += "namespace {\nconst bs::mods::Slot kSlots[] = {\n";
+    for (auto [phys, addr] : table) d += "    {" + hx(addr) + ", &slot_" + fname(addr).substr(2) + ", &" + fname(addr) + "},\n";
+    d += "};\n} // namespace\n#endif\n\nvoid register_functions() {\n    bs::sh4_set_function_table(kTable, sizeof(kTable) / sizeof(kTable[0]));\n"
+         "#if defined(BS_MODS) && BS_MODS\n    bs::mods::set_slots(kSlots, sizeof(kSlots) / sizeof(kSlots[0]));\n#endif\n"
          "    bs::sh4_set_reentry_points(kReentry, " + std::to_string(reentry.size()) + ");\n}\n} // namespace bsg\n";
     writeIfChanged(opt.out_dir / "dispatch.cpp", d);
     sources.push_back("dispatch.cpp");

@@ -32,6 +32,7 @@
 #include <execution>
 #include <xmmintrin.h>
 #include <map>
+#include <set>
 #include <tuple>
 #include <vector>
 
@@ -173,8 +174,19 @@ private:
                 g_.face = fcolor(&p.w[4]);
             }
         }  // col == 3 (intensidade 2): mantem a cor de face anterior
+        if ((obj & 8) && ((g_.tcw >> 27) & 7) == 3 && std::getenv("BS_YUV_DEBUG")) {  // diagnostico do video
+            static std::set<uint64_t> seenYuv;
+            if (seenYuv.insert((uint64_t(g_.tcw) << 32) | g_.tsp).second)
+                std::fprintf(stderr, "[yuv] poligono TCW %08X TSP %08X (u %u v %u) stride %u\n", g_.tcw, g_.tsp, 8u << ((g_.tsp >> 3) & 7), 8u << (g_.tsp & 7), pvr_reg(0x005F80E4) & 31);
+        }
         if ((obj & 8) && !pvr_texture_supported({g_.tcw})) {
-            note("formato/modo de textura (mipmap, VQ, YUV ou bump)");
+            // um aviso por combinacao (mipmap, VQ, formato, linear), para saber o que falta
+            static std::set<uint32_t> seen;
+            const uint32_t            kind = g_.tcw & 0xFC000000;
+            if (seen.insert(kind).second)
+                std::fprintf(stderr, "[render] textura nao suportada (omitida): TCW %08X (mipmap %u, VQ %u, formato %u, linear %u)\n",
+                             g_.tcw, g_.tcw >> 31, (g_.tcw >> 30) & 1, (g_.tcw >> 27) & 7, (g_.tcw >> 26) & 1);
+            note("formato/modo de textura (mipmap, VQ, YUV twiddled ou bump)");
             g_.supported = false;
         }
     }

@@ -35,6 +35,10 @@ $out   = Join-Path $outDir "codex-$stamp.md"
 $cargs = @("exec", "--sandbox", "read-only", "--ephemeral", "-C", $repo, "-o", $out)
 if ($Model) { $cargs += @("-m", $Model) }
 $cargs += "-"
-$prompt | codex @cargs | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "codex exec falhou (codigo $LASTEXITCODE)" }
+$log = $prompt | codex @cargs 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) {
+    # mostra o motivo (limite de uso, autenticacao...) em vez de so o codigo
+    $why = ($log -split "`n" | Where-Object { $_ -match "ERROR|error:" } | Select-Object -Last 2) -join " "
+    throw "codex exec falhou (codigo $LASTEXITCODE): $why"
+}
 Write-Output $out

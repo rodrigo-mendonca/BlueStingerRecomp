@@ -4,12 +4,14 @@ Blue Stinger Builder
 O que e
 -------
 O Builder transforma a SUA imagem CDI do Blue Stinger (Dreamcast, NTSC-U T13001N V1.000)
-num executavel nativo para Windows x64 (BlueStinger.exe). Ele recompila o codigo SH-4 do
-jogo para C++ e compila esse C++ junto com o runtime, aqui, no seu computador.
+num jogo nativo para Windows x64: recompila o codigo SH-4 do jogo para C++, compila esse
+C++ junto com o runtime aqui, no seu computador, e prepara os dados do disco num formato
+proprio. Depois da conversao, o jogo NAO precisa mais do CDI (nem de emulador): a pasta
+gerada pode ser movida e o CDI guardado.
 
 Esta pasta NAO contem nada do jogo: so o Builder, o codigo-fonte do runtime (licenca MIT) e
-do SDL3 (licenca zlib). O jogo compilado contem codigo derivado da sua copia: use-o so
-localmente e nao o publique.
+do SDL3 (licenca zlib). O jogo gerado (executavel e pasta data\) e derivado da sua copia:
+use-o so localmente e nao o publique.
 
 Requisitos
 ----------
@@ -20,33 +22,46 @@ Requisitos
   (secao "Ferramentas para Visual Studio"). Um Visual Studio 2022 ou mais novo com essa
   carga de trabalho tambem serve.
 - A imagem CDI do Blue Stinger NTSC-U (V1.000). Outras versoes sao recusadas.
-- Cerca de 300 MB livres (jogo compilado + cache de compilacao).
+- Cerca de 1,2 GB livres (dados do jogo, jogo compilado e cache de compilacao).
 
 Como usar
 ---------
 1. Abra BlueStingerBuilder.exe.
 2. Escolha a imagem .cdi e a pasta de saida.
-3. Clique em "Gerar BlueStinger.exe". A primeira compilacao leva de 1 a alguns minutos;
-   as seguintes reaproveitam o que ja foi compilado.
+3. Clique em "Gerar BlueStinger.exe". A primeira conversao leva alguns minutos; as
+   seguintes reaproveitam o que ja foi feito.
 4. No fim, "Jogar" inicia o jogo e "Abrir pasta" mostra a pasta BlueStinger.
 
-O que o Builder faz: confere a imagem (hash do executavel do jogo), le os arquivos de boot,
-analisa e gera o C++, compila com o seu Visual Studio, monta o pacote numa pasta temporaria,
-testa o executavel (inclusive um boot curto com a sua imagem) e so entao troca a versao
-instalada. Se qualquer etapa falhar ou for cancelada, a versao anterior continua intacta.
+O que o Builder faz: confere a imagem (hash do executavel do jogo), prepara os dados do
+disco em BlueStinger\data (conferidos setor a setor com a imagem), analisa e gera o C++,
+compila com o seu Visual Studio, monta o pacote numa pasta temporaria, testa o executavel
+SEM o CDI (dados e boot curto) e so entao troca a versao instalada. Se qualquer etapa falhar
+ou for cancelada, a versao anterior continua intacta. A versao anterior fica guardada em
+BlueStinger.anterior (para voltar, renomeie as pastas).
+
+Projeto C++ editavel e mods
+---------------------------
+- "Exportar tambem o projeto C++ editavel": cria <saida>\projeto com o C++ gerado, o
+  runtime, o mapa de funcoes (endereco SH-4 -> funcao C++), a pasta mods\ e a documentacao
+  (LEIA-ME-PROJETO.md). E privado: nao publique.
+- "Compilar a partir do projeto editavel": compila o projeto (com os seus mods em C++ e os
+  arquivos de mods\assets) pelo mesmo fluxo verificado. Nao precisa do CDI se os dados ja
+  foram preparados naquela pasta de saida.
 
 Pastas
 ------
-<saida>\BlueStinger\     o jogo (BlueStinger.exe, runtime do Visual C++, LEIA-ME, VERSAO)
-<saida>\.bs-build\       trabalho e builder.log (registro completo da ultima execucao)
-%LOCALAPPDATA%\BlueStingerRecomp\build\<codigo>\   cache de compilacao (pode ser apagado;
-                         a proxima execucao recompila tudo)
-Arquivos seus dentro de <saida>\BlueStinger (bluestinger.ini, log, saves) sao mantidos
-quando o jogo e recompilado.
+<saida>\BlueStinger\            o jogo: BlueStinger.exe, data\ (dados do disco), mods\
+<saida>\BlueStinger.anterior\   a versao anterior (rollback)
+<saida>\projeto\                projeto C++ editavel (se pedido)
+<saida>\.bs-build\              trabalho, dados preparados e builder.log
+%LOCALAPPDATA%\BlueStingerRecomp\build\<codigo>\   cache de compilacao (pode ser apagado)
+Arquivos seus dentro de <saida>\BlueStinger (log, saves) sao mantidos quando o jogo e
+recompilado.
 
 Linha de comando
 ----------------
-  bs-builder.exe --disc "D:\Jogos\Blue Stinger.cdi" --out "D:\Jogos\BS" [--clean]
+  bs-builder.exe --disc "D:\Jogos\Blue Stinger.cdi" --out "D:\Jogos\BS" [--projeto "D:\Jogos\BS\projeto"]
+  bs-builder.exe --de-projeto "D:\Jogos\BS\projeto" --out "D:\Jogos\BS"
 Codigo de saida: 0 = sucesso; 1 = falha; 3 = cancelado. BS_BUILDER_VERBOSE=1 mostra tudo.
 
 Problemas comuns

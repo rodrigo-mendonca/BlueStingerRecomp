@@ -20,6 +20,8 @@ add_executable(bs_unit_tests
   unit/test_input.cpp
   unit/test_app.cpp
   unit/test_builder.cpp
+  unit/test_runtime_data.cpp
+  unit/test_mods.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core)
@@ -31,6 +33,18 @@ target_link_libraries(bs_real_disc_test PRIVATE bs_disc)
 # Raiz do repositorio: BS_DISC_IMAGE relativo (ex.: "ISO/Blue Stinger.cdi") funciona.
 add_test(NAME real_disc COMMAND bs_real_disc_test WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(real_disc PROPERTIES SKIP_RETURN_CODE 77)
+
+# Dados de execucao (o jogo sem o CDI) a partir da imagem real; SKIP sem BS_DISC_IMAGE.
+add_executable(bs_runtime_data_test data/test_runtime_data_disc.cpp)
+target_link_libraries(bs_runtime_data_test PRIVATE bs_runtime)
+add_test(NAME runtime_data COMMAND bs_runtime_data_test WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(runtime_data PROPERTIES SKIP_RETURN_CODE 77)
+
+# Analise do executavel real (regressao do NEW GAME); SKIP sem BS_DISC_IMAGE.
+add_executable(bs_analysis_real_test data/test_analysis_real.cpp)
+target_link_libraries(bs_analysis_real_test PRIVATE bs_recomp_lib bs_runtime)
+add_test(NAME analysis_real COMMAND bs_analysis_real_test WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(analysis_real PROPERTIES SKIP_RETURN_CODE 77)
 
 # Pipeline completo sobre o programa sintetico: analise -> C++ -> compila -> executa.
 # Duas variantes: constantes do pool inline (1) e lidas da RAM (0).

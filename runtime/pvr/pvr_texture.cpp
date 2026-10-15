@@ -6,7 +6,9 @@
 //   no caminho de 64 bits).
 // Paleta: 1024 entradas em 0x005F9000; formato por PAL_RAM_CTRL (0 1555, 1 565,
 // 2 4444, 3 8888). 4 bpp usa o bloco (seletor & 0x3F) * 16; 8 bpp, (seletor >> 4) * 256.
-// M4: sem mipmap, VQ, YUV e bump (registrados e omitidos pelo rasterizador).
+// Suportados: 16 bits e paletas (twiddled/linear), VQ 16 bits, mipmap (so o maior nivel),
+// YUV422 linear. Faltam: YUV422 twiddled, bump e paleta 4 bpp com mipmap (registrados e
+// omitidos pelo rasterizador).
 #include "pvr/pvr_texture.h"
 
 #include "pvr/vram.h"
@@ -72,14 +74,51 @@ uint32_t pvr_texel16_to_argb(uint16_t t, uint32_t format) {
 }
 
 bool pvr_texture_supported(const TexInfo& t) {
-    const uint32_t fmt = (t.tcw >> 27) & 7;
-    if (t.tcw & 0xC0000000) return false;  // mipmap, VQ
+    const uint32_t fmt    = (t.tcw >> 27) & 7;
+    const bool     mipmap = t.tcw >> 31, vq = (t.tcw >> 30) & 1;
+    const bool     linear = fmt <= 4 && ((t.tcw >> 26) & 1);
+    if (vq) return fmt <= 2 && !linear;                  // VQ: 16 bits, twiddled
+    if (mipmap) return (fmt <= 2 && !linear) || fmt == 6;  // nivel maior; paleta 4 bpp com mipmap ainda nao
+    if (fmt == 3) return linear;                         // YUV422 linear (conversor YUV); twiddled ainda nao
     return fmt <= 2 || fmt == 5 || fmt == 6;
 }
 
+// YUV422: cada palavra de 32 bits guarda 2 pixels (U, Y0, V, Y1). Conversao do PowerVR2
+// (documentacao de hardware): R = Y + 11/8 (V-128), G = Y - 11/32 (U-128) - 11/16 (V-128),
+// B = Y + 55/32 (U-128).
+uint32_t pvr_yuv_to_argb(uint32_t y, uint32_t u, uint32_t v) {
+    const int yi = int(y), ui = int(u) - 128, vi = int(v) - 128;
+    auto      clamp = [](int x) { return uint32_t(x < 0 ? 0 : x > 255 ? 255 : x); };
+    const uint32_t r = clamp(yi + (11 * vi) / 8);
+    const uint32_t g = clamp(yi - (11 * ui) / 32 - (11 * vi) / 16);
+    const uint32_t b = clamp(yi + (55 * ui) / 32);
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+// Mipmaps (texturas quadradas, twiddled): os niveis vem do menor (1x1) para o maior. So o
+// maior nivel e amostrado (sem filtro entre niveis). Deslocamento do maior nivel de lado W,
+// com T = (W*W - 1) / 3 texels nos niveis menores (1 + 4 + ... + (W/2)^2):
+//   16 bits: 6 + 2T bytes (o 1x1 fica em 6); paleta 8 bpp: 3 + T; VQ (indices, 1 byte por
+//   bloco 2x2): 1 + ((W/2)^2 - 1) / 3, depois do codebook de 2 KB.
+uint32_t pvr_mip_offset(uint32_t fmt, bool vq, uint32_t w) {
+    if (w < 2) return vq ? 0 : (fmt == 6 ? 3 : 6);
+    if (vq) return 1 + ((w / 2) * (w / 2) - 1) / 3;
+    const uint32_t t = (w * w - 1) / 3;
+    return fmt == 6 ? 3 + t : 6 + 2 * t;
+}
+
 uint32_t pvr_texel(const TexInfo& t, uint32_t x, uint32_t y) {
-    const uint32_t fmt  = (t.tcw >> 27) & 7;
-    const uint32_t base = (t.tcw & 0x1FFFFF) << 3;
+    const uint32_t fmt    = (t.tcw >> 27) & 7;
+    const bool     mipmap = t.tcw >> 31, vq = (t.tcw >> 30) & 1;
+    const uint32_t base   = (t.tcw & 0x1FFFFF) << 3;
+    if (vq) {
+        // VQ: codebook de 256 entradas x 4 texels de 16 bits (2x2, ordem twiddled: (0,0),
+        // (0,1), (1,0), (1,1)), depois 1 indice por bloco 2x2, twiddled em (w/2, h/2)
+        const uint32_t idxBase = base + 2048 + (mipmap ? pvr_mip_offset(fmt, true, t.width) : 0);
+        const uint32_t code    = vram8_64(idxBase + pvr_twiddle(x / 2, y / 2, t.width / 2, t.height / 2));
+        const uint32_t sub     = ((x & 1) << 1) | (y & 1);
+        return pvr_texel16_to_argb(vram16_64(base + code * 8 + sub * 2), fmt);
+    }
     if (fmt == 5 || fmt == 6) {  // paleta: sempre twiddled
         const uint32_t sel = (t.tcw >> 21) & 0x3F;
         const uint32_t i   = pvr_twiddle(x, y, t.width, t.height);
@@ -87,10 +126,21 @@ uint32_t pvr_texel(const TexInfo& t, uint32_t x, uint32_t y) {
             const uint8_t b = vram8_64(base + i / 2);
             return pvr_pal_entry(sel * 16 + ((i & 1) ? (b >> 4) : (b & 0xF)));
         }
-        return pvr_pal_entry((sel >> 4) * 256 + vram8_64(base + i));
+        return pvr_pal_entry((sel >> 4) * 256 + vram8_64(base + (mipmap ? pvr_mip_offset(6, false, t.width) : 0) + i));
+    }
+    if (mipmap) {  // 16 bits twiddled, maior nivel
+        const uint32_t i = pvr_twiddle(x, y, t.width, t.height);
+        return pvr_texel16_to_argb(vram16_64(base + pvr_mip_offset(fmt, false, t.width) + 2 * i), fmt);
     }
     const bool     linear = (t.tcw >> 26) & 1;
     const uint32_t w      = linear && ((t.tcw >> 25) & 1) && t.stride ? t.stride : t.width;
+    if (fmt == 3) {  // YUV422 linear: par de pixels (x par, x+1) na mesma palavra
+        const uint32_t pair = base + 2 * (y * w + (x & ~1u));
+        uint32_t       word;
+        std::memcpy(&word, vram_data() + vram_offset64(pair), 4);
+        const uint32_t yy = (x & 1) ? (word >> 24) : ((word >> 8) & 0xFF);
+        return pvr_yuv_to_argb(yy, word & 0xFF, (word >> 16) & 0xFF);
+    }
     const uint32_t i      = linear ? y * w + x : pvr_twiddle(x, y, t.width, t.height);
     return pvr_texel16_to_argb(vram16_64(base + 2 * i), fmt);
 }

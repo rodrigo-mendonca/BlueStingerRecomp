@@ -11,6 +11,8 @@
 #include "memory/sh4_sq.h"
 #include "pvr/holly_intc.h"
 #include "pvr/holly_sb.h"
+#include "pvr/pvr_regs.h"
+#include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
 
@@ -346,4 +348,111 @@ BS_TEST(gdrom_toc_high_density_area_is_empty_for_cd) {
     gdCall(h.c, 2);
     BS_CHECK(gdCall(h.c, 1, id, 0x8C200100) == 2);
     BS_CHECK(sh4_read32(&h.c, toc) == 0xFFFFFFFF && sh4_read32(&h.c, toc + 101 * 4) == 0xFFFFFFFF);
+}
+
+// Conversor YUV: 2x1 macroblocos YUV420 numa textura de 32x16 (UYVY linear na VRAM, caminho
+// de 64 bits); TA_YUV_TEX_CNT conta; o ultimo macrobloco acende ISTNRM bit 6 e recomeca.
+// Modo uma-textura-por-macrobloco com entrada YUV422. Escrever TA_YUV_TEX_BASE recomeca.
+BS_TEST(ta_yuv_converter_macroblocks_to_vram) {
+    Hw h;
+    pvr_regs_reset();
+    auto feed = [&](const std::vector<uint8_t>& mb) {
+        for (size_t o = 0; o < mb.size(); o += 32) {
+            uint32_t w[8];
+            std::memcpy(w, mb.data() + o, 32);
+            ta_fifo_write(&h.c, 0x10800000, w);
+        }
+    };
+    // macrobloco 420: U = 0x40 + i, V = 0x80 + i, Y do bloco b = 0x10*b + i (i = indice no 8x8)
+    auto mb420 = [](uint8_t tag) {
+        std::vector<uint8_t> m(384);
+        for (int i = 0; i < 64; ++i) m[i] = uint8_t(0x40 + i), m[64 + i] = uint8_t(tag + i);
+        for (int b = 0; b < 4; ++b)
+            for (int i = 0; i < 64; ++i) m[128 + 64 * b + i] = uint8_t(0x10 * b + i);
+        return m;
+    };
+    auto uyvy = [](uint32_t u, uint32_t y0, uint32_t v, uint32_t y1) { return u | (y0 << 8) | (v << 16) | (y1 << 24); };
+    auto word64 = [](uint32_t off) {
+        uint32_t v;
+        std::memcpy(&v, vram_data() + vram_offset64(off), 4);
+        return v;
+    };
+    const uint32_t base = 0x00200000;
+    sh4_write32(&h.c, 0xA05F814C, 0x00000001);  // CTRL: 2x1 macroblocos, uma textura, YUV420
+    sh4_write32(&h.c, 0xA05F8148, base);        // BASE (recomeca)
+    feed(mb420(0x80));
+    BS_CHECK(sh4_read32(&h.c, 0xA05F8150) == 1 && !(h.istnrm() & 0x40));
+    // pixel (0,0): U[0], Y0[0], V[0], Y0[1]; linha 9, coluna 10 (bloco Y3; croma (5,4))
+    BS_CHECK(word64(base) == uyvy(0x40, 0x00, 0x80, 0x01));
+    const uint32_t ci = 4 * 8 + 5, yi = 1 * 8 + 2;
+    BS_CHECK(word64(base + (9 * 32 + 10) * 2) == uyvy(0x40 + ci, 0x30 + yi, 0x80 + ci, 0x30 + yi + 1));
+    feed(mb420(0x90));  // 2o macrobloco: x 16-31
+    BS_CHECK(word64(base + 16 * 2) == uyvy(0x40, 0x00, 0x90, 0x01));
+    BS_CHECK(sh4_read32(&h.c, 0xA05F8150) == 0 && (h.istnrm() & 0x40));  // quadro completo
+
+    // YUV422, uma textura 16x16 por macrobloco (512 bytes cada, em sequencia)
+    sh4_write32(&h.c, 0xA05F814C, 0x01010001);
+    sh4_write32(&h.c, 0xA05F8148, base);
+    // padrao diferente em cada uma das 6 regioes (U0 V0 Y0 | U1 V1 Y1), para que outra ordem
+    // nao passe (revisao Codex 2026-10-15)
+    std::vector<uint8_t> m422(512);
+    for (int k = 0; k < 512; ++k) m422[k] = uint8_t(k * 37 + (k >> 8) * 101 + 5);
+    feed(m422);
+    feed(m422);
+    // esperado pelo layout do hardware: metade = linha / 8, cada metade U[64] V[64] Y[128]
+    // (Y esquerdo 8x8, Y direito 8x8)
+    auto expect = [&](uint32_t row, uint32_t col) {
+        const uint32_t h  = (row / 8) * 256, ci = (row % 8) * 8 + col / 2;
+        auto           yv = [&](uint32_t x) { return uint32_t(m422[h + 128 + (x / 8) * 64 + (row % 8) * 8 + x % 8]); };
+        return uyvy(m422[h + ci], yv(col), m422[h + 64 + ci], yv(col + 1));
+    };
+    BS_CHECK(word64(base + 512 + (3 * 16 + 4) * 2) == expect(3, 4));      // metade de cima, Y esquerdo
+    BS_CHECK(word64(base + 512 + (11 * 16 + 10) * 2) == expect(11, 10));  // metade de baixo, Y direito
+    BS_CHECK(word64(base + (15 * 16 + 14) * 2) == expect(15, 14));        // 1a textura, ultima linha
+}
+
+// Textura YUV422 linear: pares de pixels na mesma palavra; cores pelos coeficientes do PowerVR2.
+BS_TEST(texture_yuv422_linear) {
+    vram_reset();
+    BS_CHECK(pvr_yuv_to_argb(128, 128, 128) == 0xFF808080);  // cinza
+    BS_CHECK(pvr_yuv_to_argb(255, 128, 255) == 0xFFFFA8FF);  // R e B saturam; G = 255 - 11*127/16
+    const uint32_t word = 0x80u | (50u << 8) | (0x80u << 16) | (200u << 24);  // U, Y0, V, Y1
+    std::memcpy(vram_data() + vram_offset64(0x1000), &word, 4);
+    TexInfo t;
+    t.tcw   = (3u << 27) | (1u << 26) | (0x1000 >> 3);  // YUV422 linear
+    t.width = 8, t.height = 8;
+    BS_CHECK(pvr_texture_supported(t));
+    BS_CHECK(pvr_texel(t, 0, 0) == 0xFF323232 && pvr_texel(t, 1, 0) == 0xFFC8C8C8);
+    TexInfo tw = t;
+    tw.tcw &= ~(1u << 26);  // twiddled: ainda nao
+    BS_CHECK(!pvr_texture_supported(tw));
+}
+
+// VQ: codebook de 256 x (2x2 texels 16 bits, ordem twiddled) + 1 indice por bloco 2x2
+// (twiddled em w/2 x h/2). Mipmap: deslocamento do maior nivel (16 bits, paleta 8 bpp, VQ).
+BS_TEST(texture_vq_and_mipmap_offsets) {
+    vram_reset();
+    auto put16 = [](uint32_t off, uint16_t v) { std::memcpy(vram_data() + vram_offset64(off), &v, 2); };
+    auto put8  = [](uint32_t off, uint8_t v) { vram_data()[vram_offset64(off)] = v; };
+    const uint32_t base = 0x4000;
+    // codigo 5: texels (0,0)=0xF800 (vermelho 565), (0,1)=0x07E0 (verde), (1,0)=0x001F (azul), (1,1)=0xFFFF
+    put16(base + 5 * 8 + 0, 0xF800), put16(base + 5 * 8 + 2, 0x07E0), put16(base + 5 * 8 + 4, 0x001F), put16(base + 5 * 8 + 6, 0xFFFF);
+    // textura 8x8: bloco (1,0) -> indice twiddled pvr_twiddle(1,0,4,4) = 2
+    put8(base + 2048 + pvr_twiddle(1, 0, 4, 4), 5);
+    TexInfo t;
+    t.tcw   = (1u << 30) | (1u << 27) | (base >> 3);  // VQ, 565, twiddled
+    t.width = 8, t.height = 8;
+    BS_CHECK(pvr_texture_supported(t));
+    BS_CHECK(pvr_texel(t, 2, 0) == 0xFFFF0000 && pvr_texel(t, 2, 1) == 0xFF00FF00 && pvr_texel(t, 3, 0) == 0xFF0000FF &&
+             pvr_texel(t, 3, 1) == 0xFFFFFFFF);
+    // mipmap: 16 bits 8x8 -> 0x30; VQ 8x8 -> 6 indices; paleta 8 bpp 8x8 -> 3 + 21
+    BS_CHECK(pvr_mip_offset(1, false, 8) == 0x30 && pvr_mip_offset(1, false, 2) == 8 && pvr_mip_offset(1, false, 1024) == 0xAAAB0);
+    BS_CHECK(pvr_mip_offset(1, true, 8) == 6 && pvr_mip_offset(1, true, 4) == 2 && pvr_mip_offset(1, true, 16) == 0x16);
+    BS_CHECK(pvr_mip_offset(6, false, 8) == 24);
+    // 16 bits com mipmap: o texel (0,0) do maior nivel fica no deslocamento
+    put16(0x8000 + 0x30, 0xF800);
+    TexInfo m;
+    m.tcw   = (1u << 31) | (1u << 27) | (0x8000 >> 3);
+    m.width = 8, m.height = 8;
+    BS_CHECK(pvr_texture_supported(m) && pvr_texel(m, 0, 0) == 0xFFFF0000);
 }

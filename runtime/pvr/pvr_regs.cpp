@@ -45,6 +45,8 @@ constexpr uint32_t kStartRender = 0x005F8014; // comando: nao guarda o valor esc
 constexpr uint32_t kTaIspBase  = 0x005F8128;
 constexpr uint32_t kTaNextOpb  = 0x005F8134;  // ponteiro mantido pelo TA
 constexpr uint32_t kTaItpCurrent = 0x005F8138; // ponteiro mantido pelo TA
+constexpr uint32_t kTaYuvTexBase = 0x005F8148;
+constexpr uint32_t kTaYuvTexCtrl = 0x005F814C;
 constexpr uint32_t kTaYuvTexCnt = 0x005F8150;  // so leitura
 constexpr uint32_t kTaNextOpbInit = 0x005F8164;
 constexpr uint32_t kTaListInit = 0x005F8144;  // bit 31: inicia listas novas (comando)
@@ -119,6 +121,10 @@ bool pvr_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     }
     if (p == kRevision) {
         v = 0x00000011;
+        return true;
+    }
+    if (p == kTaYuvTexCnt) {
+        v = ta_yuv_count();
         return true;
     }
     if (p == kSpgStatus) {
@@ -246,6 +252,7 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const bool command = p == kTaListInit || p == kStartRender || p == kSoftReset;
     const bool readOnly = p == kSpgStatus || p == kId || p == kRevision || p == kTaYuvTexCnt;
     if (!command && !readOnly) g_regs[(p - kBase) / 4] = v;
+    if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_reset(reg(kTaYuvTexBase), reg(kTaYuvTexCtrl));
     return true;
 }
 

@@ -5,8 +5,9 @@
 #include "cpu/sh4_runtime.h"
 #include "cpu/sh4_threads.h"
 #include "gdrom/gdrom.h"
-#include "gdrom/image_source.h"
+#include "gdrom/data_source.h"
 #include "hle/flashrom.h"
+#include "mods/mod_api.h"
 #include "pvr/pvr_video.h"
 
 #include <algorithm>
@@ -132,10 +133,13 @@ void GameHost::threadMain() {
     std::string err;
     try {
         if (opt_.registerFunctions) opt_.registerFunctions();
+        bs::mods::reset();     // sessao nova: nada herdado de uma anterior
+        bs::mods::init_all();  // mods compilados no executavel (projeto editavel; BS_MOD)
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);
-        else boot_prepare(c, boot_read_disc(opt_.disc), boot_rtc_now());
-        if (!opt_.disc.empty()) gdrom_set_disc(open_disc_image(opt_.disc));
+        else boot_prepare(c, boot_read_data(opt_.data), boot_rtc_now());
+        // os setores vem dos dados preparados pelo Builder: o jogo nao le o CDI
+        if (!opt_.data.empty()) gdrom_set_disc(open_runtime_data(opt_.data, opt_.modAssets));
         if (!opt_.flash.empty() && !flashrom_load(opt_.flash))
             throw std::runtime_error("flash invalida (esperado 128 KB): " + disc::pathText(opt_.flash));
         epoch_       = std::chrono::steady_clock::now();
