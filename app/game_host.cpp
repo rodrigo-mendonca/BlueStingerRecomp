@@ -7,12 +7,15 @@
 #include "gdrom/gdrom.h"
 #include "gdrom/data_source.h"
 #include "hle/flashrom.h"
+#include "debug/call_trace.h"
+#include "gdfs_adapter.h"
 #include "mods/mod_api.h"
 #include "pvr/pvr_video.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 
 namespace bs {
@@ -80,6 +83,17 @@ void GameHost::onVblank(void* self) { static_cast<GameHost*>(self)->vblank(); }
 // atende pedidos de parada.
 void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
+    // Diagnostico: BS_RAM_DUMP=<vblank>:<arquivo> grava os 16 MB da RAM do guest nesse VBlank
+    static const std::pair<uint64_t, std::string> kRamDump = [] {
+        const char* v = std::getenv("BS_RAM_DUMP");
+        if (!v || !std::strchr(v, ':')) return std::pair<uint64_t, std::string>{0, {}};
+        return std::pair<uint64_t, std::string>{std::strtoull(v, nullptr, 10), std::strchr(v, ':') + 1};
+    }();
+    if (kRamDump.first && n == kRamDump.first && ram_)
+        if (FILE* f = std::fopen(kRamDump.second.c_str(), "wb")) {
+            std::fwrite(ram_, 1, 16u << 20, f);
+            std::fclose(f);
+        }
     const auto     now = std::chrono::steady_clock::now();
     {
         const double work = std::chrono::duration<double, std::milli>(now - workStart_).count();
@@ -130,16 +144,29 @@ void GameHost::threadMain() {
     std::vector<uint8_t> ram(16u << 20);
     Sh4Context           c{};
     c.ram = ram.data();
+    ram_  = ram.data();  // so diagnostico (BS_RAM_DUMP)
     std::string err;
     try {
         if (opt_.registerFunctions) opt_.registerFunctions();
         bs::mods::reset();     // sessao nova: nada herdado de uma anterior
         bs::mods::init_all();  // mods compilados no executavel (projeto editavel; BS_MOD)
+        bs::call_trace_install();  // diagnostico BS_CALL_TRACE (desligado por padrao)
+        // N1: arquivos pelo provedor nativo (API gdFs sobre a pasta de recursos)
+        if (!opt_.data.empty() && opt_.files == FilesProvider::Native) {
+            files_ = std::make_unique<native::files::DataFileSystem>(opt_.data / L"disc", opt_.modAssets);
+            for (const auto& m : files_->mods())
+                std::fprintf(stderr, "[mods] recurso substituido: %s (%llu -> %llu bytes)\n", m.logical.c_str(),
+                             static_cast<unsigned long long>(m.originalSize), static_cast<unsigned long long>(m.modSize));
+            transitional::gdfs::check_sizes(*files_);
+            transitional::gdfs::install(transitional::boundary_registry(), *files_);
+        }
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);
         else boot_prepare(c, boot_read_data(opt_.data), boot_rtc_now());
-        // os setores vem dos dados preparados pelo Builder: o jogo nao le o CDI
-        if (!opt_.data.empty()) gdrom_set_disc(open_runtime_data(opt_.data, opt_.modAssets));
+        // GD-ROM HLE (legado): com o provedor nativo, so inicializacao e estado do drive; os
+        // mods valem pelo provedor nativo (de qualquer tamanho), nao pelos setores
+        if (!opt_.data.empty())
+            gdrom_set_disc(open_runtime_data(opt_.data, files_ ? std::filesystem::path() : opt_.modAssets));
         if (!opt_.flash.empty() && !flashrom_load(opt_.flash))
             throw std::runtime_error("flash invalida (esperado 128 KB): " + disc::pathText(opt_.flash));
         epoch_       = std::chrono::steady_clock::now();
@@ -159,6 +186,14 @@ void GameHost::threadMain() {
     if (!sh4_threads_shutdown() && err.empty()) err = "falha ao liberar as fibras das threads do guest";
     if (traceOn()) std::fprintf(stderr, "[host] fibras liberadas\n");
     gdrom_set_disc(nullptr);  // fecha a imagem de disco
+    if (files_) {
+        const auto s = transitional::gdfs::stats();
+        std::fprintf(stderr, "[arquivos] nativo: %llu aberturas, %llu leituras, %llu bytes, %llu nao encontrados\n",
+                     static_cast<unsigned long long>(s.opens), static_cast<unsigned long long>(s.reads),
+                     static_cast<unsigned long long>(s.bytes), static_cast<unsigned long long>(s.notFound));
+        transitional::gdfs::uninstall(transitional::boundary_registry());
+        files_.reset();
+    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
         error_ = err;

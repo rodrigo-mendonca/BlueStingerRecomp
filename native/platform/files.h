@@ -34,6 +34,10 @@ struct DirEntry {
     bool        directory = false;
 };
 
+// Nome logico canonico: maiusculas, separador '/', sem barra inicial, sem o sufixo de versao
+// ";1" e sem "." / partes vazias. Dois nomes do mesmo recurso dao o mesmo canonico.
+std::string canonical_path(std::string_view path);
+
 class IFileSystem {
 public:
     virtual ~IFileSystem() = default;

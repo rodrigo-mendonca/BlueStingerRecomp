@@ -252,7 +252,13 @@ int main(int argc, char** argv) {
         Metrics m = compute_metrics(r->scan, r->sdk, declared.entries, closure, declared.providers);
         if (!generated.empty()) m.merge(generatedMetrics(generated));
         writeText(dir / "metricas.toml", metrics_toml(m));
-        if (!boundaryOut.empty()) writeText(boundaryOut, boundary_toml(r->boundary));
+        if (!boundaryOut.empty()) {
+            // entradas com provedor nativo: as fronteiras migradas ([native] slots no config)
+            std::map<uint32_t, std::string> providers;
+            for (const auto& [addr, e] : r->boundary)
+                if (r->cfg.native_slots.count(addr)) providers[addr] = "nativo";
+            writeText(boundaryOut, boundary_toml(r->boundary, providers));
+        }
         if (!metricsOut.empty()) writeText(metricsOut, metrics_toml(m));
 
         std::cout << "funcoes: " << m.at("funcoes.total") << " (jogo " << m.at("camada.jogo") << ", sdk "

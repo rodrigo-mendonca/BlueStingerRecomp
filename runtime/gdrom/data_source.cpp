@@ -1,6 +1,10 @@
 #include "gdrom/data_source.h"
 
+#include "debug/file_log.h"
 #include "runtime_data.h"
+
+#include <algorithm>
+#include <cctype>
 
 #include <cstdio>
 
@@ -28,7 +32,19 @@ public:
 
     bool read(uint32_t fad, uint8_t* out) override {
         if (fad < kFadOffset) return false;
-        return disc_.readSector(fad - kFadOffset, out);
+        const bool ok = disc_.readSector(fad - kFadOffset, out);
+        if (ok && g_file_log) {  // contrato do N1: setor -> (arquivo, deslocamento)
+            std::string path;
+            uint64_t    off = 0, size = 0;
+            if (disc_.locate(fad - kFadOffset, path, off, size) && off < size) {
+                std::transform(path.begin(), path.end(), path.begin(),
+                               [](unsigned char ch) { return char(std::toupper(ch)); });
+                file_log_chunk("gdrom", path, off, out, size_t(std::min<uint64_t>(2048, size - off)));
+            } else {
+                file_log_other("gdrom", "setor", fad - kFadOffset);
+            }
+        }
+        return ok;
     }
 
 private:

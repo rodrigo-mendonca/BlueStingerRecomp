@@ -4,12 +4,14 @@
 // encerramento limpo. O front-end (SDL3, app/main_sdl.cpp) so apresenta quadros e entrega
 // eventos; a frequencia de apresentacao dele e independente da do jogo.
 #include "cpu/sh4_context.h"
+#include "platform/data_files.h"
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -31,11 +33,17 @@ struct GameStats {
     double   fieldsPerSecond = 0;           // VBlanks por segundo de relogio (ultimo segundo)
 };
 
+// Provedor dos arquivos do jogo (N1, docs/N1-PLANO.md): nativo (padrao) = API gdFs sobre a
+// pasta de recursos (data/disc) e mods/assets; legado = GD-ROM HLE por setores (referencia e
+// rollback).
+enum class FilesProvider { Native, Legacy };
+
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
     std::filesystem::path data;
     std::filesystem::path flash;  // flash de 128 KB opcional (sem: apagada, 0xFF)
     std::filesystem::path modAssets;  // mods de arquivos (mods\assets), opcional
+    FilesProvider         files = FilesProvider::Native;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
     std::function<void()> registerFunctions;
     // Prepara RAM e registradores. Padrao: boot nativo a partir de `data`. Testes trocam.
@@ -84,6 +92,8 @@ private:
     uint64_t                              rateVblank_ = 0;
     GameStats                             stats_;  // protegido por mutex_
     double                                workSumMs_ = 0;
+    std::unique_ptr<native::files::DataFileSystem> files_;  // provedor nativo de arquivos (N1)
+    const uint8_t*                                 ram_ = nullptr;  // RAM do guest (diagnostico)
 };
 
 } // namespace bs

@@ -76,6 +76,10 @@ public:
     // Setor de dados (2048 bytes). false fora das faixas de dados. Lanca RuntimeDataError
     // se um arquivo sumir ou nao puder ser lido durante a execucao.
     bool readSector(uint32_t lba, uint8_t* out);
+    // Arquivo que cobre o setor (caminho, deslocamento do setor no arquivo, tamanho efetivo,
+    // com mod). false para setor que nao e de arquivo (sistema, diretorio, fora das faixas).
+    // So diagnostico: registro de leituras do N1 (runtime/debug/file_log).
+    bool locate(uint32_t lba, std::string& path, uint64_t& offset, uint64_t& size) const;
     // Arquivo inteiro (caminho do ISO, sem diferenciar maiusculas).
     std::vector<uint8_t> readFile(const std::string& isoPath);
     // IP.BIN (16 setores do inicio da faixa de boot).

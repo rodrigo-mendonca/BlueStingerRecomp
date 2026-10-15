@@ -270,6 +270,22 @@ bool RuntimeDisc::readSector(uint32_t lba, uint8_t* out) {
     return true;
 }
 
+bool RuntimeDisc::locate(uint32_t lba, std::string& path, uint64_t& offset, uint64_t& size) const {
+    auto it = std::upper_bound(byLba_.begin(), byLba_.end(), lba,
+                               [&](uint32_t v, size_t i) { return v < m_.files[i].lba; });
+    for (int back = 0; back < 8 && it != byLba_.begin(); ++back) {
+        --it;
+        const RuntimeFile& f = m_.files[*it];
+        if (lba - f.lba < sectorsOf(f.size)) {
+            path   = f.path;
+            offset = uint64_t(lba - f.lba) * kSector;
+            size   = overrideSize_[*it] ? overrideSize_[*it] - 1 : f.size;
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<uint8_t> RuntimeDisc::readFile(const std::string& isoPath) {
     const std::string want = lowerAscii(isoPath);
     for (size_t i = 0; i < m_.files.size(); ++i) {

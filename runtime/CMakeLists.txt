@@ -29,6 +29,8 @@ add_library(bs_runtime STATIC
   debug/snapshot.cpp
   debug/hw_probe.cpp
   debug/event_trace.cpp
+  debug/call_trace.cpp
+  debug/file_log.cpp
 )
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # leitura da imagem de disco do usuario (gdrom/image_source.cpp)

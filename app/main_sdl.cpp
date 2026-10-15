@@ -16,6 +16,7 @@
 #include "disc/disc_image.h"
 #include "funcs.h"
 #include "game_host.h"
+#include "gdfs_adapter.h"
 #include "input/input.h"
 
 #include <SDL3/SDL.h>
@@ -50,6 +51,7 @@ struct Args {
     int      scale      = 2;
     bool     version    = false;
     bool     verifyData = false;
+    bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
 };
 
 std::string utf8(const fs::path& p) { return bs::disc::pathText(p); }
@@ -81,6 +83,11 @@ bool parseArgs(Args& a) {
         else if (s == L"--headless" && (v = next())) a.headless = std::wcstoull(v->c_str(), nullptr, 10);
         else if (s == L"--scale" && (v = next())) a.scale = _wtoi(v->c_str());
         else if (s == L"--data" && (v = next())) a.gameData = *v;
+        else if (s == L"--arquivos" && (v = next())) {
+            if (*v == L"nativo") a.files = bs::FilesProvider::Native;
+            else if (*v == L"legado") a.files = bs::FilesProvider::Legacy;
+            else return false;
+        }
         else if (s == L"--version") a.version = true;
         else if (s == L"--verify-data") a.verifyData = true;
         else if (!s.empty() && s[0] != L'-' && a.positional.empty()) a.positional = s;
@@ -235,10 +242,16 @@ void errorBox(SDL_Window* parent, const std::string& msg) {
 
 // Dados do jogo validos = manifesto e arquivos presentes, executavel de boot com o hash da
 // versao recompilada. A mensagem diz o que falta e como gerar de novo.
-bool validateData(const fs::path& dir, std::string& err) {
+bool validateData(const fs::path& dir, bs::FilesProvider files, std::string& err) {
     try {
         bs::boot_read_data(dir);
-        bs::disc::RuntimeDisc check(dir, exeDir() / L"mods" / L"assets");  // mods de arquivo cabem?
+        const fs::path mods = exeDir() / L"mods" / L"assets";
+        if (files == bs::FilesProvider::Native) {
+            bs::native::files::DataFileSystem check(dir / L"disc", mods);  // mods de recursos validos?
+            bs::transitional::gdfs::check_sizes(check);                    // cabem no contrato do jogo?
+        }
+        else
+            bs::disc::RuntimeDisc check(dir, mods);  // legado: mods de arquivo cabem nos setores?
         return true;
     } catch (const std::exception& e) {
         err = e.what();
@@ -385,6 +398,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.data              = a.gameData;
     opt.modAssets         = exeDir() / L"mods" / L"assets";  // mods de arquivos (opcional)
     opt.flash             = a.flash;
+    opt.files             = a.files;
     opt.registerFunctions = [] { bsg::register_functions(); };
     opt.realtime          = a.headless == 0;
     opt.vblankLimit       = a.headless;
@@ -396,6 +410,7 @@ const char* kUsage =
     "     bluestinger [--data <pasta>] --headless <vblanks> [--dump <arquivo.bmp>] [--dump-every N --capture <dir>]\n"
     "     bluestinger [--data <pasta>] --verify-data\n"
     "     bluestinger --version\n"
+    "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n";
 
 const char* kNoCdi =
@@ -404,7 +419,7 @@ const char* kNoCdi =
 
 int mainHeadless(Args& a) {
     std::string err;
-    if (!validateData(a.gameData, err)) {
+    if (!validateData(a.gameData, a.files, err)) {
         std::fprintf(stderr, "erro: %s\n", err.c_str());
         return 1;
     }
@@ -420,7 +435,7 @@ int mainHeadless(Args& a) {
 
 int mainVerifyData(const Args& a) {
     std::string err;
-    if (!validateData(a.gameData, err)) {
+    if (!validateData(a.gameData, a.files, err)) {
         std::fprintf(stderr, "erro: %s\n", err.c_str());
         return 1;
     }
@@ -436,7 +451,7 @@ int mainVerifyData(const Args& a) {
 int mainWindow(Args& a) {
     // dados validados antes de abrir a janela: sem eles, so a mensagem
     std::string err;
-    if (!validateData(a.gameData, err)) {
+    if (!validateData(a.gameData, a.files, err)) {
         std::fprintf(stderr, "erro: %s\n", err.c_str());
         nativeBox("Os dados do jogo nao puderam ser carregados.\n\n" + err, MB_ICONERROR);
         return 1;

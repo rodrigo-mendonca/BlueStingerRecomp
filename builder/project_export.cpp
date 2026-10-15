@@ -103,9 +103,10 @@ BS_MOD(meu_mod) { bs::mods::replace(0x8C194580, minhaVersao); }
 Coloque o arquivo com o mesmo caminho do disco em `mods/assets/` (por exemplo
 `mods/assets/BSDATA/CDG000.NJ`). Ao compilar pelo Builder, a pasta vai para
 `<instalação>\mods\assets\` e o jogo lê o arquivo do mod no lugar do original.
-Hoje o arquivo precisa ter **o mesmo tamanho ou menos** que o original (o espaço no disco
-não muda); maior é recusado com uma mensagem. Os nomes dos arquivos do disco estão em
-`<instalação>\data\disc.manifest`.
+O arquivo pode ter **qualquer tamanho**: o jogo lê os recursos pelo sistema de arquivos
+nativo (N1). Um mod que não corresponde a nenhum recurso do jogo é recusado com uma mensagem
+que diz o caminho. Com `--arquivos legado` (referência), o mod precisa caber no tamanho
+original. Os recursos estão em `<instalação>\data\disc\` (mesmos nomes e pastas).
 
 ## Limitações (o que ainda não foi reconstruído)
 
@@ -128,7 +129,7 @@ const char* const kModsReadme = R"(Mods do Blue Stinger recompilado
 (ou com compilar.cmd). Cada mod usa BS_MOD(nome) { ... } e bs::mods::replace(endereco, funcao).
 Veja LEIA-ME-PROJETO.md e os exemplos em exemplos\ (nao compilados).
 
-assets\<caminho do disco>: arquivos que substituem os do disco (mesmo tamanho ou menor).
+assets\<caminho do disco>: arquivos que substituem os do disco (qualquer tamanho).
 
 Esta pasta e sua: o Builder nunca a sobrescreve.
 )";
@@ -207,7 +208,7 @@ void export_project(const ExportInputs& in, const fs::path& dest, const std::fun
         writeText(mods / L"exemplos" / L"exemplo_contador.cpp", kExampleMod);
         writeText(mods / L"assets" / L"LEIA-ME.txt",
                   "Arquivos que substituem os do disco, no mesmo caminho (ex.: BSDATA\\CDG000.NJ).\n"
-                  "Mesmo tamanho ou menor que o original.\n");
+                  "Qualquer tamanho. Um arquivo que nao corresponde a nenhum do disco e recusado.\n");
     }
 
     // mapa endereco -> funcao C++ -> arquivo -> origem -> instrucoes

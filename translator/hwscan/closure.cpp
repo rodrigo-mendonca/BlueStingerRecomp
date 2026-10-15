@@ -38,19 +38,19 @@ std::set<uint32_t> data_only_sdk_targets(const Scan& s, const SdkId& id) {
     return out;
 }
 
-std::map<uint32_t, std::set<dcmap::Subsystem>> hw_reach(const Scan& s) {
+std::map<uint32_t, std::set<dcmap::Subsystem>> hw_reach(const Scan& s, const std::set<uint32_t>& nativeReplaced) {
     std::map<uint32_t, std::set<dcmap::Subsystem>> reach;
     for (const auto& r : s.refs)
-        if (r.function) reach[r.function].insert(dcmap::region_subsystem(r.region));
+        if (r.function && !nativeReplaced.count(r.function)) reach[r.function].insert(dcmap::region_subsystem(r.region));
     // `pref` de endereco calculado numa funcao que tambem carrega a base das store queues: uso
     // provavel de SQ (envio ao TA), contado como render de forma conservadora (revisao Codex)
     for (const auto& [fn, n] : s.prefUnresolved)
-        if (s.sqLiteral.count(fn)) reach[fn].insert(dcmap::Subsystem::Render);
+        if (s.sqLiteral.count(fn) && !nativeReplaced.count(fn)) reach[fn].insert(dcmap::Subsystem::Render);
     // ponto fixo sobre as arestas diretas (o grafo tem ciclos; conjuntos so crescem)
     for (bool changed = true; changed;) {
         changed = false;
         for (const auto& e : s.edges) {
-            if (!e.callee || e.kind == EdgeKind::Indirect) continue;
+            if (!e.callee || e.kind == EdgeKind::Indirect || nativeReplaced.count(e.caller)) continue;
             const auto it = reach.find(e.callee);
             if (it == reach.end()) continue;
             auto& dst = reach[e.caller];
@@ -61,8 +61,9 @@ std::map<uint32_t, std::set<dcmap::Subsystem>> hw_reach(const Scan& s) {
     return reach;
 }
 
-std::map<uint32_t, BoundaryEntry> derive_boundary(const Scan& s, const SdkId& id) {
-    const auto                        reach = hw_reach(s);
+std::map<uint32_t, BoundaryEntry> derive_boundary(const Scan& s, const SdkId& id,
+                                                  const std::set<uint32_t>& nativeReplaced) {
+    const auto                        reach = hw_reach(s, nativeReplaced);
     std::map<uint32_t, BoundaryEntry> b;
     auto add = [&](uint32_t fn, BoundaryKind k) {
         auto& e = b[fn];

@@ -103,6 +103,7 @@ RecompResult recomp_run(const RecompOptions& opt, std::ostream& log) {
     gen.funcs_per_file = cfg.funcs_per_file;
     gen.setjmp_funcs   = cfg.setjmp_funcs;
     gen.longjmp_funcs  = cfg.longjmp_funcs;
+    gen.always_slot    = cfg.native_slots;
     const auto r       = codegen::generate(img, a, gen);
     res.files          = r.files;
     res.lines          = r.lines;

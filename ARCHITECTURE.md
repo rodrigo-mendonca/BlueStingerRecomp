@@ -561,6 +561,17 @@ Detalhes, números e reprodução em `docs/N0-RELATORIO.md`.
   registro de provedores legado/nativo.
 - `legacy/`: o runtime atual com nome de alvo.
 
+### Port nativo, N1: sistema de arquivos (2026-10-15)
+
+Detalhes em `docs/N1-PLANO.md` e `docs/N1-RELATORIO.md`.
+
+- A API gdFs do executável é atendida por `transitional/gdfs_adapter` sobre
+  `native::files::IFileSystem`, implementado por `native/platform/data_files` (arquivos de
+  `data\disc` e `modsssets`, sem setores).
+- As funções da API são chamadas pelo slot em todos os builds (`[native] slots`), e o provedor
+  é escolhido em execução: `--arquivos nativo` (padrão) | `legado` (referência e rollback).
+- Ainda legados: inicialização do gdFs, estado do drive, boot e GD-ROM HLE.
+
 ## 7. Validação
 
 - **Unitários (M2)**: decodificador exaustivo (todas as 65 536 palavras

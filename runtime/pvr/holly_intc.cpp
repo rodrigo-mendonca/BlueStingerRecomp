@@ -38,7 +38,8 @@ void update(uint64_t now) {
     if (now <= g_last) return;
     const bool vblankIn = pvr_spg_crossed(g_last, now, pvr_vblank_in_line());
     if (vblankIn) reg(kIstNrm) |= kIstVblankIn;
-    if (vblankIn && g_event_trace) event_trace(TraceEvent::VBlank, now, uint32_t(++g_vblanks));
+    if (vblankIn) ++g_vblanks;
+    if (vblankIn && g_event_trace) event_trace(TraceEvent::VBlank, now, uint32_t(g_vblanks));
     if (pvr_spg_crossed(g_last, now, pvr_vblank_out_line())) reg(kIstNrm) |= kIstVblankOut;
     // fim de render agendado pelo STARTRENDER: bits 0 (video), 1 (ISP), 2 (TSP)
     if (const uint64_t due = pvr_render_done_due(); due && now >= due) {
@@ -59,6 +60,8 @@ void update(uint64_t now) {
 } // namespace
 
 void holly_intc_sync(uint64_t cycles) { update(cycles); }
+
+uint64_t holly_vblank_count() { return g_vblanks; }
 
 void holly_intc_raise(uint32_t bits) { reg(kIstNrm) |= bits; }
 

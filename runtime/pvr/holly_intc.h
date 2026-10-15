@@ -17,6 +17,8 @@ void holly_intc_reset(uint64_t cycles = 0);
 // Acende os eventos ate `cycles` com a configuracao de SPG atual. Chamado antes de
 // qualquer escrita que mude a temporizacao, para nao aplicar a nova a tempo passado.
 void holly_intc_sync(uint64_t cycles);
+// VBlank-In desde o reset (diagnostico: trace de ordem, registro de leituras do N1).
+uint64_t holly_vblank_count();
 
 // Nivel IRL pedido ao SH-4 (6, 4, 2 ou 0): maior nivel cujas mascaras IMLn
 // (NRM/EXT/ERR) tem algum bit pendente em ISTNRM/ISTEXT/ISTERR.

@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | **N0 implementado** (2026-10-15, sem commit): ver "N0: fundação do port nativo" e `docs/N0-RELATORIO.md`. Aguarda revisão e aprovação antes do N1. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): só o planejamento autorizado. |
 
 ## Versão suportada
 
@@ -975,6 +975,68 @@ Não verificado pelo Codex (registrado no relatório):
 - cobertura além da 1ª área.
 
 Depois das correções: 182 unitários, `ctest` 11/11. A fronteira e a base foram regeradas.
+
+### N1: sistema de arquivos nativo (2026-10-15)
+
+Autorização do mantenedor: N1 dentro do escopo de `docs/N1-PLANO.md`, sem N2 e sem commits
+adicionais. Relatório: `docs/N1-RELATORIO.md`.
+
+**Verificado (método):**
+- **Identificação por contrato da API gdFs (Shinobi 1.05).**
+  - Método: disassembly de `0x8C15A5E8`-`0x8C15C300`; trace de argumentos e retornos
+    (`BS_CALL_TRACE`, novo, build BS_MODS, NEW GAME 6 000 VBlanks, 68 aberturas).
+  - Estrutura GDFS deduzida.
+  - 21 endereços que criam ou recebem GDFS: 17 com código gerado, 4 nunca alcançados. Mais o
+    servidor `8C15AE28`.
+- **Slots sempre ativos** (`[native] slots`, gerador `BSG_SLOT`): comportamento idêntico, com
+  o quadro em 6 000 VBlanks igual ao do N0 (`b49d68e2…`).
+- **Provedor nativo** (`DataFileSystem` + adaptador gdFs, padrão), roteiro NEW GAME de 8 000
+  VBlanks:
+  - 68 aberturas, 108 leituras, 15,8 MB, 0 não encontrados;
+  - **0 setores de arquivo pelo GD-ROM HLE** (P2);
+  - sequência global de 7 750 blocos `(arquivo, deslocamento, SHA-256)` **idêntica** ao legado
+    (P1), comparando os 88 grupos de arquivos que dividem setores no disco pelo grupo;
+  - determinístico: log e quadro iguais em duas execuções;
+  - eventos +2 VBlanks depois da tela-título (tempo de carga), por isso o quadro num VBlank
+    fixo difere (investigação no relatório, seção 5).
+- **Rollback:** `--arquivos legado` dá o quadro do N0 em 6 000 VBlanks (`b49d68e2…`, P8).
+- **Fronteira:**
+  - 5 entradas gdFs com `provedor = "nativo"`;
+  - `fronteira.provedor.legado` 267 → 262;
+  - `legado.subsistema.arquivos` 17 → 2: inicialização `8C08BB40` e estado do drive
+    `8C15C016`, ainda legados.
+- **Investigação da diferença inicial (`IWP20` × `IWP15`).**
+  - Descartados por experimento: tempo de carga (0-100 000 ciclos por setor não mudaram o
+    arquivo), sobras após o fim do arquivo (nenhuma no disco) e valor do handle.
+  - Causa provada: `IWP15.NT` e `IWP20.NT` dividem LBA, tamanho e SHA-256, e o log do legado
+    (setor → arquivo) não distingue aliases. O trace de chamadas e os snapshots de RAM
+    (`BS_RAM_DUMP`, novo) mostram `IWP15` nos dois modos.
+- **Regressão encontrada e corrigida:** o projeto exportado traz `mods/assets/LEIA-ME.txt`, que o
+  provedor nativo recusava como "mod sem recurso", e o Builder falhava em "verificando o
+  executável". Agora a documentação na raiz da pasta de mods é ignorada (teste
+  `n1_data_files_mods_readme_ignored`). O texto do projeto exportado passou a refletir as
+  regras de mods do N1.
+
+**Testes:**
+- 192 unitários (10 do N1);
+- `ctest` 11/11 com o CDI real;
+- suítes de distribuição (2026-10-15, `make_builder` e `make_preview` refeitos, depois cada
+  suíte): `test_preview` 9/9, `test_gameplay` 4/4, `test_builder` 18/18, `test_projeto` 11/11,
+  `test_arquivos` 6/6 (P1 7 750/7 750 blocos em 54 arquivos, ordem global igual; P2 0 setores;
+  P3/P8 roteiro completo; 68 aberturas nativas, 0 não encontrados), `test_ordem` 8/8 (ordem
+  `176F4C28…` igual em duas execuções).
+
+**Revisão do Codex** (`reviews/codex-20261015-101006.md`, somente leitura):
+
+| Gravidade | Achado | Decisão |
+|---|---|---|
+| ALTA | `ReqRd32` concluía na chamada; o binário publica "ocupado" (2) com 0 bytes (`8C15B966`/`8C15B978`) e conclui no servidor | **Aceito.** Pedido pendente (um por vez), concluído no gancho do servidor `8C15AE28`; `Stop`/`Close` cancelam; leitura síncrona conclui o pendente antes. Teste atualizado. Medido: não mudou leituras nem quadro do roteiro. |
+| MÉDIA | P1 passava com conjunto de arquivos diferente | **Aceito.** P1 também exige o mesmo conjunto e a mesma contagem de blocos, comparando por grupo de conteúdo. |
+| BAIXA | A explicação por tempo não isolava a causa | **Aceito.** Os experimentos refutaram o tempo; a causa real foi provada (aliases no log do legado). |
+| BAIXA | Tamanho maior que 32 bits truncado no contrato gdFs | **Aceito.** Mod acima de 4 GiB − 1 recusado na carga e na validação, com o caminho (`check_sizes`); abertura recusada. |
+| BAIXA | Erros ao percorrer a pasta base eram descartados | **Aceito.** Abortam com caminho e motivo. |
+| BAIXA | `emitFunction` dependia de um global | **Aceito.** `FnEmitter` usa `opt_.always_slot`; teste `n1_codegen_always_slot_in_emit_function`. |
+| (não verificado) | Mod ilegível sem teste | **Coberto:** `n1_data_files_unreadable_mod` (arquivo com acesso exclusivo). |
 
 ## Revisões independentes (Codex)
 

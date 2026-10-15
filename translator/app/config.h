@@ -16,6 +16,7 @@ struct GameConfig {
     bool               inline_pool_constants = true;
     uint32_t           funcs_per_file        = 400;
     std::set<uint32_t> setjmp_funcs, longjmp_funcs;  // [threads]
+    std::set<uint32_t> native_slots;                 // [native] slots (fronteiras migraveis)
 };
 
 GameConfig loadConfig(const std::filesystem::path& path);

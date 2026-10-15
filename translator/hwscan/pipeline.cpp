@@ -28,7 +28,7 @@ std::unique_ptr<Report> run(const std::filesystem::path& config, const std::file
         r->probe    = merge_probe(r->scan, r->img, text);
         r->hasProbe = true;
     }
-    r->boundary = derive_boundary(r->scan, r->sdk);
+    r->boundary = derive_boundary(r->scan, r->sdk, r->cfg.native_slots);
     return r;
 }
 

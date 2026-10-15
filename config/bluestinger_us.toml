@@ -92,3 +92,33 @@ address = 0x8C1981A8   # tratador de excecao (literal original em 8C198170/8C198
 # address   = 0x8C0xxxxx
 # name      = "on_room_load"
 # registers = ["r4", "r5"]
+
+# --- port nativo: fronteiras migraveis (docs/N1-PLANO.md) ---
+# Chamadas sempre pelo slot, em todos os builds, para o provedor (legado/nativo) poder ser
+# trocado em execucao. N1: a API gdFs (Shinobi 1.05) que cria ou recebe GDFS, identificada por
+# contrato (disassembly + trace de argumentos/retornos, 2026-10-15). Nomes do SDK Katana.
+[native]
+slots = [
+  0x8C15BF60,  # gdFsOpen(nome, dirrec) -> GDFS
+  0x8C15B626,  # gdFsChangeDir(nome)
+  0x8C15B644,  # gdFsClose(gdfs)
+  0x8C15B680,  # gdFsGetFileSize(gdfs, &bytes)
+  0x8C15B69A,  # gdFsGetFileSctSize(gdfs, &setores)
+  0x8C15B6B4,  # gdFsGetFileFad(gdfs, &fad)        (guarda: sem equivalente nativo)
+  0x8C15B6CE,  # gdFsSeek(gdfs, setor, origem)
+  0x8C15B71C,  # gdFsTell(gdfs)
+  0x8C15B732,  # (gdfs, &fim_de_arquivo)
+  0x8C15B75A,  # gdFsSetTransMode(gdfs, modo)
+  0x8C15B774,  # gdFsRead(gdfs, nsct, buf)
+  0x8C15B7FA,  # leitura por PIO (interna)        (guarda)
+  0x8C15B8D4,  # gdFsReqRd32(gdfs, nsct, buf)
+  0x8C15B548,  # espera do pedido (interna)        (guarda)
+  0x8C15BBF8,  # gdFsGetStat(gdfs)
+  0x8C15BC10,  # gdFsGetTransStat(gdfs) -> bytes
+  0x8C15BC26,  # gdFsStop(gdfs)
+  0x8C15BD40,  # gdFsGetErr(gdfs)
+  0x8C15BD58,  # callback de fim de leitura (gdfs, func, obj)
+  0x8C15BDA4,  # callback 2 (gdfs, func, obj)
+  0x8C15BDDE,  # callback de erro (gdfs, func, obj)
+  0x8C15AE28,  # servidor do gdFs (interno): conclui os pedidos assincronos nativos
+]

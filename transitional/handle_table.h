@@ -13,6 +13,7 @@
 #include "core/handle.h"
 
 #include <cstdint>
+#include <algorithm>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -26,6 +27,10 @@ public:
     static constexpr uint32_t kIndexMask  = (1u << kIndexBits) - 1;
     static constexpr uint32_t kMaxGen     = 0xFFF;
     static constexpr uint32_t kMaxEntries = kIndexMask + 1;
+
+    // maxGen < kMaxGen limita o handle a menos bits (p.ex. 15: cabe em 24 bits, para quem
+    // precisa marcar o valor com uma etiqueta nos bits altos).
+    explicit HandleTable(uint32_t maxGen = kMaxGen) : maxGen_(maxGen ? std::min(maxGen, kMaxGen) : 1) {}
 
     // 0 se a tabela esta cheia.
     uint32_t insert(T value) {
@@ -65,6 +70,12 @@ public:
 
     size_t size() const { return live_; }
 
+    template <class Fn>
+    void for_each(Fn&& fn) {
+        for (Slot& s : slots_)
+            if (s.value) fn(*s.value);
+    }
+
     template <class Tag>
     static native::Handle<Tag> typed(uint32_t h) { return native::Handle<Tag>{h}; }
 
@@ -84,7 +95,7 @@ private:
     void release(Slot& s, uint32_t index) {
         s.value.reset();
         --live_;
-        if (s.gen == kMaxGen) return;  // aposentado
+        if (s.gen >= maxGen_) return;  // aposentado
         ++s.gen;
         free_.push_back(index);
     }
@@ -92,6 +103,7 @@ private:
     std::vector<Slot>     slots_;
     std::vector<uint32_t> free_;
     size_t                live_ = 0;
+    uint32_t              maxGen_ = kMaxGen;
 };
 
 } // namespace bs::transitional

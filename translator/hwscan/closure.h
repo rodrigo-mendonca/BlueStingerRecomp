@@ -43,9 +43,12 @@ std::set<uint32_t> indirect_targets(const Scan& s, const SdkId& id);
 std::set<uint32_t> data_only_sdk_targets(const Scan& s, const SdkId& id);
 
 // Subsistemas de hardware alcancaveis por chamadas diretas a partir de cada funcao (ela inclusive).
-std::map<uint32_t, std::set<dcmap::Subsystem>> hw_reach(const Scan& s);
+// `nativeReplaced`: funcoes com provedor nativo (N1+: [native] slots); o corpo legado delas nao
+// executa, entao o alcance nao passa por elas.
+std::map<uint32_t, std::set<dcmap::Subsystem>> hw_reach(const Scan& s, const std::set<uint32_t>& nativeReplaced = {});
 
-std::map<uint32_t, BoundaryEntry> derive_boundary(const Scan& s, const SdkId& id);
+std::map<uint32_t, BoundaryEntry> derive_boundary(const Scan& s, const SdkId& id,
+                                                  const std::set<uint32_t>& nativeReplaced = {});
 
 // Manifesto com dominancia: para cada funcao que acessa hardware, as entradas da fronteira que
 // a alcancam por chamadas diretas/observadas dentro do lado SDK. Com o fechamento valido

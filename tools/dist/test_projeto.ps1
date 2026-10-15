@@ -3,7 +3,8 @@
 #   2. adiciona um mod em C++, uma alteracao controlada no C++ gerado e um mod de arquivo;
 #   3. recompila A PARTIR do projeto com o CDI inacessivel;
 #   4. o jogo instalado mostra os tres efeitos (sem o CDI);
-#   5. mod de arquivo maior que o original: mensagem clara;
+#   5. mods de recursos (N1): maior que o original vale no provedor nativo; no legado, e para
+#      recurso inexistente, mensagem clara;
 #   6. reexportar preserva mods/ e guarda o generated/ editado.
 #
 #   powershell -ExecutionPolicy Bypass -File tools/dist/test_projeto.ps1 -Disc <imagem.cdi> [-Builder <pasta>]
@@ -78,12 +79,20 @@ try {
     $env:BS_INPUT_SCRIPT = ""
     Check "mod em C++ ativo (replace)" ($g -match "\[mods\] iniciando exemplo_contador" -and $g -match "\[mod exemplo\] primeira chamada de 8C194580") ""
     Check "alteracao no C++ gerado ativa" ($g -match "\[edicao controlada\] entrada do jogo") ""
-    Check "mod de arquivo carregado" ($g -match [regex]::Escape("[mods] arquivo substituido: $assetRel") -and $g -match "VBlanks: 2300;") $assetRel
-    # 5. mod de arquivo maior que o espaco original: mensagem clara, sem iniciar
+    Check "mod de arquivo carregado" ($g -match [regex]::Escape("[mods] recurso substituido: $($assetRel.ToUpper())") -and $g -match "VBlanks: 2300;") $assetRel
+    # 5. mod maior que o original: o provedor nativo de arquivos (N1) aceita; o legado (setores
+    #    de tamanho fixo) recusa com mensagem clara; mod sem recurso correspondente: erro claro
     $installedAsset = Join-Path $out ("BlueStinger\mods\assets\" + $assetRel.Replace('/', '\'))
     [IO.File]::WriteAllBytes($installedAsset, (New-Object byte[] ($assetSize + 4096)))
     $g = RunCmd "`"$exe`" --headless 10"
-    Check "mod de arquivo grande demais: mensagem clara" ($LASTEXITCODE -ne 0 -and $g -match "maior que o original") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
+    Check "mod maior que o original: aceito no provedor nativo" ($LASTEXITCODE -eq 0 -and $g -match [regex]::Escape("($assetSize -> $($assetSize + 4096) bytes)")) (($g -split "`n" | Where-Object { $_ -match "erro|recurso" } | Select-Object -First 1))
+    $g = RunCmd "`"$exe`" --arquivos legado --headless 10"
+    Check "mod maior que o original: mensagem clara no legado" ($LASTEXITCODE -ne 0 -and $g -match "maior que o original") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
+    $bogus = Join-Path $out "BlueStinger\mods\assets\BSDATA\NAO_EXISTE.BIN"
+    [IO.File]::WriteAllText($bogus, "x")
+    $g = RunCmd "`"$exe`" --headless 10"
+    Check "mod sem recurso correspondente: mensagem clara" ($LASTEXITCODE -ne 0 -and $g -match "NAO_EXISTE.BIN: nao substitui nenhum recurso") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
+    Remove-Item -LiteralPath $bogus
     # 5b. remover o mod e recompilar: o efeito some (o cache espelha mods/, nada sobra la)
     Remove-Item -LiteralPath (Join-Path $proj "mods\exemplo_contador.cpp")
     $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`""

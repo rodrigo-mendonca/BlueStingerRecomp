@@ -78,6 +78,9 @@ GameConfig loadConfig(const std::filesystem::path& path) {
                 (std::string(k) == "setjmp" ? c.setjmp_funcs : c.longjmp_funcs).insert(a);
                 c.analysis.extra_functions.push_back(a);
             }
+    // [native] slots: fronteiras migraveis do port nativo, chamadas sempre pelo slot
+    if (auto arr = t["native"]["slots"].as_array())
+        for (auto& el : *arr) c.native_slots.insert(u32(&el, "native.slots"));
     return c;
 }
 
