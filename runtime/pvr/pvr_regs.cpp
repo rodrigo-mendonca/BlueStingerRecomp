@@ -16,6 +16,8 @@
 // ligado de vstart ate vbend (o mesmo que o Flycast faz). Os ciclos do codigo gerado
 // sao estimados, entao a fase exata nunca coincide com o Flycast.
 #include "pvr/pvr_regs.h"
+#include "cpu/time_hooks.h"
+#include "debug/clock_log.h"
 
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_render.h"
@@ -52,8 +54,8 @@ constexpr uint32_t kTaNextOpbInit = 0x005F8164;
 constexpr uint32_t kTaListInit = 0x005F8144;  // bit 31: inicia listas novas (comando)
 constexpr uint32_t kTaListCont = 0x005F8160;  // bit 31: continua as listas
 
-constexpr uint64_t kCpuHz          = 200000000;
-constexpr uint64_t kFieldCycles    = kCpuHz * 1001 / 60000;  // NTSC 59.94 Hz
+// campo NTSC 59.94 Hz na base de tempo de compatibilidade (cpu/time_hooks.h)
+constexpr uint64_t kFieldCycles    = kCompatTicksPerField;
 constexpr uint32_t kDefaultLines   = 263;                    // NTSC nao entrelacado
 
 std::array<uint32_t, kSize / 4> g_regs{};
@@ -82,6 +84,8 @@ void pvr_regs_reset() {
     g_phase = 0;
     g_renderDue = 0;
     g_reported.fill(false);
+    time_provider().render_scheduled(0);  // nenhum fim de render pendente
+    time_provider().spg_changed();
 }
 
 uint32_t pvr_vblank_in_line() { return reg(kSpgVblankInt) & 0x3FF; }
@@ -97,6 +101,17 @@ bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line) {
     // eventos em off + k*campo; existe algum em (from, to]?
     auto count = [&](uint64_t t) { return t < off ? 0ull : (t - off) / kFieldCycles + 1; };
     return count(to) > count(from);
+}
+
+uint64_t pvr_spg_next_crossing(uint64_t after, uint32_t line) {
+    const uint32_t lines = fieldLines();
+    if (line >= lines) return kSpgNever;
+    const uint64_t off = uint64_t(line) * kFieldCycles / lines;
+    // mesma conta de pvr_spg_crossed: eventos em t com t + fase = off + k*campo, k >= 0
+    const uint64_t x = after + g_phase;
+    if (x < off) return off - g_phase;
+    const uint64_t k = (x - off) / kFieldCycles + 1;
+    return off + k * kFieldCycles - g_phase;
 }
 
 SpgPos pvr_spg_position(uint64_t cycles) {
@@ -128,12 +143,14 @@ bool pvr_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
         return true;
     }
     if (p == kSpgStatus) {
-        const SpgPos s = pvr_spg_position(c->cycles);
+        const uint64_t now = time_now(c);
+        const SpgPos   s   = pvr_spg_position(now);
         // bit 10: campo (alterna a cada campo com SPG_CONTROL.interlace, bit 4); bit 11
         // nunca aceso no Flycast
         const bool interlace = reg(kSpgControl) & 0x10;
-        const bool field     = interlace && (((c->cycles + g_phase) / kFieldCycles) & 1);
+        const bool field     = interlace && (((now + g_phase) / kFieldCycles) & 1);
         v = (s.line & 0x3FF) | (field ? 1u << 10 : 0) | (s.vsync ? 1u << 13 : 0);
+        if (g_clock_log) clock_log_read(ClockRead::Spg, v);
         return true;
     }
     v = reg(p);
@@ -173,6 +190,7 @@ void pvr_regs_load(const uint32_t* words) {
     const uint32_t lines  = fieldLines();
     const uint32_t line   = std::min<uint32_t>(status & 0x3FF, lines - 1);
     g_phase = ((status >> 10) & 1) * kFieldCycles + (uint64_t(line) * kFieldCycles + lines - 1) / lines;
+    time_provider().spg_changed();
 }
 
 void pvr_regs_dump(Sh4Context* c, uint32_t* out) {
@@ -236,9 +254,10 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         // (spg.cpp, scheduleRenderDone): min(450000 + bytes do TA * 100, 1500000) ciclos.
         // Aproximacao. Depois disso, ISTNRM bits 0 (video), 1 (ISP) e 2 (TSP).
         const uint64_t cost = std::min<uint64_t>(450000 + uint64_t(ta_bytes()) * 100, 1500000);
-        g_renderDue         = c->cycles + cost;
+        g_renderDue         = time_now(c) + cost;
+        time_provider().render_scheduled(g_renderDue);
     }
-    if (p == kSpgLoad || p == kSpgVblankInt) holly_intc_sync(c->cycles);
+    if (p == kSpgLoad || p == kSpgVblankInt) holly_intc_sync(time_now(c));
     if (p == kTaListInit && (v & 0x80000000)) {
         ta_list_init();
         // o TA recomeca nos ponteiros iniciais; o jogo le TA_ITP_CURRENT para saber onde
@@ -252,6 +271,7 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const bool command = p == kTaListInit || p == kStartRender || p == kSoftReset;
     const bool readOnly = p == kSpgStatus || p == kId || p == kRevision || p == kTaYuvTexCnt;
     if (!command && !readOnly) g_regs[(p - kBase) / 4] = v;
+    if (p == kSpgLoad || p == kSpgVblankInt) time_provider().spg_changed();  // nova temporizacao do SPG
     if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_reset(reg(kTaYuvTexBase), reg(kTaYuvTexCtrl));
     return true;
 }

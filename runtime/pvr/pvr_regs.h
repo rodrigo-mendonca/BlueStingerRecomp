@@ -44,6 +44,10 @@ void pvr_set_startrender_hook(PvrStartRenderHook hook);
 
 // O inicio de `line` (em algum campo) caiu no intervalo (from, to]?
 bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line);
+// Primeiro instante depois de `after` em que a linha `line` e cruzada (a mesma conta de
+// pvr_spg_crossed); kSpgNever se o campo nunca chega a ela. N2a: agenda o VBlank na fila.
+constexpr uint64_t kSpgNever = ~0ull;
+uint64_t           pvr_spg_next_crossing(uint64_t after, uint32_t line);
 // Linhas das interrupcoes de VBlank (SPG_VBLANK_INT 0x005F80C4).
 uint32_t pvr_vblank_in_line();
 uint32_t pvr_vblank_out_line();

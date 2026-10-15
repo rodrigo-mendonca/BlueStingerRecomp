@@ -8,6 +8,8 @@
 //   0x00710008  bit 0 libera a escrita do RTC; escrever os 16 bits altos a desliga
 // O RTC conta segundos desde 1950-01-01 e avanca um por segundo de CPU emulada.
 #include "aica/aica_regs.h"
+#include "cpu/time_hooks.h"
+#include "debug/clock_log.h"
 
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
@@ -23,15 +25,12 @@
 namespace bs {
 namespace {
 
-constexpr uint64_t kCpuHz   = 200000000;
 constexpr uint32_t kCtrl    = 0x00702C00;
 constexpr uint32_t kRtcHi   = 0x00710000;
 constexpr uint32_t kRtcLo   = 0x00710004;
 constexpr uint32_t kRtcEn   = 0x00710008;
 
 uint32_t g_ctrl = 0;
-uint32_t g_rtcBase = 0;       // valor do RTC em g_rtcCycles
-uint64_t g_rtcCycles = 0;
 bool     g_rtcEnable = false;
 bool     g_rtcSet = false;        // sem valor definido: hora do host no primeiro acesso
 
@@ -40,9 +39,10 @@ std::vector<uint8_t> g_ram(kAicaRamSize);
 uint32_t canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 bool     inRam(uint32_t p) { return p >= 0x00800000 && p < 0x01000000; }
 
-uint32_t rtcNow(uint64_t cycles) {
-    if (!g_rtcSet) aica_rtc_set(aica_rtc_host_now(), cycles);
-    return g_rtcBase + uint32_t((cycles >= g_rtcCycles ? cycles - g_rtcCycles : 0) / kCpuHz);
+// N2a: a contagem do RTC e do provedor de tempo (legado: base + ciclos; nativo: relogio logico)
+uint32_t rtcNow(uint64_t now) {
+    if (!g_rtcSet) aica_rtc_set(aica_rtc_host_now(), now);
+    return time_provider().rtc_seconds(now);
 }
 
 } // namespace
@@ -56,10 +56,9 @@ void aica_regs_reset() {
     aica_rtc_set(aica_rtc_host_now(), 0);
 }
 
-void aica_rtc_set(uint32_t seconds, uint64_t cycles) {
-    g_rtcBase   = seconds;
-    g_rtcCycles = cycles;
-    g_rtcSet    = true;
+void aica_rtc_set(uint32_t seconds, uint64_t now) {
+    time_provider().rtc_set(seconds, now);
+    g_rtcSet = true;
 }
 
 uint32_t aica_rtc_host_now() {
@@ -160,14 +159,15 @@ bool aica_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     if (inRam(p)) {
         v = 0;
         std::memcpy(&v, &g_ram[p & (kAicaRamSize - 1)], size);
-        trace(false, p, v, c->cycles, c->pr);
+        trace(false, p, v, time_now(c), c->pr);
         return true;
     }
     if (p == kCtrl && size == 4) v = g_ctrl;
-    else if (p == kRtcHi && size == 4) v = rtcNow(c->cycles) >> 16;
-    else if (p == kRtcLo && size == 4) v = rtcNow(c->cycles) & 0xFFFF;
+    else if (p == kRtcHi && size == 4) v = rtcNow(time_now(c)) >> 16;
+    else if (p == kRtcLo && size == 4) v = rtcNow(time_now(c)) & 0xFFFF;
     else if (p == kRtcEn && size == 4) v = 0;
     else return false;
+    if (g_clock_log && (p == kRtcHi || p == kRtcLo)) clock_log_read(ClockRead::Rtc, v);
     return true;
 }
 
@@ -175,14 +175,14 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (inRam(p)) {
         std::memcpy(&g_ram[p & (kAicaRamSize - 1)], &v, size);
-        trace(true, p, v, c->cycles, c->pr);
+        trace(true, p, v, time_now(c), c->pr);
         return true;
     }
     if (size != 4) return false;
     if (p == kCtrl) {
         if (std::getenv("BS_AICA_TRACE"))  // diagnostico: reset/liberacao do ARM7 (bit 0)
             std::fprintf(stderr, "[aica] controle 00702C00 = %08X (ARM7 %s; ciclo %llu, PR %08X, funcao %08X)\n", v,
-                         (v & 1) ? "em reset" : "liberado", (unsigned long long)c->cycles, c->pr, g_lastFn);
+                         (v & 1) ? "em reset" : "liberado", (unsigned long long)time_now(c), c->pr, g_lastFn);
         if (std::getenv("BS_AICA_TRACE")) {  // pilha: enderecos de retorno salvos pelos chamadores
             std::fprintf(stderr, "[aica]   pilha (r15=%08X):", c->r[15]);
             for (uint32_t i = 0; i < 24; ++i) {
@@ -196,9 +196,9 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         g_rtcEnable = v & 1;
     } else if (p == kRtcHi || p == kRtcLo) {
         if (g_rtcEnable) {
-            const uint32_t now = rtcNow(c->cycles);
+            const uint32_t now = rtcNow(time_now(c));
             const uint32_t val = p == kRtcHi ? (now & 0xFFFF) | ((v & 0xFFFF) << 16) : (now & 0xFFFF0000) | (v & 0xFFFF);
-            aica_rtc_set(val, c->cycles);
+            aica_rtc_set(val, time_now(c));
             if (p == kRtcHi) g_rtcEnable = false;
         }
     } else {

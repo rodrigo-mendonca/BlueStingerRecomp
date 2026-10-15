@@ -8,10 +8,13 @@
 //             [--metricas-gerar <toml>]     grava as metricas atuais como linha de base
 //             [--sonda <tsv>]               junta o TSV da sonda dinamica (BS_HW_PROBE)
 //             [--gerado <dir>]              metricas do codigo gerado (generated/)
+//             [--runtime <dir>]             leituras do contador de ciclos no runtime (N2a)
 // Saida: 0 ok; 1 erro; 2 uso; 3 violacao de fechamento; 4 regressao de metrica.
 #include "hwscan/boundary_io.h"
 #include "hwscan/pipeline.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -196,6 +199,75 @@ Metrics generatedMetrics(const fs::path& dir) {
     return m;
 }
 
+// N2a (criterio A8): quem le o contador de ciclos estimados do SH-4 (`->cycles`/`.cycles`) no
+// runtime. Categorias: entrada de compatibilidade (cpu/time_hooks.h, time_now), base de
+// progresso (BS_CYCLES/BS_POLL: cpu/sh4_gen.h e o poll central), diagnostico (debug/ e
+// comandos de log/trace) e o resto, que e consumo funcional de tempo por ciclos (catraca).
+Metrics runtimeMetrics(const fs::path& dir, const fs::path& tsv) {
+    Metrics m;
+    for (const char* k : {"tempo.consumidores.ciclos", "tempo.ciclos.funcionais", "tempo.ciclos.diagnostico",
+                          "tempo.ciclos.progresso", "tempo.ciclos.entrada_compat"})
+        m[k] = 0;
+    std::ofstream out(tsv, std::ios::trunc);
+    out << "arquivo\tlinha\tcategoria\n";
+    std::vector<fs::path> files;
+    for (const auto& e : fs::recursive_directory_iterator(dir))
+        if (e.is_regular_file() && (e.path().extension() == ".cpp" || e.path().extension() == ".h"))
+            files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    for (const auto& path : files) {
+        const std::string rel = fs::relative(path, dir).generic_string();
+        std::string       text = readText(path);
+        // comentarios viram espacos (posicoes e linhas preservadas)
+        for (size_t i = 0; i + 1 < text.size(); ++i) {
+            if (text[i] == '"') {  // literal: pula
+                for (++i; i < text.size() && text[i] != '"' && text[i] != '\n'; ++i)
+                    if (text[i] == '\\') ++i;
+            } else if (text[i] == '/' && text[i + 1] == '/') {
+                for (; i < text.size() && text[i] != '\n'; ++i) text[i] = ' ';
+            } else if (text[i] == '/' && text[i + 1] == '*') {
+                for (; i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/'); ++i)
+                    if (text[i] != '\n') text[i] = ' ';
+                if (i + 1 < text.size()) text[i] = text[i + 1] = ' ';
+            }
+        }
+        bool functionalFile = false;
+        for (size_t p = text.find("cycles"); p != std::string::npos; p = text.find("cycles", p + 1)) {
+            const bool member = (p >= 2 && text.compare(p - 2, 2, "->") == 0) || (p >= 1 && text[p - 1] == '.');
+            const bool word   = p + 6 >= text.size() || !(std::isalnum(uint8_t(text[p + 6])) || text[p + 6] == '_');
+            if (!member || !word) continue;
+            // comando que contem a leitura: do ultimo ; { } ate o proximo ; (ou o fim da linha,
+            // nas macros)
+            const size_t      b    = text.find_last_of(";{}", p);
+            const size_t      e    = text.find_first_of(";\n", p);
+            const std::string stmt = text.substr(b == std::string::npos ? 0 : b, e == std::string::npos ? std::string::npos : e - b);
+            const size_t      ls   = text.rfind('\n', p);
+            const std::string line = text.substr(ls == std::string::npos ? 0 : ls + 1, text.find('\n', p) - (ls == std::string::npos ? 0 : ls + 1));
+            std::string cat;
+            // so as expressoes conhecidas contam como entrada de compatibilidade e progresso; outra
+            // leitura nesses arquivos e consumo funcional (revisao Codex 2026-10-15)
+            if (rel == "cpu/time_hooks.h" && stmt.find("clock(c->cycles)") != std::string::npos) cat = "entrada_compat";
+            else if (rel == "cpu/sh4_gen.h" &&
+                     (line.find("#define BS_CYCLES(n) (c->cycles += (n))") != std::string::npos ||
+                      line.find("if (c->cycles >= c->next_event)") != std::string::npos))
+                cat = "progresso";
+            else if (rel == "cpu/sh4_runtime.cpp" && stmt.find("c->next_event = c->cycles + kServiceQuantum") != std::string::npos)
+                cat = "progresso";
+            else if (rel.rfind("debug/", 0) == 0) cat = "diagnostico";
+            else if (stmt.find("printf") != std::string::npos || stmt.find("event_trace(") != std::string::npos)
+                cat = "diagnostico";
+            else cat = "funcional";
+            if (cat == "funcional") {
+                functionalFile = true;
+                m["tempo.ciclos.funcionais"]++;
+            } else m["tempo.ciclos." + cat]++;
+            out << rel << '\t' << 1 + std::count(text.begin(), text.begin() + p, '\n') << '\t' << cat << '\n';
+        }
+        if (functionalFile) m["tempo.consumidores.ciclos"]++;
+    }
+    return m;
+}
+
 void writeClosure(const ClosureResult& c, const fs::path& dir) {
     std::ofstream o(dir / "fechamento.tsv", std::ios::trunc);
     o << "tipo\tfuncao\talcancada_por\tvia_indireta\n";
@@ -213,7 +285,7 @@ int main(int argc, char** argv) {
                      "[--fronteira-gerar <toml>] [--metricas-base <toml>] [--metricas-gerar <toml>]\n";
         return 2;
     }
-    fs::path boundaryIn, boundaryOut, metricsBase, metricsOut, probe, generated;
+    fs::path boundaryIn, boundaryOut, metricsBase, metricsOut, probe, generated, runtimeDir;
     for (int i = 4; i < argc; ++i) {
         const std::string a = argv[i];
         if (i + 1 >= argc) {
@@ -226,6 +298,7 @@ int main(int argc, char** argv) {
         else if (a == "--metricas-gerar") metricsOut = argv[++i];
         else if (a == "--sonda") probe = argv[++i];
         else if (a == "--gerado") generated = argv[++i];
+        else if (a == "--runtime") runtimeDir = argv[++i];
         else {
             std::cerr << "opcao desconhecida: " << a << "\n";
             return 2;
@@ -251,6 +324,7 @@ int main(int argc, char** argv) {
         writeDominance(r->scan, r->sdk, bset, dir);
         Metrics m = compute_metrics(r->scan, r->sdk, declared.entries, closure, declared.providers);
         if (!generated.empty()) m.merge(generatedMetrics(generated));
+        if (!runtimeDir.empty()) m.merge(runtimeMetrics(runtimeDir, dir / "runtime_ciclos.tsv"));
         writeText(dir / "metricas.toml", metrics_toml(m));
         if (!boundaryOut.empty()) {
             // entradas com provedor nativo: as fronteiras migradas ([native] slots no config)

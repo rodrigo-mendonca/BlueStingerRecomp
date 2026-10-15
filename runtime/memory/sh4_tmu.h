@@ -1,6 +1,6 @@
 #pragma once
 // Timer unit (TMU) do SH-4: tres contadores decrescentes de 32 bits com recarga.
-// O valor e derivado do contador de ciclos estimado (c->cycles), sem eventos proprios.
+// O valor e derivado do instante do provedor de tempo (cpu/time_hooks.h), sem eventos proprios.
 #include "cpu/sh4_context.h"
 
 namespace bs {

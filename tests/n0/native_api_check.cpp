@@ -136,8 +136,9 @@ int main() {
     CHECK((pad.buttons & input::Start) && !(pad.buttons & input::B));
     saves::SaveInfo si{"BLUESTIN.000", "BLUE STINGER", 10, 0, 1};
     CHECK(si.blocks == 10);
-    time::Instant t{120, 0};
-    CHECK(t.frame == 120);
+    constexpr time::TimeBase tb;  // campo NTSC exato
+    CHECK(tb.frame(tb.frame_start(120)) == 120);
+    static_assert(tb.ns(tb.frame_start(60000)) == 1001000000000ull);
     constexpr time::Rate ntsc;
     static_assert(ntsc.frame_ns(60000) == 1001000000000ull);  // 60 000 campos = 1 001 s exatos
     CHECK(ntsc.frame_ns(1) == 16683333);

@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): só o planejamento autorizado. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: só investigação e planejamento autorizados. |
 
 ## Versão suportada
 
@@ -1037,6 +1037,106 @@ adicionais. Relatório: `docs/N1-RELATORIO.md`.
 | BAIXA | Erros ao percorrer a pasta base eram descartados | **Aceito.** Abortam com caminho e motivo. |
 | BAIXA | `emitFunction` dependia de um global | **Aceito.** `FnEmitter` usa `opt_.always_slot`; teste `n1_codegen_always_slot_in_emit_function`. |
 | (não verificado) | Mod ilegível sem teste | **Coberto:** `n1_data_files_unreadable_mod` (arquivo com acesso exclusivo). |
+
+**Depois do commit `770e3d1` (2026-10-15).** No build local `msvc-release`, o executável
+terminava com `0xC0000409` ao sair, nos dois provedores de arquivos. Diagnóstico:
+- log de eventos do Windows: `__fastfail(2)`, cookie de pilha;
+- `ninja -t deps`: `main_sdl.cpp.obj` era das 10:23, de antes do membro `ram_` entrar em
+  `game_host.h`. O `main` montava um `GameHost` menor que o real.
+
+Causa:
+- o ninja não registrou dependências de cabeçalho para 110 de 375 objetos;
+- o prefixo do `/showIncludes` foi detectado em português ("Observação: incluindo arquivo:") e
+  parte das compilações devolve o texto em outra codificação.
+
+O código está correto: a Preview e o Builder compilam do zero e passaram em todas as suítes.
+Com build limpo (debug e release), `ctest` deu 11/11 e o executável sai com 0 nos dois modos.
+Ainda há 31 objetos sem dependências registradas. Até a correção (decisão D6 em
+`docs/N2-PLANO.md`), cada verificação usa build limpo.
+
+### N2: planejamento (2026-10-15)
+
+Autorização do mantenedor: só o plano, sem implementação. O plano está em `docs/N2-PLANO.md`.
+
+**Levantamento feito para o plano** (só diagnóstico, nenhuma mudança de código):
+- Trace de eventos e de leituras, 300 VBlanks, nos dois provedores de arquivos. Até V40 as
+  sequências diferem; de V41 a V220 são iguais; a transição para a tela-título cai em V221
+  (legado) × V223 (nativo).
+- A causa ainda não está provada: o método está na seção 3 do plano.
+- Pontos de entrega de interrupção, eventos por tipo e esperas, conferidos no disassembly:
+  - `8C064A26` espera a bandeja `0x8C24F88A`;
+  - o TMU é lido em `8C15D1A2`.
+
+**Revisão do Codex** (`reviews/codex-20261015-134106.md`): 4 achados ALTA e 6 MÉDIA, todos
+conferidos e aceitos. A tabela está na seção 10 do plano.
+
+A implementação aguarda a aprovação do plano e as decisões D1-D7.
+
+### N2a: relógio lógico e fila de eventos nativos (2026-10-15)
+
+Plano aprovado como diretriz, com as decisões D1–D6; a D7 ficou aberta. Autorização: só o N2a,
+sem commit. Relatório: `docs/N2a-RELATORIO.md`.
+
+**O que mudou:**
+- `native/platform/time.h` revisada; `LogicalClock` e `EventQueue` em `native/platform`.
+- Os módulos do runtime pedem eventos e instantes a um provedor de tempo
+  (`runtime/cpu/time_hooks.h`).
+- `--tempo nativo` (padrão): `transitional/time_adapter`. `--tempo legado`: o cálculo de antes,
+  reunido em `runtime/cpu/time_legacy.cpp`.
+- Os ciclos estimados entram só como instante de compatibilidade.
+- `tempo.consumidores.ciclos` 7 → 0, com catraca.
+
+**Portões** (`tools/dist/test_tempo.ps1`, roteiro NEW GAME, relógio fixo):
+- A1, A3 e A5 idênticos entre `--tempo legado` e `nativo` em 3 000 (arquivos nativo), 6 000
+  (arquivos legado) e 8 000 (os dois provedores de arquivos);
+- quadros iguais ao N0 (`B49D68E2165B8505`, 6 000) e ao N1 (8 000);
+- A2: 15 999 VBlanks com o devido na linha exata do SPG, 0 entregas antecipadas, atraso
+  máximo 2 120 ticks;
+- negativos detectados: prioridade, perda, atraso, cancelamento, deriva, relógio em degraus,
+  leitura de ciclos fora do provedor e dependências de cabeçalho perdidas.
+
+**Diferença de 2 VBlanks: causa provada sem intervenção.** Um trecho com interrupções mascaradas
+funde as interrupções dos VBlanks 21 e 22 no modo de arquivos nativo. O contador de troca de
+quadro do SDK (`0x8C2B4488`, `8C08F0E0`/`8C08F332`) fica 1 atrás a partir de V22, e a tela-título
+entra um passo de lógica depois. Detalhes na seção 4 do relatório.
+
+**D7:** inventário do TMU feito.
+- Todos os chamadores são do SDK; o jogo não lê o TMU.
+- `8C1586B8` (CRI): medição de carga, 20 M chamadas em 3 000 VBlanks.
+- `8C173044`: espera com timeout.
+- A recomendação está na seção 5 do relatório.
+
+**D6:**
+- `VSLANG=1033` nos presets não resolve nesta máquina (sem o pacote de idioma inglês).
+- A causa é a página de código do terminal.
+- Proteções: aviso no configure e o teste `n2_build_incremental`.
+
+**Preview:** o cache de compilação do Builder foi renomeado
+(`%LOCALAPPDATA%\BlueStingerRecomp\build.antes-n2a`, `build.n2a-1`) para a Preview final ser
+compilada do zero. O executável do N1 ficou em `dist/BlueStinger-Preview.n1-770e3d1` (rollback).
+
+**Revisões do Codex:**
+
+| Revisão | Resultado |
+|---|---|
+| `reviews/codex-20261015-142429.md` | 4 MÉDIA e 3 BAIXA, todos aceitos e corrigidos, cada um com teste que falha sem a correção. Lista na seção 11 do relatório |
+| `reviews/codex-20261015-164027.md` (acompanhamento) | Nenhum achado novo. Uma observação de cobertura, aceita |
+
+**Testes:** 2026-10-15, no código final:
+- unitários 204/204 (12 `n2_*`);
+- `ctest` com o CDI real 12/12 (`boot_trace` pulado: sem o oráculo), incluindo `n0_fechamento`
+  com os negativos da catraca e `n2_build_incremental`;
+- `make_builder` e `make_preview`: a Preview foi compilada do zero, com cache novo do Builder.
+  Conferido que ela aceita a mutação `relogio_degraus` e recusa a antiga `congelar_relogio`, que
+  só existiam antes e depois da última correção;
+- `test_preview` 9/9; `test_gameplay` 4/4; `test_builder` 18/18; `test_projeto` 11/11 (mods);
+  `test_arquivos` 6/6; `test_ordem` 8/8; `test_tempo` 35/35.
+
+O `test_tempo` falhou duas vezes antes da versão final, ambas por defeitos do próprio teste:
+- a mutação de relógio parado travava o jogo;
+- o rc vinha vazio com `Start-Process`.
+
+Os portões de conteúdo passaram nas duas tentativas.
 
 ## Revisões independentes (Codex)
 

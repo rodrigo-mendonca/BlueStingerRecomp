@@ -9,6 +9,7 @@
 #include "hle/flashrom.h"
 #include "debug/call_trace.h"
 #include "gdfs_adapter.h"
+#include "time_adapter.h"
 #include "mods/mod_api.h"
 #include "pvr/pvr_video.h"
 
@@ -35,6 +36,18 @@ void onFatal(Sh4Context*, const char* what, uint32_t pc, uint32_t extra) {
 }
 
 // Diagnostico: BS_APP_TRACE=1 registra as etapas do encerramento.
+// Hora do sistema no boot (RTC, segundos desde 1950). Jogo normal: hora local do host. Testes
+// e roteiros (D5): BS_RELOGIO_FIXO=<segundos Unix, hora local> fixa o relogio.
+uint32_t rtcAtBoot() {
+    if (const char* v = std::getenv("BS_RELOGIO_FIXO")) {
+        char*         end = nullptr;
+        const int64_t t   = std::strtoll(v, &end, 10);
+        if (end == v || *end) throw std::runtime_error(std::string("BS_RELOGIO_FIXO invalido: ") + v);
+        return uint32_t(t + 7305ll * 86400);  // 1950 -> 1970
+    }
+    return boot_rtc_now();
+}
+
 bool traceOn() {
     static const bool on = std::getenv("BS_APP_TRACE") != nullptr;
     return on;
@@ -160,9 +173,16 @@ void GameHost::threadMain() {
             transitional::gdfs::check_sizes(*files_);
             transitional::gdfs::install(transitional::boundary_registry(), *files_);
         }
+        // N2a: tempo e eventos pelo provedor nativo (antes do boot: o reset do hardware o inicia)
+        if (opt_.time == TimeProviderKind::Native) {
+            transitional::time::Options to;
+            if (const char* v = std::getenv("BS_TIME_TRACE")) to.trace = v;
+            if (const char* v = std::getenv("BS_TEMPO_MUTACAO")) to.mutation = v;
+            transitional::time::install(to);
+        }
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);
-        else boot_prepare(c, boot_read_data(opt_.data), boot_rtc_now());
+        else boot_prepare(c, boot_read_data(opt_.data), rtcAtBoot());
         // GD-ROM HLE (legado): com o provedor nativo, so inicializacao e estado do drive; os
         // mods valem pelo provedor nativo (de qualquer tamanho), nao pelos setores
         if (!opt_.data.empty())
@@ -186,6 +206,16 @@ void GameHost::threadMain() {
     if (!sh4_threads_shutdown() && err.empty()) err = "falha ao liberar as fibras das threads do guest";
     if (traceOn()) std::fprintf(stderr, "[host] fibras liberadas\n");
     gdrom_set_disc(nullptr);  // fecha a imagem de disco
+    if (transitional::time::installed()) {
+        transitional::time::uninstall();
+        const auto s = transitional::time::stats();
+        std::fprintf(stderr, "[tempo] nativo: VBlank-In %llu, VBlank-Out %llu, render %llu, Maple %llu, GD-ROM %llu; "
+                             "agendados %llu, cancelados %llu, recuos do relogio %llu\n",
+                     static_cast<unsigned long long>(s.delivered[0]), static_cast<unsigned long long>(s.delivered[1]),
+                     static_cast<unsigned long long>(s.delivered[2]), static_cast<unsigned long long>(s.delivered[3]),
+                     static_cast<unsigned long long>(s.delivered[4]), static_cast<unsigned long long>(s.posted),
+                     static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions));
+    }
     if (files_) {
         const auto s = transitional::gdfs::stats();
         std::fprintf(stderr, "[arquivos] nativo: %llu aberturas, %llu leituras, %llu bytes, %llu nao encontrados\n",

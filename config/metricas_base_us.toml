@@ -8,6 +8,7 @@
 # catraca: sq.literal.funcoes.jogo
 # catraca: camada.conflito
 # catraca: fronteira.provedor.legado
+# catraca: tempo.consumidores.ciclos
 "camada.conflito" = 1
 "camada.desconhecida" = 82
 "camada.jogo" = 1365
@@ -67,3 +68,8 @@
 "sq.literal.funcoes.desconhecida" = 5
 "sq.literal.funcoes.jogo" = 1
 "sq.literal.funcoes.sdk" = 282
+"tempo.ciclos.diagnostico" = 11
+"tempo.ciclos.entrada_compat" = 1
+"tempo.ciclos.funcionais" = 0
+"tempo.ciclos.progresso" = 3
+"tempo.consumidores.ciclos" = 0

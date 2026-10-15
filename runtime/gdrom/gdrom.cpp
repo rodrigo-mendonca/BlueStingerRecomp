@@ -7,6 +7,7 @@
 // Um pedido por vez; o comando e executado na chamada a EXEC_SERVER (inteiro, ou em
 // blocos de tempo com BS_GDROM_TIMING=reios).
 #include "gdrom/gdrom.h"
+#include "cpu/time_hooks.h"
 
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
@@ -31,7 +32,7 @@ struct State {
     uint32_t result[4] = {};
     // leitura por DMA em andamento (perfil de tempo "reios")
     uint32_t xferFad = 0, xferLeft = 0, xferTotal = 0, xferDest = 0;
-    uint64_t xferDue = 0;  // ciclo em que o proximo bloco fica pronto
+    uint64_t xferDue = 0;  // instante em que o proximo bloco fica pronto (agendado no provedor de tempo)
 } g;
 
 // Tempo das leituras por DMA (BS_GDROM_TIMING):
@@ -125,7 +126,8 @@ void execute(Sh4Context* c) {
             g.xferFad   = g.params[0] & 0xFFFFFF;
             g.xferLeft  = g.xferTotal = g.params[1];
             g.xferDest  = g.params[2];
-            g.xferDue   = c->cycles + reiosTicks(g.xferLeft);
+            g.xferDue   = time_now(c) + reiosTicks(g.xferLeft);
+            time_provider().disc_scheduled(g.xferDue);
             g.result[2] = 0;
             return;  // continua ocupado
         }
@@ -148,7 +150,7 @@ void execute(Sh4Context* c) {
 
 // Leitura por DMA em blocos (perfil reios): copia os blocos cujo tempo ja passou.
 void advance(Sh4Context* c) {
-    while (g.xferLeft && c->cycles >= g.xferDue) {
+    while (g.xferLeft && time_provider().disc_due(time_now(c))) {
         const uint32_t k = g.xferLeft < 5 ? g.xferLeft : 5;
         if (!readSectors(c, g.xferFad, k, g.xferDest)) {
             g.xferLeft  = 0;
@@ -159,14 +161,20 @@ void advance(Sh4Context* c) {
         g.xferFad += k, g.xferDest += k * 2048, g.xferLeft -= k;
         g.result[2] = (g.xferTotal - g.xferLeft) * 2048;
         if (!g.xferLeft) g.status = kComplete;
-        else g.xferDue += reiosTicks(g.xferLeft);
+        else {
+            g.xferDue += reiosTicks(g.xferLeft);
+            time_provider().disc_scheduled(g.xferDue);
+        }
     }
 }
 
 } // namespace
 
 void gdrom_set_disc(std::unique_ptr<DiscSource> disc) { g_disc = std::move(disc); }
-void gdrom_reset() { g = {}; }
+void gdrom_reset() {
+    g = {};
+    time_provider().disc_cancel();
+}
 void gdrom_set_timing(bool reios) { g_timingOverride = reios ? 1 : 0; }
 void gdrom_poll(Sh4Context* c) { advance(c); }
 
@@ -181,6 +189,7 @@ void gdrom_syscall(Sh4Context* c, uint32_t func, uint32_t r4, uint32_t r5) {
         }
         for (int i = 0; i < 4; ++i) g.params[i] = r5 ? sh4_read32(c, r5 + 4 * i) : 0;
         g.xferLeft = 0;  // pedido novo descarta transferencia antiga (como o reios)
+        time_provider().disc_cancel();
         for (auto& r : g.result) r = 0;
         if (g.nextId == 0 || g.nextId == 0xFFFFFFFF) g.nextId = 1;
         g.lastId  = g.nextId++;
@@ -206,6 +215,7 @@ void gdrom_syscall(Sh4Context* c, uint32_t func, uint32_t r4, uint32_t r5) {
         return;
     case kInitSystem:
         g = {};
+        time_provider().disc_cancel();  // transferencia descartada: o bloco agendado tambem
         return;
     case kGetDrvStat:
         sh4_write32(c, r4, kStatPause);

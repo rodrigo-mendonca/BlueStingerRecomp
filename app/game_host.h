@@ -38,12 +38,17 @@ struct GameStats {
 // rollback).
 enum class FilesProvider { Native, Legacy };
 
+// Provedor de tempo e eventos (N2a, docs/N2-PLANO.md): nativo (padrao) = relogio logico e fila
+// de eventos de native/; legado = calculo preguicoso por ciclos (referencia e rollback).
+enum class TimeProviderKind { Native, Legacy };
+
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
     std::filesystem::path data;
     std::filesystem::path flash;  // flash de 128 KB opcional (sem: apagada, 0xFF)
     std::filesystem::path modAssets;  // mods de arquivos (mods\assets), opcional
     FilesProvider         files = FilesProvider::Native;
+    TimeProviderKind      time  = TimeProviderKind::Native;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
     std::function<void()> registerFunctions;
     // Prepara RAM e registradores. Padrao: boot nativo a partir de `data`. Testes trocam.

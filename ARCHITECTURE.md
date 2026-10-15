@@ -567,10 +567,41 @@ Detalhes em `docs/N1-PLANO.md` e `docs/N1-RELATORIO.md`.
 
 - A API gdFs do executável é atendida por `transitional/gdfs_adapter` sobre
   `native::files::IFileSystem`, implementado por `native/platform/data_files` (arquivos de
-  `data\disc` e `modsssets`, sem setores).
+  `data\disc` e `mods\assets`, sem setores).
 - As funções da API são chamadas pelo slot em todos os builds (`[native] slots`), e o provedor
   é escolhido em execução: `--arquivos nativo` (padrão) | `legado` (referência e rollback).
 - Ainda legados: inicialização do gdFs, estado do drive, boot e GD-ROM HLE.
+
+### Port nativo, N2a: relógio lógico e fila de eventos (2026-10-15)
+
+Detalhes em `docs/N2-PLANO.md` e `docs/N2a-RELATORIO.md`.
+
+**Interfaces nativas:** `native/platform/time.h`.
+- Instante em ticks numa base de tempo inteira (`TimeBase`).
+- Fila com ordem total: instante, prioridade do tipo, ordem de agendamento.
+- `post`/`cancel`/`reschedule` tipados; prioridade por tipo configurável (`set_kind_priority`).
+- Cancelar uma inscrição vale na hora, inclusive durante a entrega.
+- `ITaskScheduler` só declarada, para o N2b.
+- Implementação: `LogicalClock` e `EventQueue`.
+
+**No runtime:** os módulos não medem mais tempo pelo contador de ciclos. Pedem a um provedor
+(`runtime/cpu/time_hooks.h`):
+- os eventos agendados vencidos: VBlank-In/Out, fim de render, fim de DMA do Maple e bloco do
+  GD-ROM;
+- o instante atual, para TMU, SPG_STATUS, MDST e RTC.
+
+A entrega à CPU continua nos mesmos pontos: poll, acesso aos registradores e nível IRL.
+
+**Provedores** (`--tempo nativo|legado`):
+- legado: `runtime/cpu/time_legacy.cpp`, o cálculo preguiçoso de antes reunido num só arquivo;
+- nativo (padrão): `transitional/time_adapter`, com relógio e filas nativos.
+
+Durante o N2a o progresso ainda vem dos ciclos estimados (`BS_CYCLES`/`BS_POLL`), que entram
+só como instante de compatibilidade: um tick por ciclo. Isso sai no N2b.
+
+**Relógio de parede:**
+- jogo normal: hora local do host no boot;
+- testes e roteiros: `BS_RELOGIO_FIXO` (D5).
 
 ## 7. Validação
 

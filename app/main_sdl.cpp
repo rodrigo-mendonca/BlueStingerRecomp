@@ -52,6 +52,7 @@ struct Args {
     bool     version    = false;
     bool     verifyData = false;
     bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
+    bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado (N2a)
 };
 
 std::string utf8(const fs::path& p) { return bs::disc::pathText(p); }
@@ -86,6 +87,11 @@ bool parseArgs(Args& a) {
         else if (s == L"--arquivos" && (v = next())) {
             if (*v == L"nativo") a.files = bs::FilesProvider::Native;
             else if (*v == L"legado") a.files = bs::FilesProvider::Legacy;
+            else return false;
+        }
+        else if (s == L"--tempo" && (v = next())) {
+            if (*v == L"nativo") a.time = bs::TimeProviderKind::Native;
+            else if (*v == L"legado") a.time = bs::TimeProviderKind::Legacy;
             else return false;
         }
         else if (s == L"--version") a.version = true;
@@ -399,6 +405,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.modAssets         = exeDir() / L"mods" / L"assets";  // mods de arquivos (opcional)
     opt.flash             = a.flash;
     opt.files             = a.files;
+    opt.time              = a.time;
     opt.registerFunctions = [] { bsg::register_functions(); };
     opt.realtime          = a.headless == 0;
     opt.vblankLimit       = a.headless;
@@ -411,6 +418,7 @@ const char* kUsage =
     "     bluestinger [--data <pasta>] --verify-data\n"
     "     bluestinger --version\n"
     "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
+    "     --tempo nativo|legado: provedor de tempo e eventos (padrao: nativo)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n";
 
 const char* kNoCdi =

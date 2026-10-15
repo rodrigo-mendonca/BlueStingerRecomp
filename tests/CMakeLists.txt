@@ -1,4 +1,4 @@
-enable_language(ASM_MASM)
+﻿enable_language(ASM_MASM)
 add_executable(bs_unit_tests
   unit/main.cpp
   unit/test_skeleton.cpp
@@ -25,6 +25,7 @@ add_executable(bs_unit_tests
   unit/test_n0.cpp
   unit/test_transitional.cpp
   unit/test_n1.cpp
+  unit/test_n2.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core bs_hwscan bs_transitional)
@@ -77,6 +78,15 @@ add_test(NAME n0_fechamento
          COMMAND ${CMAKE_COMMAND} -DHWSCAN=$<TARGET_FILE:bs-hwscan> -DROOT=${PROJECT_SOURCE_DIR}
                  -DOUT=${CMAKE_CURRENT_BINARY_DIR}/n0_hwscan -P ${CMAKE_CURRENT_SOURCE_DIR}/n0/run_fechamento.cmake)
 set_tests_properties(n0_fechamento PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
+
+# N2 (D6): dependencias de cabecalho registradas e build incremental que recompila (MSVC + Ninja).
+if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
+  add_test(NAME n2_build_incremental
+           COMMAND ${CMAKE_COMMAND} -DNINJA=${CMAKE_MAKE_PROGRAM} -DBIN=${PROJECT_BINARY_DIR}
+                   -DCXX=${CMAKE_CXX_COMPILER} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/n2_incremental
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/n2/check_build_incremental.cmake)
+  set_tests_properties(n2_build_incremental PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
+endif()
 
 # N0: a leitura de CDI fica fora do produto (alvo bs_runtime_cdi); conferido no mapa do linker.
 if(TARGET bluestinger AND MSVC)

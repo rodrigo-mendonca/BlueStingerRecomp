@@ -466,7 +466,7 @@ def cmd_first_diff(a):
 
 
 def cmd_mem(a):
-    """Para na N-esima execucao de unc e mostra len bytes de ddr (palavras de 32 bits)."""
+    """Para na N-esima execucao de func e mostra len bytes de addr (palavras de 32 bits)."""
     if a.len % 4:
         raise SystemExit("len precisa ser multiplo de 4 (palavras de 32 bits)")
     g = connect(a)

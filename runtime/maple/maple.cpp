@@ -22,6 +22,8 @@
 // Tempo: o barramento roda a 2 Mbit/s; o fim do DMA e agendado para 100 ciclos do
 // SH-4 (200 MHz) por bit enviado ou recebido. Aproximacao (registrada no STATUS.md).
 #include "maple/maple.h"
+#include "cpu/time_hooks.h"
+#include "debug/clock_log.h"
 
 #include "cpu/sh4_runtime.h"
 #include "input/input.h"
@@ -163,8 +165,9 @@ void runDma(Sh4Context* c) {
         addr += 12 + 4 * len;
         if (instr & 0x80000000) break;
     }
-    g_due = c->cycles + bits * 100;
+    g_due = time_now(c) + bits * 100;
     if (g_due == 0) g_due = 1;
+    time_provider().maple_scheduled(g_due);
 }
 
 } // namespace
@@ -172,6 +175,7 @@ void runDma(Sh4Context* c) {
 void maple_reset() {
     g_regs.fill(0);
     g_due = 0;
+    time_provider().maple_cancel();
     g_pad = {};
     for (auto& n : g_condSeq) n = 0;
 }
@@ -182,7 +186,10 @@ bool maple_read(Sh4Context* c, uint32_t a, uint32_t& v) {
     const uint32_t p = a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0;
     if (p < kBase || p >= kBase + kSize) return false;
     v = reg(p);
-    if (p == kMdst) v = (g_due && c->cycles < g_due) ? 1 : 0;
+    if (p == kMdst) {
+        v = (g_due && time_now(c) < g_due) ? 1 : 0;
+        if (g_clock_log) clock_log_read(ClockRead::Mdst, v);
+    }
     return true;
 }
 
@@ -195,9 +202,10 @@ bool maple_write(Sh4Context* c, uint32_t a, uint32_t v) {
         warned = true;
     }
     if (p == kMdst) {
-        if (g_due && c->cycles >= g_due) {  // fim anterior ainda nao visto pelo controlador
+        if (g_due && time_now(c) >= g_due) {  // fim anterior ainda nao visto pelo controlador
             holly_intc_raise(kIstMapleDma);
             g_due = 0;
+            time_provider().maple_cancel();
         }
         if ((v & 1) && (reg(kMden) & 1) && !g_due) runDma(c);
         return true;

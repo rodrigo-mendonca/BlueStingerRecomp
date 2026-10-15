@@ -4,6 +4,7 @@
 #include "cpu/sh4_runtime.h"
 
 #include "cpu/sh4_intc.h"
+#include "cpu/time_hooks.h"
 #include "cpu/sh4_mem.h"
 #include "debug/hw_probe.h"
 #include "gdrom/gdrom.h"
@@ -119,7 +120,7 @@ void sh4_service(Sh4Context* c) {
     gdrom_poll(c);
     // eventos do Holly/SPG (VBlank: video e ritmo do host) avancam com o tempo mesmo com
     // interrupcoes bloqueadas (SR.BL); a entrega para a CPU continua em sh4_irq_check
-    holly_intc_sync(c->cycles);
+    holly_intc_sync(time_now(c));
     sh4_irq_check(c);
 }
 

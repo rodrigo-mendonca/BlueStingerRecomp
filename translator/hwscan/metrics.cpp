@@ -105,6 +105,7 @@ const std::vector<std::string>& ratchet_keys() {
         "sq.literal.funcoes.jogo",          // funcoes do jogo com a base das store queues
         "camada.conflito",
         "fronteira.provedor.legado",  // fronteira ainda servida pelo runtime legado
+        "tempo.consumidores.ciclos",  // modulos do runtime que medem tempo pelo contador de ciclos (N2a)
     };
     return k;
 }

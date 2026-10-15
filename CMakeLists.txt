@@ -16,6 +16,16 @@ set(BS_MODS_DIR "" CACHE PATH "Pasta com os mods (.cpp) do projeto editavel")
 
 if(MSVC)
   add_compile_options(/W4 /permissive- /utf-8)
+  # Ninja acha as dependencias de cabecalho pelo prefixo do /showIncludes, que o cl traduz.
+  # Com o prefixo localizado, a codificacao muda com a pagina de codigo do terminal e um
+  # build de outro terminal perde as dependencias (objetos velhos: STATUS.md, N1). Os
+  # presets pedem ingles (VSLANG=1033); sem o pacote de idioma ingles do VS, compile sempre
+  # do mesmo tipo de terminal. O teste n2_build_incremental confere.
+  if(CMAKE_GENERATOR MATCHES "Ninja" AND CMAKE_CL_SHOWINCLUDES_PREFIX AND
+     NOT CMAKE_CL_SHOWINCLUDES_PREFIX MATCHES "^[ -~]*$")
+    message(WARNING "prefixo /showIncludes localizado (\"${CMAKE_CL_SHOWINCLUDES_PREFIX}\"): compile sempre "
+                    "do mesmo terminal (pagina de codigo) ou instale o pacote de idioma ingles do Visual Studio")
+  endif()
 else()
   add_compile_options(-Wall -Wextra)
 endif()

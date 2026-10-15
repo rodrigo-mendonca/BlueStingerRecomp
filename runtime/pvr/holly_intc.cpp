@@ -4,9 +4,11 @@
 //   ISTEXT 0x005F6904, ISTERR 0x005F6908: status externo/erro (ainda sem fontes).
 //   IML2NRM..IML6ERR 0x005F6910-0x005F6938: mascaras por nivel (so guardadas).
 //
-// Os eventos sao avaliados de forma preguicosa: a cada acesso, os cruzamentos de
-// linha entre o ultimo acesso e `c->cycles` acendem os bits correspondentes.
+// Os eventos sao avaliados nos pontos de sempre (acesso, poll, nivel IRL): o provedor de tempo
+// (cpu/time_hooks.h) diz o que venceu desde o ultimo ponto.
 #include "pvr/holly_intc.h"
+#include "cpu/time_hooks.h"
+#include "debug/clock_log.h"
 #include "debug/event_trace.h"
 
 #include "pvr/pvr_regs.h"
@@ -36,18 +38,22 @@ uint64_t g_vblanks = 0;  // contagem de VBlank-In (trace de ordem)
 
 void update(uint64_t now) {
     if (now <= g_last) return;
-    const bool vblankIn = pvr_spg_crossed(g_last, now, pvr_vblank_in_line());
+    // N2a: os eventos agendados vencidos vem do provedor de tempo (legado: calculo preguicoso
+    // por ciclos; nativo: fila de eventos), entregues aqui como antes
+    const uint32_t due      = time_provider().holly_due(now);
+    const bool     vblankIn = due & kDueVblankIn;
     if (vblankIn) reg(kIstNrm) |= kIstVblankIn;
     if (vblankIn) ++g_vblanks;
     if (vblankIn && g_event_trace) event_trace(TraceEvent::VBlank, now, uint32_t(g_vblanks));
-    if (pvr_spg_crossed(g_last, now, pvr_vblank_out_line())) reg(kIstNrm) |= kIstVblankOut;
+    if (vblankIn && g_clock_log) clock_log_vblank(g_vblanks);
+    if (due & kDueVblankOut) reg(kIstNrm) |= kIstVblankOut;
     // fim de render agendado pelo STARTRENDER: bits 0 (video), 1 (ISP), 2 (TSP)
-    if (const uint64_t due = pvr_render_done_due(); due && now >= due) {
+    if (due & kDueRender) {
         reg(kIstNrm) |= 0x7;
         pvr_render_done_take();
     }
     // fim do DMA do Maple: bit 12
-    if (const uint64_t due = maple_dma_due(); due && now >= due) {
+    if (due & kDueMaple) {
         reg(kIstNrm) |= kIstMapleDma;
         maple_dma_take();
     }
@@ -80,20 +86,22 @@ void holly_intc_reset(uint64_t cycles) {
     g_regs.fill(0);
     g_last    = cycles;
     g_vblanks = 0;
+    time_provider().reset(cycles);
 }
 
 bool holly_intc_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
-    update(c->cycles);
+    update(time_now(c));
     v = reg(p);
+    if (g_clock_log && (p == kIstNrm || p == kIstExt || p == kIstErr)) clock_log_read(ClockRead::Ist, v);
     return true;
 }
 
 bool holly_intc_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
-    update(c->cycles);
+    update(time_now(c));
     if (p == kIstNrm || p == kIstExt || p == kIstErr) {
         reg(p) &= ~v;  // escrever 1 limpa
     } else {

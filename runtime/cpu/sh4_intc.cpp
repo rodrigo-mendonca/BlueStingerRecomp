@@ -10,6 +10,7 @@
 #include "debug/event_trace.h"
 
 #include "cpu/sh4_runtime.h"
+#include "cpu/time_hooks.h"
 #include "pvr/holly_intc.h"
 
 #include <cstdio>
@@ -50,7 +51,7 @@ bool deliverOne(Sh4Context* c) {
     const uint32_t sr = sh4_get_sr(*c);
     if (sr & kSrBL) return false;
     const uint32_t imask = (sr & kSrImask) >> 4;
-    const uint32_t level = holly_irl_level(c->cycles);
+    const uint32_t level = holly_irl_level(time_now(c));
     // Diagnostico: BS_IRQ_DEBUG=1 lista as primeiras checagens com nivel pendente.
     static const bool debug = std::getenv("BS_IRQ_DEBUG") != nullptr;
     static int        dbg   = 0;

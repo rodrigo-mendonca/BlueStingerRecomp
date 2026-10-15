@@ -13,6 +13,8 @@
 // interrupcao). Interrupcao de underflow, captura e fontes RTC/externas sao registradas e
 // ainda nao modeladas.
 #include "memory/sh4_tmu.h"
+#include "cpu/time_hooks.h"
+#include "debug/clock_log.h"
 
 #include <cstdio>
 
@@ -75,7 +77,7 @@ void sh4_tmu_reset() {
 
 bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     if (!inRange(a)) return false;
-    const uint64_t now = c->cycles;
+    const uint64_t now = time_now(c);
     if (a == kTocr) v = g_tocr;
     else if (a == kTstr) v = g_tstr;
     else if (a == kTcpr2) v = g_tcpr2;
@@ -83,7 +85,10 @@ bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
         const uint32_t off = a - kCh0, n = off / 12, r = off % 12;
         if (n > 2) return false;
         if (r == 0) v = g_ch[n].tcor;
-        else if (r == 4) v = count(int(n), now);
+        else if (r == 4) {
+            v = count(int(n), now);
+            if (g_clock_log) clock_log_read(ClockRead::Tmu, v);
+        }
         else if (r == 8) {
             count(int(n), now);  // UNF atualizado
             v = g_ch[n].tcr;
@@ -97,7 +102,7 @@ bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
 bool sh4_tmu_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     (void)size;
     if (!inRange(a)) return false;
-    const uint64_t now = c->cycles;
+    const uint64_t now = time_now(c);
     if (a == kTocr) {
         g_tocr = uint8_t(v & 1);
     } else if (a == kTstr) {

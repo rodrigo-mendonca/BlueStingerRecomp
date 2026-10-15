@@ -14,7 +14,7 @@ uint8_t*           aica_ram();
 // RTC em segundos desde 1950-01-01 (epoca do Dreamcast, hora local, sem fuso).
 // `cycles` e o instante (contador da CPU) em que o valor vale; o relogio avanca
 // um por segundo emulado (200 000 000 ciclos).
-void     aica_rtc_set(uint32_t seconds, uint64_t cycles);
+void     aica_rtc_set(uint32_t seconds, uint64_t now);  // now: instante do provedor de tempo
 uint32_t aica_rtc_host_now();  // hora atual do host na epoca do Dreamcast
 
 // true se `a` e um registrador tratado aqui.

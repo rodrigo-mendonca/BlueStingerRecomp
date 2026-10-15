@@ -3,6 +3,7 @@ add_library(bs_runtime STATIC
   cpu/sh4_runtime.cpp
   cpu/sh4_intc.cpp
   cpu/sh4_threads.cpp
+  cpu/time_legacy.cpp
   memory/memory.cpp
   memory/sh4_port.cpp
   memory/sh4_tmu.cpp
@@ -31,6 +32,7 @@ add_library(bs_runtime STATIC
   debug/event_trace.cpp
   debug/call_trace.cpp
   debug/file_log.cpp
+  debug/clock_log.cpp
 )
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # leitura da imagem de disco do usuario (gdrom/image_source.cpp)
