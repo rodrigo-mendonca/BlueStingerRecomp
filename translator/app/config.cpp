@@ -81,6 +81,9 @@ GameConfig loadConfig(const std::filesystem::path& path) {
     // [native] slots: fronteiras migraveis do port nativo, chamadas sempre pelo slot
     if (auto arr = t["native"]["slots"].as_array())
         for (auto& el : *arr) c.native_slots.insert(u32(&el, "native.slots"));
+    // [native] esperas: back-edges dos lacos que esperam um evento (N2b, docs/N2b-PLANO.md)
+    if (auto arr = t["native"]["esperas"].as_array())
+        for (auto& el : *arr) c.native_waits.insert(u32(&el, "native.esperas"));
     return c;
 }
 

@@ -98,7 +98,7 @@ private:
     GameStats                             stats_;  // protegido por mutex_
     double                                workSumMs_ = 0;
     std::unique_ptr<native::files::DataFileSystem> files_;  // provedor nativo de arquivos (N1)
-    const uint8_t*                                 ram_ = nullptr;  // RAM do guest (diagnostico)
+    uint8_t*                                       ram_ = nullptr;  // RAM do guest (diagnostico)
 };
 
 } // namespace bs

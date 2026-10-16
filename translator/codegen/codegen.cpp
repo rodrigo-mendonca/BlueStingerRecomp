@@ -102,6 +102,9 @@ public:
         }
         for (size_t k = 0; k < order.size(); ++k) {
             if (labels_.count(order[k])) out += lname(order[k]) + ":;\n";
+            // saida de um laco de espera declarado (N2b): todas as saidas passam pela instrucao
+            // seguinte ao back-edge (fim normal e timeout de 8C173044 caem no mesmo ponto)
+            if (opt_.wait_points.count(order[k] - 2)) out += "    BS_WAIT_END(" + hx(order[k] - 2) + ");\n";
             out += bodies[k];
         }
         // longjmp de volta a este quadro (BS_CALL_REENTRANT, R15 igual ao da chamada). Alvo
@@ -137,6 +140,8 @@ private:
     std::string jumpTo(uint32_t t, uint32_t from) {
         if (!f_.insns.count(t)) return "{ ::bs::sh4_unreachable(c, " + hx(t) + "); return; }";
         labels_.insert(t);
+        if (t <= from && opt_.wait_points.count(from))  // ponto de espera declarado (N2b)
+            return "{ BS_WAIT(" + hx(from) + ", " + hx(t) + "); goto " + lname(t) + "; }";
         return std::string(t <= from ? "{ BS_POLL(" + hx(t) + "); goto " : "{ goto ") + lname(t) + "; }";
     }
 

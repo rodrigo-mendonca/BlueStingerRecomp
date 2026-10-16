@@ -21,7 +21,17 @@ if(MSVC)
   # build de outro terminal perde as dependencias (objetos velhos: STATUS.md, N1). Os
   # presets pedem ingles (VSLANG=1033); sem o pacote de idioma ingles do VS, compile sempre
   # do mesmo tipo de terminal. O teste n2_build_incremental confere.
-  if(CMAKE_GENERATOR MATCHES "Ninja" AND CMAKE_CL_SHOWINCLUDES_PREFIX AND
+  # BS_MSVC_DEPS_JSON (D10, ligado por padrao desde o N2b): as dependencias saem do /sourceDependencies (JSON, sem
+  # texto traduzido) e tools/build/msvc_srcdeps.cmake as converte para o ninja. Independe do
+  # idioma do MSVC e da pagina de codigo do terminal (teste n2_build_incremental).
+  option(BS_MSVC_DEPS_JSON "Dependencias de cabecalho do MSVC por /sourceDependencies" ON)
+  if(BS_MSVC_DEPS_JSON AND CMAKE_GENERATOR MATCHES "Ninja")
+    foreach(lang C CXX)
+      set(CMAKE_${lang}_DEPFILE_FORMAT gcc)
+      set(CMAKE_DEPFILE_FLAGS_${lang} "/sourceDependencies <DEP_FILE>.json")
+      set(CMAKE_${lang}_COMPILER_LAUNCHER "${CMAKE_COMMAND};-P;${CMAKE_SOURCE_DIR}/tools/build/msvc_srcdeps.cmake;--")
+    endforeach()
+  elseif(CMAKE_GENERATOR MATCHES "Ninja" AND CMAKE_CL_SHOWINCLUDES_PREFIX AND
      NOT CMAKE_CL_SHOWINCLUDES_PREFIX MATCHES "^[ -~]*$")
     message(WARNING "prefixo /showIncludes localizado (\"${CMAKE_CL_SHOWINCLUDES_PREFIX}\"): compile sempre "
                     "do mesmo terminal (pagina de codigo) ou instale o pacote de idioma ingles do Visual Studio")

@@ -84,6 +84,7 @@ if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
   add_test(NAME n2_build_incremental
            COMMAND ${CMAKE_COMMAND} -DNINJA=${CMAKE_MAKE_PROGRAM} -DBIN=${PROJECT_BINARY_DIR}
                    -DCXX=${CMAKE_CXX_COMPILER} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/n2_incremental
+                   -DSRCDEPS=${PROJECT_SOURCE_DIR}/tools/build/msvc_srcdeps.cmake
                    -P ${CMAKE_CURRENT_SOURCE_DIR}/n2/check_build_incremental.cmake)
   set_tests_properties(n2_build_incremental PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP:")
 endif()

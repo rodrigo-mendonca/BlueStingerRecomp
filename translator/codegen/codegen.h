@@ -18,6 +18,10 @@ struct Options {
     // Funcoes chamadas sempre pelo slot, em todos os builds ([native] slots no TOML): fronteiras
     // migraveis do port nativo, onde o provedor (legado/nativo) e trocado em execucao.
     std::set<uint32_t>    always_slot;
+    // Back-edges de lacos declarados como pontos de espera ([native] esperas no TOML, N2b): o
+    // desvio de volta emite BS_WAIT e a saida do laco BS_WAIT_END. So desvios condicionais sem
+    // delay slot (bt/bf) para tras.
+    std::set<uint32_t>    wait_points;
 };
 
 struct Result {

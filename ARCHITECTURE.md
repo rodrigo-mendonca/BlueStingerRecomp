@@ -603,6 +603,52 @@ só como instante de compatibilidade: um tick por ciclo. Isso sai no N2b.
 - jogo normal: hora local do host no boot;
 - testes e roteiros: `BS_RELOGIO_FIXO` (D5).
 
+### Port nativo, N2b-0/N2b-1: diagnósticos e modo sombra (2026-10-15)
+
+Detalhes em `docs/N2b-PLANO.md` e `docs/N2b-RELATORIO.md`. O N2b-2 não está autorizado.
+
+**Interface nativa:** `native/platform/time.h` troca a `ITaskScheduler` por `IProgress` (D4):
+- só observa trabalho e esperas e diz se o tempo poderia andar;
+- nenhum método escolhe ou alterna threads; quem troca continua sendo o despachante do SDK
+  recompilado.
+
+Implementação: `native/platform/progress.*` (`ProgressMonitor`).
+
+**Pontos de espera:**
+- declarados em `[native] esperas` no config;
+- o gerador emite `BS_WAIT(pc, destino)` no back-edge (o poll de sempre continua dentro) e
+  `BS_WAIT_END(pc)` na instrução seguinte, por onde passam todas as saídas;
+- o jogo não muda: o laço continua testando a condição.
+
+**Trabalho estrutural:** `Sh4Context::polls` conta os pontos de controle executados (`BS_POLL`).
+É a métrica de falta de progresso do D8; não é tempo e não usa ciclos.
+
+**Modo sombra:**
+- o provedor nativo alimenta o monitor (`progress`, `wait_point`, `wait_end`);
+- voltas repetidas numa espera são acumuladas, para custar perto de zero;
+- a execução real não muda: o trace de ordem é igual ao legado byte a byte.
+
+**Diagnósticos** (desligados por padrão):
+
+| Variável | O que faz |
+|---|---|
+| `BS_PROGRESS_TRACE` | episódios de espera, avanços, janelas, trabalho por thread e por VBlank |
+| `BS_TMU_DIAG` | `quadro`, `agendado`, `zero`, `dobro` |
+| `BS_CRI_DIAG` | contagem e salto de passadas do servidor do CRI; só no build com mods, nunca no produto |
+| `BS_STATE_LOG`, `BS_RAM_MUTACAO` | estado do jogo em checkpoints e mutação de RAM |
+| `BS_ARQUIVOS_MUTACAO` | leitura de arquivo corrompida |
+| `BS_CLOCK_LOG` | leituras de relógio e estado, mais escritas na AICA |
+| `BS_TEMPO_MUTACAO` | mutações negativas do provedor de tempo |
+| `[vblank] fundidos` | contador de VBlanks fundidos, impresso no fim da execução |
+
+**Dependências de build (D10):** `BS_MSVC_DEPS_JSON` ligado por padrão.
+- O `/sourceDependencies` do MSVC grava JSON, e `tools/build/msvc_srcdeps.cmake` o converte para
+  depfile do ninja, independente de idioma e página de código.
+- Uma barra invertida no fim de um argumento vira `/`, por causa do `/Fd<pasta>\` do Debug.
+- `tools/build` entra no kit do Builder.
+- O teste `n2_build_incremental` cobre: página 850, caminho com espaço, `#` e `$$`, Debug e
+  falha do compilador.
+
 ## 7. Validação
 
 - **Unitários (M2)**: decodificador exaustivo (todas as 65 536 palavras

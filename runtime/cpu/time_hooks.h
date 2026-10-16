@@ -52,6 +52,15 @@ public:
     // RTC (segundos na epoca do Dreamcast, 1950)
     virtual uint32_t rtc_seconds(uint64_t now) = 0;
     virtual void     rtc_set(uint32_t seconds, uint64_t now) = 0;
+
+    // N2b-1 (modo sombra, so observacao): progresso estrutural da thread `thread` (contador de
+    // pontos de controle `polls`, monotono) e pontos de espera declarados. Nao mudam a execucao.
+    virtual void progress(uint32_t thread, uint64_t polls) { (void)thread, (void)polls; }
+    virtual void wait_point(uint32_t pc, uint32_t thread, uint64_t polls) { (void)pc, (void)thread, (void)polls; }
+    virtual void wait_end(uint32_t pc, uint32_t thread, uint64_t polls) { (void)pc, (void)thread, (void)polls; }
+    // Diagnostico (BS_TMU_DIAG=agendado): instante devido do ultimo VBlank-In entregue (0 se
+    // o provedor nao sabe).
+    virtual uint64_t last_vblank_due() const { return 0; }
 };
 
 // Provedor atual (nunca nulo: o legado e o padrao).

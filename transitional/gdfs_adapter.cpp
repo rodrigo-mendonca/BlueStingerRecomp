@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace bs::transitional::gdfs {
@@ -97,6 +98,13 @@ int32_t doRead(Sh4Context* c, Gdfs& g, uint32_t nsct, uint32_t buf) {
         callGuest(c, g.cbErr[0], g.cbErr[1]);
         return int32_t(nsct);
     }
+    // Diagnostico (N2b-0, negativo do criterio B3): BS_ARQUIVOS_MUTACAO=corromper_bloco troca um
+    // byte da 20a leitura; o contrato de leituras tem de acusar.
+    static const bool corrupt = [] {
+        const char* v = std::getenv("BS_ARQUIVOS_MUTACAO");
+        return v && std::string(v) == "corromper_bloco";
+    }();
+    if (corrupt && s.stats.reads + 1 == 20 && !tmp.empty()) tmp[0] ^= std::byte{0x5A};
     GuestMemory mem(c);
     if (!mem.write(buf, tmp))
         sh4_fatal(c, "gdFs nativo: destino da leitura fora da RAM principal", c->pc, buf);

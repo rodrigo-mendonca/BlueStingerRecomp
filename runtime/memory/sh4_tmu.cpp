@@ -13,10 +13,13 @@
 // interrupcao). Interrupcao de underflow, captura e fontes RTC/externas sao registradas e
 // ainda nao modeladas.
 #include "memory/sh4_tmu.h"
+#include "pvr/holly_intc.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace bs {
 namespace {
@@ -75,9 +78,44 @@ void sh4_tmu_reset() {
     g_tcpr2         = 0;
 }
 
+// Diagnostico N2b (D7): BS_TMU_DIAG=quadro faz o TCNT lido valer o do instante em que o ultimo
+// VBlank-In foi entregue (ponto de poll; nao o inicio exato do campo), como se o tempo parasse
+// dentro do passo. O avanco por ciclos continua: aproxima o modelo do N2b, nao o reproduz.
+// Serve para medir se os consumidores do TMU mudam o comportamento do jogo. Desligado.
+// Outras variantes (N2b-0): "agendado" usa o instante devido do ultimo VBlank-In (inicio logico
+// do campo; so o provedor nativo sabe); "zero" para o TMU de vez (instante 0); "dobro" faz o TMU
+// andar duas vezes mais rapido. Medem quanto os consumidores dependem do valor.
+enum class TmuDiag { Off, Quadro, Agendado, Zero, Dobro };
+TmuDiag tmuDiag() {
+    static const TmuDiag d = [] {
+        const char* v = std::getenv("BS_TMU_DIAG");
+        if (!v || !*v) return TmuDiag::Off;
+        if (std::strcmp(v, "quadro") == 0) return TmuDiag::Quadro;
+        if (std::strcmp(v, "agendado") == 0) return TmuDiag::Agendado;
+        if (std::strcmp(v, "zero") == 0) return TmuDiag::Zero;
+        if (std::strcmp(v, "dobro") == 0) return TmuDiag::Dobro;
+        std::fprintf(stderr, "BS_TMU_DIAG invalido: %s (quadro, agendado, zero ou dobro)\n", v);
+        std::exit(2);
+    }();
+    return d;
+}
+
+uint64_t tmuNow(Sh4Context* c) {
+    switch (tmuDiag()) {
+    case TmuDiag::Quadro: return holly_last_vblank_instant();
+    case TmuDiag::Agendado: {
+        const uint64_t due = time_provider().last_vblank_due();
+        return due ? due : holly_last_vblank_instant();
+    }
+    case TmuDiag::Zero: return 0;
+    case TmuDiag::Dobro: return 2 * time_now(c);
+    default: return time_now(c);
+    }
+}
+
 bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     if (!inRange(a)) return false;
-    const uint64_t now = time_now(c);
+    const uint64_t now = tmuNow(c);
     if (a == kTocr) v = g_tocr;
     else if (a == kTstr) v = g_tstr;
     else if (a == kTcpr2) v = g_tcpr2;

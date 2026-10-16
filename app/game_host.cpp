@@ -8,9 +8,11 @@
 #include "gdrom/data_source.h"
 #include "hle/flashrom.h"
 #include "debug/call_trace.h"
+#include "debug/cri_diag.h"
 #include "gdfs_adapter.h"
 #include "time_adapter.h"
 #include "mods/mod_api.h"
+#include "pvr/holly_intc.h"
 #include "pvr/pvr_video.h"
 
 #include <algorithm>
@@ -107,6 +109,28 @@ void GameHost::vblank() {
             std::fwrite(ram_, 1, 16u << 20, f);
             std::fclose(f);
         }
+    // Diagnostico (N2b-0, criterio B6): BS_STATE_LOG=<arquivo> grava a cada 250 VBlanks o hash da
+    // regiao de variaveis do jogo (0x8C240000-0x8C25FFFF: estado logico provisorio, ate os campos
+    // terem nome). BS_RAM_MUTACAO=<vblank>:<endereco> troca um byte nesse VBlank (negativo).
+    static FILE* stateLog = [] {
+        const char* v = std::getenv("BS_STATE_LOG");
+        FILE*       f = v && *v ? std::fopen(v, "w") : nullptr;
+        if (f) std::fprintf(f, "vblank\testado\n");
+        return f;
+    }();
+    static const std::pair<uint64_t, uint32_t> kRamMut = [] {
+        const char* v = std::getenv("BS_RAM_MUTACAO");
+        if (!v || !std::strchr(v, ':')) return std::pair<uint64_t, uint32_t>{0, 0};
+        return std::pair<uint64_t, uint32_t>{std::strtoull(v, nullptr, 10),
+                                             uint32_t(std::strtoul(std::strchr(v, ':') + 1, nullptr, 16))};
+    }();
+    if (kRamMut.first && n == kRamMut.first && ram_) ram_[kRamMut.second & 0xFFFFFF] ^= 0x01;
+    if (stateLog && ram_ && n % 250 == 0) {
+        uint64_t h = 0xCBF29CE484222325ull;
+        for (uint32_t a = 0x240000; a < 0x260000; ++a) h = (h ^ ram_[a]) * 0x100000001B3ull;
+        std::fprintf(stateLog, "%llu\t%016llX\n", static_cast<unsigned long long>(n), static_cast<unsigned long long>(h));
+        std::fflush(stateLog);
+    }
     const auto     now = std::chrono::steady_clock::now();
     {
         const double work = std::chrono::duration<double, std::milli>(now - workStart_).count();
@@ -164,6 +188,7 @@ void GameHost::threadMain() {
         bs::mods::reset();     // sessao nova: nada herdado de uma anterior
         bs::mods::init_all();  // mods compilados no executavel (projeto editavel; BS_MOD)
         bs::call_trace_install();  // diagnostico BS_CALL_TRACE (desligado por padrao)
+        bs::cri_diag_install();    // diagnostico BS_CRI_DIAG (N2b-0; desligado por padrao)
         // N1: arquivos pelo provedor nativo (API gdFs sobre a pasta de recursos)
         if (!opt_.data.empty() && opt_.files == FilesProvider::Native) {
             files_ = std::make_unique<native::files::DataFileSystem>(opt_.data / L"disc", opt_.modAssets);
@@ -178,6 +203,9 @@ void GameHost::threadMain() {
             transitional::time::Options to;
             if (const char* v = std::getenv("BS_TIME_TRACE")) to.trace = v;
             if (const char* v = std::getenv("BS_TEMPO_MUTACAO")) to.mutation = v;
+            if (const char* v = std::getenv("BS_PROGRESS_TRACE")) to.progress_trace = v;
+            if (const char* v = std::getenv("BS_PROGRESSO_LIMITE")) to.stall_units = std::strtoull(v, nullptr, 10);
+            else to.stall_units = transitional::time::kDefaultStallUnits;
             transitional::time::install(to);
         }
         sh4_set_fatal_handler(onFatal);
@@ -206,15 +234,20 @@ void GameHost::threadMain() {
     if (!sh4_threads_shutdown() && err.empty()) err = "falha ao liberar as fibras das threads do guest";
     if (traceOn()) std::fprintf(stderr, "[host] fibras liberadas\n");
     gdrom_set_disc(nullptr);  // fecha a imagem de disco
+    std::fputs(cri_diag_summary().c_str(), stderr);
+    // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
+    std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
     if (transitional::time::installed()) {
         transitional::time::uninstall();
+        std::fputs(transitional::time::progress_summary().c_str(), stderr);
         const auto s = transitional::time::stats();
         std::fprintf(stderr, "[tempo] nativo: VBlank-In %llu, VBlank-Out %llu, render %llu, Maple %llu, GD-ROM %llu; "
-                             "agendados %llu, cancelados %llu, recuos do relogio %llu\n",
+                             "agendados %llu, cancelados %llu, recuos do relogio %llu, VBlank-In colapsados %llu\n",
                      static_cast<unsigned long long>(s.delivered[0]), static_cast<unsigned long long>(s.delivered[1]),
                      static_cast<unsigned long long>(s.delivered[2]), static_cast<unsigned long long>(s.delivered[3]),
                      static_cast<unsigned long long>(s.delivered[4]), static_cast<unsigned long long>(s.posted),
-                     static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions));
+                     static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions),
+                     static_cast<unsigned long long>(s.vblankCollapsed));
     }
     if (files_) {
         const auto s = transitional::gdfs::stats();

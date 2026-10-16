@@ -54,6 +54,9 @@ void sh4_ldtlb(Sh4Context* c);
 void sh4_sq_flush(Sh4Context* c, uint32_t addr);  // pref em 0xE0000000-0xE3FFFFFF
 constexpr uint64_t kServiceQuantum = 2000;          // ciclos entre polls (~10 us a 200 MHz)
 void sh4_service(Sh4Context* c);                   // eventos/interrupcoes pendentes
+// N2b-1 (modo sombra): back-edge de um ponto de espera declarado (BS_WAIT) e saida do laco.
+void sh4_wait_point(Sh4Context* c, uint32_t pc);
+void sh4_wait_end(Sh4Context* c, uint32_t pc);
 // Codigo que o jogo copia para a RAM e o tradutor compilou no destino (relocated):
 // confere que as instrucoes na RAM sao as compiladas; diferenca e fatal.
 void sh4_check_code(Sh4Context* c, const uint32_t* pcs, const uint16_t* ops, size_t n);

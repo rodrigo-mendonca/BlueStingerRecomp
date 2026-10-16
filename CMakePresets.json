@@ -8,8 +8,8 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "environment": { "VSLANG": "1033" }
     },
-    { "name": "msvc-debug",    "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl" } },
-    { "name": "msvc-release",  "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl" } },
+    { "name": "msvc-debug",    "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl", "BS_MSVC_DEPS_JSON": "ON" } },
+    { "name": "msvc-release",  "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl", "BS_MSVC_DEPS_JSON": "ON" } },
     { "name": "clang-debug",   "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl" } },
     { "name": "clang-release", "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl" } }
   ],

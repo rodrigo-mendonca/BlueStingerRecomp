@@ -20,6 +20,8 @@ namespace bs {
 
 // Numero de threads do guest ja vistas (diagnostico e testes).
 int sh4_thread_count();
+// Thread do guest em execucao (0 = a que comecou o jogo). Diagnostico e monitor de progresso.
+int sh4_current_thread();
 
 // Encerramento: apaga as fibras das threads do guest e desfaz a conversao da thread do
 // host em fibra. Chamar na thread do host que executou o jogo, depois que a execucao

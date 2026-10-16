@@ -33,6 +33,7 @@ add_library(bs_runtime STATIC
   debug/call_trace.cpp
   debug/file_log.cpp
   debug/clock_log.cpp
+  debug/cri_diag.cpp
 )
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # leitura da imagem de disco do usuario (gdrom/image_source.cpp)

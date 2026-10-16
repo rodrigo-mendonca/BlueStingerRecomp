@@ -17,6 +17,7 @@ struct GameConfig {
     uint32_t           funcs_per_file        = 400;
     std::set<uint32_t> setjmp_funcs, longjmp_funcs;  // [threads]
     std::set<uint32_t> native_slots;                 // [native] slots (fronteiras migraveis)
+    std::set<uint32_t> native_waits;                 // [native] esperas (back-edges de lacos de espera, N2b)
 };
 
 GameConfig loadConfig(const std::filesystem::path& path);

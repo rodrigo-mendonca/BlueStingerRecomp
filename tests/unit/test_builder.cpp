@@ -343,7 +343,8 @@ BS_TEST(builder_rejects_bad_inputs_without_side_effects) {
     for (const wchar_t* f : {L"CMakeLists.txt", L"LICENSE", L"config/bluestinger_us.toml", L"app/CMakeLists.txt",
                              L"runtime/CMakeLists.txt", L"tools/extractor/CMakeLists.txt", L"tools/dist/LEIA-ME.txt",
                              L"tools/dcmap/CMakeLists.txt", L"native/CMakeLists.txt", L"legacy/CMakeLists.txt",
-                             L"transitional/CMakeLists.txt", L"third_party/SDL3/CMakeLists.txt"})
+                             L"transitional/CMakeLists.txt", L"tools/build/msvc_srcdeps.cmake",
+                             L"third_party/SDL3/CMakeLists.txt"})
         writeFile(kit / f, "");
     BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").empty());
     BS_CHECK(!check_kit(tmp.p / L"vazio", tmp.p / L"vazio").empty());

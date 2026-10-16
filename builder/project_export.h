@@ -36,6 +36,6 @@ void export_project(const ExportInputs& in, const std::filesystem::path& dest,
 std::string check_project(const std::filesystem::path& dir);
 
 // Partes do kit que entram na compilacao (mesma lista usada para copiar o kit ao cache).
-extern const wchar_t* const kKitEntries[12];
+extern const wchar_t* const kKitEntries[13];
 
 } // namespace bs::builder

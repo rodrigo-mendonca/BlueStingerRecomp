@@ -19,6 +19,12 @@ void holly_intc_reset(uint64_t cycles = 0);
 void holly_intc_sync(uint64_t cycles);
 // VBlank-In desde o reset (diagnostico: trace de ordem, registro de leituras do N1).
 uint64_t holly_vblank_count();
+// Instante (provedor de tempo) em que o ultimo VBlank-In foi entregue, no ponto de poll (nao o
+// cruzamento exato da linha). Diagnostico N2b: BS_TMU_DIAG.
+uint64_t holly_last_vblank_instant();
+// VBlank-In que chegaram com o bit de VBlank-In ainda aceso (nao reconhecido): o tratador ve um
+// so atendimento para dois campos (N2b, criterio B4; causa da diferenca de 2 VBlanks do N1).
+uint64_t holly_vblank_fused();
 
 // Nivel IRL pedido ao SH-4 (6, 4, 2 ou 0): maior nivel cujas mascaras IMLn
 // (NRM/EXT/ERR) tem algum bit pendente em ISTNRM/ISTEXT/ISTERR.

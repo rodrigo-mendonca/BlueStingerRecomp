@@ -19,11 +19,21 @@
 // `resume` e o endereco SH-4 onde a execucao continua (vira SPC se houver interrupcao).
 #define BS_POLL(resume)                       \
     do {                                      \
+        ++c->polls;                           \
         if (c->cycles >= c->next_event) {     \
             c->pc = (resume);                 \
             ::bs::sh4_service(c);             \
         }                                     \
     } while (0)
+// N2b: back-edge de um laco declarado como ponto de espera ([native] esperas no config). No
+// N2b-1 (modo sombra) so informa o monitor de progresso e faz o poll de sempre: a execucao nao
+// muda. BS_WAIT_END marca a saida do laco (a condicao esperada ficou verdadeira).
+#define BS_WAIT(pc, resume)                \
+    do {                                   \
+        ::bs::sh4_wait_point(c, (pc));     \
+        BS_POLL(resume);                   \
+    } while (0)
+#define BS_WAIT_END(pc) ::bs::sh4_wait_end(c, (pc))
 // Depois de `ldc ...,sr`: uma interrupcao pendente pode ter sido desmascarada agora.
 #define BS_IRQ_CHECK(resume)        \
     do {                            \

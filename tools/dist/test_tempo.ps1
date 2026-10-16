@@ -77,7 +77,10 @@ function CheckQueue($tt, $label) {
     $prevDue = -1; $prevKind = ""
     foreach ($line in [System.IO.File]::ReadLines($tt)) {
         if ($line.StartsWith("#") -or $line.StartsWith("seq")) { continue }
-        $f = $line.Split("`t"); $k = $f[1]; $d = [uint64]$f[2]; $e = [uint64]$f[3]; ++$count
+        $f = $line.Split("`t"); $k = $f[1]
+        # RenderStart (N2b-0) nao e entrega: registra o STARTRENDER com o fim agendado como devido
+        if ($k -eq "RenderStart") { continue }
+        $d = [uint64]$f[2]; $e = [uint64]$f[3]; ++$count
         if ($e -lt $d) { ++$early } elseif ($e - $d -gt $max) { $max = $e - $d }
         if ($k -eq "VBlankIn" -or $k -eq "VBlankOut") { ++$vb; if ($f[4] -ne "1") { ++$offLine } }
         if ($d -eq $prevDue) { ++$simult; if ($prio[$k] -lt $prio[$prevKind]) { ++$badOrder } }

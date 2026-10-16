@@ -3,6 +3,7 @@
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 #include "mods/mod_api.h"
+#include "pvr/holly_intc.h"
 
 #include <array>
 #include <cstdio>
@@ -47,12 +48,15 @@ template <int I>
 void thunk(Sh4Context* c) {
     State&         s      = st();
     const uint32_t caller = c->cur_fn;
+    const uint32_t pr     = c->pr;  // endereco de retorno: o ponto exato da chamada (+4)
+    const uint64_t vblank = holly_vblank_count();  // VBlank na entrada da chamada
     const uint32_t a[4]   = {c->r[4], c->r[5], c->r[6], c->r[7]};
     s.orig[I](c);
     std::lock_guard lk(s.mu);
-    char line[160];
-    std::snprintf(line, sizeof line, "%llu\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t",
-                  static_cast<unsigned long long>(s.seq++), s.addr[I], caller, a[0], a[1], a[2], a[3], c->r[0]);
+    char line[200];
+    std::snprintf(line, sizeof line, "%llu\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%llu\t",
+                  static_cast<unsigned long long>(s.seq++), s.addr[I], caller, a[0], a[1], a[2], a[3], c->r[0], pr,
+                  static_cast<unsigned long long>(vblank));
     s.out << line;
     for (int k = 0; k < 4; ++k) {
         const std::string str = guestString(c, a[k]);
@@ -115,7 +119,7 @@ bool call_trace_flush() {
     if (s.path.empty()) return false;
     FILE* f = std::fopen(s.path.c_str(), "wb");
     if (!f) return false;
-    const std::string text = "seq\tfuncao\tchamador\tr4\tr5\tr6\tr7\tr0\tstrings\n" + s.out.str();
+    const std::string text = "seq\tfuncao\tchamador\tr4\tr5\tr6\tr7\tr0\tpr\tvblank\tstrings\n" + s.out.str();
     const bool        ok   = std::fwrite(text.data(), 1, text.size(), f) == text.size();
     return std::fclose(f) == 0 && ok;
 }

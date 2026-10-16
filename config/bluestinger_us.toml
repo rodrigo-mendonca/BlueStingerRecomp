@@ -122,3 +122,12 @@ slots = [
   0x8C15BDDE,  # callback de erro (gdfs, func, obj)
   0x8C15AE28,  # servidor do gdFs (interno): conclui os pedidos assincronos nativos
 ]
+# N2b (docs/N2b-PLANO.md, secao 1.2): back-edges dos lacos que esperam uma condicao acesa por
+# evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por
+# onde passam todas as saidas). No N2b-1 so informam o monitor de progresso (modo sombra).
+# A thread 3 (servidor do CRI, 8C158840) NAO entra: trabalha ate ser preemptada.
+esperas = [
+  0x8C064A2C,  # espera do VBlank do jogo (bandeira 0x8C24F88A), funcao 8C064A20
+  0x8C173086,  # espera do fim do render anterior, timeout 166 ms (8C173044)
+  0x8C0978F6,  # espera de bit com timeout (8C0978BE; nao exercitada no roteiro)
+]

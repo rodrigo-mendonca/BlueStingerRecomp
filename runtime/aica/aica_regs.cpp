@@ -176,9 +176,11 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     if (inRam(p)) {
         std::memcpy(&g_ram[p & (kAicaRamSize - 1)], &v, size);
         trace(true, p, v, time_now(c), c->pr);
+        if (g_clock_log) clock_log_read(ClockRead::Aud, p), clock_log_read(ClockRead::Aud, v);
         return true;
     }
     if (size != 4) return false;
+    if (g_clock_log) clock_log_read(ClockRead::Aud, p), clock_log_read(ClockRead::Aud, v);
     if (p == kCtrl) {
         if (std::getenv("BS_AICA_TRACE"))  // diagnostico: reset/liberacao do ARM7 (bit 0)
             std::fprintf(stderr, "[aica] controle 00702C00 = %08X (ARM7 %s; ciclo %llu, PR %08X, funcao %08X)\n", v,

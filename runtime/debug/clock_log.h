@@ -12,7 +12,8 @@ namespace bs {
 
 extern bool g_clock_log;
 
-enum class ClockRead : uint8_t { Tmu, Spg, Mdst, Rtc, Ist, Count };
+// Aud (N2b-0): escritas da CPU na AICA (registradores e RAM de som; endereco e valor).
+enum class ClockRead : uint8_t { Tmu, Spg, Mdst, Rtc, Ist, Aud, Count };
 
 void clock_log_read(ClockRead kind, uint32_t value);
 void clock_log_vblank(uint64_t vblank);  // fecha a linha do VBlank

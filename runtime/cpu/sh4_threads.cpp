@@ -1,6 +1,7 @@
 #include "cpu/sh4_threads.h"
 
 #include "cpu/sh4_runtime.h"
+#include "cpu/time_hooks.h"
 #include "debug/event_trace.h"
 
 #include <algorithm>
@@ -69,6 +70,7 @@ void ensureMain(Sh4Context* c) {
 // Suspende a thread atual (retomada em resumePc/resumeSp) e passa a `next`.
 void switchTo(Sh4Context* c, size_t next) {
     if (g_event_trace) event_trace(TraceEvent::ThreadSwitch, c->cycles, uint32_t(g_current), uint32_t(next));
+    time_provider().progress(uint32_t(g_current), c->polls);  // trabalho ate aqui e da thread que sai
     Thread& cur   = g_threads[g_current];
     cur.suspended = true;
     cur.resumePc  = c->ret_expect;
@@ -137,6 +139,7 @@ void startThread(Sh4Context* c, uint32_t pc, uint32_t target) {
 } // namespace
 
 int sh4_thread_count() { return int(g_threads.size()); }
+int sh4_current_thread() { return int(g_current); }
 
 int sh4_live_fibers() { return g_liveFibers.load(); }
 

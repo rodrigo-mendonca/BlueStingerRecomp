@@ -6,7 +6,8 @@ target_compile_features(bs_native_api INTERFACE cxx_std_20)
 
 # Implementacoes nativas (produto). N1: arquivos do jogo sobre a pasta de recursos. N2a: relogio
 # logico e fila de eventos.
-add_library(bs_native STATIC platform/data_files.cpp platform/clock.cpp platform/event_queue.cpp)
+add_library(bs_native STATIC platform/data_files.cpp platform/clock.cpp platform/event_queue.cpp
+            platform/progress.cpp)
 target_link_libraries(bs_native PUBLIC bs_native_api)
 
 if(BS_BUILD_TESTS AND BS_BUILD_TOOLS)

@@ -6,6 +6,7 @@
 #include "cpu/sh4_intc.h"
 #include "cpu/time_hooks.h"
 #include "cpu/sh4_mem.h"
+#include "cpu/sh4_threads.h"
 #include "debug/hw_probe.h"
 #include "gdrom/gdrom.h"
 #include "pvr/holly_intc.h"
@@ -113,8 +114,17 @@ void sh4_check_code(Sh4Context* c, const uint32_t* pcs, const uint16_t* ops, siz
 
 // Poll periodico (BS_POLL nos back-edges): reavalia interrupcoes a cada quantum de
 // ciclos. c->pc ja e o endereco de retomada.
+void sh4_wait_point(Sh4Context* c, uint32_t pc) {
+    time_provider().wait_point(pc, uint32_t(sh4_current_thread()), c->polls);
+}
+
+void sh4_wait_end(Sh4Context* c, uint32_t pc) {
+    time_provider().wait_end(pc, uint32_t(sh4_current_thread()), c->polls);
+}
+
 void sh4_service(Sh4Context* c) {
     c->next_event = c->cycles + kServiceQuantum;
+    time_provider().progress(uint32_t(sh4_current_thread()), c->polls);
     // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
     // sem depender de nova syscall (revisao Codex 2026-10-14)
     gdrom_poll(c);

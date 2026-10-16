@@ -1138,7 +1138,127 @@ O `test_tempo` falhou duas vezes antes da versão final, ambas por defeitos do p
 
 Os portões de conteúdo passaram nas duas tentativas.
 
+### N2b: preparação (2026-10-15)
+
+Autorização: só investigação, planejamento e testes diagnósticos. Plano: `docs/N2b-PLANO.md`.
+Commit do N2a: `fdf326a`.
+
+**Achados** (disassembly e traces, roteiro NEW GAME, relógio fixo):
+
+| Tema | Achado |
+|---|---|
+| Agendamento | Dois níveis. (1) Threads do SDK trocadas na volta da interrupção pelo despachante `8C17DE4C`: thread 0 (principal) e thread 3 (`8C158840`, servidor do CRI), alternando a cada VBlank. (2) Escalonador cooperativo do jogo (`8C0903C0`, `setjmp`/`longjmp`): uma passada por VBlank, 2 tarefas que dormem 1 passo |
+| Espera `8C173044` | Espera o fim do render anterior (bandeira `0x8C2D9E3C`, apagada por `8C1725E6` no fim de render), com timeout de 166 ms (`0x28870` µs). Uma vez por render (3 986 em 8 000 VBlanks); **o timeout nunca estourou**; `8C172FE6` é o gancho de conclusão normal |
+| TMU | Todos os consumidores classificados: medição (servidor do CRI `8C1586B8` = 20 M chamadas), carimbos, cronômetro, timeouts (`8C173044`, `8C0978BE`, gdFsStop já substituído) e registros. Nenhum é do jogo. Com `BS_TMU_DIAG=quadro` (TMU parado por VBlank), em 8 000 VBlanks: ordem lógica, leituras e quadro idênticos. D7 continua hipótese condicional (revisão do Codex) |
+| Thread 3 | Não tem ponto de espera: roda o servidor do CRI até ser preemptada. É o principal risco do N2b |
+
+**Ambiente de build:**
+- opção `BS_MSVC_DEPS_JSON`, **desligada**: dependências por `/sourceDependencies` (JSON) e
+  `tools/build/msvc_srcdeps.cmake`, independentes de idioma e página de código;
+- com a página 850, o modo atual perde a dependência e o JSON mantém;
+- projeto inteiro no modo JSON: 0 objetos do projeto sem dependências;
+- `n2_build_incremental` ganhou os casos JSON, página 850, caminho com espaço/`#`/`$$` (falha sem
+  o escape) e compilador com erro.
+
+**Diagnósticos acrescentados:**
+- `BS_CALL_TRACE` com colunas PR e VBlank;
+- `BS_TMU_DIAG=quadro`.
+
+Comportamento padrão inalterado: trace de 3 000 VBlanks = referência do N2a. `ctest` 12/12.
+
+**Revisão do Codex do plano** (`reviews/codex-20261015-192135.md`): 2 ALTA, 4 MÉDIA, 1 BAIXA,
+todos aceitos. Os principais:
+- a thread 3 saiu da lista de esperas;
+- `BS_WAIT` nunca escolhe thread;
+- a guarda de liveness vira erro;
+- critérios com oráculo e negativo;
+- escape do depfile.
+
+**Acompanhamento** (`reviews/codex-20261015-192954.md`): 1 ALTA e 2 MÉDIA, de texto, aceitos:
+- o componente nativo não escolhe thread (`ITaskScheduler` não é usada para as threads do SDK;
+  D4 revista);
+- o TMU fica como "classificação preliminar";
+- novo critério B3b para as leituras de relógio e estado.
+
+### N2b-0 / N2b-1: diagnósticos e modo sombra (2026-10-16, sem commit)
+
+Autorização: só N2b-0 e N2b-1. **N2b-2 não autorizado.** Relatório: `docs/N2b-RELATORIO.md`.
+
+**Compilação (D10):**
+- `BS_MSVC_DEPS_JSON` ligado por padrão (presets, CMake e kit do Builder).
+- Defeito do lançador no Debug: `/Fd<pasta>\` fazia o argumento seguinte se fundir a ele
+  (C1041). Correção: a barra invertida final vira `/`.
+- `n2_build_incremental` ganhou um executável em Debug. Método: o teste **falha** com o lançador
+  antigo (C1041) e passa com o novo.
+- Release, Debug e mods compilados do zero.
+
+**Modo sombra:**
+- `IProgress`/`ProgressMonitor`;
+- `BS_WAIT`/`BS_WAIT_END` nos 3 pontos do config;
+- `Sh4Context::polls`;
+- evento esperado por espera, notificado só depois que o assinante o aplica;
+- VBlank-In colapsados no adaptador.
+
+Método: trace de ordem completo igual ao legado byte a byte (8 000 VBlanks, duas rotas de
+arquivos); desempenho igual (17,27 × 17,38 ms por campo).
+
+**Medidas** (8 000 VBlanks, NEW GAME):
+- **Espera do VBlank:** 3 792 episódios, todos com VBlank-In entregue no episódio.
+- **Espera do render:** 17 episódios, todos com o fim de render; maior episódio 1,49 M ticks
+  (estouro = 33,2 M).
+- **Thread 3:** ~113 mil pontos de controle por VBlank.
+- **Janelas sem espera:** até 17,2 M (cargas); `kDefaultStallUnits` = 64 M.
+
+**CRI (thread 3):**
+
+| Condição | Resultado |
+|---|---|
+| 0 entradas MW | **descartada**: muda as leituras de arquivo (`pular`) |
+| Sem MW, sem ADX e sem stream (gerenciador `0x8C2DA958`) | sem efeito lógico (TN, CL, SL, quadro iguais). O controle só de tempo (`repetir3`) reproduz as outras diferenças (AICA no vídeo, SPG). Mas só vale em boot e menus (27% das passadas) |
+
+**Testes:** `tools/dist/test_n2b.ps1` (S1–S4, B1–B9 com negativos; B7, B10 e B11 parciais).
+
+**Regressão completa** (2026-10-16, em sequência):
+
+| Suíte | Resultado |
+|---|---|
+| Unitários | 210/210 |
+| `ctest` | 12/12, sem e com a imagem |
+| `test_preview` | 9/9 |
+| `test_gameplay` | 4/4 |
+| `test_builder` | 18/18 |
+| `test_projeto` | 11/11 |
+| `test_arquivos` | 6/6 |
+| `test_ordem` | 8/8 |
+| `test_tempo` | 35/35 |
+| `test_n2b` | 44/44 |
+
+O `test_tempo` falhou na primeira rodada. O A2 lia como entregas os registros diagnósticos
+`RenderStart` do N2b-0. Corrigido no teste; conferido: 0 antecipadas, atraso máximo 2 120 ticks,
+o mesmo do N2a.
+
+**O que bloqueia o N2b-2:** relatório, seção 8. O principal é a ociosidade da thread 3 no
+gameplay.
+
 ## Revisões independentes (Codex)
+
+### 2026-10-16: N2b-0/N2b-1 (lançador, modo sombra, diagnósticos, `test_n2b.ps1`). Relatório em `reviews/codex-20261016-002552.md`
+
+O Codex confirmou como corretos:
+- o lançador (falha do compilador, barra final, escapes);
+- os 3 back-edges reais (`89FB`, `8BF0`, `8BF2`);
+- `BS_WAIT` só no ramo tomado e `BS_WAIT_END` no fall-through;
+- o modo sombra sem escrita no estado do guest.
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [MÉDIA] S4 media polls agregados, comparava sombra com sombra; o negativo passava com artefato vazio | **Aceito** | Artefato de chamadas (`BS_CALL_TRACE` em `8C1586B8` e `8C174888`, quantidade e hash da sequência por VBlank), legado × sombra; `Differ` exige os dois artefatos não vazios; negativo `BS_CRI_DIAG=menos1` (uma passada a menos por VBlank). Resultado: 3 376 VBlanks e 1 000 742 passadas, iguais; negativo detectado |
+| [MÉDIA] O Holly não via dois VBlank-In no mesmo atendimento | **Aceito** | Confirmado: com `fundir_vblank`, o Holly continuava com 14 e o adaptador agora conta 30 colapsos. O positivo exige 0 colapsos; o negativo exige mais que a referência. O plano pede 0 fundidos, mas o legado tem 14 no boot: o critério ficou "igual ao legado", e o desvio está no relatório |
+| [MÉDIA] "Liberada por" era o último evento global, notificado antes do assinante | **Aceito em parte** | O monitor passa a ser notificado depois que o assinante aplica o evento; cada espera declara o evento esperado; S2 exige o evento esperado entregue no episódio. Teste `n2b_progress_expected_event`. Isso prova a entrega, não a transição da condição do jogo (limitação registrada) |
+| [MÉDIA] B4 sem troca de provedor de arquivos; B5 não provava o estouro | **Aceito** | B5: saída sem o fim de render e episódio ≥ 0,9 × 166 ms (54,4 M ticks; referência 1,49 M). B4: comparação cruzada acrescentada. Ela mostra a diferença conhecida do N1 (tempo de carga, `IWP20`×`IWP15`), por isso fica informativa; o contrato P1 continua no `test_arquivos`. A igualdade de TN entre provedores é meta do N2b-2 |
+| [MÉDIA] B7, B10 e B11 incompletos | **Aceito** | Declarados parciais no script e no relatório. B7: contagem de deadlocks nos positivos, e fila vazia → deadlock no unitário. B10 = as demais suítes. B11 só a ordem lógica com o TMU parado |
+
+Depois das correções: unitários 210/210; `test_n2b` rodado de novo na regressão completa.
 
 ### 2026-10-15: mudanças pendentes desde a5a1fe4 (dados sem CDI, Builder, NEW GAME, YUV/VQ, mods). Relatório em `reviews/codex-20261015-002752.md`
 

@@ -117,25 +117,38 @@ public:
     virtual size_t run_until(Instant until) = 0;
 };
 
-// N2b (D3, D4): agendador cooperativo e deterministico das tarefas logicas do jogo. Uma
-// tarefa esta apta, bloqueada esperando um tipo de evento, ou encerrada; o tempo so avanca
-// quando nenhuma tarefa esta apta. Implementacao no N2b.
-struct TaskTag;
-using TaskId = Handle<TaskTag>;
+// N2b (D4 revista): progresso logico e pontos de espera. A interface NAO escolhe nem alterna
+// contextos de execucao: so observa o trabalho feito e as esperas e diz se o tempo logico
+// poderia andar. Quem troca de contexto continua sendo o codigo que ja o faz (na transicao, o
+// despachante do SDK recompilado). Um contexto e identificado por quem chama.
+struct ContextTag;
+using ContextId = Handle<ContextTag>;
+struct WaitTag;
+using WaitId = Handle<WaitTag>;
 
-enum class TaskState : uint8_t { Ready, Blocked, Finished };
+enum class ProgressDecision : uint8_t {
+    Continue,     // ha evento vencido ainda nao entregue: entregar e continuar, sem andar o tempo
+    AdvanceTime,  // o contexto so espera: o tempo pode ir ate `advance_to` (proximo evento)
+    Deadlock,     // o contexto espera e nao ha evento futuro: nada vai libera-lo
+};
 
-class ITaskScheduler {
+struct ProgressReport {
+    ProgressDecision decision = ProgressDecision::Continue;
+    Instant          advance_to;
+};
+
+class IProgress {
 public:
-    virtual ~ITaskScheduler() = default;
-    virtual TaskId    spawn(std::function<void()> entry) = 0;
-    virtual TaskState state(TaskId task) const = 0;
-    // Chamado pela tarefa atual: bloqueia ate o proximo evento do tipo pedido.
-    virtual void wait(EventKind kind) = 0;
-    // Chamado pela tarefa atual: cede a vez as outras tarefas aptas, sem bloquear.
-    virtual void yield() = 0;
-    // Roda as tarefas aptas ate todas bloquearem ou encerrarem; devolve quantas rodaram.
-    virtual size_t run_ready() = 0;
+    virtual ~IProgress() = default;
+    // Trabalho feito por `ctx` desde a ultima observacao, em unidades estruturais de progresso
+    // (pontos de controle executados), nunca em tempo.
+    virtual void work(ContextId ctx, uint64_t units) = 0;
+    // `ctx` chegou (mais uma vez) ao ponto de espera `wait`, cuja condicao ainda e falsa.
+    virtual ProgressReport at_wait(ContextId ctx, WaitId wait) = 0;
+    // A condicao de `wait` ficou verdadeira: `ctx` saiu da espera.
+    virtual void wait_done(ContextId ctx, WaitId wait) = 0;
+    // Um evento foi entregue no instante `at`.
+    virtual void delivered(EventKind kind, Instant at) = 0;
 };
 
 } // namespace bs::native::time
