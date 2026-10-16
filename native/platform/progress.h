@@ -85,6 +85,8 @@ public:
     uint64_t window() const { return window_; }               // trabalho desde a ultima espera
     uint64_t max_window() const { return maxWindow_; }        // maior janela vista
     uint64_t stalls() const { return stalls_; }
+    ContextId last_blamed() const { return lastBlamed_; }  // quem mais trabalhou na ultima falta
+    const std::map<uint32_t, uint64_t>& window_by() const { return windowBy_; }  // trabalho por contexto na janela
 
 private:
     void endEpisode(ContextStats& c, ContextId ctx, bool exited);
@@ -96,6 +98,7 @@ private:
     std::map<uint32_t, WaitStats>    waits_;
     std::map<uint32_t, uint64_t>     windowBy_;  // trabalho de cada contexto na janela
     uint64_t                         window_ = 0, maxWindow_ = 0, stalls_ = 0;
+    ContextId                        lastBlamed_{};
     bool                             stalled_ = false;
     uint64_t                         windowReport_ = 0;
     Observer                         observer_;

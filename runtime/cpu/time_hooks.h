@@ -55,7 +55,8 @@ public:
 
     // N2b-1 (modo sombra, so observacao): progresso estrutural da thread `thread` (contador de
     // pontos de controle `polls`, monotono) e pontos de espera declarados. Nao mudam a execucao.
-    virtual void progress(uint32_t thread, uint64_t polls) { (void)thread, (void)polls; }
+    // `pc`: onde a thread esta (retomada do poll; so para a mensagem de falta de progresso).
+    virtual void progress(uint32_t thread, uint64_t polls, uint32_t pc) { (void)thread, (void)polls, (void)pc; }
     virtual void wait_point(uint32_t pc, uint32_t thread, uint64_t polls) { (void)pc, (void)thread, (void)polls; }
     virtual void wait_end(uint32_t pc, uint32_t thread, uint64_t polls) { (void)pc, (void)thread, (void)polls; }
     // Diagnostico (BS_TMU_DIAG=agendado): instante devido do ultimo VBlank-In entregue (0 se

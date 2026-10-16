@@ -47,6 +47,21 @@ bool    has_slot(uint32_t addr);
 // A funcao gerada original (para chamar de dentro da substituta). nullptr se nao existe.
 Sh4Func original(uint32_t addr);
 void    call_original(uint32_t addr, Sh4Context* c);  // fatal se nao existe
+// Esperas (N2b, criterio B10). Um mod que reescreve um laco de espera do jogo (por exemplo a
+// espera do VBlank em 8C064A20) chama wait() em cada volta e wait_end() na saida, como o codigo
+// gerado faz com BS_WAIT/BS_WAIT_END nos pontos declarados em [native] esperas:
+//   while (bs::sh4_read16(c, bandeira) == 0) bs::mods::wait(c, 0x8C064A2C, 0x8C064A26, 6);
+//   bs::mods::wait_end(c, 0x8C064A2C);
+// `pc` identifica a espera (o back-edge do original), `resume` e onde o original retomaria (vira
+// SPC se uma interrupcao for entregue) e `cycles` o custo estimado de uma volta (enquanto o tempo
+// andar por ciclos, sem ele o laco nao deixa o tempo andar). Um laco de espera sem wait() e
+// trabalho sem fim para o monitor de progresso: falta de progresso com a thread e o PC (no
+// modo sombra, aviso; quando o tempo so andar nas esperas, erro).
+void wait(Sh4Context* c, uint32_t pc, uint32_t resume, uint32_t cycles);
+void wait_end(Sh4Context* c, uint32_t pc);
+// Ponto de poll sem espera (laco de trabalho longo num mod): interrupcoes e eventos vencidos.
+void poll(Sh4Context* c, uint32_t resume, uint32_t cycles);
+
 // Volta todas as substituicoes ao original (testes; nova sessao).
 void    reset();
 

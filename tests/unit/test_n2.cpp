@@ -7,6 +7,7 @@
 #include "cpu/sh4_mem.h"
 #include "cpu/time_hooks.h"
 #include "gdrom/gdrom.h"
+#include "mods/mod_api.h"
 #include "memory/sh4_tmu.h"
 #include "platform/clock.h"
 #include "platform/event_queue.h"
@@ -396,6 +397,11 @@ BS_TEST(n2b_progress_stall_window) {
     nt::ProgressMonitor off(clk, q, 0);  // limite 0: so mede
     off.work(nt::ContextId{1}, 1u << 30);
     BS_CHECK(off.stalls() == 0 && off.max_window() == (1u << 30));
+    // a culpa e de quem mais trabalhou na janela, nao de quem cruzou o limite (mensagem da D8, B10)
+    nt::ProgressMonitor b(clk, q, 100);
+    b.work(nt::ContextId{1}, 90);
+    b.work(nt::ContextId{4}, 20);  // o contexto 4 cruza o limite
+    BS_CHECK(b.stalls() == 1 && b.last_blamed().value == 1 && b.contexts().at(1).stalls_blamed == 1);
 }
 
 // Gerador: back-edge declarado vira BS_WAIT (o poll de sempre continua dentro dele) e a
@@ -465,4 +471,46 @@ BS_TEST(n2b_progress_expected_event) {
     const auto& s = m.waits().at(0x8C173086);
     BS_CHECK(s.exits_with_event == 2 && s.exits_with_expected == 1 && s.exits_without_expected == 1);
     BS_CHECK(s.max_ticks == 40);
+}
+
+// B10: a primitiva de espera da API de mods faz o mesmo que BS_WAIT/BS_WAIT_END do codigo
+// gerado (ponto de espera no provedor, poll com o custo da volta).
+namespace {
+struct WaitSpy : TimeProvider {
+    std::vector<std::string> calls;
+    const char* name() const override { return "espiao"; }
+    void        reset(uint64_t) override {}
+    uint64_t    clock(uint64_t cycles) override { return cycles; }
+    uint32_t    holly_due(uint64_t) override { return 0; }
+    void        spg_changed() override {}
+    void        render_scheduled(uint64_t) override {}
+    void        maple_scheduled(uint64_t) override {}
+    void        maple_cancel() override {}
+    void        disc_scheduled(uint64_t) override {}
+    bool        disc_due(uint64_t) override { return false; }
+    void        disc_cancel() override {}
+    uint32_t    rtc_seconds(uint64_t) override { return 0; }
+    void        rtc_set(uint32_t, uint64_t) override {}
+    void        wait_point(uint32_t pc, uint32_t, uint64_t polls) override {
+        calls.push_back("espera " + std::to_string(pc) + " " + std::to_string(polls));
+    }
+    void wait_end(uint32_t pc, uint32_t, uint64_t) override { calls.push_back("fim " + std::to_string(pc)); }
+};
+} // namespace
+
+BS_TEST(n2b_mod_wait_primitive) {
+    WaitSpy spy;
+    time_set_provider(&spy);
+    Sh4Context c{};
+    c.next_event = ~0ull;  // sem servico: so o registro e a contagem
+    bs::mods::wait(&c, 0x8C064A2C, 0x8C064A26, 6);
+    bs::mods::wait(&c, 0x8C064A2C, 0x8C064A26, 6);
+    bs::mods::wait_end(&c, 0x8C064A2C);
+    bs::mods::poll(&c, 0x8C064A26, 4);
+    time_set_provider(nullptr);
+    BS_CHECK(spy.calls.size() == 3);
+    BS_CHECK(spy.calls[0] == "espera " + std::to_string(0x8C064A2Cu) + " 0");
+    BS_CHECK(spy.calls[1] == "espera " + std::to_string(0x8C064A2Cu) + " 1");  // o poll da volta anterior conta
+    BS_CHECK(spy.calls[2] == "fim " + std::to_string(0x8C064A2Cu));
+    BS_CHECK(c.polls == 3 && c.cycles == 16);
 }

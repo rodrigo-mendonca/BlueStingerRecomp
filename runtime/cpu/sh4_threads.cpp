@@ -35,6 +35,7 @@ struct Thread {
 thread_local std::vector<Thread> g_threads;  // [0] = thread em que o jogo comecou
 thread_local size_t              g_current = 0;
 thread_local Sh4Context*         g_ctx     = nullptr;
+thread_local uint64_t            g_switches = 0;  // diagnostico (sh4_thread_switch_count)
 // Excecao (erro fatal do bs-diff, fim de trace) lancada numa fibra: nao pode atravessar
 // para outra pilha; volta para a thread 0 e e relancada la.
 thread_local std::exception_ptr g_pending;
@@ -69,8 +70,9 @@ void ensureMain(Sh4Context* c) {
 
 // Suspende a thread atual (retomada em resumePc/resumeSp) e passa a `next`.
 void switchTo(Sh4Context* c, size_t next) {
+    ++g_switches;
     if (g_event_trace) event_trace(TraceEvent::ThreadSwitch, c->cycles, uint32_t(g_current), uint32_t(next));
-    time_provider().progress(uint32_t(g_current), c->polls);  // trabalho ate aqui e da thread que sai
+    time_provider().progress(uint32_t(g_current), c->polls, c->ret_expect);  // trabalho ate aqui e da thread que sai
     Thread& cur   = g_threads[g_current];
     cur.suspended = true;
     cur.resumePc  = c->ret_expect;
@@ -140,6 +142,7 @@ void startThread(Sh4Context* c, uint32_t pc, uint32_t target) {
 
 int sh4_thread_count() { return int(g_threads.size()); }
 int sh4_current_thread() { return int(g_current); }
+uint64_t sh4_thread_switch_count() { return g_switches; }
 
 int sh4_live_fibers() { return g_liveFibers.load(); }
 

@@ -24,9 +24,11 @@ constexpr uint32_t kIntevt = 0xFF000028;
 
 uint16_t g_icr = 0, g_ipr[3] = {0, 0, 0};
 uint32_t g_intevt = 0;
+uint64_t g_taken  = 0;  // diagnostico (sh4_irq_taken_count)
 
 void take(Sh4Context* c, uint32_t intevt) {
     g_intevt     = intevt;
+    ++g_taken;
     if (g_event_trace) event_trace(TraceEvent::Irq, c->cycles, intevt, c->pc);
     const uint32_t sr = sh4_get_sr(*c);
     c->ssr       = sr;
@@ -66,6 +68,8 @@ bool deliverOne(Sh4Context* c) {
 }
 
 } // namespace
+
+uint64_t sh4_irq_taken_count() { return g_taken; }
 
 void sh4_intc_reset() {
     g_icr = 0;

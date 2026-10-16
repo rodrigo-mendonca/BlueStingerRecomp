@@ -59,6 +59,12 @@ void event_trace(TraceEvent e, uint64_t cycles, uint32_t a, uint32_t b) {
     s.entries.push_back({cycles, char(e), a, b});
 }
 
+uint64_t event_trace_count() {
+    State&          s = state();
+    std::lock_guard lk(s.mu);
+    return s.entries.size();
+}
+
 std::string event_trace_dump() {
     State&             s = state();
     std::lock_guard    lk(s.mu);

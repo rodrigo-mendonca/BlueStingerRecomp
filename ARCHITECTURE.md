@@ -634,12 +634,26 @@ Implementação: `native/platform/progress.*` (`ProgressMonitor`).
 |---|---|
 | `BS_PROGRESS_TRACE` | episódios de espera, avanços, janelas, trabalho por thread e por VBlank |
 | `BS_TMU_DIAG` | `quadro`, `agendado`, `zero`, `dobro` |
-| `BS_CRI_DIAG` | contagem e salto de passadas do servidor do CRI; só no build com mods, nunca no produto |
+| `BS_CRI_DIAG` | contagem e salto de passadas do servidor do CRI (`contar`, `pular*`, `menos1`, `repetir3`); classificação trabalho × ociosa e bloqueio simulado (`fluxo`, `pular5`, `repetir5`); consumidor artificial do TMU (`consumidor`). Só no build com mods, nunca no produto |
+| `BS_CRI_FLUXO_LOG`, `BS_CRI_MEDIDORES`, `BS_CRI_SNAP_VB` | passadas com trabalho por VBlank; medidores do CRI por VBlank (B11); RAM do CRI antes e depois de cada passada numa janela |
 | `BS_STATE_LOG`, `BS_RAM_MUTACAO` | estado do jogo em checkpoints e mutação de RAM |
 | `BS_ARQUIVOS_MUTACAO` | leitura de arquivo corrompida |
-| `BS_CLOCK_LOG` | leituras de relógio e estado, mais escritas na AICA |
+| `BS_CLOCK_LOG` | leituras de relógio e estado; escritas (só RAM de som e registradores `0x00700000`–`0x0071FFFF`) e leituras da RAM de som da AICA: o oráculo de áudio |
+| `BS_AICA_MUTACAO` | perde a N-ésima escrita na RAM de som (negativo do oráculo de áudio) |
 | `BS_TEMPO_MUTACAO` | mutações negativas do provedor de tempo |
 | `[vblank] fundidos` | contador de VBlanks fundidos, impresso no fim da execução |
+
+**Esperas em mods (B10):** `bs::mods::wait(c, pc, resume, ciclos)`, `wait_end` e `poll`
+(`runtime/mods/mod_api.h`) fazem o que `BS_WAIT`, `BS_WAIT_END` e `BS_POLL` fazem no código
+gerado. Um laço de espera reescrito num mod sem `wait()` aparece como falta de progresso, com a
+thread e o PC.
+
+**Thread 3 (CRI) e o N2b-2** (`docs/N2b-BLOQUEIOS.md`):
+- a passada do servidor é ociosa no gameplay;
+- quem a acorda são eventos: VBlank (`8C158A26`), fim de render (`8C158A82`), ações da thread
+  principal e, com a D7, o avanço do tempo lógico;
+- a única diferença de ordem de um bloqueio até o próximo evento é a cessão de exclusão mútua
+  `8C1588AA`, que só existe com preempção no meio da passada.
 
 **Dependências de build (D10):** `BS_MSVC_DEPS_JSON` ligado por padrão.
 - O `/sourceDependencies` do MSVC grava JSON, e `tools/build/msvc_srcdeps.cmake` o converte para

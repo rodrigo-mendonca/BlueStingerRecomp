@@ -2,7 +2,8 @@
 #   1. compila do CDI exportando o projeto (mapa de funcoes, fontes, C++ gerado, mods/);
 #   2. adiciona um mod em C++, uma alteracao controlada no C++ gerado e um mod de arquivo;
 #   3. recompila A PARTIR do projeto com o CDI inacessivel;
-#   4. o jogo instalado mostra os tres efeitos (sem o CDI);
+#   4. o jogo instalado mostra os tres efeitos (sem o CDI); 4b. B10 (N2b): mod que reescreve a
+#      espera do VBlank, com bs::mods::wait (sem falta de progresso) e sem (falta acusada com PC);
 #   5. mods de recursos (N1): maior que o original vale no provedor nativo; no legado, e para
 #      recurso inexistente, mensagem clara;
 #   6. reexportar preserva mods/ e guarda o generated/ editado.
@@ -67,6 +68,35 @@ New-Item -ItemType Directory -Force -Path (Split-Path $assetMod) | Out-Null
 # setor a setor e coberta por runtime_data_asset_overrides; mudar um arquivo de configuracao
 # como CNF00.NT muda o comportamento do jogo)
 Copy-Item -LiteralPath $assetOrig -Destination $assetMod
+# B10 (N2b): a espera do VBlank do jogo (8C064A20) reescrita num mod, ativa so com
+# BS_TESTE_ESPERA: "primitiva" usa bs::mods::wait em cada volta; "sem", o mesmo laco so com poll
+# (o monitor de progresso tem de acusar a falta de progresso com a thread e o PC)
+[IO.File]::WriteAllText((Join-Path $proj "mods\teste_espera.cpp"), @'
+#include "cpu/sh4_mem.h"
+#include "mods/mod_api.h"
+
+#include <cstdlib>
+#include <cstring>
+
+static bool g_primitiva = true;
+
+static void espera(bs::Sh4Context* c) {
+    const uint32_t flag = bs::sh4_read32(c, 0x8C064A84) + uint32_t(int16_t(bs::sh4_read16(c, 0x8C064A80)));
+    while (bs::sh4_read16(c, flag) == 0) {
+        if (g_primitiva) bs::mods::wait(c, 0x8C064A2C, 0x8C064A26, 4);
+        else bs::mods::poll(c, 0x8C064A26, 4);
+    }
+    if (g_primitiva) bs::mods::wait_end(c, 0x8C064A2C);
+    bs::mods::call_original(0x8C064A20, c);  // bandeira ja acesa: o original so conclui
+}
+
+BS_MOD(teste_espera) {
+    const char* v = std::getenv("BS_TESTE_ESPERA");
+    if (!v || !*v) return;
+    g_primitiva = std::strcmp(v, "sem") != 0;
+    bs::mods::replace(0x8C064A20, espera);
+}
+'@)
 
 # 3. recompila do projeto com o CDI inacessivel
 Rename-Item -LiteralPath $cdi -NewName "imagem ç.cdi.fora"
@@ -80,6 +110,19 @@ try {
     Check "mod em C++ ativo (replace)" ($g -match "\[mods\] iniciando exemplo_contador" -and $g -match "\[mod exemplo\] primeira chamada de 8C194580") ""
     Check "alteracao no C++ gerado ativa" ($g -match "\[edicao controlada\] entrada do jogo") ""
     Check "mod de arquivo carregado" ($g -match [regex]::Escape("[mods] recurso substituido: $($assetRel.ToUpper())") -and $g -match "VBlanks: 2300;") $assetRel
+    # 4b. B10: mod de funcao de espera, com e sem a primitiva (modo sombra: a falta e acusada)
+    $env:BS_INPUT_SCRIPT = Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"
+    $env:BS_TESTE_ESPERA = "primitiva"
+    $g = RunCmd "`"$exe`" --headless 2300"
+    $env:BS_TESTE_ESPERA = "sem"
+    $g2 = RunCmd "`"$exe`" --headless 2300"
+    $env:BS_TESTE_ESPERA = ""; $env:BS_INPUT_SCRIPT = ""
+    $ep = [regex]::Match($g, "\[progresso\] espera 8C064A2C: episodios (\d+).*evento esperado VBlankIn: com (\d+), sem (\d+)")
+    Check "B10 mod de espera com a primitiva: roda, espera declarada, sem falta de progresso" `
+        ($g -match "VBlanks: 2300;" -and $g -match "faltas de progresso 0 " -and $ep.Success -and [int]$ep.Groups[1].Value -gt 0 -and $ep.Groups[3].Value -eq "0") $ep.Value
+    $msg = ($g2 -split "`n" | Where-Object { $_ -match "falta de progresso:" } | Select-Object -First 1)
+    Check "B10 mod de espera sem a primitiva: falta de progresso com thread e PC" `
+        ($g2 -match "VBlanks: 2300;" -and $msg -match "thread 0 \d+ \(maior lote em 8C064A26\)" -and $msg -match "bs::mods::wait") $msg
     # 5. mod maior que o original: o provedor nativo de arquivos (N1) aceita; o legado (setores
     #    de tamanho fixo) recusa com mensagem clara; mod sem recurso correspondente: erro claro
     $installedAsset = Join-Path $out ("BlueStinger\mods\assets\" + $assetRel.Replace('/', '\'))

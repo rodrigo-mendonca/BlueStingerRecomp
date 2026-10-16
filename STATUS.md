@@ -1180,7 +1180,7 @@ todos aceitos. Os principais:
 - o TMU fica como "classificação preliminar";
 - novo critério B3b para as leituras de relógio e estado.
 
-### N2b-0 / N2b-1: diagnósticos e modo sombra (2026-10-16, sem commit)
+### N2b-0 / N2b-1: diagnósticos e modo sombra (2026-10-16, commit `18a5cc2`)
 
 Autorização: só N2b-0 e N2b-1. **N2b-2 não autorizado.** Relatório: `docs/N2b-RELATORIO.md`.
 
@@ -1214,7 +1214,7 @@ arquivos); desempenho igual (17,27 × 17,38 ms por campo).
 | Condição | Resultado |
 |---|---|
 | 0 entradas MW | **descartada**: muda as leituras de arquivo (`pular`) |
-| Sem MW, sem ADX e sem stream (gerenciador `0x8C2DA958`) | sem efeito lógico (TN, CL, SL, quadro iguais). O controle só de tempo (`repetir3`) reproduz as outras diferenças (AICA no vídeo, SPG). Mas só vale em boot e menus (27% das passadas) |
+| Sem MW, sem ADX e sem stream (gerenciador `0x8C2DA958`) | sem efeito lógico (TN, CL, SL, quadro iguais). O controle só de tempo (`repetir3`) reproduz as outras diferenças (AICA no vídeo, SPG). Mas só vale em boot e menus (27% das passadas). **Correção (2026-10-16, depois do commit):** a diferença "AICA no vídeo" era defeito do artefato AUD (escritas do P4 contadas como áudio); com o AUD corrigido, as escritas na AICA são iguais. Ver a seção seguinte |
 
 **Testes:** `tools/dist/test_n2b.ps1` (S1–S4, B1–B9 com negativos; B7, B10 e B11 parciais).
 
@@ -1240,7 +1240,133 @@ o mesmo do N2a.
 **O que bloqueia o N2b-2:** relatório, seção 8. O principal é a ociosidade da thread 3 no
 gameplay.
 
+### N2b-2: investigação dos bloqueios (2026-10-16, sem commit)
+
+Pedido: eliminar os bloqueios do N2b-2 sem implementá-lo. Relatório: `docs/N2b-BLOQUEIOS.md`.
+Diagnósticos novos, desligados por padrão (precisam do build com mods):
+- `BS_CRI_DIAG=fluxo|pular5|repetir5|consumidor`;
+- `BS_CRI_FLUXO_LOG`, `BS_CRI_MEDIDORES`, `BS_CRI_SNAP_VB`;
+- `BS_AICA_MUTACAO`.
+
+**Thread 3 (CRI):**
+- `+48` do gerenciador de streams = "buffer cheio" (disassembly de `8C174888`..`8C174E16`).
+- Medição não invasiva (todos os artefatos iguais com e sem ela).
+- No gameplay, **nenhuma passada com trabalho**:
+  - área 1, 8 000 VBlanks: 90 650 com trabalho em 2 666 236, quase todas do vídeo;
+  - exploração, 16 000 VBlanks: o mesmo trabalho, nenhum nos 8 000 VBlanks a mais.
+- O stream ambiente (`E012BENV.WAV`) enche e para: sem o ARM7, nada o consome.
+- **Observador independente:** toda a RAM principal e a de som, em 6 janelas de 3 VBlanks (menu,
+  fim do vídeo, enchimento, gameplay da área e da exploração, gameplay com TMU parado).
+  - Uma passada ociosa sem evento só grava os medidores do TMU.
+  - Com o TMU parado por quadro (D7), não muda nada.
+- **Transições sem evento:** 7 contando só o início da passada; 1 contando também o meio dela
+  (consumo pelo relógio de software, TMU); **0 com o TMU parado por quadro** (D7).
+- **Bloqueio até o próximo evento** (`pular5`, área 1 com 8 000 VBlanks e exploração com 16 000,
+  build final): TN (sem normalização), IRQF, CL, SL, AUD e quadro iguais à referência.
+  - Com uma época de eventos incompleta (sem os eventos do Holly mascarados), a TN diferia numa
+    cessão de exclusão mútua `8C1588AA`.
+  - Essa cessão só existe com preempção no meio da passada. Ela é marcada causalmente
+    (`BS_CRI_CESSAO_LOG` na cessão `8C17DDCC`, PRs `8C1588C2` e `8C158854`) e fica como exceção
+    proposta.
+- Controle `repetir5`: tudo igual.
+- O S4 por VBlank é artefato de tempo: o controle já o muda.
+
+**Áudio:** o AUD do N2b-0 contava as escritas do P4 (`hwWrite` tenta a AICA antes do P4):
+- eram 424 M dos ~425 M; as escritas reais são 1 023 386;
+- corrigido, sem mudar a execução;
+- leituras da RAM de som numa coluna nova (`audrd`);
+- o oráculo fica igual em todos os experimentos e detecta os dois negativos (`BS_AICA_MUTACAO`):
+  escrita perdida e escrita registrada mas não aplicada;
+- o segundo negativo mostrou que **o estado do driver de som é entrada da lógica**: com o bloco de
+  estado em 0, a biblioteca manda comandos e o vídeo muda (8 447 leituras em vez de 7 750);
+- limitação: sem o ARM7, a biblioteca de som não manda comandos no gameplay (0 escritas).
+
+**B10:**
+- primitiva `bs::mods::wait`/`wait_end`/`poll` (unitário `n2b_mod_wait_primitive`);
+- `test_projeto` caso 4b: mod da espera do VBlank, com e sem a primitiva;
+- a falta de progresso agora sai na hora, com o trabalho de cada thread na janela e o PC onde ela
+  mais gastou. A regressão pegou duas versões erradas: a thread que cruzou o limite (a 3) e o
+  último PC (a cessão ao CRI no render).
+
+**B11** (classificação corrigida pela revisão: `0x8C1DD1C4` é contador lógico; os carimbos são
+lidos só para cópia):
+
+| Caso | Resultado |
+|---|---|
+| Medidores do CRI, legado × sombra | iguais |
+| TMU parado por quadro | lógica igual, medidores diferentes |
+| Consumidor artificial | detectado nas leituras |
+
+**D8:** a rota de 16 000 VBlanks não aumenta a janela máxima (17,2 M, entrada na área). Não há
+roteiro reproduzível com troca de sala ou save/load (uma tentativa às cegas falhou).
+
+**B4:** a sequência de eventos de lógica (71 790) é idêntica entre os provedores de arquivos.
+Muda só o VBlank em 4 cargas, mais 1 ciclo de atraso no boot. Proposta: D9(a) nos dois
+provedores no N2b-2.
+
+**Teste novo:** `tools/dist/test_cri.ps1` (C1–C5, A1, B11, com negativos).
+
+**Regressão definitiva** (2026-10-16, 14:45–16:25, em sequência, código congelado antes do
+início):
+
+| Suíte | Resultado |
+|---|---|
+| Builds Release, Debug e mods | ok |
+| Unitários | 211/211 |
+| `ctest` | 12/12, sem e com a imagem (`n0_fechamento` incluso) |
+| `make_builder`, `make_preview` | ok (Preview com o código desta etapa; backups intactos, incluindo `.n2b01-18a5cc2`) |
+| `test_preview` | 9/9 |
+| `test_gameplay` | 4/4 |
+| `test_builder` | 18/18 |
+| `test_projeto` (mods, B10) | 13/13 |
+| `test_arquivos` | 6/6 |
+| `test_ordem` | 8/8 |
+| `test_tempo` | 35/35 |
+| `test_n2b` | 44/44 (B9: 16,99 × 17,18 ms por campo) |
+| `test_cri` | 33/33 |
+
+As rodadas anteriores pegaram e corrigiram:
+- a catraca do N0 (`c->cycles` em `mods::poll`);
+- duas versões erradas da mensagem de falta de progresso.
+
+Elas foram interrompidas e repetidas do zero.
+
+**Catraca do N0:** a primeira versão de `bs::mods::poll` lia `c->cycles` à mão. O `n0_fechamento`
+acusou `tempo.consumidores.ciclos 0 → 1`. A função passou a usar `BS_CYCLES`/`BS_POLL`.
+
 ## Revisões independentes (Codex)
+
+### 2026-10-16: segunda e terceira revisões das correções. Relatórios em `reviews/codex-20261016-141648.md` e `reviews/codex-20261016-144322.md`
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] A TNC por intervalo da chamada a `8C1588AA` continuava temporal: o callback de VBlank pode trocar de thread dentro do intervalo | **Aceito** | Marcação causal: a cessão `8C17DDCC` mascara as interrupções e salta ao despachante, então o próximo evento é a troca pedida. Só os PRs `8C1588C2` e `8C158854` são marcados; o teste falha se uma marca não cair numa troca. Resultado: 8 marcas (referência) e 8 (bloqueio), todas trocas |
+| [MÉDIA] `0x8C1DD23C` (bandeira lógica) estava na faixa dos medidores | **Aceito** | Faixa `0x8C1DD1C8`–`0x8C1DD238` |
+| [MÉDIA] O negativo `registrada:` não exigia consequência de comportamento | **Aceito** | Exige leituras e ao menos um de TN, CL, SL, quadro diferentes (mudam os quatro) |
+| [BAIXA] "PC onde mais gastou" é atribuição por lote | **Aceito** | Mensagem: "maior lote em" |
+| [BAIXA] Captura de RAM com o TMU parado fora da regressão | **Aceito** | `fluxo_tq` com captura: zero mudanças sem evento e zero só nos medidores |
+| [BAIXA] (3ª) O teste não exigia marcas no bloqueio | **Aceito** | Exige quantidade igual à da referência |
+
+A terceira verificação confirmou no disassembly a premissa causal e os PRs.
+
+### 2026-10-16: investigação dos bloqueios do N2b-2 (thread 3, áudio, B10/B11, D8, B4). Relatório em `reviews/codex-20261016-105307.md`
+
+O Codex confirmou como corretos:
+- o `+48` e o fluxo do gerenciador de streams;
+- a mecânica de `8C1588AA`;
+- a correção do AUD;
+- `bs::mods::wait` contra `BS_WAIT`, e o mod do caso 4b contra `8C064A20`;
+- os contadores novos e a assinatura de `progress`.
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] A TNC removia qualquer par adjacente 0→3→0 sem provar a causa | **Aceito** | `BS_CRI_CESSAO_LOG`: intervalos do trace de cada chamada a `8C1588AA` com troca. A TNC remove só as trocas de dentro |
+| [MÉDIA] "Medidores e carimbos só escritos" era falso (`8C158A50` lê `0x8C1DD1C4`; `8C15886E`/`8C158884` leem 228/238) | **Aceito** | Confirmado no disassembly. `0x8C1DD1C4` (contador lógico) saiu da faixa dos medidores; 228/238 são lidos só para cópia em 224/230; a decisão em `8C158864` é pela bandeira lógica `0x8C1DD23C` |
+| [MÉDIA] C1 comparava projeções | **Aceito** | Arquivos brutos comparados: idênticos |
+| [MÉDIA] C2 circular, com tolerância e passando com 0 = 0 | **Aceito** | Sem tolerância (último trabalho = VBlank da última leitura); exige violações > 0 e eventos durante as passadas > 0; observador de RAM independente |
+| [MÉDIA] Prova pela RAM em duas janelas, com exclusão larga da pilha | **Aceito** | Toda a RAM principal e de som; exclusão só abaixo do SP da entrada; texto como evidência amostral |
+| [BAIXA] O negativo do AUD tirava a própria escrita do log | **Aceito** | Novo negativo de sensibilidade (escrita registrada, não aplicada), detectado pelas leituras |
+| [BAIXA] O GD-ROM faltava nos eventos de despertar | **Aceito** | Incluído |
 
 ### 2026-10-16: N2b-0/N2b-1 (lançador, modo sombra, diagnósticos, `test_n2b.ps1`). Relatório em `reviews/codex-20261016-002552.md`
 

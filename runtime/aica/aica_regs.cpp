@@ -84,6 +84,7 @@ struct RamStat {
     uint64_t reads = 0, writes = 0, firstCycle = 0, lastCycle = 0;
     uint32_t firstValue = 0, lastValue = 0, changes = 0;
     uint32_t readers[4] = {};  // funcoes SH-4 que leram (as 4 primeiras)
+    uint32_t writers[4] = {};  // funcoes SH-4 que escreveram (as 4 primeiras; BS_FN_ENTER)
 };
 uint32_t g_lastFn = 0;  // ultima funcao gerada que comecou (BS_FN_ENTER)
 uint32_t g_pr     = 0;  // PR no momento da leitura (retorno dentro de quem leu)
@@ -109,6 +110,22 @@ void traceReport() {
                      s.changes, (unsigned long long)s.firstCycle, (unsigned long long)s.lastCycle, s.readers[0],
                      s.readers[1], s.readers[2], s.readers[3]);
     }
+    // N2b (oraculo de audio): os mais escritos e quem escreve
+    std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second.writes > b.second.writes; });
+    std::fprintf(stderr, "[aica] mais escritos:\n");
+    for (size_t i = 0; i < v.size() && i < 40 && v[i].second.writes; ++i) {
+        const auto& [addr, s] = v[i];
+        std::fprintf(stderr, "[aica]   %08X escritas %llu (mudou %u vezes) valor %08X -> %08X funcoes %08X %08X %08X %08X\n",
+                     addr, (unsigned long long)s.writes, s.changes, s.firstValue, s.lastValue, s.writers[0],
+                     s.writers[1], s.writers[2], s.writers[3]);
+    }
+    // por faixa de 64 KB
+    std::map<uint32_t, std::pair<uint64_t, uint64_t>> pages;  // faixa -> (enderecos escritos, escritas)
+    for (const auto& [addr, s] : v)
+        if (s.writes) ++pages[addr >> 16].first, pages[addr >> 16].second += s.writes;
+    for (const auto& [pg, n] : pages)
+        std::fprintf(stderr, "[aica]   faixa %08X: %llu enderecos, %llu escritas\n", pg << 16,
+                     (unsigned long long)n.first, (unsigned long long)n.second);
 }
 void trace(bool write, uint32_t p, uint32_t v, uint64_t cycles, uint32_t pr) {
     static const bool on = std::getenv("BS_AICA_TRACE") != nullptr;
@@ -144,6 +161,12 @@ void trace(bool write, uint32_t p, uint32_t v, uint64_t cycles, uint32_t pr) {
         }
     }
     g_pr = pr;
+    if (write)
+        for (uint32_t& w : s.writers)
+            if (w == g_lastFn || !w) {
+                w = g_lastFn;
+                break;
+            }
     if (!write)
         for (uint32_t& r : s.readers)
             if (r == g_pr || !r) {
@@ -160,6 +183,7 @@ bool aica_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
         v = 0;
         std::memcpy(&v, &g_ram[p & (kAicaRamSize - 1)], size);
         trace(false, p, v, time_now(c), c->pr);
+        if (g_clock_log) clock_log_read(ClockRead::AudRd, p), clock_log_read(ClockRead::AudRd, v);
         return true;
     }
     if (p == kCtrl && size == 4) v = g_ctrl;
@@ -174,13 +198,31 @@ bool aica_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
 bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (inRam(p)) {
-        std::memcpy(&g_ram[p & (kAicaRamSize - 1)], &v, size);
+        // Negativos do oraculo de audio (so diagnostico), BS_AICA_MUTACAO:
+        //  <N>                a N-esima escrita da CPU na RAM de som se perde (e some do log: testa
+        //                     o comparador);
+        //  registrada:<hex>   a primeira escrita nesse endereco entra no log mas nao na RAM: so as
+        //                     leituras seguintes da CPU podem acusar (testa a sensibilidade).
+        static const char*    mut    = std::getenv("BS_AICA_MUTACAO");
+        static const bool     logged = mut && std::strncmp(mut, "registrada:", 11) == 0;
+        static const uint64_t lose   = mut && !logged ? std::strtoull(mut, nullptr, 10) : 0;
+        static uint32_t       target = logged ? uint32_t(std::strtoul(mut + 11, nullptr, 16)) & ~3u : 0;
+        static uint64_t       writes = 0;
+        if (lose && ++writes == lose) return true;
+        const bool skip = logged && target && (p & ~3u) == target;
+        if (skip) target = 0;  // so a primeira
+        if (!skip) std::memcpy(&g_ram[p & (kAicaRamSize - 1)], &v, size);
         trace(true, p, v, time_now(c), c->pr);
         if (g_clock_log) clock_log_read(ClockRead::Aud, p), clock_log_read(ClockRead::Aud, v);
         return true;
     }
+    // So registradores da AICA (0x00700000-0x0071FFFF) entram no artefato de audio: as escritas
+    // do P4 (INTC, TMU, store queues) passam por aqui antes dos seus handlers e nao sao audio
+    // (correcao 2026-10-16: antes eram 99,8% do AUD do N2b-0)
+    if (p < 0x00700000 || p >= 0x00720000) return false;
     if (size != 4) return false;
     if (g_clock_log) clock_log_read(ClockRead::Aud, p), clock_log_read(ClockRead::Aud, v);
+    trace(true, p, v, time_now(c), c->pr);  // diagnostico: registradores tambem (BS_AICA_TRACE)
     if (p == kCtrl) {
         if (std::getenv("BS_AICA_TRACE"))  // diagnostico: reset/liberacao do ARM7 (bit 0)
             std::fprintf(stderr, "[aica] controle 00702C00 = %08X (ARM7 %s; ciclo %llu, PR %08X, funcao %08X)\n", v,

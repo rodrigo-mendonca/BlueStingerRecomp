@@ -26,6 +26,8 @@ public:
 
 void gdrom_set_disc(std::unique_ptr<DiscSource> disc);
 void gdrom_reset();
+// Blocos de leitura entregues pelo tempo (diagnostico N2b: epoca de eventos do BS_CRI_DIAG).
+uint64_t gdrom_event_count();
 // Tempo das leituras por DMA: false = instantaneo, true = modelo do reios (oraculo). O
 // padrao vem de BS_GDROM_TIMING (instant | reios).
 void gdrom_set_timing(bool reios);

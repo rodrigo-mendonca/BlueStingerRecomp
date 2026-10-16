@@ -10,10 +10,10 @@
 #       VBlank). Precisa do build com mods (-ExeMods): sem ele, SKIP explicito
 #   B1..B9 comparadores (TN, IRQ, CL, CK, provedores de arquivos e fusao, timeout, SL, liveness,
 #       determinismo, desempenho) e uma mutacao por criterio que tem de ser detectada.
-#   Parciais (o resto fica para o N2b-2, docs/N2b-RELATORIO.md): B7 fila vazia -> deadlock so no
-#   teste unitario n2b_progress_decisions_at_wait; B10 = as demais suites (regressao), sem o caso
-#   "mod de funcao de espera"; B11 so a ordem logica com o TMU parado (sem os valores dos
-#   medidores do CRI e sem o consumidor artificial).
+#   Parciais aqui: B7 fila vazia -> deadlock so no teste unitario n2b_progress_decisions_at_wait.
+#   B10 (mod de funcao de espera) esta no test_projeto.ps1 (caso 4b); B11 completo (medidores do
+#   CRI, consumidor artificial) e a ociosidade da thread 3 estao no test_cri.ps1
+#   (docs/N2b-BLOQUEIOS.md).
 #   powershell -File tools/dist/test_n2b.ps1 [-Exe <exe>] [-ExeMods <exe com BS_MODS>] [-Data <data>]
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\BlueStinger.exe"),

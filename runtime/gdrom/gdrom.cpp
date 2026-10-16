@@ -148,9 +148,12 @@ void execute(Sh4Context* c) {
     g.status = kComplete;
 }
 
+uint64_t g_blocks = 0;  // blocos entregues pelo tempo (diagnostico N2b: epoca de eventos)
+
 // Leitura por DMA em blocos (perfil reios): copia os blocos cujo tempo ja passou.
 void advance(Sh4Context* c) {
     while (g.xferLeft && time_provider().disc_due(time_now(c))) {
+        ++g_blocks;
         const uint32_t k = g.xferLeft < 5 ? g.xferLeft : 5;
         if (!readSectors(c, g.xferFad, k, g.xferDest)) {
             g.xferLeft  = 0;
@@ -171,6 +174,8 @@ void advance(Sh4Context* c) {
 } // namespace
 
 void gdrom_set_disc(std::unique_ptr<DiscSource> disc) { g_disc = std::move(disc); }
+uint64_t gdrom_event_count() { return g_blocks; }
+
 void gdrom_reset() {
     g = {};
     time_provider().disc_cancel();

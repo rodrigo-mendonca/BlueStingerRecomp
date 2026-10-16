@@ -1,5 +1,7 @@
 #include "mods/mod_api.h"
 
+#include "cpu/sh4_gen.h"
+
 #include <algorithm>
 #include <set>
 #include <cstdio>
@@ -70,6 +72,20 @@ void call_original(uint32_t addr, Sh4Context* c) {
     if (!f) throw std::runtime_error("mods: nao ha funcao original no endereco pedido");
     f(c);
 }
+
+// As mesmas macros do codigo gerado (cpu/sh4_gen.h): o custo da volta e o poll sao a base de
+// progresso de sempre, nao um consumidor novo do contador de ciclos (catraca do N0/N2a).
+void poll(Sh4Context* c, uint32_t resume, uint32_t n) {
+    BS_CYCLES(n);
+    BS_POLL(resume);
+}
+
+void wait(Sh4Context* c, uint32_t pc, uint32_t resume, uint32_t n) {
+    BS_CYCLES(n);
+    BS_WAIT(pc, resume);
+}
+
+void wait_end(Sh4Context* c, uint32_t pc) { sh4_wait_end(c, pc); }
 
 void reset() {
     for (Slot& s : slots()) *s.slot = s.original;

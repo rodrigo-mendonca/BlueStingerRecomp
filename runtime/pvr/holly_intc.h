@@ -25,6 +25,9 @@ uint64_t holly_last_vblank_instant();
 // VBlank-In que chegaram com o bit de VBlank-In ainda aceso (nao reconhecido): o tratador ve um
 // so atendimento para dois campos (N2b, criterio B4; causa da diferenca de 2 VBlanks do N1).
 uint64_t holly_vblank_fused();
+// Eventos do Holly entregues (vencidos ou levantados), mesmo com a interrupcao mascarada:
+// diagnostico do N2b (epoca de eventos do BS_CRI_DIAG).
+uint64_t holly_event_count();
 
 // Nivel IRL pedido ao SH-4 (6, 4, 2 ou 0): maior nivel cujas mascaras IMLn
 // (NRM/EXT/ERR) tem algum bit pendente em ISTNRM/ISTEXT/ISTERR.

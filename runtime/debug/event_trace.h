@@ -26,5 +26,7 @@ void event_trace(TraceEvent e, uint64_t cycles, uint32_t a, uint32_t b = 0);
 void        event_trace_init(const std::string& path);  // vazio desliga
 bool        event_trace_flush();
 std::string event_trace_dump();  // testes
+// Eventos gravados ate agora (o proximo recebe este numero de sequencia; diagnostico N2b).
+uint64_t event_trace_count();
 
 } // namespace bs

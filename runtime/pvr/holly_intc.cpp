@@ -36,6 +36,7 @@ uint32_t  canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 
 uint64_t g_vblanks = 0;  // contagem de VBlank-In (trace de ordem)
 uint64_t g_vblankAt = 0;  // instante do ultimo VBlank-In entregue (diagnostico BS_TMU_DIAG)
+uint64_t g_events = 0;  // eventos do Holly entregues (diagnostico N2b: epoca, mesmo mascarados)
 uint64_t g_vblankFused = 0;  // VBlank-In com o bit ainda aceso: um atendimento para dois (N2b, B4)
 
 void update(uint64_t now) {
@@ -44,6 +45,7 @@ void update(uint64_t now) {
     // por ciclos; nativo: fila de eventos), entregues aqui como antes
     const uint32_t due      = time_provider().holly_due(now);
     const bool     vblankIn = due & kDueVblankIn;
+    if (due) ++g_events;
     if (vblankIn && (reg(kIstNrm) & kIstVblankIn)) ++g_vblankFused;
     if (vblankIn) reg(kIstNrm) |= kIstVblankIn;
     if (vblankIn) ++g_vblanks, g_vblankAt = now;
@@ -74,7 +76,11 @@ uint64_t holly_vblank_count() { return g_vblanks; }
 uint64_t holly_last_vblank_instant() { return g_vblankAt; }
 uint64_t holly_vblank_fused() { return g_vblankFused; }
 
-void holly_intc_raise(uint32_t bits) { reg(kIstNrm) |= bits; }
+void holly_intc_raise(uint32_t bits) {
+    reg(kIstNrm) |= bits;
+    ++g_events;
+}
+uint64_t holly_event_count() { return g_events; }
 
 uint32_t holly_irl_level(uint64_t cycles) {
     update(cycles);

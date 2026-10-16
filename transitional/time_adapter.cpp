@@ -14,6 +14,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace bs::transitional::time {
 namespace nt = bs::native::time;
@@ -136,15 +137,41 @@ public:
     }
 
     // ---- N2b-1: modo sombra. So observa; nada aqui muda a execucao. ----
-    void progress(uint32_t thread, uint64_t polls) override {
+    void progress(uint32_t thread, uint64_t polls, uint32_t pc) override {
         flushRepeats();
         const uint64_t units = polls >= lastPolls_ ? polls - lastPolls_ : polls;  // contexto novo: recomeca
         lastPolls_           = polls;
         progress_->work(nt::ContextId{thread + 1}, units);
+        if (thread < kMaxThreads && units) hot_[thread][pc] += units;  // lote desde o ultimo checkpoint, creditado ao PC dele
+        if (progress_->stalls() != lastStalls_) {
+            // D8 (modo sombra: aviso; no N2b-2, erro): a primeira falta, com o trabalho de cada
+            // thread na janela e o ultimo PC dela (a que cruzou o limite nao e necessariamente a
+            // culpada: no N2b-1 a thread 3 nunca passa por um ponto de espera)
+            if (!lastStalls_) {
+                std::string who;
+                for (const auto& [id, w] : progress_->window_by()) {
+                    const uint32_t t   = id - 1;
+                    uint32_t       top = 0;
+                    uint64_t       most = 0;
+                    if (t < kMaxThreads)
+                        for (const auto& [p, u] : hot_[t])
+                            if (u > most) most = u, top = p;
+                    char b[96];
+                    std::snprintf(b, sizeof b, "%sthread %u %llu (maior lote em %08X)", who.empty() ? "" : ", ", t, ull(w), top);
+                    who += b;
+                }
+                std::fprintf(stderr,
+                             "[progresso] falta de progresso: %llu pontos de poll sem chegar a um ponto de espera "
+                             "declarado (limite %llu); na janela: %s. Um laco de espera reescrito (mod) tem de "
+                             "usar bs::mods::wait() em cada volta\n",
+                             ull(progress_->window()), ull(stallUnits_), who.c_str());
+            }
+            lastStalls_ = progress_->stalls();
+        }
     }
     void wait_point(uint32_t pc, uint32_t thread, uint64_t polls) override {
         if (skipWait_ && pc == kVblankWaitPc) {  // mutacao: espera nao declarada
-            progress(thread, polls);
+            progress(thread, polls, pc);
             return;
         }
         // Volta repetida na mesma espera: so o poll da propria volta, sem evento entregue nem outro
@@ -154,15 +181,17 @@ public:
             ++repeats_;
             return;
         }
-        progress(thread, polls);
+        progress(thread, polls, pc);
         const nt::ProgressReport r = progress_->at_wait(nt::ContextId{thread + 1}, nt::WaitId{pc});
+        for (auto& h : hot_)
+            if (!h.empty()) h.clear();  // a janela fechou
         ++decisions_[static_cast<size_t>(r.decision)];
         repeatPc_       = pc;
         repeatThread_   = thread;
         repeatDecision_ = static_cast<size_t>(r.decision);
     }
     void wait_end(uint32_t pc, uint32_t thread, uint64_t polls) override {
-        progress(thread, polls);
+        progress(thread, polls, pc);
         if (skipWait_ && pc == kVblankWaitPc) return;
         progress_->wait_done(nt::ContextId{thread + 1}, nt::WaitId{pc});
     }
@@ -364,7 +393,9 @@ private:
     nt::EventQueue                       display_, disc_;
     nt::EventId                          vbIn_, vbOut_, render_, maple_, discEv_;
     std::unique_ptr<nt::ProgressMonitor> progress_;
-    uint64_t                             stallUnits_ = 0, lastPolls_ = 0;
+    uint64_t                             stallUnits_ = 0, lastPolls_ = 0, lastStalls_ = 0;
+    static constexpr uint32_t            kMaxThreads = 16;
+    std::unordered_map<uint32_t, uint64_t> hot_[kMaxThreads];  // por thread: trabalho da janela por PC (mensagem da D8)
     std::array<uint64_t, 3>              decisions_{};
     std::map<uint32_t, uint64_t>         frameTotals_;
     uint32_t                             repeatPc_ = 0, repeatThread_ = 0;  // ultima espera vista

@@ -124,7 +124,7 @@ void sh4_wait_end(Sh4Context* c, uint32_t pc) {
 
 void sh4_service(Sh4Context* c) {
     c->next_event = c->cycles + kServiceQuantum;
-    time_provider().progress(uint32_t(sh4_current_thread()), c->polls);
+    time_provider().progress(uint32_t(sh4_current_thread()), c->polls, c->pc);
     // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
     // sem depender de nova syscall (revisao Codex 2026-10-14)
     gdrom_poll(c);

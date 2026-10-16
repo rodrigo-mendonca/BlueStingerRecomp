@@ -9,7 +9,14 @@ Autorização do mantenedor: **só N2b-0 e N2b-1**.
 - D4: interface só de progresso e esperas.
 - D10: dependências por JSON ligadas.
 
-**N2b-2 não autorizado. Sem commit.**
+**N2b-2 não autorizado. Sem commit.** (Aprovado e commitado depois em `18a5cc2`.)
+
+> **Correções posteriores** (2026-10-16, `docs/N2b-BLOQUEIOS.md`):
+> - **Áudio.** As "escritas na AICA" deste relatório (seções 4 e 8, bloqueio 2) eram 99,8%
+>   escritas do P4 (store queues, TMU, INTC), que o `aica_reg_write` registrava antes de recusar.
+>   Com o artefato corrigido, as escritas reais na AICA são iguais em todos os experimentos. O
+>   áudio não depende do tempo de execução.
+> - **`+48`.** O campo `+48` das entradas de stream é "buffer cheio", não "pedido pendente".
 
 ## 1. Resumo
 

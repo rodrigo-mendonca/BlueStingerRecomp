@@ -44,7 +44,7 @@ void clock_log_init(const std::string& path) {
     s.f         = path.empty() ? nullptr : std::fopen(path.c_str(), "w");
     g_clock_log = s.f != nullptr;
     for (int i = 0; i < static_cast<int>(ClockRead::Count); ++i) s.n[i] = 0, s.h[i] = 0xCBF29CE484222325ull;
-    if (s.f) std::fprintf(s.f, "vblank\ttmu_n\ttmu_h\tspg_n\tspg_h\tmdst_n\tmdst_h\trtc_n\trtc_h\tist_n\tist_h\taud_n\taud_h\n");
+    if (s.f) std::fprintf(s.f, "vblank\ttmu_n\ttmu_h\tspg_n\tspg_h\tmdst_n\tmdst_h\trtc_n\trtc_h\tist_n\tist_h\taud_n\taud_h\taudrd_n\taudrd_h\n");
 }
 
 void clock_log_read(ClockRead kind, uint32_t value) {

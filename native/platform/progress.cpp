@@ -19,6 +19,7 @@ void ProgressMonitor::work(ContextId ctx, uint64_t units) {
         for (const auto& [id, w] : windowBy_)
             if (w > most) most = w, blamed = id;
         ++ctx_[blamed].stalls_blamed;
+        lastBlamed_ = ContextId{blamed};
         if (observer_) observer_({RecordKind::Stall, ContextId{blamed}, {}, clock_.now(), {}, window_});
     }
 }

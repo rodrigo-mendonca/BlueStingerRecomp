@@ -17,4 +17,7 @@ void sh4_irq_check(Sh4Context* c);
 bool sh4_intc_read(uint32_t a, unsigned size, uint32_t& v);
 bool sh4_intc_write(uint32_t a, unsigned size, uint32_t v);
 
+// Interrupcoes aceitas desde o inicio do processo (diagnostico N2b: epoca de eventos).
+uint64_t sh4_irq_taken_count();
+
 } // namespace bs
