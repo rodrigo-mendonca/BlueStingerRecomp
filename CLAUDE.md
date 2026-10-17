@@ -39,6 +39,11 @@ Ferramentas:
   `test_builder.ps1 -Disc <img.cdi>`, `test_projeto.ps1 -Disc <img.cdi>` (projeto editável e mods).
 - Diagnóstico do jogo: `bluestinger --headless N --dump-every K --capture <dir>` com
   `BS_INPUT_SCRIPT=tools/dist/roteiros/newgame_area1.txt`.
+- Gameplay assistido (só desenvolvimento, `app/assist.h`): `python tools/dev/assistido.py iniciar <pasta>`
+  e `... cmd <pasta> "pad UP" "passos 30" "quadro x"` (jogo pausado entre VBlanks, capturas PNG,
+  RAM, sessão gravada como roteiro `indice passo`); `tools/dev/assistido_ir.py` navega até (x, z).
+  Roteiros por passo de jogo valem igual nos dois modos de tempo: `tools/dist/test_assistido.ps1`
+  compara `--tempo nativo` e `experimental` (quadros, leituras, áudio, estado por passo).
 
 ## Revisão com Codex (revisor independente)
 

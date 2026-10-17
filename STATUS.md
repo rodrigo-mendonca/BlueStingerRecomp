@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`); P0/P1 e **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) sem commit: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. |
 
 ## Versão suportada
 
@@ -1454,7 +1454,7 @@ de desenvolvimento dentro de `dist/BlueStinger-Preview`. Ele vinha de uma execu�
 cobertura às 17:07. O log foi movido para `analysis/n2b/` e a regressão foi refeita do início.
 Os backups da Preview ficaram intactos.
 
-### N2b-2 experimental: tempo lógico sem ciclos estimados (2026-10-17, sem commit)
+### N2b-2 experimental: tempo lógico sem ciclos estimados (2026-10-17, commit `8bfa94e`)
 
 Autorização: N2b-2 **só experimental, atrás de opção** (`--tempo experimental`). O padrão continua
 `--tempo nativo`. Relatório: `docs/N2b2-RELATORIO.md`. Teste: `tools/dist/test_n2b2.ps1`.
@@ -1541,8 +1541,59 @@ A primeira tentativa parou no `n0_fechamento`, a catraca do `bs-hwscan`: `sh4_wa
 `next_event = cycles`, uma leitura direta de `c->cycles` em código novo do runtime. A correção usa
 `next_event = 0`, o mesmo idioma do fim do DMA do canal 2, com o mesmo efeito.
 
+### Gameplay assistido: cobertura além da área 1, estável x experimental (2026-10-17, sem commit)
+
+Relatório: `docs/N2b2-GAMEPLAY.md`. Teste: `tools/dist/test_assistido.ps1`.
+
+**Infraestrutura (só desenvolvimento, sem emulação):**
+- `BS_ASSISTIDO=<pasta>` com `--headless` (`app/assist.h`): o jogo pausa entre VBlanks e atende
+  comandos (`pad`, `passos`, `quadro`, `ram`, `dump`, `roteiro`...); a sessão vira um roteiro;
+- clientes `tools/dev/assistido.py` e `assistido_ir.py` (navegação até um ponto);
+- roteiros indexados pelo **passo de jogo** (saídas da espera `8C064A2C`, uma por volta do laço
+  principal), que valem igual nos dois modos de tempo; o índice por leitura do controle explicava o
+  −26 do N2b-2 e um deslocamento de 6 passos já no START do título;
+- `BS_STATE_PASSO` (estado lógico por passo) e coluna `passo` no `BS_FRAME_LOG`;
+- `tools/dev/compara_modos.py`: comparação por passo.
+
+**Alcançado:** 4 salas (`RCG00`, `RCG00A`, `RCG02`, `RCG03`), movimentação e câmera, portas
+(evento, painel, porta trancada), menu e inventário, item encontrado e usado, combate com dano nos
+dois lados, morte e GAME OVER, cenas e rádio, LOAD GAME e OPTIONS (sem VMU: "A VMU is not inserted").
+
+**`test_assistido.ps1`: 28 casos, 0 falhas.** 4 roteiros, até 14 328 passos (29 mil VBlanks): quadros no fim de cada
+passo, leituras, escritas na AICA (sem as cópias de guarda) e estado lógico a cada 10 passos
+**iguais nos dois modos**; o negativo (entradas atrasadas 3 passos) é acusado. As únicas
+diferenças são de tempo: boot (33 × 4 VBlanks), cargas de sala (5–9 × 2), vídeos (até +10).
+
+**Verificado à parte:** sessão ao vivo = reprodução da `sessao.txt` (quadros linha a linha);
+nenhuma espera nova nem registrador sem modelo novo nas áreas novas.
+
+**Bloqueios:** porta C01 exige cartão de ID; monstro do heliporto não derrotado desarmado.
+
+**Regressão completa** (2026-10-17, 11:23–13:38, sequencial), toda verde: builds release, debug,
+mods e investigação; 213 unitários; ctest sem e com o disco 100%; `make_builder` e `make_preview`;
+`test_preview` 9/0, `test_gameplay` 4/0, `test_builder` 18/0, `test_projeto` 13/0, `test_arquivos`
+6/0, `test_ordem` 8/0, `test_tempo` 35/0, `test_n2b` 44/0, `test_cri` 33/0, `test_efeito` 17/0,
+`test_n2b2` 17/0 (2 SKIP declarados; N11: estável byte a byte igual ao executável anterior ao
+N2b-2), `test_assistido` 28/0.
+
 
 ## Revisões independentes (Codex)
+
+### 2026-10-17: gameplay assistido e comparação por passo. Relatório em `reviews/codex-20261017-110130.md`
+
+| Achado | Decisão |
+|---|---|
+| [MÉDIA] `pad` depois de um `roteiro` com entradas futuras era adiado até a última entrada e a substituía | **Aceito.** `pad` recusado enquanto houver entradas futuras (erro com o passo); caso A8b. Nenhuma sessão gravada caiu no caso |
+| [MÉDIA] A1/A4 comparavam só a interseção dos passos: um buraco num log passaria | **Aceito.** Todos os passos da faixa e todas as amostras múltiplas do intervalo são exigidos; negativo A6b (passo removido de um log) |
+| [BAIXA] cargas de sala no mesmo passo só eram impressas | **Aceito.** Veredito `cargas` (passo, arquivo), caso A7 |
+| [BAIXA] `pad_state_text` não é sem perda para valores intermediários | **Aceito.** Contrato restrito ao subconjunto digital (documentado em `input.h` e no unitário) |
+| Não verificado: sessão ao vivo = reprodução sem prova automatizada | **Aceito.** Caso A8 (sessão ao vivo pelo cliente e reprodução da `sessao.txt`, quadros VBlank a VBlank) |
+| Não verificado: deslocamento 6 e endereços de RAM só como afirmação | Método documentado em `docs/N2b2-GAMEPLAY.md` (1.2, 1.4); endereços só de diagnóstico |
+
+Verificado pelo Codex sem problema: o passo de jogo está na saída da espera (`bt 8C064A26` em
+`8C064A2C`, único chamador `8C078664` no laço principal); o contador conta nos dois modos sem mudar a
+ordem de `progress()`/`wait_done()`; roteiros antigos continuam por leitura; `Assist` só existe com
+`BS_ASSISTIDO` e headless; nada de emulação em `assist.cpp`.
 
 ### 2026-10-17: N2b-2 experimental, duas rodadas. Relatórios em `reviews/codex-20261017-015745.md` e `-024221.md`
 

@@ -57,6 +57,15 @@ struct GameOptions {
     std::function<void(Sh4Context&)> prepare;
     bool     realtime    = true;  // segura o jogo em 59,94 VBlanks por segundo
     uint64_t vblankLimit = 0;     // > 0: para sozinho depois desses VBlanks (headless)
+    // Desenvolvimento (gameplay assistido, app/assist.h): chamado na thread do jogo a cada VBlank,
+    // depois do quadro exibido. Pode bloquear (pausa entre VBlanks, sem mudar o jogo); devolve
+    // false para encerrar. `ram`: os 16 MB da RAM do guest, so leitura.
+    struct VblankView {
+        uint64_t         vblank, step, reads;  // VBlank, passo de jogo, leituras do controle (porta 0)
+        const GameFrame& frame;
+        const uint8_t*   ram;
+    };
+    std::function<bool(const VblankView&)> vblankHook;
 };
 
 class GameHost {

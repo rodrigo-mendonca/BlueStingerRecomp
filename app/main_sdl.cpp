@@ -12,6 +12,7 @@
 // %LOCALAPPDATA%\BlueStingerRecomp).
 #include "boot/native_boot.h"
 #include "runtime_data.h"
+#include "assist.h"
 #include "bs_version.h"
 #include "disc/disc_image.h"
 #include "funcs.h"
@@ -433,9 +434,20 @@ int mainHeadless(Args& a) {
         std::fprintf(stderr, "erro: %s\n", err.c_str());
         return 1;
     }
-    setupInput(a);
+    // desenvolvimento: gameplay assistido (app/assist.h); a entrada vem so dos comandos
+    std::unique_ptr<bs::Assist> assist;
+    if (const wchar_t* dir = _wgetenv(L"BS_ASSISTIDO"); dir && *dir) {
+        if (std::getenv("BS_INPUT_SCRIPT")) throw std::runtime_error("BS_ASSISTIDO e BS_INPUT_SCRIPT sao exclusivos");
+        auto  live = bs::make_live_script_input();
+        auto* in   = live.get();
+        bs::input_set_source(std::move(live));
+        assist = std::make_unique<bs::Assist>(fs::path(dir), in);
+    }
+    else setupInput(a);
+    bs::GameOptions opt = gameOptions(a);
+    if (assist) opt.vblankHook = [&assist](const bs::GameOptions::VblankView& v) { return assist->onVblank(v); };
     bs::GameHost host;
-    host.start(gameOptions(a));
+    host.start(std::move(opt));
     const int rc = runHeadless(host, a);
     host.requestStop();
     host.join();
@@ -459,6 +471,10 @@ int mainVerifyData(const Args& a) {
 }
 
 int mainWindow(Args& a) {
+    if (const wchar_t* dir = _wgetenv(L"BS_ASSISTIDO"); dir && *dir) {
+        std::fprintf(stderr, "erro: BS_ASSISTIDO exige --headless\n");
+        return 2;
+    }
     // dados validados antes de abrir a janela: sem eles, so a mensagem
     std::string err;
     if (!validateData(a.gameData, a.files, err)) {

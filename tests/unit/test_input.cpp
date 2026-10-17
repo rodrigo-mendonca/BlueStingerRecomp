@@ -55,6 +55,42 @@ BS_TEST(input_script_and_keymap_errors) {
     BS_CHECK(!throws([] { make_keyboard_input("START = SPACE\nA = F1\nLT = 1\n"); }));
 }
 
+// Roteiro "indice passo" (gameplay assistido): o estado vem do passo de jogo informado pelo host,
+// nao do numero da leitura; gatilhos e analogico por nome; texto <-> estado sem perda.
+namespace {
+uint64_t g_testStep = 0;
+}
+BS_TEST(input_script_indexed_by_game_step) {
+    auto s = make_scripted_input("indice passo\n10 START\n12 UP+RT+ANALOG_LEFT\n14 -\n");
+    BS_CHECK(throws([&] { s->read(0, 0); }));  // sem contador de passos: erro, nunca o indice de leitura
+    input_set_step_counter([] { return g_testStep; });
+    g_testStep = 9;
+    BS_CHECK(s->read(0, 500).buttons == 0);  // o numero da leitura nao importa
+    g_testStep = 10;
+    BS_CHECK(s->read(0, 0).buttons == kPadStart);
+    g_testStep = 13;
+    const PadState m = s->read(0, 7);
+    BS_CHECK(m.buttons == kPadUp && m.rtrig == 255 && m.ltrig == 0 && m.joyx == 0 && m.joyy == 0x80);
+    g_testStep = 14;
+    BS_CHECK(s->read(0, 7).buttons == 0);
+    // roteiro ao vivo: mesma semantica; o mesmo passo substitui, passo anterior e erro
+    auto live = make_live_script_input();
+    live->push(5, pad_state_from_text("A"));
+    live->push(5, pad_state_from_text("B"));
+    BS_CHECK(throws([&] { live->push(4, {}); }));
+    g_testStep = 4;
+    BS_CHECK(live->read(0, 0).buttons == 0);
+    g_testStep = 5;
+    BS_CHECK(live->read(0, 0).buttons == kPadB);
+    input_set_step_counter(nullptr);
+    // texto <-> estado (subconjunto digital: gatilhos e analogico so nos extremos)
+    BS_CHECK(pad_state_text(pad_state_from_text("up+a+LT+ANALOG_DOWN")) == "A+UP+LT+ANALOG_DOWN");
+    BS_CHECK(pad_state_text(pad_state_from_text("-")) == "-");
+    BS_CHECK(throws([] { pad_state_from_text("TURBO"); }));
+    BS_CHECK(throws([] { make_scripted_input("5 A\nindice passo\n"); }));  // indice depois dos passos
+    BS_CHECK(throws([] { make_scripted_input("indice vblank\n"); }));
+}
+
 // O Maple pede a condicao do controle da porta A: com roteiro, a 2a leitura (seq 1) ja
 // ve START apertado (bit 3 em 0 no barramento, que e ativo em 0).
 BS_TEST(input_script_drives_maple_get_condition) {

@@ -1,0 +1,29 @@
+# Gameplay assistido, indice por passo de jogo. Titulo: LOAD GAME (sem VMU: "A VMU is not
+# inserted") e OPTIONS (dificuldade, audio).
+indice passo
+1 START
+4 -
+602 START
+605 -
+802 START
+805 -
+1001 DOWN
+1003 -
+1013 START
+1016 -
+1196 START
+1199 -
+1239 DOWN
+1241 -
+1251 START
+1254 -
+1434 A
+1437 -
+1597 A
+1600 -
+1660 B
+1663 -
+1703 DOWN
+1705 -
+1715 A
+1718 -

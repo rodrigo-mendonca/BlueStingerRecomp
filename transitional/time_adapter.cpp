@@ -36,6 +36,9 @@ constexpr uint64_t kMutationRender = 500;  // "render_perdido": o 500o fim de re
 constexpr uint32_t kVblankWaitPc  = 0x8C064A2C;  // "sem_espera": espera do VBlank do jogo
 constexpr uint32_t kRenderWaitPc  = 0x8C173086;  // espera do fim do render anterior (timeout 166 ms)
 constexpr uint64_t kWindowReport  = 100000;      // BS_PROGRESS_TRACE: janelas a partir daqui (calibracao D8)
+// Observador de passos de jogo (diagnostico do host: estado logico por passo, BS_STATE_PASSO)
+void (*g_stepObserver)(uint64_t step, void* ctx) = nullptr;
+void* g_stepCtx = nullptr;
 
 // N2b-2 (--tempo experimental): o que libera cada ponto de espera declarado ([native] esperas no
 // config; inventario em docs/N2b-ESPERAS.md). Ponto nao listado (p.ex. bs::mods::wait num mod) e
@@ -269,6 +272,10 @@ public:
     void wait_end(uint32_t pc, uint32_t thread, uint64_t polls) override {
         const WaitDecl* d = findWait(pc);
         if (!exp_ && d && d->n2b2) return;  // modo estavel: as esperas do N2b-2 nao existem
+        if (pc == kVblankWaitPc) {
+            ++stats.gameSteps;
+            if (g_stepObserver) g_stepObserver(stats.gameSteps, g_stepCtx);
+        }
         progress(thread, polls, pc);
         if (skipWait_ && pc == kVblankWaitPc) return;
         progress_->wait_done(nt::ContextId{thread + 1}, nt::WaitId{pc});
@@ -647,6 +654,13 @@ void uninstall() {
 bool installed() { return g_native != nullptr; }
 
 Stats stats() { return g_native ? g_native->stats : g_lastStats; }
+
+uint64_t game_steps() { return g_native ? g_native->stats.gameSteps : g_lastStats.gameSteps; }
+
+void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx) {
+    g_stepObserver = fn;
+    g_stepCtx      = ctx;
+}
 
 std::string progress_summary() { return g_native ? g_native->progress_summary() : g_lastProgress; }
 

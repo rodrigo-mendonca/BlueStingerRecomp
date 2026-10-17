@@ -1,5 +1,5 @@
 # Nucleo do executavel (sem janela): execucao do jogo numa thread, ritmo e quadros.
-add_library(bs_app_core STATIC game_host.cpp)
+add_library(bs_app_core STATIC game_host.cpp assist.cpp)
 target_include_directories(bs_app_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(bs_app_core PUBLIC bs_runtime bs_transitional)
 

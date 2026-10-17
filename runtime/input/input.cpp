@@ -22,6 +22,7 @@ namespace bs {
 namespace {
 
 std::unique_ptr<InputSource> g_source;
+uint64_t (*g_stepCounter)() = nullptr;
 
 std::string upper(std::string s) {
     for (char& ch : s) ch = char(std::toupper(static_cast<unsigned char>(ch)));
@@ -36,18 +37,25 @@ std::string trim(const std::string& s) {
 
 // --- roteiro ---
 
-class Scripted : public InputSource {
+class Scripted : public LiveScriptInput {
 public:
-    std::vector<std::pair<uint64_t, PadState>> steps;  // ordenado por seq
+    std::vector<std::pair<uint64_t, PadState>> steps;  // ordenado pelo indice
+    bool                                       byStep = false;  // indice: passo de jogo (senao leitura)
 
     PadState read(int port, uint64_t seq) override {
         if (port != 0) return {};
-        PadState s;
-        for (const auto& [at, st] : steps) {
-            if (at > seq) break;
+        const uint64_t at = byStep ? input_step() : seq;
+        PadState       s;
+        for (const auto& [from, st] : steps) {
+            if (from > at) break;
             s = st;
         }
         return s;
+    }
+    void push(uint64_t step, const PadState& s) override {
+        if (!steps.empty() && step < steps.back().first) throw std::runtime_error("roteiro ao vivo: passo fora de ordem");
+        if (!steps.empty() && step == steps.back().first) steps.back().second = s;
+        else steps.push_back({step, s});
     }
 };
 
@@ -236,6 +244,34 @@ uint16_t pad_button_from_name(const std::string& name) {
     return it == names.end() ? 0 : it->second;
 }
 
+PadState pad_state_from_text(const std::string& text) {
+    if (text == "-") return {};
+    uint32_t           act = 0;
+    std::istringstream bs(text);
+    std::string        b;
+    while (std::getline(bs, b, '+')) {
+        const uint32_t a = actionFromName(upper(b));
+        if (!a) throw std::runtime_error("botao " + b);
+        act |= a;
+    }
+    return stateFromActions(act);
+}
+
+std::string pad_state_text(const PadState& s) {
+    static const char* const kNames[] = {"C", "B", "A", "START", "UP", "DOWN", "LEFT", "RIGHT", "Z", "Y", "X", "D"};
+    std::string out;
+    auto        add = [&](const char* n) { out += (out.empty() ? "" : "+") + std::string(n); };
+    for (int i = 0; i < 12; ++i)
+        if (s.buttons & (1u << i)) add(kNames[i]);
+    if (s.ltrig) add("LT");
+    if (s.rtrig) add("RT");
+    if (s.joyy < 0x80) add("ANALOG_UP");
+    if (s.joyy > 0x80) add("ANALOG_DOWN");
+    if (s.joyx < 0x80) add("ANALOG_LEFT");
+    if (s.joyx > 0x80) add("ANALOG_RIGHT");
+    return out.empty() ? "-" : out;
+}
+
 std::unique_ptr<InputSource> make_scripted_input(const std::string& text) {
     auto               s = std::make_unique<Scripted>();
     std::istringstream in(text);
@@ -246,24 +282,44 @@ std::unique_ptr<InputSource> make_scripted_input(const std::string& text) {
         line = trim(line.substr(0, line.find('#')));
         if (line.empty()) continue;
         std::istringstream ls(line);
-        uint64_t           seq = 0;
-        std::string        btns;
-        if (!(ls >> seq >> btns)) throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n));
+        std::string        first, btns;
+        ls >> first;
+        if (first == "indice") {
+            std::string kind;
+            ls >> kind;
+            if (!s->steps.empty() || (kind != "passo" && kind != "leitura"))
+                throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) + ": indice passo|leitura, antes dos passos");
+            s->byStep = kind == "passo";
+            continue;
+        }
+        char*          end = nullptr;
+        const uint64_t seq = std::strtoull(first.c_str(), &end, 10);
+        if (first.empty() || *end || !(ls >> btns)) throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n));
         PadState st;
-        if (btns != "-") {
-            std::istringstream bs(btns);
-            std::string        b;
-            while (std::getline(bs, b, '+')) {
-                const uint16_t bit = pad_button_from_name(b);
-                if (!bit) throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) + ": botao " + b);
-                st.buttons |= bit;
-            }
+        try {
+            st = pad_state_from_text(btns);
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) + ": " + e.what());
         }
         if (!s->steps.empty() && seq < s->steps.back().first)
             throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) + ": fora de ordem");
         s->steps.push_back({seq, st});
     }
     return s;
+}
+
+std::unique_ptr<LiveScriptInput> make_live_script_input() {
+    auto s    = std::make_unique<Scripted>();
+    s->byStep = true;
+    return s;
+}
+
+void input_set_step_counter(uint64_t (*fn)()) { g_stepCounter = fn; }
+
+uint64_t input_step() {
+    if (!g_stepCounter)
+        throw std::runtime_error("roteiro indexado por passo de jogo exige o provedor de tempo nativo ou experimental");
+    return g_stepCounter();
 }
 
 std::unique_ptr<InputSource> make_keyboard_input(const std::string& mapping) {

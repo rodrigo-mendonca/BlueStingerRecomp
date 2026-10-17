@@ -69,9 +69,18 @@ struct Stats {
     uint64_t                posted = 0, cancelled = 0;
     uint64_t                clockRegressions = 0;  // instante de compatibilidade menor que o relogio
     uint64_t                vblankCollapsed  = 0;  // dois VBlank-In entregues no mesmo atendimento (B4)
+    // Passos de jogo: saidas da espera do VBlank do jogo (8C064A2C), uma por volta do laco
+    // principal. Indice dos roteiros de entrada portateis entre modos de tempo (gameplay
+    // assistido): ao contrario das leituras do controle, nao conta as cargas.
+    uint64_t gameSteps = 0;
 };
 Stats stats();
 // N2b-1: resumo do monitor de progresso (esperas, decisoes, janelas, faltas de progresso).
 std::string progress_summary();
+// Passos de jogo ate agora (Stats::gameSteps, sem copiar as estatisticas); 0 sem provedor.
+uint64_t game_steps();
+// Diagnostico: chamado na thread do jogo a cada passo de jogo, na saida da espera do VBlank do
+// jogo (ponto logico igual nos dois modos de tempo). nullptr desliga.
+void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx);
 
 } // namespace bs::transitional::time

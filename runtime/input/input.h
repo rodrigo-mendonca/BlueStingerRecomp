@@ -45,9 +45,33 @@ public:
 uint16_t pad_button_from_name(const std::string& name);
 
 // Roteiro deterministico: linhas "<seq> <botoes|->" (p.ex. "600 START", "610 -"); o
-// estado vale a partir daquela leitura ate a proxima linha. Botoes separados por '+'.
+// estado vale a partir daquela leitura ate a proxima linha. Botoes separados por '+'; alem
+// dos botoes, LT, RT (gatilhos no fundo) e ANALOG_UP/DOWN/LEFT/RIGHT (analogico no limite).
 // Comentarios com '#'. Lanca std::runtime_error com a linha em caso de erro.
+// Indice: por padrao, o numero da leitura do controle. A linha "indice passo" (antes dos
+// passos) troca para o passo de jogo (input_step): um roteiro por passo vale igual nos modos
+// de tempo, porque as cargas nao contam passos (o estavel le o controle mais vezes nelas).
 std::unique_ptr<InputSource> make_scripted_input(const std::string& text);
+
+// Estado <-> texto do roteiro ("UP+A+RT", "-"). Lanca std::runtime_error para nome invalido.
+// So o subconjunto digital: gatilhos no fundo ou soltos, analogico no centro ou no limite. Um
+// estado com valor intermediario (vindo de um controle real) vira o extremo do mesmo lado no texto.
+PadState    pad_state_from_text(const std::string& text);
+std::string pad_state_text(const PadState& s);
+
+// Roteiro alimentado durante a execucao (gameplay assistido, so desenvolvimento): o estado
+// vale a partir do passo de jogo `step`. Mesma semantica de um roteiro "indice passo", entao a
+// sessao gravada se reproduz exatamente.
+class LiveScriptInput : public InputSource {
+public:
+    virtual void push(uint64_t step, const PadState& s) = 0;
+};
+std::unique_ptr<LiveScriptInput> make_live_script_input();
+
+// Passo de jogo (voltas do laco principal; o host informa o contador do provedor de tempo).
+// Sem contador, input_step() lanca: roteiros por passo exigem --tempo nativo ou experimental.
+void     input_set_step_counter(uint64_t (*fn)());
+uint64_t input_step();
 
 // Teclado do Windows (GetAsyncKeyState) com mapeamento "BOTAO = TECLA" por linha (teclas:
 // letras, digitos, ENTER, SPACE, ESC, TAB, SHIFT, CTRL, UP, DOWN, LEFT, RIGHT, F1..F12).

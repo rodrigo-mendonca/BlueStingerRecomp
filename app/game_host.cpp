@@ -10,6 +10,7 @@
 #include "debug/call_trace.h"
 #include "debug/cri_diag.h"
 #include "gdfs_adapter.h"
+#include "input/input.h"
 #include "time_adapter.h"
 #include "cri_idle.h"
 #include "mods/mod_api.h"
@@ -55,6 +56,28 @@ uint32_t rtcAtBoot() {
 bool traceOn() {
     static const bool on = std::getenv("BS_APP_TRACE") != nullptr;
     return on;
+}
+
+// Diagnostico BS_STATE_PASSO (ver threadMain): estado logico no inicio de cada passo de jogo.
+struct StepLog {
+    FILE*           f     = nullptr;
+    uint64_t        every = 10;
+    const uint8_t*  ram   = nullptr;
+    const GameHost* host  = nullptr;
+} g_stepLog;
+
+void stepLogWrite(uint64_t step, void*) {
+    if (!g_stepLog.f || step % g_stepLog.every) return;
+    const uint8_t* ram = g_stepLog.ram;
+    uint64_t       h   = 0xCBF29CE484222325ull;
+    for (uint32_t a = 0x240000; a < 0x260000; ++a) h = (h ^ ram[a]) * 0x100000001B3ull;
+    int16_t life;
+    float   p[3];
+    std::memcpy(&life, ram + 0x24FBCC, 2);
+    std::memcpy(p, ram + 0x24D668, 12);
+    std::fprintf(g_stepLog.f, "%llu\t%llu\t%016llX\t%d\t%.3f\t%.3f\t%.3f\n", static_cast<unsigned long long>(step),
+                 static_cast<unsigned long long>(g_stepLog.host->vblanks()), static_cast<unsigned long long>(h), life, p[0],
+                 p[1], p[2]);
 }
 
 // Periodo de um campo NTSC: 1001 / 60000 s (59,94 Hz).
@@ -171,14 +194,16 @@ void GameHost::vblank() {
     static FILE* frameLog = [] {
         const char* v = std::getenv("BS_FRAME_LOG");
         FILE*       f = v && *v ? std::fopen(v, "w") : nullptr;
-        if (f) std::fprintf(f, "vblank\tquadro\tentrada\n");  // entrada: leituras do controle (indice do roteiro)
+        // entrada: leituras do controle (indice do roteiro); passo: voltas do laco principal do jogo
+        if (f) std::fprintf(f, "vblank\tquadro\tentrada\tpasso\n");
         return f;
     }();
     if (frameLog) {
         uint64_t h = 0xCBF29CE484222325ull ^ (uint64_t(scratch_.width) << 32 | scratch_.height);
         for (uint32_t px : scratch_.argb) h = (h ^ px) * 0x100000001B3ull;
-        std::fprintf(frameLog, "%llu\t%016llX\t%llu\n", static_cast<unsigned long long>(n), static_cast<unsigned long long>(h),
-                     static_cast<unsigned long long>(maple_cond_seq(0)));
+        std::fprintf(frameLog, "%llu\t%016llX\t%llu\t%llu\n", static_cast<unsigned long long>(n),
+                     static_cast<unsigned long long>(h), static_cast<unsigned long long>(maple_cond_seq(0)),
+                     static_cast<unsigned long long>(transitional::time::game_steps()));
         if (n % 250 == 0) std::fflush(frameLog);
     }
     {
@@ -186,6 +211,9 @@ void GameHost::vblank() {
         std::swap(frame_, scratch_);
         ++frameSeq_;
     }
+    if (opt_.vblankHook &&
+        !opt_.vblankHook({n, transitional::time::game_steps(), maple_cond_seq(0), frame_, ram_}))
+        stop_.store(true);
     if (stop_.load() || (opt_.vblankLimit && n >= opt_.vblankLimit)) {
         if (traceOn()) std::fprintf(stderr, "[host] parada vista no VBlank %llu\n", (unsigned long long)n);
         throw StopRequest{};
@@ -251,6 +279,22 @@ void GameHost::threadMain() {
             if (const char* v = std::getenv("BS_PROGRESSO_LIMITE")) to.stall_units = std::strtoull(v, nullptr, 10);
             else to.stall_units = transitional::time::kDefaultStallUnits;
             transitional::time::install(to);
+            input_set_step_counter([] { return transitional::time::game_steps(); });  // roteiros por passo
+            // Diagnostico (gameplay assistido): BS_STATE_PASSO=<arquivo> grava a cada BS_STATE_PASSO_CADA
+            // passos de jogo (padrao 10), no inicio do passo, o hash da regiao de variaveis do jogo
+            // (0x8C240000-0x8C25FFFF), a vida do Eliot (int16 em 0x8C24FBCC) e a posicao dele (floats em
+            // 0x8C24D668). Comparavel entre modos de tempo passo a passo (tools/dev/compara_modos.py).
+            if (const char* v = std::getenv("BS_STATE_PASSO"); v && *v) {
+                g_stepLog.f = std::fopen(v, "w");
+                if (!g_stepLog.f) throw std::runtime_error(std::string("BS_STATE_PASSO: nao abre ") + v);
+                g_stepLog.every = 10;
+                if (const char* k = std::getenv("BS_STATE_PASSO_CADA"))
+                    g_stepLog.every = std::max<uint64_t>(1, std::strtoull(k, nullptr, 10));
+                g_stepLog.ram  = c.ram;
+                g_stepLog.host = this;
+                std::fprintf(g_stepLog.f, "passo\tvblank\testado\tvida\tx\ty\tz\n");
+                transitional::time::set_step_observer(&stepLogWrite, nullptr);
+            }
         }
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);
@@ -282,6 +326,9 @@ void GameHost::threadMain() {
     // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
     std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
     if (transitional::time::installed()) {
+        input_set_step_counter(nullptr);
+        transitional::time::set_step_observer(nullptr, nullptr);
+        if (g_stepLog.f) std::fclose(g_stepLog.f), g_stepLog.f = nullptr;
         transitional::time::uninstall();
         std::fputs(transitional::time::progress_summary().c_str(), stderr);
         const auto s = transitional::time::stats();
