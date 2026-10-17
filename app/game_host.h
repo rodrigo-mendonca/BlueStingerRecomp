@@ -39,8 +39,10 @@ struct GameStats {
 enum class FilesProvider { Native, Legacy };
 
 // Provedor de tempo e eventos (N2a, docs/N2-PLANO.md): nativo (padrao) = relogio logico e fila
-// de eventos de native/; legado = calculo preguicoso por ciclos (referencia e rollback).
-enum class TimeProviderKind { Native, Legacy };
+// de eventos de native/; legado = calculo preguicoso por ciclos (referencia e rollback);
+// experimental (N2b-2, docs/N2b2-RELATORIO.md) = o tempo logico deixa de vir dos ciclos e so anda
+// nos pontos de espera, ate o proximo evento. O padrao continua nativo.
+enum class TimeProviderKind { Native, Legacy, Experimental };
 
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI

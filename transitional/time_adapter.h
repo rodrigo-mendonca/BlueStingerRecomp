@@ -37,6 +37,18 @@ struct Options {
     // D8: limite da janela de trabalho sem espera (pontos de controle); 0 = so mede. Em modo
     // sombra a falta de progresso so e registrada; nunca muda a execucao.
     uint64_t stall_units = 0;
+    // N2b-2 (--tempo experimental, docs/N2b2-RELATORIO.md): o instante logico deixa de vir dos
+    // ciclos estimados. Ele so anda quando o contexto corrente chega a um ponto de espera
+    // declarado, e so ate o proximo evento real (fila do Holly e do GD-ROM; nas esperas que leem
+    // o SPG, a proxima mudanca de linha). TMU, SPG, MDST e RTC leem esse instante (D7). Falta de
+    // progresso e fila vazia numa espera sao erros com threads, PCs e pontos de espera.
+    // Mutacoes exclusivas (negativos): "cri_ignora_ram" (o detector da thread 3 nao olha a RAM) e
+    // "cri_nunca_ocioso" (a thread 3 nunca bloqueia: a guarda de progresso tem de pegar) e
+    // "cri_sempre_ocioso" (bloqueia depois de toda passada, mesmo com trabalho: o video atrasa).
+    bool experimental = false;
+    // RAM do guest com rastreamento de escrita (cri::alloc_watched_ram), para a ociosidade da
+    // thread 3. Obrigatoria no modo experimental.
+    uint8_t* ram = nullptr;
 };
 
 // D8: limite padrao da janela de trabalho sem espera (pontos de controle), calibrado no N2b-1

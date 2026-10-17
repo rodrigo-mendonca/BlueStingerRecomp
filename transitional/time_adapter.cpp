@@ -1,5 +1,7 @@
 #include "time_adapter.h"
 
+#include "cri_idle.h"
+
 #include "cpu/time_hooks.h"
 #include "platform/clock.h"
 #include "platform/event_queue.h"
@@ -14,6 +16,9 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <cstdlib>
+#include <vector>
+#include <algorithm>
 #include <unordered_map>
 
 namespace bs::transitional::time {
@@ -32,11 +37,60 @@ constexpr uint32_t kVblankWaitPc  = 0x8C064A2C;  // "sem_espera": espera do VBla
 constexpr uint32_t kRenderWaitPc  = 0x8C173086;  // espera do fim do render anterior (timeout 166 ms)
 constexpr uint64_t kWindowReport  = 100000;      // BS_PROGRESS_TRACE: janelas a partir daqui (calibracao D8)
 
+// N2b-2 (--tempo experimental): o que libera cada ponto de espera declarado ([native] esperas no
+// config; inventario em docs/N2b-ESPERAS.md). Ponto nao listado (p.ex. bs::mods::wait num mod) e
+// tratado como Evento.
+//  - Evento: o tempo anda ate o proximo evento das filas (VBlank, render, Maple, GD-ROM); os
+//    timeouts pelo TMU vencem porque o TMU le o mesmo instante;
+//  - LinhaSpg: o laco le SPG_STATUS, que so muda na troca de linha do feixe: o tempo anda ate a
+//    proxima troca de linha ou o proximo evento, o que vier antes;
+//  - Sincrona: a condicao e satisfeita na propria escrita (DMA ch2, FIFO do G2); o laco nao pode
+//    dar volta. Se der, e erro (nao ha evento que a libere);
+//  - OciosaCri: back-edge da thread 3; so espera se a passada foi ociosa (cri_idle.h).
+// `n2b2`: ponto novo do N2b-2, ignorado no tempo nativo estavel (o modo padrao nao muda).
+enum class WaitKind : uint8_t { Event, SpgLine, Sync, CriIdle };
+struct WaitDecl {
+    uint32_t    pc;
+    WaitKind    kind;
+    bool        n2b2;
+    const char* what;
+};
+constexpr WaitDecl kWaitDecls[] = {
+    {0x8C064A2C, WaitKind::Event, false, "VBlank do jogo (bandeira 0x8C24F88A)"},
+    {0x8C173086, WaitKind::Event, false, "fim do render anterior, timeout de 166 ms pelo TMU"},
+    {0x8C0978F6, WaitKind::Event, false, "bit com timeout pelo TMU (8C0978BE)"},
+    {0x8C172628, WaitKind::SpgLine, true, "boot: vsync do SPG acender (f_8C172620)"},
+    {0x8C17262E, WaitKind::SpgLine, true, "boot: vsync do SPG apagar (f_8C172620)"},
+    {0x8C172808, WaitKind::Event, true, "boot: VBlank-In em ISTNRM (f_8C172642)"},
+    {0x8C172EF8, WaitKind::Event, true, "boot: contador do callback de VBlank 8C172602 (f_8C172D22)"},
+    {0x8C1C6D06, WaitKind::SpgLine, true, "boot: linha do SPG sair de 0 (f_8C1C6B3C)"},
+    {0x8C1C6D0E, WaitKind::SpgLine, true, "boot: linha do SPG voltar a 0 (f_8C1C6B3C)"},
+    {0x8C1C1DC6, WaitKind::Sync, true, "DMA ch2: C2DST = 0 (conclui na escrita)"},
+    {0x8C096EE8, WaitKind::Sync, true, "FIFO do G2 vazia: SB_FFST bit 0 (conclui na escrita)"},
+    {0x8C096EF8, WaitKind::Sync, true, "FIFO do G2 vazia: SB_FFST bit 0 (conclui na escrita)"},
+    {0x8C097254, WaitKind::Sync, true, "FIFO do G2 vazia: SB_FFST bit 5 (conclui na escrita)"},
+    {0x8C097264, WaitKind::Sync, true, "FIFO do G2 vazia: SB_FFST bit 5 (conclui na escrita)"},
+    {0x8C158860, WaitKind::CriIdle, true, "thread 3: passada do servidor do CRI sem efeito"},
+};
+const WaitDecl* findWait(uint32_t pc) {
+    for (const WaitDecl& w : kWaitDecls)
+        if (w.pc == pc) return &w;
+    return nullptr;
+}
+constexpr size_t   kRamBytes  = size_t(16) << 20;
+constexpr uint64_t kNoTarget  = ~0ull;
+constexpr uint64_t kMaxDueNow = 1000;  // eventos vencidos seguidos numa espera sem entrega: erro
+
 class NativeTime final : public TimeProvider {
 public:
-    explicit NativeTime(const Options& opt) : stallUnits_(opt.stall_units) {
+    explicit NativeTime(const Options& opt) : stallUnits_(opt.stall_units), exp_(opt.experimental) {
         const std::string& m = opt.mutation;
-        if (m == "perder_vblank_out") dropVblankOut_ = true;
+        if ((m == "cri_ignora_ram" || m == "cri_nunca_ocioso" || m == "cri_sempre_ocioso") && !exp_)
+            throw std::invalid_argument("BS_TEMPO_MUTACAO=" + m + " exige --tempo experimental");
+        if (m == "cri_ignora_ram") criIgnoreRam_ = true;
+        else if (m == "cri_nunca_ocioso") criNeverIdle_ = true;
+        else if (m == "cri_sempre_ocioso") criAlwaysIdle_ = true;
+        else if (m == "perder_vblank_out") dropVblankOut_ = true;
         else if (m == "atrasar_render") delayRender_ = true;
         else if (m == "ignorar_cancelamento") ignoreCancel_ = true;
         else if (m == "deriva") drift_ = true;
@@ -63,6 +117,11 @@ public:
                                   "instante, alvo, valor (voltas ou trabalho), eventos no episodio (mascara), liberado por\n");
             std::fprintf(ptrace_, "reg\tvblank\tthread\tespera\tinstante\talvo\tvalor\teventos\tliberado\n");
         }
+        if (exp_) {
+            if (!opt.ram) throw std::invalid_argument("tempo experimental sem RAM com rastreamento de escrita");
+            if (!stallUnits_) throw std::invalid_argument("tempo experimental exige o limite de falta de progresso (D8)");
+            cri_ = std::make_unique<cri::IdleDetector>(opt.ram, kRamBytes, criIgnoreRam_);
+        }
         start(0);
     }
     ~NativeTime() override {
@@ -70,11 +129,13 @@ public:
         if (ptrace_) std::fclose(ptrace_);
     }
 
-    const char* name() const override { return "nativo"; }
+    const char* name() const override { return exp_ ? "experimental" : "nativo"; }
 
-    void reset(uint64_t now) override { start(now); }
+    // N2b-2: uma sessao nova do hardware nao volta o instante logico (ele nao vem dos ciclos)
+    void reset(uint64_t now) override { start(exp_ ? clock_->now().ticks : now); }
 
     uint64_t clock(uint64_t cycles) override {
+        if (exp_) return clock_->now().ticks;  // N2b-2: os ciclos nao movem o tempo
         advance(cycles);
         // mutacao: relogio consultavel parado entre degraus de 1/8 de campo (continua andando, para
         // nao travar o poll central, que tambem le o instante por aqui)
@@ -143,11 +204,12 @@ public:
         lastPolls_           = polls;
         progress_->work(nt::ContextId{thread + 1}, units);
         if (thread < kMaxThreads && units) hot_[thread][pc] += units;  // lote desde o ultimo checkpoint, creditado ao PC dele
+        if (profile_ && thread < kMaxThreads && units) prof_[thread][pc] += units;  // BS_PROGRESSO_PCS (inventario P0)
         if (progress_->stalls() != lastStalls_) {
             // D8 (modo sombra: aviso; no N2b-2, erro): a primeira falta, com o trabalho de cada
             // thread na janela e o ultimo PC dela (a que cruzou o limite nao e necessariamente a
             // culpada: no N2b-1 a thread 3 nunca passa por um ponto de espera)
-            if (!lastStalls_) {
+            if (!lastStalls_ || exp_) {
                 std::string who;
                 for (const auto& [id, w] : progress_->window_by()) {
                     const uint32_t t   = id - 1;
@@ -156,9 +218,23 @@ public:
                     if (t < kMaxThreads)
                         for (const auto& [p, u] : hot_[t])
                             if (u > most) most = u, top = p;
-                    char b[96];
-                    std::snprintf(b, sizeof b, "%sthread %u %llu (maior lote em %08X)", who.empty() ? "" : ", ", t, ull(w), top);
+                    char b[160];
+                    std::snprintf(b, sizeof b, "%sthread %u %llu (maior lote em %08X", who.empty() ? "" : ", ", t, ull(w), top);
                     who += b;
+                    if (exp_ && t < kMaxThreads && lastWait_[t]) {
+                        std::snprintf(b, sizeof b, "; ultima espera %08X", lastWait_[t]);
+                        who += b;
+                    }
+                    who += ")";
+                }
+                if (exp_) {  // N2b-2 (D8): erro, nunca avanco silencioso do tempo
+                    char b[256];
+                    std::snprintf(b, sizeof b,
+                                  "tempo experimental: falta de progresso: %llu pontos de poll sem chegar a um ponto de "
+                                  "espera (limite %llu); thread corrente %u em %08X; na janela: ",
+                                  ull(progress_->window()), ull(stallUnits_), thread, pc);
+                    throw std::runtime_error(b + who + ". Um laco que espera hardware ou evento precisa ser declarado em "
+                                                       "[native] esperas (ou usar bs::mods::wait() num mod)");
                 }
                 std::fprintf(stderr,
                              "[progresso] falta de progresso: %llu pontos de poll sem chegar a um ponto de espera "
@@ -191,9 +267,27 @@ public:
         repeatDecision_ = static_cast<size_t>(r.decision);
     }
     void wait_end(uint32_t pc, uint32_t thread, uint64_t polls) override {
+        const WaitDecl* d = findWait(pc);
+        if (!exp_ && d && d->n2b2) return;  // modo estavel: as esperas do N2b-2 nao existem
         progress(thread, polls, pc);
         if (skipWait_ && pc == kVblankWaitPc) return;
         progress_->wait_done(nt::ContextId{thread + 1}, nt::WaitId{pc});
+    }
+
+    bool wait(Sh4Context* c, uint32_t pc, uint32_t thread) override {
+        const WaitDecl* d = findWait(pc);
+        if (!exp_) {
+            if (d && d->n2b2) return false;  // modo estavel: as esperas do N2b-2 nao existem
+            wait_point(pc, thread, c->polls);
+            return false;
+        }
+        return experimentalWait(c, pc, thread, d ? d->kind : WaitKind::Event, d ? d->what : "espera sem declaracao de tipo");
+    }
+
+    bool holly_pending(uint64_t now) override {
+        if (!exp_) return false;
+        const auto next = display_.next_due();
+        return next && next->ticks <= now;
     }
     uint64_t last_vblank_due() const override { return lastVbDue_; }
 
@@ -201,6 +295,24 @@ public:
         flushRepeats();
         std::string out;
         char        b[256];
+        for (uint32_t t = 0; profile_ && t < kMaxThreads; ++t) {  // BS_PROGRESSO_PCS: onde o trabalho foi gasto
+            if (prof_[t].empty()) continue;
+            std::vector<std::pair<uint64_t, uint32_t>> v;
+            uint64_t                                    total = 0;
+            for (const auto& [pc, u] : prof_[t]) v.push_back({u, pc}), total += u;
+            std::sort(v.rbegin(), v.rend());
+            const char* path = std::getenv("BS_PROGRESSO_PCS");  // um caminho: perfil completo no arquivo
+            if (path && std::strlen(path) > 1)
+                if (std::FILE* f = std::fopen(path, t == 0 ? "w" : "a")) {
+                    for (const auto& [u, pc] : v) std::fprintf(f, "%u\t%08X\t%llu\n", t, pc, ull(u));
+                    std::fclose(f);
+                }
+            for (size_t i = 0; i < v.size() && i < 40; ++i) {
+                std::snprintf(b, sizeof b, "[progresso] pcs thread %u: %08X %llu (%.2f%%)\n", t, v[i].second, ull(v[i].first),
+                              100.0 * double(v[i].first) / double(total));
+                out += b;
+            }
+        }
         std::snprintf(b, sizeof b, "[progresso] sombra: maior janela %llu, faltas de progresso %llu (limite %llu); "
                                    "decisoes continuar %llu, avancar %llu, deadlock %llu\n",
                       ull(progress_->max_window()), ull(progress_->stalls()), ull(stallUnits_), ull(decisions_[0]),
@@ -231,6 +343,27 @@ public:
                           id - 1, ull(c.total), ull(c.waits), ull(c.stalls_blamed));
             out += b;
         }
+        if (exp_) {
+            const ExpStats&      e = exp_stats_;
+            const cri::IdleStats s = cri_->stats();
+            std::snprintf(b, sizeof b,
+                          "[n2b2] tempo experimental: instante final %llu ticks (%.2f campos); avancos %llu (linha do "
+                          "SPG %llu), maior passo %llu ticks, eventos vencidos entregues sem avanco %llu\n",
+                          ull(clock_->now().ticks), double(clock_->now().ticks) / double(kCompatTicksPerField),
+                          ull(e.advances), ull(e.spgLine), ull(e.maxStep), ull(e.dueNow));
+            out += b;
+            std::snprintf(b, sizeof b,
+                          "[n2b2] thread 3: visitas %llu, ociosas (bloqueios) %llu, com evento %llu, com efeito na RAM "
+                          "%llu, com outro efeito %llu; paginas escritas comparadas %llu\n",
+                          ull(s.visits), ull(e.criBlocks), ull(s.eventDuring), ull(s.effectRam), ull(s.effectOther),
+                          ull(s.dirtyPages));
+            out += b;
+            for (const auto& [pc, n] : e.byWait) {
+                const WaitDecl* d = findWait(pc);
+                std::snprintf(b, sizeof b, "[n2b2] avancos na espera %08X: %llu (%s)\n", pc, ull(n), d ? d->what : "sem declaracao");
+                out += b;
+            }
+        }
         return out;
     }
 
@@ -238,6 +371,68 @@ public:
 
 private:
     static unsigned long long ull(uint64_t v) { return static_cast<unsigned long long>(v); }
+
+    // N2b-2: o contexto corrente chegou ao ponto de espera `pc` e a condicao do laco ainda e falsa
+    // (senao ele teria saido). Devolve true se o instante andou ou ha evento vencido a entregar.
+    bool experimentalWait(Sh4Context* c, uint32_t pc, uint32_t thread, WaitKind kind, const char* what) {
+        if (skipWait_ && pc == kVblankWaitPc) {  // mutacao: espera nao declarada (a guarda tem de pegar)
+            progress(thread, c->polls, pc);
+            return false;
+        }
+        progress(thread, c->polls, pc);
+        if (thread < kMaxThreads) lastWait_[thread] = pc;
+        char b[320];
+        if (kind == WaitKind::Sync) {
+            std::snprintf(b, sizeof b,
+                          "tempo experimental: a espera sincrona %08X (%s) deu volta na thread %u: a condicao devia "
+                          "estar satisfeita na escrita e nenhum evento a libera",
+                          pc, what, thread);
+            throw std::runtime_error(b);
+        }
+        const bool criIdle = kind == WaitKind::CriIdle && (cri_->idle(c) || criAlwaysIdle_) && !criNeverIdle_;
+        if (kind == WaitKind::CriIdle && !criIdle) {
+            ++exp_stats_.criWork;  // a passada trabalhou (ou houve evento): a proxima roda ja
+            return false;
+        }
+        if (kind == WaitKind::CriIdle) ++exp_stats_.criBlocks;
+        // o tempo pode andar aqui: episodio de espera e janela de trabalho no monitor
+        progress_->at_wait(nt::ContextId{thread + 1}, nt::WaitId{pc});
+        for (auto& h : hot_)
+            if (!h.empty()) h.clear();
+        const uint64_t now    = clock_->now().ticks;
+        uint64_t       target = kNoTarget;
+        if (const auto n = display_.next_due()) target = n->ticks;
+        if (const auto n = disc_.next_due()) target = std::min(target, n->ticks);
+        bool line = false;
+        if (kind == WaitKind::SpgLine) {
+            const uint64_t l = pvr_spg_next_line_change(now);
+            if (l != kSpgNever && l < target) target = l, line = true;
+        }
+        if (target == kNoTarget) {
+            std::snprintf(b, sizeof b,
+                          "tempo experimental: deadlock na espera %08X (%s), thread %u: nenhum evento agendado", pc,
+                          what, thread);
+            throw std::runtime_error(b);
+        }
+        if (target <= now) {  // evento vencido ainda nao entregue: entregar antes de andar o tempo
+            if (++dueNowRun_ > kMaxDueNow) {
+                std::snprintf(b, sizeof b,
+                              "tempo experimental: evento vencido em %llu nao e entregue na espera %08X (%s), thread %u",
+                              ull(target), pc, what, thread);
+                throw std::runtime_error(b);
+            }
+            ++exp_stats_.dueNow;
+            return true;
+        }
+        dueNowRun_ = 0;
+        clock_->advance_to(nt::Instant{target});
+        ++exp_stats_.advances;
+        exp_stats_.spgLine += line;
+        exp_stats_.ticks += target - now;
+        if (target - now > exp_stats_.maxStep) exp_stats_.maxStep = target - now;
+        ++exp_stats_.byWait[pc];
+        return true;
+    }
 
     void start(uint64_t now) {
         clock_ = std::make_unique<nt::LogicalClock>(nt::TimeBase{kCompatTicksPerSecond, kCompatTicksPerField}, 0);
@@ -357,6 +552,7 @@ private:
 
     void observe(const nt::Event& e, nt::Instant at) {
         flushRepeats();  // um evento muda a decisao: a proxima volta passa pelo monitor
+        dueNowRun_ = 0;  // N2b-2: o evento vencido foi entregue (o limite mede so voltas seguidas sem entrega)
         ++stats.delivered[static_cast<size_t>(e.kind)];
         if (!trace_) return;
         // criterio A2: o devido de um VBlank tem de ser o cruzamento da linha do SPG, conferido
@@ -396,6 +592,8 @@ private:
     uint64_t                             stallUnits_ = 0, lastPolls_ = 0, lastStalls_ = 0;
     static constexpr uint32_t            kMaxThreads = 16;
     std::unordered_map<uint32_t, uint64_t> hot_[kMaxThreads];  // por thread: trabalho da janela por PC (mensagem da D8)
+    const bool profile_ = std::getenv("BS_PROGRESSO_PCS") != nullptr;  // diagnostico: perfil de trabalho por PC na execucao toda
+    std::unordered_map<uint32_t, uint64_t> prof_[kMaxThreads];
     std::array<uint64_t, 3>              decisions_{};
     std::map<uint32_t, uint64_t>         frameTotals_;
     uint32_t                             repeatPc_ = 0, repeatThread_ = 0;  // ultima espera vista
@@ -414,6 +612,16 @@ private:
     std::FILE* trace_      = nullptr;
     std::FILE* ptrace_     = nullptr;
     uint64_t   traceSeq_   = 0;
+    // N2b-2 (--tempo experimental)
+    bool                               exp_          = false;
+    bool                               criIgnoreRam_ = false, criNeverIdle_ = false, criAlwaysIdle_ = false;
+    std::unique_ptr<cri::IdleDetector> cri_;
+    uint32_t                           lastWait_[kMaxThreads] = {};
+    uint64_t                           dueNowRun_ = 0;
+    struct ExpStats {
+        uint64_t advances = 0, spgLine = 0, dueNow = 0, ticks = 0, maxStep = 0, criWork = 0, criBlocks = 0;
+        std::map<uint32_t, uint64_t> byWait;  // avancos do tempo por ponto de espera
+    } exp_stats_;
 };
 
 std::unique_ptr<NativeTime> g_native;

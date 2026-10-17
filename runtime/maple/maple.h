@@ -25,6 +25,8 @@ bool maple_read(Sh4Context* c, uint32_t a, uint32_t& v);
 bool maple_write(Sh4Context* c, uint32_t a, uint32_t v);
 
 // Fim de DMA pendente (ciclo, 0 = nenhum). holly_intc acende ISTNRM bit 12 e chama take.
+// Pedidos de condicao (GetCond) feitos ao controle da porta: o indice do roteiro de entrada.
+uint64_t maple_cond_seq(int port);
 uint64_t maple_dma_due();
 void     maple_dma_take();
 

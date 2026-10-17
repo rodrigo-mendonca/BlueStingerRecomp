@@ -663,6 +663,64 @@ thread e o PC.
 - O teste `n2_build_incremental` cobre: página 850, caminho com espaço, `#` e `$$`, Debug e
   falha do compilador.
 
+### Port nativo, N2b-2 experimental: tempo lógico sem ciclos (2026-10-17)
+
+Detalhes em `docs/N2b2-RELATORIO.md`. Atrás de opção: `--tempo experimental`. O padrão continua
+`--tempo nativo`, inalterado byte a byte.
+
+**Tempo:** o provedor nativo, com `experimental`, tem um instante lógico próprio. Os ciclos
+estimados não o movem. Ele só anda quando o contexto corrente chega a um ponto de espera declarado
+(`TimeProvider::wait`, chamado pelo `BS_WAIT`), e só até o próximo evento real. A escolha de thread
+continua com o despachante do SDK.
+
+**Pontos de espera:** `[native] esperas` no config, e o tipo de cada um em `kWaitDecls`
+(`transitional/time_adapter.cpp`):
+- Evento;
+- LinhaSpg: próxima troca de linha do feixe;
+- Síncrona: dar volta é erro;
+- OciosaCri: a thread 3 só espera depois de passada ociosa (`transitional/cri_idle`, com RAM
+  rastreada pelo sistema, `MEM_WRITE_WATCH`).
+
+**Erros explícitos:** falta de progresso, deadlock e espera síncrona que dá volta. O tempo nunca
+anda sozinho.
+
+**Diagnósticos novos:**
+- `BS_FRAME_LOG` (hash do quadro por VBlank);
+- `BS_AICA_LOG` e `BS_AICA_LOG_TUDO` (sequência de escritas na AICA, independente da linha do
+  tempo);
+- `BS_SB_MUTACAO` (esperas síncronas que dão volta);
+- mutações `cri_nunca_ocioso`, `cri_sempre_ocioso` e `cri_ignora_ram`.
+
+### Diretriz permanente: mídia moddável no N5 (vídeo) e no N6 (áudio)
+
+Registrada em 2026-10-16. Detalhes em `docs/PLANO-PORT-NATIVO.md`, seção 4.1. Não muda a ordem do
+roadmap e nada é implementado antes da etapa autorizada.
+
+**Interface nativa de mídia:**
+- recursos por ID lógico e estável, mapeado dos identificadores originais;
+- categorias separadas: música, efeito, diálogo e vídeo.
+
+**Formatos:**
+- vídeo: MP4/H.264 (com caminho para outros codecs), em qualquer resolução e taxa de quadros;
+- áudio: WAV, FLAC e OGG, com loops e transições preservados.
+
+**Mods:**
+- substituição em tempo de execução, sem recompilar;
+- arquivos maiores que os originais;
+- formatos e regras documentados;
+- dublagem e legendas como camadas de mídia.
+
+**Contrato com o jogo:**
+- a sincronização e os eventos observados pelo jogo (fim de vídeo, posição de stream, estado do
+  driver de som) seguem o relógio lógico, independentes do formato;
+- **modo fiel** (sem mods ou com mods de mesma duração): o jogo vê o contrato original (eventos,
+  durações e estados), igual ao legado;
+- **modo modificado** (mídia de outra duração, p.ex. dublagem ou música remasterizada mais
+  longa): a duração e os laços vêm dos metadados do recurso do mod. A documentação de cada tipo
+  de mídia diz quais eventos do gameplay acompanham a nova duração e quais continuam fixos;
+- sem mods, os recursos originais (convertidos pelo Builder a partir do CDI do usuário) são a
+  referência de fidelidade.
+
 ## 7. Validação
 
 - **Unitários (M2)**: decodificador exaustivo (todas as 65 536 palavras

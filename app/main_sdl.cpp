@@ -92,6 +92,7 @@ bool parseArgs(Args& a) {
         else if (s == L"--tempo" && (v = next())) {
             if (*v == L"nativo") a.time = bs::TimeProviderKind::Native;
             else if (*v == L"legado") a.time = bs::TimeProviderKind::Legacy;
+            else if (*v == L"experimental") a.time = bs::TimeProviderKind::Experimental;  // N2b-2
             else return false;
         }
         else if (s == L"--version") a.version = true;
@@ -418,7 +419,8 @@ const char* kUsage =
     "     bluestinger [--data <pasta>] --verify-data\n"
     "     bluestinger --version\n"
     "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
-    "     --tempo nativo|legado: provedor de tempo e eventos (padrao: nativo)\n"
+    "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao: nativo;\n"
+    "       experimental = N2b-2, tempo logico sem ciclos estimados, em validacao)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n";
 
 const char* kNoCdi =

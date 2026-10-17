@@ -6,7 +6,10 @@
 #include "cpu/sh4_runtime.h"
 #include "cpu/sh4_threads.h"
 #include "debug/event_trace.h"
+#include "cpu/write_watch.h"
+#include "pvr/vram.h"
 #include "gdrom/gdrom.h"
+#include "memory/sh4_tmu.h"
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
 
@@ -46,7 +49,8 @@ constexpr uint32_t kLevel     = 0x8C19135A; // nivel do buffer do handle (r4), e
 
 enum class Mode {
     Off, Count, SkipMw, SkipAll, SkipNoStream, SkipFirstPerVblank, RepeatNoStream,
-    Flow, SkipAfterIdle, RepeatAfterIdle, TmuConsumer
+    Flow, SkipAfterIdle, RepeatAfterIdle, TmuConsumer, Effect, SkipNoEffect, RepeatNoEffect, SkipNoEffectRamBlind,
+    SkipNoEffectSqBlind
 };
 
 // B11: medidores do servidor do CRI (tempos lidos do TMU por 8C15D1A2 e gravados pela propria
@@ -229,13 +233,16 @@ std::vector<uint8_t> g_snapBefore;
 uint64_t             g_snapVb = 0, g_snapReports = 0;
 
 void snapRam(Sh4Context* c, std::vector<uint8_t>& out) {
-    out.resize(kRamBytes + kAicaRamSize);
+    out.resize(kRamBytes + kAicaRamSize + kVramSize);  // RAM principal, de som e VRAM
     std::memcpy(out.data(), c->ram, kRamBytes);
     std::memcpy(out.data() + kRamBytes, aica_ram(), kAicaRamSize);
+    std::memcpy(out.data() + kRamBytes + kAicaRamSize, vram_data(), kVramSize);
 }
 
 uint32_t g_snapSp = 0;
 uint64_t g_snapPasses = 0, g_snapIdle = 0, g_snapIdleChanged = 0, g_snapIdleChangedNoEvent = 0, g_snapMetersOnly = 0;
+// passadas com trabalho declarado (MW/ADX etc.) e sem evento: quantas nao mudaram nada fora dos medidores
+uint64_t g_snapWorkNoEvent = 0, g_snapWorkNoEventUnchanged = 0;
 
 void reportIdleChanges(Sh4Context* c, uint64_t vb, uint32_t work, bool eventDuring) {
     std::vector<uint8_t> now;
@@ -247,8 +254,10 @@ void reportIdleChanges(Sh4Context* c, uint64_t vb, uint32_t work, bool eventDuri
     const uint32_t spLo = (g_snapSp - 0x4000) & kRamMask, spHi = g_snapSp & kRamMask;
     for (size_t off = 0; off < now.size(); off += 4) {
         if (std::memcmp(&now[off], &g_snapBefore[off], 4) == 0) continue;
-        const bool     sound = off >= kRamBytes;
-        const uint32_t a     = sound ? 0x00800000u + uint32_t(off - kRamBytes) : 0x8C000000u | uint32_t(off);
+        const bool     sound = off >= kRamBytes;  // RAM de som ou VRAM
+        const uint32_t a     = !sound ? 0x8C000000u | uint32_t(off)
+                               : off < kRamBytes + kAicaRamSize ? 0x00800000u + uint32_t(off - kRamBytes)
+                                                                 : 0xA5000000u + uint32_t(off - kRamBytes - kAicaRamSize);
         if (!sound && ((off >= spLo && off < spHi) || a == kStreamCtl + 36)) continue;
         if (!sound && a >= kMeterLo && a < kMeterHi) {
             ++meters;
@@ -265,6 +274,9 @@ void reportIdleChanges(Sh4Context* c, uint64_t vb, uint32_t work, bool eventDuri
         g_snapIdleChanged += total != 0;
         g_snapIdleChangedNoEvent += total != 0 && !eventDuring;
         g_snapMetersOnly += !total && meters && !eventDuring;
+    } else if (!eventDuring) {
+        ++g_snapWorkNoEvent;
+        g_snapWorkNoEventUnchanged += total == 0;
     }
     if (total && g_snapReports++ < 80) std::fprintf(stderr, "%s (%zu palavras)\n", line, total);
 }
@@ -327,6 +339,82 @@ void flowPass(Sh4Context* c, uint32_t mw, uint32_t adx) {
     g.lastIdleSwitches = sh4_thread_switch_count();
 }
 
+// --- Efeitos da passada (P1b; so no build de investigacao BS_WRITE_WATCH) ---
+// Uma passada tem efeito se mudou algum valor na RAM principal (fora da pilha morta, dos medidores
+// do TMU e do indice do rodizio), escreveu fora da RAM (MMIO, VRAM, store queues, AICA), o host
+// escreveu na RAM do guest (provedores nativos) ou o estado do HLE do GD-ROM mudou. Escrita que
+// regrava o mesmo valor nao e efeito (conta a parte: polling que escreve).
+//  efeito   mede; pular6: nao executa a passada que vem depois de uma sem efeito, sem evento desde
+//  entao (bloqueio ate o proximo evento, tambem com MW/ADX ativos); repetir6: controle (duas vezes);
+//  pular6r: NEGATIVO, detector errado que ignora as mudancas na RAM.
+struct Fx {
+    uint64_t passes = 0, noEvent = 0, noEventEffect = 0, noEventIdle = 0, sameValueOnly = 0;
+    uint64_t mwNoEvent = 0, mwNoEventIdle = 0, eligible = 0, violations = 0, eventDuring = 0;
+    uint64_t kRam = 0, kHw = 0, kHost = 0, kGd = 0, kSq = 0, kTmu = 0;
+    uint64_t firstViolationVb = 0, transientOnly = 0, sqOnly = 0;
+};
+Fx       g_fx;
+bool     g_fxLastIdle  = false;
+uint64_t g_fxLastEpoch = 0;
+
+void effectPass(Sh4Context* c, uint32_t mw, uint32_t adx) {
+    const uint64_t vb       = holly_vblank_count();
+    const uint64_t e0       = epoch();
+    const bool     eligible = g_fxLastIdle && e0 == g_fxLastEpoch;
+    if (eligible) ++g_fx.eligible;
+    if (eligible && (g.mode == Mode::SkipNoEffect || g.mode == Mode::SkipNoEffectRamBlind ||
+                     g.mode == Mode::SkipNoEffectSqBlind)) {
+        ++g.skipped;  // bloqueio simulado: a passada nao roda e nada muda
+        // modo sombra: o monitor de progresso ve o bloqueio como a espera condicional que o N2b-2
+        // declararia no back-edge do laco da thread 3 (so informa; a execucao nao muda)
+        sh4_wait_point(c, 0x8C158860);
+        return;
+    }
+    const uint64_t gd0 = gdrom_state_hash(), tm0 = sh4_tmu_state_hash();
+    g_ww               = WriteWatch{};
+    g_ww.spLo = (c->r[15] - 0x4000) & kRamMask, g_ww.spHi = c->r[15] & kRamMask;
+    g_ww.exLo[0] = kMeterLo & kRamMask, g_ww.exHi[0] = kMeterHi & kRamMask;
+    g_ww.exLo[1] = (kStreamCtl + 36) & kRamMask, g_ww.exHi[1] = g_ww.exLo[1] + 4;
+    g_ww.on = true;
+    if (eligible && g.mode == Mode::RepeatNoEffect) {
+        ++g.skipped;  // controle: so o tempo muda, se a passada e mesmo sem efeito
+        mods::call_original(kPass, c);
+    }
+    mods::call_original(kPass, c);
+    g_ww.on               = false;
+    const WriteWatch& w   = g_ww;
+    const uint64_t    net = ww_net_changes(c->ram);  // mudanca liquida na RAM (fim x inicio)
+    const bool gdc      = gdrom_state_hash() != gd0;
+    const bool tmc      = sh4_tmu_state_hash() != tm0;  // p.ex. UNF aceso por leitura do TCNT
+    const bool evDuring = epoch() != e0;
+    bool       effect   = net || w.hwWrites || w.hostWrites || w.sqFlushes || gdc || tmc;
+    if (g.mode == Mode::SkipNoEffectRamBlind) effect = w.hwWrites || w.hostWrites || w.sqFlushes || gdc || tmc;  // negativo
+    if (g.mode == Mode::SkipNoEffectSqBlind) effect = net || w.hwWrites || w.hostWrites || gdc || tmc;  // negativo
+    if (!evDuring && !net && w.ramChanges) ++g_fx.transientOnly;  // so mudancas desfeitas na propria passada
+    // efeito so pela descarga da store queue (o negativo pular6s so e sensivel se isto ocorrer)
+    g_fx.sqOnly += w.sqFlushes && !net && !w.hwWrites && !w.hostWrites && !gdc && !tmc;
+    ++g_fx.passes;
+    g_fx.kRam += net != 0, g_fx.kHw += w.hwWrites != 0, g_fx.kHost += w.hostWrites != 0, g_fx.kGd += gdc, g_fx.kSq += w.sqFlushes != 0, g_fx.kTmu += tmc;
+    if (!evDuring) {
+        ++g_fx.noEvent;
+        g_fx.noEventEffect += effect, g_fx.noEventIdle += !effect;
+        g_fx.sameValueOnly += !effect && w.ramWrites && !w.ramChanges;
+        if (mw || adx) ++g_fx.mwNoEvent, g_fx.mwNoEventIdle += !effect;
+    }
+    if (eligible && effect) {
+        if (evDuring) ++g_fx.eventDuring;
+        else {
+            if (!g_fx.violations) g_fx.firstViolationVb = vb;
+            ++g_fx.violations;
+        }
+    }
+    if (effect && g_flowLog)
+        std::fprintf(g_flowLog, "%llu\t%c%c%c%c\n", static_cast<unsigned long long>(vb), net ? 'R' : '-',
+                     w.hwWrites ? 'H' : '-', w.hostWrites ? 'O' : '-', gdc ? 'G' : '-');
+    g_fxLastIdle  = !effect;
+    g_fxLastEpoch = epoch();
+}
+
 void wrapper(Sh4Context* c) {
     const uint32_t mw   = activeEntries(c);
     const uint32_t adx  = activeAdx(c);
@@ -343,6 +431,11 @@ void wrapper(Sh4Context* c) {
     g.noStream += noSt;
     if (g.mode == Mode::Flow || g.mode == Mode::SkipAfterIdle || g.mode == Mode::RepeatAfterIdle) {
         flowPass(c, mw, adx);
+        return;
+    }
+    if (g.mode == Mode::Effect || g.mode == Mode::SkipNoEffect || g.mode == Mode::RepeatNoEffect ||
+        g.mode == Mode::SkipNoEffectRamBlind || g.mode == Mode::SkipNoEffectSqBlind) {
+        effectPass(c, mw, adx);
         return;
     }
     if ((g.mode == Mode::SkipMw && mw == 0) || (g.mode == Mode::SkipAll && idle) ||
@@ -413,7 +506,8 @@ void cri_diag_install() {
     if (g_flowLog) std::fclose(g_flowLog), g_flowLog = nullptr;
     if (g_lockLog) std::fclose(g_lockLog), g_lockLog = nullptr;
     g_lockCalls = g_lockWithSwitch = g_lockSwitches = 0;
-    g_snapReports = 0;
+    g_snapReports = 0, g_snapPasses = g_snapIdle = g_snapIdleChanged = g_snapIdleChangedNoEvent = g_snapMetersOnly = 0;
+    g_snapWorkNoEvent = g_snapWorkNoEventUnchanged = 0;  // sessao nova: nada herdado (revisao Codex)
     g_snapVb      = std::getenv("BS_CRI_SNAP_VB") ? std::strtoull(std::getenv("BS_CRI_SNAP_VB"), nullptr, 10) : 0;
     if (const char* f = std::getenv("BS_CRI_FLUXO_LOG"); f && *f)
         if (fopen_s(&g_flowLog, f, "w") != 0 || !g_flowLog)
@@ -439,9 +533,18 @@ void cri_diag_install() {
     else if (std::strcmp(v, "pular5") == 0) g.mode = Mode::SkipAfterIdle;
     else if (std::strcmp(v, "repetir5") == 0) g.mode = Mode::RepeatAfterIdle;
     else if (std::strcmp(v, "consumidor") == 0) g.mode = Mode::TmuConsumer;
+    else if (std::strcmp(v, "efeito") == 0) g.mode = Mode::Effect;
+    else if (std::strcmp(v, "pular6") == 0) g.mode = Mode::SkipNoEffect;
+    else if (std::strcmp(v, "repetir6") == 0) g.mode = Mode::RepeatNoEffect;
+    else if (std::strcmp(v, "pular6r") == 0) g.mode = Mode::SkipNoEffectRamBlind;
+    else if (std::strcmp(v, "pular6s") == 0) g.mode = Mode::SkipNoEffectSqBlind;
     else
         throw std::runtime_error(std::string("BS_CRI_DIAG invalido: ") + v +
-                                 " (contar, pular, pular2, pular3, menos1, repetir3, fluxo, pular5, repetir5 ou consumidor)");
+                                 " (contar, pular, pular2, pular3, menos1, repetir3, fluxo, pular5, repetir5, consumidor, efeito, pular6, repetir6, pular6r ou pular6s)");
+    if ((g.mode == Mode::Effect || g.mode == Mode::SkipNoEffect || g.mode == Mode::RepeatNoEffect ||
+         g.mode == Mode::SkipNoEffectRamBlind || g.mode == Mode::SkipNoEffectSqBlind) && !kWriteWatchBuilt)
+        throw std::runtime_error("BS_CRI_DIAG=efeito/pular6/repetir6/pular6r precisa do build -DBS_WRITE_WATCH=ON");
+    g_fx = Fx{}, g_fxLastIdle = false, g_fxLastEpoch = 0;
     if (!mods::has_slot(kPass))
         throw std::runtime_error("BS_CRI_DIAG precisa do build com slots (BS_MODS): a passada e chamada direto");
     if (!mods::replace(kPass, wrapper)) throw std::runtime_error("BS_CRI_DIAG: passada do CRI nao encontrada");
@@ -477,11 +580,12 @@ std::string cri_diag_summary() {
                   static_cast<unsigned long long>(g_lockSwitches));
     out += b;
     if (g_snapVb) {
-        std::snprintf(b, sizeof b, "; RAM (principal e de som) em V%llu-%llu: %llu passadas, %llu ociosas, %llu ociosas com RAM mudada (%llu sem evento durante a passada; %llu so nos medidores)",
+        std::snprintf(b, sizeof b, "; RAM (principal e de som) em V%llu-%llu: %llu passadas, %llu ociosas, %llu ociosas com RAM mudada (%llu sem evento durante a passada; %llu so nos medidores); com trabalho e sem evento %llu, delas sem mudanca %llu",
                       static_cast<unsigned long long>(g_snapVb - 2), static_cast<unsigned long long>(g_snapVb),
                       static_cast<unsigned long long>(g_snapPasses), static_cast<unsigned long long>(g_snapIdle),
                       static_cast<unsigned long long>(g_snapIdleChanged), static_cast<unsigned long long>(g_snapIdleChangedNoEvent),
-                      static_cast<unsigned long long>(g_snapMetersOnly));
+                      static_cast<unsigned long long>(g_snapMetersOnly), static_cast<unsigned long long>(g_snapWorkNoEvent),
+                      static_cast<unsigned long long>(g_snapWorkNoEventUnchanged));
         out += b;
     }
     out += "\n";
@@ -499,6 +603,19 @@ std::string cri_diag_summary() {
                       u(g.kChanged), u(g.kPassChanged), u(g.kMwAdx), u(g.ties), u(g.streamPasses), u(g.streamIdle),
                       u(g.firstStreamVblank), u(g.vblanks), u(g.vblanksWithWork), u(g.maxWorkedPerVblank),
                       u(g.levelCalls), u(g.levelChanges), g.levelCalls ? g.minLevel : 0u, g.maxLevel);
+        out += b;
+    }
+    if (g.mode == Mode::Effect || g.mode == Mode::SkipNoEffect || g.mode == Mode::RepeatNoEffect ||
+        g.mode == Mode::SkipNoEffectRamBlind || g.mode == Mode::SkipNoEffectSqBlind) {
+        auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
+        std::snprintf(b, sizeof b,
+                      "[cri] efeitos: passadas %llu; sem evento %llu (com efeito %llu, sem efeito %llu, das quais so "
+                      "regravando o mesmo valor %llu, com mudanca so transitoria %llu); com MW/ADX e sem evento %llu (sem efeito %llu); efeito por tipo: "
+                      "RAM %llu, MMIO/VRAM/SQ %llu, host %llu, GD-ROM %llu, descarga de SQ %llu (so ela %llu), TMU %llu; elegiveis %llu, violacoes %llu (primeira V%llu), "
+                      "com evento durante %llu\n",
+                      u(g_fx.passes), u(g_fx.noEvent), u(g_fx.noEventEffect), u(g_fx.noEventIdle), u(g_fx.sameValueOnly), u(g_fx.transientOnly),
+                      u(g_fx.mwNoEvent), u(g_fx.mwNoEventIdle), u(g_fx.kRam), u(g_fx.kHw), u(g_fx.kHost), u(g_fx.kGd), u(g_fx.kSq), u(g_fx.sqOnly), u(g_fx.kTmu),
+                      u(g_fx.eligible), u(g_fx.violations), u(g_fx.firstViolationVb), u(g_fx.eventDuring));
         out += b;
     }
     return out;

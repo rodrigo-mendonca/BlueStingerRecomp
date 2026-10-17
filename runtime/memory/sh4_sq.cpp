@@ -6,6 +6,7 @@
 //                          (QACRn[4:2] << 26) | (Rn & 0x03FFFFE0)
 // O boot do jogo escreve vertices/matrizes (floats) e os envia assim.
 #include "memory/sh4_sq.h"
+#include "memory/effect_counters.h"
 
 #include "debug/hw_probe.h"
 
@@ -64,6 +65,11 @@ void sh4_sq_flush(Sh4Context* c, uint32_t addr) {
     const uint32_t* q      = g_sq[(addr >> 5) & 1];
     const uint32_t  target = sh4_sq_target(addr);
     if (g_hw_probe) hw_probe_access(c, target, 32, ProbeKind::StoreQueue);
+    ++g_effects.sqFlushes;  // N2b-2: pref direto ao TA nao passa pelo hwWrite
+#if BS_WRITE_WATCH
+    ww_dirty_all();
+    if (g_ww.on) ++g_ww.sqFlushes;  // diagnostico N2b: pref direto ao TA nao passa pelo hwWrite
+#endif
     if ((target & 0x1C000000) == 0x0C000000) {  // area 3: RAM
         for (int i = 0; i < 8; ++i) sh4_write32(c, target + 4 * i, q[i]);
         return;

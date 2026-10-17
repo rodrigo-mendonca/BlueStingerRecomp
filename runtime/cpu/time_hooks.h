@@ -62,6 +62,20 @@ public:
     // Diagnostico (BS_TMU_DIAG=agendado): instante devido do ultimo VBlank-In entregue (0 se
     // o provedor nao sabe).
     virtual uint64_t last_vblank_due() const { return 0; }
+
+    // N2b-2 (--tempo experimental): ponto de espera declarado, com o contexto. Devolve true se o
+    // instante logico andou (ou ha evento vencido a entregar): o poll que segue o ponto atende.
+    // Padrao: so o modo sombra do N2b-1.
+    virtual bool wait(Sh4Context* c, uint32_t pc, uint32_t thread) {
+        wait_point(pc, thread, c->polls);
+        return false;
+    }
+    // Ha evento do Holly vencido ate `now` ainda nao entregue? So acontece no tempo experimental,
+    // em que o instante fica parado entre dois atendimentos.
+    virtual bool holly_pending(uint64_t now) {
+        (void)now;
+        return false;
+    }
 };
 
 // Provedor atual (nunca nulo: o legado e o padrao).

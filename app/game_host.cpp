@@ -11,9 +11,11 @@
 #include "debug/cri_diag.h"
 #include "gdfs_adapter.h"
 #include "time_adapter.h"
+#include "cri_idle.h"
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_video.h"
+#include "maple/maple.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -98,17 +100,30 @@ void GameHost::onVblank(void* self) { static_cast<GameHost*>(self)->vblank(); }
 // atende pedidos de parada.
 void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
-    // Diagnostico: BS_RAM_DUMP=<vblank>:<arquivo> grava os 16 MB da RAM do guest nesse VBlank
-    static const std::pair<uint64_t, std::string> kRamDump = [] {
+    // Diagnostico: BS_RAM_DUMP=<vblank>[,<vblank>...]:<arquivo> grava os 16 MB da RAM do guest
+    // nesses VBlanks (com mais de um, em <arquivo>_<vblank>)
+    static const std::pair<std::vector<uint64_t>, std::string> kRamDump = [] {
+        std::pair<std::vector<uint64_t>, std::string> d;
         const char* v = std::getenv("BS_RAM_DUMP");
-        if (!v || !std::strchr(v, ':')) return std::pair<uint64_t, std::string>{0, {}};
-        return std::pair<uint64_t, std::string>{std::strtoull(v, nullptr, 10), std::strchr(v, ':') + 1};
-    }();
-    if (kRamDump.first && n == kRamDump.first && ram_)
-        if (FILE* f = std::fopen(kRamDump.second.c_str(), "wb")) {
-            std::fwrite(ram_, 1, 16u << 20, f);
-            std::fclose(f);
+        if (!v || !std::strchr(v, ':')) return d;
+        for (const char* p = v; p < std::strchr(v, ':');) {
+            char* end = nullptr;
+            d.first.push_back(std::strtoull(p, &end, 10));
+            p = *end == ',' ? end + 1 : end;
+            if (end == p && *end != ',') break;
         }
+        d.second = std::strchr(v, ':') + 1;
+        return d;
+    }();
+    if (ram_)
+        for (uint64_t at : kRamDump.first)
+            if (n == at) {
+                const std::string path = kRamDump.first.size() > 1 ? kRamDump.second + "_" + std::to_string(n) : kRamDump.second;
+                if (FILE* f = std::fopen(path.c_str(), "wb")) {
+                    std::fwrite(ram_, 1, 16u << 20, f);
+                    std::fclose(f);
+                }
+            }
     // Diagnostico (N2b-0, criterio B6): BS_STATE_LOG=<arquivo> grava a cada 250 VBlanks o hash da
     // regiao de variaveis do jogo (0x8C240000-0x8C25FFFF: estado logico provisorio, ate os campos
     // terem nome). BS_RAM_MUTACAO=<vblank>:<endereco> troca um byte nesse VBlank (negativo).
@@ -151,6 +166,21 @@ void GameHost::vblank() {
         }
     }
     pvr_video_frame(scratch_.argb, scratch_.width, scratch_.height);
+    // Diagnostico (N2b-2): BS_FRAME_LOG=<arquivo> grava o hash do quadro exibido a cada VBlank
+    // (compara a sequencia de quadros entre modos de tempo com linhas do tempo deslocadas)
+    static FILE* frameLog = [] {
+        const char* v = std::getenv("BS_FRAME_LOG");
+        FILE*       f = v && *v ? std::fopen(v, "w") : nullptr;
+        if (f) std::fprintf(f, "vblank\tquadro\tentrada\n");  // entrada: leituras do controle (indice do roteiro)
+        return f;
+    }();
+    if (frameLog) {
+        uint64_t h = 0xCBF29CE484222325ull ^ (uint64_t(scratch_.width) << 32 | scratch_.height);
+        for (uint32_t px : scratch_.argb) h = (h ^ px) * 0x100000001B3ull;
+        std::fprintf(frameLog, "%llu\t%016llX\t%llu\n", static_cast<unsigned long long>(n), static_cast<unsigned long long>(h),
+                     static_cast<unsigned long long>(maple_cond_seq(0)));
+        if (n % 250 == 0) std::fflush(frameLog);
+    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
         std::swap(frame_, scratch_);
@@ -178,11 +208,23 @@ GameStats GameHost::stats() const {
 }
 
 void GameHost::threadMain() {
-    std::vector<uint8_t> ram(16u << 20);
-    Sh4Context           c{};
-    c.ram = ram.data();
-    ram_  = ram.data();  // so diagnostico (BS_RAM_DUMP)
-    std::string err;
+    // N2b-2: no tempo experimental a RAM tem rastreamento de escrita (ociosidade da thread 3); no
+    // padrao, a alocacao de sempre
+    std::vector<uint8_t> ram;
+    uint8_t*             watched = nullptr;
+    std::string          err;
+    try {
+        if (opt_.time == TimeProviderKind::Experimental) watched = transitional::cri::alloc_watched_ram(16u << 20);
+        else ram.resize(16u << 20);
+    } catch (const std::exception& e) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        error_ = e.what();
+        running_.store(false);
+        return;
+    }
+    Sh4Context c{};
+    c.ram = watched ? watched : ram.data();
+    ram_  = c.ram;  // so diagnostico (BS_RAM_DUMP)
     try {
         if (opt_.registerFunctions) opt_.registerFunctions();
         bs::mods::reset();     // sessao nova: nada herdado de uma anterior
@@ -199,8 +241,10 @@ void GameHost::threadMain() {
             transitional::gdfs::install(transitional::boundary_registry(), *files_);
         }
         // N2a: tempo e eventos pelo provedor nativo (antes do boot: o reset do hardware o inicia)
-        if (opt_.time == TimeProviderKind::Native) {
+        if (opt_.time == TimeProviderKind::Native || opt_.time == TimeProviderKind::Experimental) {
             transitional::time::Options to;
+            to.experimental = opt_.time == TimeProviderKind::Experimental;
+            to.ram          = watched;
             if (const char* v = std::getenv("BS_TIME_TRACE")) to.trace = v;
             if (const char* v = std::getenv("BS_TEMPO_MUTACAO")) to.mutation = v;
             if (const char* v = std::getenv("BS_PROGRESS_TRACE")) to.progress_trace = v;
@@ -241,8 +285,9 @@ void GameHost::threadMain() {
         transitional::time::uninstall();
         std::fputs(transitional::time::progress_summary().c_str(), stderr);
         const auto s = transitional::time::stats();
-        std::fprintf(stderr, "[tempo] nativo: VBlank-In %llu, VBlank-Out %llu, render %llu, Maple %llu, GD-ROM %llu; "
+        std::fprintf(stderr, "[tempo] %s: VBlank-In %llu, VBlank-Out %llu, render %llu, Maple %llu, GD-ROM %llu; "
                              "agendados %llu, cancelados %llu, recuos do relogio %llu, VBlank-In colapsados %llu\n",
+                     opt_.time == TimeProviderKind::Experimental ? "experimental" : "nativo",
                      static_cast<unsigned long long>(s.delivered[0]), static_cast<unsigned long long>(s.delivered[1]),
                      static_cast<unsigned long long>(s.delivered[2]), static_cast<unsigned long long>(s.delivered[3]),
                      static_cast<unsigned long long>(s.delivered[4]), static_cast<unsigned long long>(s.posted),
@@ -257,6 +302,8 @@ void GameHost::threadMain() {
         transitional::gdfs::uninstall(transitional::boundary_registry());
         files_.reset();
     }
+    ram_ = nullptr;
+    transitional::cri::free_watched_ram(watched);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         error_ = err;

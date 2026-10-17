@@ -81,6 +81,59 @@ BS_TEST(pvr_spg_status_vsync_toggles_once_per_field) {
     BS_CHECK(((sh4_read32(&f.c, 0xA05F810C) >> 13) & 1) == 0);
 }
 
+// N2b-2: alvo das esperas que leem o SPG (8C172624, 8C1C6D08). A linha tem de mudar exatamente no
+// instante devolvido (nem antes, nem um campo depois: o defeito do arredondamento no limite de
+// linha fazia a espera da linha 0 saltar um campo inteiro com 525 linhas), e andar de troca em
+// troca percorre cada linha do campo uma vez.
+BS_TEST(pvr_spg_next_line_change_is_exact) {
+    PortFixture f;
+    // (linhas, linha e campo deixados pelo BIOS em SPG_STATUS -> fase, entrelacado)
+    struct Setup {
+        uint32_t lines, biosLine, biosField;
+        bool     interlace;
+    };
+    for (const Setup s : {Setup{263, 0, 0, false}, Setup{525, 0, 0, false}, Setup{263, 123, 1, true},
+                          Setup{525, 524, 1, true}, Setup{525, 0, 1, true}}) {
+        const uint32_t lines = s.lines;
+        pvr_regs_reset();
+        std::vector<uint32_t> bank(0x2000 / 4, 0);
+        bank[(0x005F80D8 - 0x005F8000) / 4] = ((lines - 1) << 16) | 857;               // SPG_LOAD
+        bank[(0x005F80DC - 0x005F8000) / 4] = (21u << 16) | 240;                        // SPG_VBLANK
+        bank[(0x005F80D0 - 0x005F8000) / 4] = s.interlace ? 0x10 : 0;                   // SPG_CONTROL
+        bank[(0x005F810C - 0x005F8000) / 4] = s.biosLine | (s.biosField << 10);         // SPG_STATUS: fase
+        pvr_regs_load(bank.data());
+        const uint64_t field = 200000000ull * 1001 / 60000;
+        auto           status = [&](uint64_t t) {
+            f.c.cycles = t;
+            return sh4_read32(&f.c, 0xA05F810C);
+        };
+        std::vector<uint64_t> probes;
+        for (uint64_t after = 0; after < 2 * field; after += 7919) probes.push_back(after);
+        // os instantes dos eventos de VBlank (inicio de linha truncado de pvr_spg_next_crossing): e ai
+        // que a espera fica parada quando o tempo anda de evento em evento
+        for (uint32_t l = 0; l < lines; ++l) probes.push_back(pvr_spg_next_crossing(field, l));
+        for (uint64_t after : probes) {
+            const uint64_t t    = pvr_spg_next_line_change(after);
+            const uint32_t from = pvr_spg_position(after).line;
+            BS_CHECK(t > after);
+            BS_CHECK(t - after <= field / lines + 2);
+            BS_CHECK(pvr_spg_position(t).line == (from + 1) % lines);
+            BS_CHECK(pvr_spg_position(t - 1).line == from);
+            // SPG_STATUS inteiro (linha, vsync, campo) parado ate t e diferente em t
+            BS_CHECK(status(t - 1) == status(after));
+            BS_CHECK(status(t) != status(after));
+        }
+        // de troca em troca: da primeira linha 0 ate a seguinte, cada linha do campo uma vez
+        uint64_t t     = 0;
+        uint32_t steps = 0;
+        while (pvr_spg_position(t).line != 0 && steps++ < 2 * lines) t = pvr_spg_next_line_change(t);
+        steps = 0;
+        do t = pvr_spg_next_line_change(t), ++steps;
+        while (pvr_spg_position(t).line != 0 && steps < 2 * lines);
+        BS_CHECK(steps == lines);
+    }
+}
+
 // Boot do Blue Stinger (8C1727F6): limpa ISTNRM.VBlankIn (escrevendo 8) e espera ele voltar.
 BS_TEST(holly_istnrm_vblank_in_sets_once_per_field_and_clears_on_write) {
     PortFixture f;

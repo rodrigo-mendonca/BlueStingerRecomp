@@ -2,6 +2,7 @@
 // Acesso a memoria do guest. RAM principal (area 3, com espelhos em P0-P3) tem
 // caminho rapido inline; o resto vai para o despacho por regiao (memory/).
 #include "cpu/sh4_context.h"
+#include "cpu/write_watch.h"
 
 #include <cstring>
 
@@ -41,20 +42,32 @@ inline uint32_t sh4_read32(Sh4Context* c, uint32_t a) {
     return sh4_read32_slow(c, a);
 }
 inline void sh4_write8(Sh4Context* c, uint32_t a, uint32_t v) {
+#if BS_WRITE_WATCH
+    if (sh4_is_ram(a)) { const uint8_t b = uint8_t(v); ww_ram(c->ram + (a & kRamMask), a & kRamMask, &b, 1); }
+#endif
     if (sh4_is_ram(a)) c->ram[a & kRamMask] = uint8_t(v);
     else sh4_write8_slow(c, a, uint8_t(v));
 }
 inline void sh4_write16(Sh4Context* c, uint32_t a, uint32_t v) {
     if (sh4_is_ram(a) && !(a & 1)) {
         const uint16_t w = uint16_t(v);
+#if BS_WRITE_WATCH
+        ww_ram(c->ram + (a & kRamMask), a & kRamMask, &w, 2);
+#endif
         std::memcpy(c->ram + (a & kRamMask), &w, 2);
     } else {
         sh4_write16_slow(c, a, uint16_t(v));
     }
 }
 inline void sh4_write32(Sh4Context* c, uint32_t a, uint32_t v) {
-    if (sh4_is_ram(a) && !(a & 3)) std::memcpy(c->ram + (a & kRamMask), &v, 4);
-    else sh4_write32_slow(c, a, v);
+    if (sh4_is_ram(a) && !(a & 3)) {
+#if BS_WRITE_WATCH
+        ww_ram(c->ram + (a & kRamMask), a & kRamMask, &v, 4);
+#endif
+        std::memcpy(c->ram + (a & kRamMask), &v, 4);
+    } else {
+        sh4_write32_slow(c, a, v);
+    }
 }
 
 } // namespace bs

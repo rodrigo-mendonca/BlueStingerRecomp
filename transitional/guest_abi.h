@@ -9,6 +9,8 @@
 // recusado: o adaptador nunca vira um caminho para o hardware simulado. Tudo isso some
 // quando os chamadores forem elevados (N9).
 #include "cpu/sh4_context.h"
+#include "cpu/write_watch.h"
+#include "memory/effect_counters.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +43,11 @@ public:
     bool write(uint32_t a, std::span<const std::byte> in) {
         const auto off = ram_offset(a, uint32_t(in.size()));
         if (!off) return false;
+        ++g_effects.hostWrites;  // N2b-2: efeito na RAM do guest fora da CPU
+#if BS_WRITE_WATCH
+        ww_dirty_all();
+        if (g_ww.on) ++g_ww.hostWrites;  // diagnostico N2b: escrita do host na RAM do guest
+#endif
         std::memcpy(c_->ram + *off, in.data(), in.size());
         return true;
     }

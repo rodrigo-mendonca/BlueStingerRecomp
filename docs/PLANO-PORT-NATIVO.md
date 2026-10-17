@@ -179,12 +179,14 @@ migração versionada.
 **N5. Vídeo**
 - Provedor nativo da API Sofdec: decodificação MPEG-1 + ADX com licença revisada (seção 8)
   e saída nativa sincronizada pelo relógio do vídeo, não da AICA.
+- Projetado para mods de mídia (diretriz permanente, seção 4.1).
 
 **N6. Áudio**
 - Provedor nativo da API de som do lado SH-4: motor que lê o `BS_SND.MLT` (bancos,
   sequências, PCM/ADPCM) e saída nativa.
 - O `MANATEE.DRV` é **analisado estaticamente** (código ARM como documentação de
   comportamento), nunca executado.
+- Projetado para mods de mídia (diretriz permanente, seção 4.1).
 
 **N7b. Renderização nativa**
 - Provedores nativos de Ninja/Kamui sobre o renderizador, com assets convertidos pelo
@@ -205,6 +207,48 @@ migração versionada.
 - Validação de contrato por função/sistema contra a versão gerada.
 - Código do SDK substituído e morto é **descartado**, não elevado.
 - A meta não é "100% das funções": é a ausência de dependência operacional (seção 7).
+
+### 4.1 Diretriz permanente: vídeo e áudio moddáveis (registrada em 2026-10-16)
+
+Só requisito de projeto. **Não muda a ordem do roadmap, não antecipa N5, N6 ou N7**, e nada
+é implementado antes da etapa autorizada.
+
+**N5 (vídeos):**
+- substituir vídeos por versões com upscale, remasterizadas e em resoluções maiores;
+- aceitar formatos modernos e documentados (MP4/H.264), com caminho para outros codecs;
+- preservar a sincronização de áudio, legendas e eventos do jogo;
+- não depender da resolução, da taxa de quadros nem do formato original do Dreamcast.
+
+**N6 (áudio):**
+- separar logicamente músicas, efeitos e diálogos;
+- aceitar substituições em WAV, FLAC ou OGG, conforme o suporte implementado;
+- facilitar dublagem em português e em outros idiomas;
+- aceitar músicas remasterizadas, mantendo loops e transições;
+- mapear os identificadores originais (bancos, sequências, streams, cues) para nomes ou IDs
+  estáveis.
+
+**Sistema de mods de mídia:**
+- substituir mídia sem recompilar o executável (pasta de mods lida em tempo de execução, como
+  os mods de arquivo do N1);
+- aceitar arquivos maiores que os originais;
+- preservar a sincronização e o comportamento do gameplay, com dois modos explícitos:
+  - **modo fiel** (sem mods ou com mods de mesma duração): o jogo vê o contrato original
+    (eventos, durações e estados), igual ao legado;
+  - **modo modificado** (mídia de outra duração): a duração e os laços vêm dos metadados do
+    recurso do mod. A documentação de cada tipo de mídia diz quais eventos do gameplay
+    acompanham a nova duração (fim de vídeo, fim de fala, ponto de laço) e quais continuam
+    fixos;
+- documentar formatos, mapeamentos e regras de substituição;
+- conversão e extração só a partir dos recursos fornecidos pelo dono do CDI (Builder), nunca
+  distribuídas;
+- os recursos originais continuam sendo a referência de fidelidade: o modo sem mods reproduz
+  o original, e os testes comparam contra ele.
+
+**Consequências para o projeto do N5/N6:**
+- a interface nativa trata mídia por ID lógico, não por arquivo do disco;
+- duração e laços vêm de metadados do recurso (original no modo fiel, do mod no modificado), não de taxas fixas;
+- os eventos que o jogo observa (fim de vídeo, posição de stream, estado do driver de som) são
+  definidos no relógio lógico, de forma independente do formato.
 
 ---
 

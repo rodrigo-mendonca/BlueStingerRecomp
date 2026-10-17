@@ -48,6 +48,9 @@ bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line);
 // pvr_spg_crossed); kSpgNever se o campo nunca chega a ela. N2a: agenda o VBlank na fila.
 constexpr uint64_t kSpgNever = ~0ull;
 uint64_t           pvr_spg_next_crossing(uint64_t after, uint32_t line);
+// N2b-2: primeiro instante depois de `after` em que a linha do feixe muda. SPG_STATUS (linha,
+// vsync, campo) so muda nesses instantes: e o alvo de uma espera que le o SPG.
+uint64_t pvr_spg_next_line_change(uint64_t after);
 // Linhas das interrupcoes de VBlank (SPG_VBLANK_INT 0x005F80C4).
 uint32_t pvr_vblank_in_line();
 uint32_t pvr_vblank_out_line();

@@ -10,6 +10,7 @@
 #include "memory/sh4_dmac.h"
 #include "memory/sh4_port.h"
 #include "memory/sh4_tmu.h"
+#include "memory/effect_counters.h"
 #include "memory/sh4_sq.h"
 #include "pvr/holly_intc.h"
 #include "pvr/holly_sb.h"
@@ -17,11 +18,84 @@
 #include "pvr/vram.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <unordered_map>
 #include <set>
 #include <string>
 #include <utility>
 
 namespace bs {
+
+WriteWatch     g_ww;       // diagnostico N2b (cpu/write_watch.h)
+EffectCounters g_effects;  // N2b-2 (memory/effect_counters.h)
+
+// Diagnostico N2b (so chamado no build BS_WRITE_WATCH): voltas por PC de retomada e declaracao
+// sombra das esperas temporais do boot.
+void ww_poll_note(Sh4Context* c, uint32_t resume, bool callReturn) {
+    struct Count {
+        uint64_t loops = 0, returns = 0, stuck = 0;  // voltas, retornos de chamada, voltas sem progresso
+    };
+    struct State {  // o estado arquitetural que um laco muda sem escrever na memoria
+        uint32_t r[16], rbank[8], t, sr, gbr, vbr, ssr, spc, sgr, dbr, pr, fr[16], xf[16], fpscr, fpul, mach, macl;
+        bool     operator==(const State&) const = default;
+    };
+    struct Slot {  // laco ativo (g_ww.loops[i] tem a janela de pilha e a marca de escrita)
+        uint32_t pc  = 0;
+        uint64_t use = 0;
+        State    s{};
+    };
+    static std::unordered_map<uint32_t, Count>* polls = nullptr;
+    static Slot                                 slots[kWwLoops];
+    static uint64_t                             tick = 0;
+    static bool                                    declare = false;
+    static const bool                              init    = [] {
+        if (const char* p = std::getenv("BS_WW_VOLTAS"); p && *p) {
+            polls    = new std::unordered_map<uint32_t, Count>();
+            g_ww.track = true;
+            static std::string path = p;
+            std::atexit([] {
+                if (std::FILE* f = std::fopen(path.c_str(), "w")) {
+                    for (const auto& [pc, n] : *polls)
+                        std::fprintf(f, "%08X\t%llu\t%llu\t%llu\n", pc, static_cast<unsigned long long>(n.loops),
+                                     static_cast<unsigned long long>(n.returns), static_cast<unsigned long long>(n.stuck));
+                    std::fclose(f);
+                }
+            });
+        }
+        declare = std::getenv("BS_WW_DECLARAR") != nullptr;
+        return true;
+    }();
+    (void)init;
+    if (polls && callReturn) ++(*polls)[resume].returns;
+    if (polls && !callReturn) {
+        Count& n = (*polls)[resume];
+        ++n.loops;
+        State s;
+        std::memcpy(s.r, c->r, sizeof s.r);
+        std::memcpy(s.rbank, c->rbank, sizeof s.rbank);
+        std::memcpy(s.fr, c->fr, sizeof s.fr);
+        std::memcpy(s.xf, c->xf, sizeof s.xf);
+        s.t = c->t, s.sr = c->sr, s.gbr = c->gbr, s.vbr = c->vbr, s.ssr = c->ssr, s.spc = c->spc;
+        s.sgr = c->sgr, s.dbr = c->dbr, s.pr = c->pr, s.fpscr = c->fpscr;
+        s.fpul = c->fpul, s.mach = c->mach, s.macl = c->macl;
+        int i = 0;  // o slot deste laco, ou o menos usado recentemente
+        for (int k = 0; k < kWwLoops; ++k) {
+            if (slots[k].pc == resume) { i = k; break; }
+            if (slots[k].use < slots[i].use) i = k;
+        }
+        WwLoop& w = g_ww.loops[i];
+        if (slots[i].pc == resume && !w.dirty && slots[i].s == s) ++n.stuck;
+        slots[i].pc = resume, slots[i].use = ++tick, slots[i].s = s;
+        w.hi    = c->r[15] & 0x00FFFFFFu;  // frames abaixo do r15 do laco: chamadas dentro da volta
+        w.lo    = w.hi > 0x10000u ? w.hi - 0x10000u : 0;
+        w.dirty = false;
+    }
+    if (declare && !callReturn &&
+        (resume == 0x8C172624 || resume == 0x8C17262A || resume == 0x8C172804 || resume == 0x8C172EF2 ||
+         resume == 0x8C1C6CB0 || resume == 0x8C1C6D08))
+        sh4_wait_point(c, resume);  // modo sombra: so informa o monitor
+}
 namespace {
 
 // Cada registrador distinto e registrado uma vez (area 0 e P4 por endereco; o resto,
@@ -50,6 +124,11 @@ bool hwRead(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
            sh4_ccn_read(a, size, v);             // P4: CCR, arrays de cache
 }
 bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
+    ++g_effects.hwWrites;  // N2b-2: efeito fora da RAM (detector de ociosidade da thread 3)
+#if BS_WRITE_WATCH
+    ww_dirty_all();
+    if (g_ww.on) ++g_ww.hwWrites;  // diagnostico N2b: efeito fora da RAM
+#endif
     return vram_write(c, a, size, v) ||
            pvr_reg_write(c, a, size, v) ||
            holly_intc_write(c, a, size, v) ||

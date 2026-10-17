@@ -54,6 +54,23 @@ uint32_t count(int n, uint64_t now) {
     return ch.tcor - uint32_t((ticks - ch.base - 1) % period);
 }
 
+} // namespace
+
+// Diagnostico N2b (detector de efeito): estado mutavel do TMU, inclusive o UNF que uma leitura do
+// TCNT pode acender.
+uint64_t sh4_tmu_state_hash() {
+    uint64_t h = 1469598103934665603ull;
+    for (const Channel& ch : g_ch) {
+        const uint64_t f[] = {ch.tcor, ch.tcr, ch.base, ch.baseCycle};
+        for (uint64_t v : f) h = (h ^ v) * 1099511628211ull;
+    }
+    const uint64_t f2[] = {g_tocr, g_tstr, g_tcpr2};
+    for (uint64_t v : f2) h = (h ^ v) * 1099511628211ull;
+    return h;
+}
+
+namespace {
+
 // Fixa o valor atual como nova base (antes de mudar TSTR, TCR ou TCNT).
 void rebase(int n, uint64_t now) {
     g_ch[n].base      = count(n, now);

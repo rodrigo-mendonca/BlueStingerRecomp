@@ -17,14 +17,24 @@
 #define BS_CYCLES(n) (c->cycles += (n))
 // Ponto de checagem de eventos (back-edges): interrupcoes, VBlank, timers.
 // `resume` e o endereco SH-4 onde a execucao continua (vira SPC se houver interrupcao).
-#define BS_POLL(resume)                       \
+// BS_POLL fica nos back-edges; BS_POLL_RET, no retorno de chamada (BS_CALL). Os dois fazem o
+// mesmo; so o diagnostico do N2b (build BS_WRITE_WATCH) distingue voltas de laco de retornos.
+#if BS_WRITE_WATCH
+#define BS_WW_POLL(resume, ret) ::bs::ww_poll_note(c, (resume), (ret))
+#else
+#define BS_WW_POLL(resume, ret) ((void)0)
+#endif
+#define BS_POLL_KIND(resume, ret)             \
     do {                                      \
         ++c->polls;                           \
+        BS_WW_POLL(resume, ret);              \
         if (c->cycles >= c->next_event) {     \
             c->pc = (resume);                 \
             ::bs::sh4_service(c);             \
         }                                     \
     } while (0)
+#define BS_POLL(resume) BS_POLL_KIND(resume, false)
+#define BS_POLL_RET(resume) BS_POLL_KIND(resume, true)
 // N2b: back-edge de um laco declarado como ponto de espera ([native] esperas no config). No
 // N2b-1 (modo sombra) so informa o monitor de progresso e faz o poll de sempre: a execucao nao
 // muda. BS_WAIT_END marca a saida do laco (a condicao esperada ficou verdadeira).
@@ -55,7 +65,7 @@
         c->ret_sp     = saved_sp_;                  \
         c->cur_fn     = saved_fn_;                  \
         if (c->redirect) return;                    \
-        BS_POLL(ret);                               \
+        BS_POLL_RET(ret);                           \
     } while (0)
 // Um longjmp pendente (c->redirect) sobe pelos quadros ate o da funcao que chamou o
 // setjmp (BS_CALL acima so retorna). Numa funcao com pontos de reentrada, o longjmp
@@ -77,7 +87,7 @@
             if (c->r[15] == call_sp_) goto bs_reenter_; \
             return;                                     \
         }                                               \
-        BS_POLL(ret);                                   \
+        BS_POLL_RET(ret);                               \
     } while (0)
 // rts de uma funcao longjmp (config [threads]): alvo diferente do esperado e troca de
 // contexto do guest.

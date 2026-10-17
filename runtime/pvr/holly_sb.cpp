@@ -16,6 +16,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace bs {
 namespace {
@@ -28,6 +29,7 @@ constexpr uint32_t kIstPvrDma = 1u << 19;
 
 std::array<uint32_t, kSize / 4> g_regs{};
 std::array<bool, kSize / 4>     g_reported{};
+bool                            g_c2dstWritten = false;  // BS_SB_MUTACAO=c2dst_ocupado
 
 uint32_t canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 
@@ -49,6 +51,24 @@ bool holly_sb_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     }
     const uint32_t i = (p - kBase) / 4;
     v                = g_regs[i];
+    // N2b-2, negativo (so testes): BS_SB_MUTACAO=c2dst_ocupado faz a primeira leitura de C2DST
+    // depois de cada escrita dizer "ocupado". O laco sincrono 8C1C1DC2 da uma volta: no tempo
+    // experimental isso tem de ser erro explicito (nenhum evento libera a espera).
+    // BS_SB_MUTACAO=ffst_ocupado: a primeira leitura de SB_FFST (0x005F688C) diz "FIFO ocupada"
+    // (bits 0 e 5): os lacos sincronos 8C096EE0/8C09724C dao uma volta.
+    static const char* mut      = std::getenv("BS_SB_MUTACAO");
+    static const bool  busyOnce = mut && std::strcmp(mut, "c2dst_ocupado") == 0;
+    static bool        ffstBusy = mut && std::strcmp(mut, "ffst_ocupado") == 0;
+    if (busyOnce && p == kC2Dst && g_c2dstWritten) {
+        g_c2dstWritten = false;
+        v              = 1;
+        return true;
+    }
+    if (ffstBusy && p == 0x005F688C) {
+        ffstBusy = false;
+        v        = 0x21;
+        return true;
+    }
     if (!g_reported[i]) {
         g_reported[i] = true;
         std::fprintf(stderr, "[sb] leitura sem modelo: %08X -> %08X (ultimo valor escrito)\n", p, v);
@@ -61,6 +81,7 @@ bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     if (maple_write(c, a, v)) return true;
     if (p != kSbRev) g_regs[(p - kBase) / 4] = v;
+    if (p == kC2Dst) g_c2dstWritten = true;
     // Diagnostico: BS_PVR_DEBUG=1 registra o disparo do DMA do canal 2 (SB_C2DST)
     static const bool debug = std::getenv("BS_PVR_DEBUG") != nullptr;
     static int        n     = 0;

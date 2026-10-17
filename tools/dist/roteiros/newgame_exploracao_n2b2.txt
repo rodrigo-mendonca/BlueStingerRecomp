@@ -1,0 +1,69 @@
+# N2b-2 (--tempo experimental): newgame_exploracao.txt com os botoes do gameplay (indices a partir
+# de 4700) adiantados 26. O indice do roteiro e o numero de leituras do controle (GetCond), nao o
+# VBlank. No tempo estavel o jogo le o controle tambem durante as cargas, que la duram mais
+# VBlanks: no mesmo passo de jogo da area 1 o estavel fez 26 leituras a mais (medido pela coluna
+# "entrada" do BS_FRAME_LOG nos quadros alinhados; docs/N2b2-RELATORIO.md). Com o deslocamento, o
+# jogador aperta os mesmos botoes nos mesmos passos do jogo que no estavel com o roteiro original.
+# NEW GAME + exploracao longa da primeira area (20 000 leituras): botoes, caminhadas longas,
+# combinacoes e um trecho parado no fim (estabilidade). Mesmo inicio de newgame_area1.txt.
+200 START
+230 -
+1200 START
+1230 -
+1600 START
+1630 -
+2000 START
+2030 -
+# botoes isolados na area jogavel
+5574 A
+5584 -
+5674 B
+5684 -
+5774 X
+5784 -
+5874 Y
+5884 -
+5974 START
+5984 -
+6174 START
+6184 -
+# caminhada longa para frente (em direcao ao portao C-GATE)
+6374 UP
+7574 -
+# acao perto do portao
+7624 A
+7634 -
+7724 A
+7734 -
+# esquerda, frente, direita, frente
+7874 LEFT
+8074 -
+8124 UP
+8974 -
+9024 RIGHT
+9374 -
+9424 UP
+10474 -
+# combinacoes (frente + acao, frente + B)
+10574 UP+A
+10874 -
+10974 UP+B
+11274 -
+# volta (tras) e meia-volta
+11374 DOWN
+12374 -
+12474 LEFT
+12874 -
+12924 UP
+14474 -
+# acoes repetidas
+14574 A
+14584 -
+14674 A
+14684 -
+14774 X
+14784 -
+14874 Y
+14884 -
+# parado ate o fim (estabilidade)
+14974 -

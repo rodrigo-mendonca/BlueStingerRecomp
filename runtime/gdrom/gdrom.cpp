@@ -176,6 +176,16 @@ void advance(Sh4Context* c) {
 void gdrom_set_disc(std::unique_ptr<DiscSource> disc) { g_disc = std::move(disc); }
 uint64_t gdrom_event_count() { return g_blocks; }
 
+uint64_t gdrom_state_hash() {
+    uint64_t       h = 1469598103934665603ull;
+    const uint32_t f[] = {uint32_t(g.status), g.lastId, g.nextId, g.command, g.params[0], g.params[1], g.params[2],
+                          g.params[3], g.result[0], g.result[1], g.result[2], g.result[3], g.xferFad, g.xferLeft,
+                          g.xferTotal, g.xferDest};
+    for (uint32_t v : f) h = (h ^ v) * 1099511628211ull;
+    h = (h ^ g.xferDue) * 1099511628211ull;  // instante do proximo bloco (revisao Codex)
+    return h;
+}
+
 void gdrom_reset() {
     g = {};
     time_provider().disc_cancel();

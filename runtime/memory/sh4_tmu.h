@@ -5,6 +5,9 @@
 
 namespace bs {
 
+// Diagnostico N2b: hash do estado mutavel do TMU (TCR/UNF, TCOR, bases, TSTR).
+uint64_t sh4_tmu_state_hash();
+
 void sh4_tmu_reset();
 
 // true se `a` pertence ao TMU (o acesso foi tratado).

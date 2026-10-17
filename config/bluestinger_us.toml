@@ -126,8 +126,28 @@ slots = [
 # evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por
 # onde passam todas as saidas). No N2b-1 so informam o monitor de progresso (modo sombra).
 # A thread 3 (servidor do CRI, 8C158840) NAO entra: trabalha ate ser preemptada.
+#
+# N2b-2 (--tempo experimental; o tempo nativo estavel ignora estes pontos): esperas do inventario
+# docs/N2b-ESPERAS.md e o back-edge condicional da thread 3. O que libera cada uma fica em
+# transitional/time_adapter.cpp (kWaitDecls). Back-edges com delay slot (bra) entram tambem: o
+# BS_WAIT vem depois do slot.
 esperas = [
   0x8C064A2C,  # espera do VBlank do jogo (bandeira 0x8C24F88A), funcao 8C064A20
   0x8C173086,  # espera do fim do render anterior, timeout 166 ms (8C173044)
   0x8C0978F6,  # espera de bit com timeout (8C0978BE; nao exercitada no roteiro)
+  # N2b-2: esperas temporais do boot (V2 e V13)
+  0x8C172628,  # vsync do SPG_STATUS acender (laco 8C172624, f_8C172620)
+  0x8C17262E,  # vsync do SPG_STATUS apagar (laco 8C17262A)
+  0x8C172808,  # VBlank-In em ISTNRM (laco 8C172804, f_8C172642)
+  0x8C172EF8,  # contador do callback de VBlank 8C172602 (laco 8C172EF2, f_8C172D22)
+  0x8C1C6D06,  # linha do SPG_STATUS sair de 0 (laco 8C1C6CB0, f_8C1C6B3C)
+  0x8C1C6D0E,  # linha do SPG_STATUS voltar a 0 (laco 8C1C6D08)
+  # N2b-2: esperas sincronas (a condicao e satisfeita na escrita; volta = erro explicito)
+  0x8C1C1DC6,  # DMA ch2: C2DST = 0 (f_8C1C1DB4)
+  0x8C096EE8,  # FIFO do G2 vazia, SB_FFST bit 0 (getter 8C09A054)
+  0x8C096EF8,  # idem, segundo teste
+  0x8C097254,  # FIFO do G2 vazia, SB_FFST bit 5 (getter 8C09A1F4)
+  0x8C097264,  # idem, segundo teste
+  # N2b-2: thread 3 (servidor do CRI, laco 8C158840): bloqueia so depois de passada ociosa
+  0x8C158860,  # back-edge bra da passada 8C1586B8
 ]

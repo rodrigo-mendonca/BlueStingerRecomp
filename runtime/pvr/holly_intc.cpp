@@ -40,7 +40,9 @@ uint64_t g_events = 0;  // eventos do Holly entregues (diagnostico N2b: epoca, m
 uint64_t g_vblankFused = 0;  // VBlank-In com o bit ainda aceso: um atendimento para dois (N2b, B4)
 
 void update(uint64_t now) {
-    if (now <= g_last) return;
+    // no tempo experimental (N2b-2) o instante fica parado entre dois atendimentos: um evento
+    // vencido no mesmo instante ainda e entregue
+    if (now < g_last || (now == g_last && !time_provider().holly_pending(now))) return;
     // N2a: os eventos agendados vencidos vem do provedor de tempo (legado: calculo preguicoso
     // por ciclos; nativo: fila de eventos), entregues aqui como antes
     const uint32_t due      = time_provider().holly_due(now);

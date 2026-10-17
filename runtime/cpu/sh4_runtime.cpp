@@ -115,7 +115,9 @@ void sh4_check_code(Sh4Context* c, const uint32_t* pcs, const uint16_t* ops, siz
 // Poll periodico (BS_POLL nos back-edges): reavalia interrupcoes a cada quantum de
 // ciclos. c->pc ja e o endereco de retomada.
 void sh4_wait_point(Sh4Context* c, uint32_t pc) {
-    time_provider().wait_point(pc, uint32_t(sh4_current_thread()), c->polls);
+    // N2b-2: se o instante logico andou, o poll que segue o ponto (BS_WAIT) atende os eventos
+    // (next_event = 0 forca o atendimento, como no fim do DMA do canal 2)
+    if (time_provider().wait(c, pc, uint32_t(sh4_current_thread()))) c->next_event = 0;
 }
 
 void sh4_wait_end(Sh4Context* c, uint32_t pc) {

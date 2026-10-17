@@ -114,6 +114,18 @@ uint64_t pvr_spg_next_crossing(uint64_t after, uint32_t line) {
     return off + k * kFieldCycles - g_phase;
 }
 
+uint64_t pvr_spg_next_line_change(uint64_t after) {
+    // a mesma conta de pvr_spg_position: a linha muda na primeira posicao do campo com
+    // (posicao * linhas / campo) >= linha + 1, ou seja, em teto((linha + 1) * campo / linhas). (O
+    // inicio de linha de pvr_spg_next_crossing e truncado: no limite, a linha ainda nao mudou.)
+    const uint32_t lines = fieldLines();
+    const uint64_t x     = after + g_phase;
+    const uint64_t base  = x - x % kFieldCycles;
+    const uint32_t line  = uint32_t((x % kFieldCycles) * lines / kFieldCycles);
+    const uint64_t next  = line + 1 >= lines ? kFieldCycles : (uint64_t(line + 1) * kFieldCycles + lines - 1) / lines;
+    return base + next - g_phase;
+}
+
 SpgPos pvr_spg_position(uint64_t cycles) {
     cycles += g_phase;
     const uint32_t lines   = fieldLines();

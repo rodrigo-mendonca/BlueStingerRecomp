@@ -30,6 +30,11 @@
 // BS_CRI_DIAG=pular5   NAO executa as passadas elegiveis (o que o N2b-2 faria bloqueando a thread 3
 //                      ate o proximo evento).
 // BS_CRI_DIAG=repetir5 controle do pular5: executa duas vezes as passadas elegiveis.
+// BS_CRI_DIAG=efeito|pular6|repetir6|pular6r|pular6s  (so no build -DBS_WRITE_WATCH=ON) efeito
+//                      liquido de cada passada (RAM fora da pilha morta, MMIO/VRAM/AICA, descarga
+//                      de store queue, escritas do host, estado do GD-ROM e do TMU); pular6 bloqueia
+//                      depois de passada sem efeito ate o proximo evento; repetir6 e o controle;
+//                      pular6r/pular6s sao negativos (detector que ignora a RAM / a store queue).
 // BS_CRI_DIAG=consumidor  negativo do B11: gasta trabalho extra quando o hash dos medidores do
 //                      CRI (gravados a partir do TMU) e impar; um consumidor do TMU assim muda TN.
 // BS_CRI_MEDIDORES=<arquivo>  B11: os medidores do CRI (0x8C1DD1C4-0x8C1DD23C), uma linha por

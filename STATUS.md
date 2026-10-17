@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: só investigação e planejamento autorizados. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`); P0/P1 e **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) sem commit: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. |
 
 ## Versão suportada
 
@@ -1334,7 +1334,261 @@ Elas foram interrompidas e repetidas do zero.
 **Catraca do N0:** a primeira versão de `bs::mods::poll` lia `c->cycles` à mão. O `n0_fechamento`
 acusou `tempo.consumidores.ciclos 0 → 1`. A função passou a usar `BS_CYCLES`/`BS_POLL`.
 
+### Proposta de sequência para o N2b-2 (2026-10-16, depois de `246e6b3`, sem commit)
+
+Documento: `docs/N2b-PROPOSTA.md`.
+
+**Medidas novas** (observador de RAM com contadores para passadas com trabalho):
+- no meio dos dois vídeos (V2150, V4550; também com o TMU parado), ~1 005 passadas com MW ativo
+  e sem evento deixam a RAM principal e a de som inalteradas;
+- isso é indício, não prova: o observador não cobre VRAM, MMIO, filas e o estado interno.
+
+**Inventário pelo aviso de falta de progresso:**
+- as janelas longas da thread 0 são computação (`8C0100EE`, `8C1C43C8`);
+- durante o vídeo, a thread 0 fica suspensa.
+
+**Esperas temporais não declaradas** (achadas pela revisão, confirmadas no disassembly):
+- SPG vsync em `8C172624`/`8C17262A`;
+- `ISTNRM` VBlank-In em `8C172804`;
+- polling de DMA `C2DST` em `8C1C1DC2`.
+
+**Recomendação:**
+1. P0 (inventário das esperas temporais) e P1 (observador ampliado e predicado do MW/ADX);
+2. decisões D7, D9(a), S4, exceção e D11;
+3. N2b-2;
+4. áudio e vídeo nativos sobre o relógio lógico;
+5. o protocolo do driver de som analisado em paralelo.
+
+### N2b-2: investigação P0/P1 dos bloqueios (2026-10-16, depois de `246e6b3`, sem commit)
+
+Pedido: P0 (inventário das esperas temporais) e P1 (ociosidade do Sofdec/ADX), sem implementar o
+N2b-2. Documentos:
+- `docs/N2b-PROPOSTA.md`, seções 8–12;
+- `docs/N2b-ESPERAS.md`.
+
+**Cobertura de todas as medidas:** **um** roteiro (NEW GAME até a primeira área), em 8 000 e
+16 000 VBlanks.
+
+**Ferramentas** (diagnóstico; o produto não muda):
+- **build de investigação** `-DBS_WRITE_WATCH=ON`, com a sonda de escrita e de poll:
+  - efeito líquido por passada: RAM, MMIO/VRAM/AICA, store queue, host, GD-ROM, TMU;
+  - voltas exatas por back-edge, com os retornos de chamada separados;
+  - voltas sem progresso;
+- `BS_CRI_DIAG=efeito|pular6|repetir6|pular6r|pular6s`;
+- `tools/dist/test_efeito.ps1` (E1–E7);
+- `tools/dev/n2b_esperas_estaticas.py`, `n2b_lacos_quentes.py`, `n2b_classifica_lacos.py`;
+- dados brutos com proveniência (hashes, comandos) em `analysis/n2b/`.
+
+**P0, inventário (método: voltas sem progresso em todos os laços executados, mais o varredor
+estático e a classificação estrutural):**
+- dos 833 laços executados, seis têm voltas sem progresso, e os seis são esperas temporais:
+  - duas declaradas: VBlank `8C064A26` e render `8C17306A`;
+  - quatro não declaradas: `8C172804` (VBlank-In), `8C17262A` (vsync), `8C172EF2` (callback de
+    VBlank) e **`8C1C6D08`**;
+- `8C1C6D08` é nova: espera a linha de varredura do `SPG_STATUS` voltar a 0, por um getter
+  chamado por registrador, em `f_8C1C6B3C`. O varredor estático não a via;
+- com as de 0 voltas (`8C172624`, `8C1C6CB0`), são seis laços de espera do boot (V2 e V13), cada
+  um executado uma vez;
+- polling satisfeito sincronamente: `8C1C1DC2`, `8C096EE0`, `8C09724C`;
+- o resto é computação.
+
+**P1, ociosidade** (`test_efeito.ps1`: 17 casos, 0 falhas, E7 em SKIP):
+
+| Medida | Resultado |
+|---|---|
+| Passadas sem evento | 2 653 809, das quais **81** com efeito líquido |
+| Com MW/ADX ativo | 89 610 de 89 661 sem efeito |
+| Violações | **0** (também com o TMU parado) |
+| Supressão sob o modelo atual (`pular6`) | TN, IRQF, CL, SL, AUD e quadro iguais ao legado; controle igual |
+| Negativo `pular6r` (ignora a RAM) | detectado |
+| Negativo `pular6s` (ignora a store queue) | **não exercitado**: nenhuma passada tem efeito só por ela |
+| D7 + supressão | só as 4 cessões marcadas somem |
+
+O bloqueio real não foi testado: é o portão do N2b-2 experimental.
+
+**D11:** com as esperas do boot declaradas em modo sombra, o boot se divide em:
+- V0–V2: 1,29 M;
+- V2–V13: 4,20 M;
+- V13–V33: 9,72 M.
+
+Mais 9 trechos de trabalho de 2 a 25 VBlanks (seção 9.3 da proposta).
+
+**Custo** (sequencial, 3 000 VBlanks):
+
+| Configuração | Custo |
+|---|---|
+| Build com mods | +0,4% |
+| Sonda compilada e desligada | +3,1% |
+| Detector ligado | +9,3% |
+| Produto (Release) | inalterado |
+
+"< 0,1% com o bloqueio" é só uma extrapolação linear.
+
+**Critérios de desbloqueio:**
+- U1 **parcial**;
+- U2–U4 cumpridos em uma rota;
+- U5–U8 pendentes;
+- **N2b-2 continua bloqueado.**
+
+**Regressão completa** (2026-10-16, 21:22–23:26, sequencial, depois do código estabilizado):
+
+| Etapa | Resultado |
+|---|---|
+| Builds release, debug e mods | ok |
+| Unitários | 211 |
+| ctest, sem e com o disco | 100% |
+| `make_builder`, `make_preview` | ok |
+| `test_preview` | 9/0 |
+| `test_gameplay` | 4/0 |
+| `test_builder` | 18/0 |
+| `test_projeto` | 13/0 |
+| `test_arquivos` | 6/0 |
+| `test_ordem` | 8/0 |
+| `test_tempo` | 35/0 |
+| `test_n2b` | 44/0 |
+| `test_cri` | 33/0 |
+| `test_efeito` | 17/0, E7 em SKIP |
+
+A primeira tentativa parou no `make_preview`, e com razão: havia um `bluestinger.log` com o caminho
+de desenvolvimento dentro de `dist/BlueStinger-Preview`. Ele vinha de uma execução diagnóstica de
+cobertura às 17:07. O log foi movido para `analysis/n2b/` e a regressão foi refeita do início.
+Os backups da Preview ficaram intactos.
+
+### N2b-2 experimental: tempo lógico sem ciclos estimados (2026-10-17, sem commit)
+
+Autorização: N2b-2 **só experimental, atrás de opção** (`--tempo experimental`). O padrão continua
+`--tempo nativo`. Relatório: `docs/N2b2-RELATORIO.md`. Teste: `tools/dist/test_n2b2.ps1`.
+
+**Mecanismo:**
+- o instante lógico só anda quando o contexto corrente chega a um ponto de espera declarado, e
+  só até o próximo evento real (fila do Holly e do GD-ROM; nas esperas do SPG, a próxima troca de
+  linha);
+- TMU, SPG, MDST e RTC leem esse instante (D7);
+- 12 pontos de espera novos no config:
+  - os 6 laços de espera do boot;
+  - 5 esperas síncronas (DMA ch2 e `SB_FFST`);
+  - o back-edge condicional da thread 3;
+- a thread 3 bloqueia depois de passada ociosa, pelo critério `pular6`, com RAM rastreada pelo
+  sistema;
+- falta de progresso, deadlock e espera síncrona que dá volta viram erro com threads, PCs e
+  esperas.
+
+**`test_n2b2.ps1`: 17 casos, 0 falhas** (exploração 16 000 e área 1 8 000 VBlanks):
+
+| Critério | Resultado |
+|---|---|
+| Leituras | mesma sequência (7 915) que o estável |
+| Quadros | mesma sequência de 2 517 trocas do boot ao gameplay (título, menus, dois vídeos, cargas); com as entradas alinhadas por passo de jogo, iguais na rota inteira, salvo a transição do menu de itens (D11) |
+| Áudio | mesmas 1 023 002 escritas na AICA na rota inteira, sem as cópias de guarda do anel |
+| Eventos | 99,94% dos VBlanks com padrão existente no estável |
+| Provedores (D9a) | legado = nativo VBlank a VBlank |
+| Timeout de render (B5) | preservado |
+| Negativos de liveness | 3, todos detectados com thread, PC e espera |
+| Detector da thread 3 | necessário (bloquear sempre muda leituras e quadros) |
+| Determinismo | duas execuções idênticas |
+| Estável inalterado | byte a byte igual ao executável anterior |
+| Mods | o build com mods dá o mesmo resultado |
+| Desempenho | experimental −12% a −14% de trabalho por campo |
+
+**SKIP:** o DMA ch2 não é alcançado na rota; o negativo `cri_ignora_ram` não é sensível.
+
+**Diferenças justificadas (D11):**
+- o trabalho não consome VBlanks: as cargas e o boot são instantâneos, e a partida dos vídeos é
+  mais curta. A área 1 abre 42 VBlanks antes;
+- o estável perde renders, o experimental não;
+- o áudio só difere nas cópias de guarda do anel;
+- no mesmo passo de jogo, 194 palavras de RAM diferem (TMU, contadores de VBlank e passadas,
+  pilha da thread 3), nenhuma na região de variáveis do jogo.
+
+**Gameplay (revisão do Codex):** a divergência depois do primeiro botão vinha da entrada. O roteiro
+é indexado pelas leituras do controle, e o estável fez 26 a mais nas cargas. Com as entradas
+alinhadas, quadros, leituras e áudio são iguais na rota inteira, salvo a transição do menu.
+
+**Desempenho do estável:** +2,0% sobre o executável anterior (cinco rodadas pareadas), dentro do
+B9. **Custo conhecido e aceito** pelo mantenedor em 2026-10-17 (tolerância B9 de 5%). Não será
+investigado nem otimizado agora.
+
+**Defeito encontrado e corrigido:** `pvr_spg_next_line_change` (arredondamento no limite de
+linha), com unitário sensível.
+
+**Rollback:**
+- `analysis/rollback-antes-n2b2/` (código gerado e executáveis, com hashes);
+- `dist/BlueStinger-Preview.p0p1-246e6b3`.
+
+**Regressão completa** (2026-10-17, 03:36–05:35, sequencial):
+
+| Etapa | Resultado |
+|---|---|
+| Builds release, debug, mods e investigação | ok |
+| Unitários | 212 |
+| ctest, sem e com o disco | 100% |
+| `make_builder`, `make_preview` | ok |
+| `test_preview` | 9/0 |
+| `test_gameplay` | 4/0 |
+| `test_builder` | 18/0 |
+| `test_projeto` | 13/0 |
+| `test_arquivos` | 6/0 |
+| `test_ordem` | 8/0 |
+| `test_tempo` | 35/0 |
+| `test_n2b` | 44/0 |
+| `test_cri` | 33/0 |
+| `test_efeito` | 17/0 |
+| `test_n2b2` | 17/0, com 2 SKIP declarados |
+
+Na regressão, o desempenho deu 17,23 ms por campo no estável e 14,75 ms no experimental.
+
+A primeira tentativa parou no `n0_fechamento`, a catraca do `bs-hwscan`: `sh4_wait_point` fazia
+`next_event = cycles`, uma leitura direta de `c->cycles` em código novo do runtime. A correção usa
+`next_event = 0`, o mesmo idioma do fim do DMA do canal 2, com o mesmo efeito.
+
+
 ## Revisões independentes (Codex)
+
+### 2026-10-17: N2b-2 experimental, duas rodadas. Relatórios em `reviews/codex-20261017-015745.md` e `-024221.md`
+
+Todos os achados foram aceitos. O detalhe está em `docs/N2b2-RELATORIO.md`, seção 7.
+
+| Rodada | Achados principais | Ação |
+|---|---|---|
+| 015745 | [MÉDIA] equivalência de gameplay não demonstrada; N3 aceitava vários quadros de boot; N4 não afirmava a rota inteira; N11 passava com artefatos ausentes. [BAIXA] N6 por ponto de controle; limite de evento vencido acumulava; unitário sem fase nem entrelaçado | Bissecção da RAM: a divergência vinha do índice do roteiro (leituras do controle, 26 a mais no estável). Com as entradas alinhadas, o gameplay é igual, salvo o menu de itens. Testes endurecidos; limite zerado a cada entrega; unitário com fase do BIOS e entrelaçado |
+| 024221 | [MÉDIA] N3b limitado só de um lado e sem o fim do experimental; N4 sem a área 1. [BAIXA] faixa do quadro de boot; término no N6 | Comparação por ponto lógico (leitura alinhada) até o último ponto comum, com a exceção limitada pelos dois STARTs do menu; áudio da área 1; faixa V4–V13 conferida no log bruto; término exigido |
+
+Verificado sem problema pelo Codex:
+- os ciclos não movem o relógio no experimental;
+- o alvo considera o display e o disco;
+- o poll forçado preserva o SPC;
+- os tipos das esperas, no binário;
+- o detector reproduz o `pular6`;
+- o modo estável não recebe estado do experimental, só custo;
+- o índice do roteiro é o `GetCond`.
+
+### 2026-10-16: investigação P0/P1 do N2b-2, três rodadas. Relatórios em `reviews/codex-20261016-182653.md`, `-194556.md` e `-204336.md`
+
+Todos os achados foram aceitos. As ações de cada um estão em `docs/N2b-PROPOSTA.md`, seção 11.
+
+| Rodada | Achados principais | Ação |
+|---|---|---|
+| 182653 | [ALTA] falsos negativos do detector (store queue, UNF do TMU, `xferDue`); inventário não auditável; `pular6` ≠ bloqueio real; boot com as próprias esperas; "duas rotas"; contrato de duração da mídia | Detector ampliado; varredores versionados; U3 reescrito; boot dividido; texto "uma rota"; modo fiel × modificado |
+| 194556 | resumo ainda dizia "duas rotas"; U1 heurístico; `BS_WW_VOLTAS` misturava retornos de chamada; E7 vazio aprovado; "< 0,1%" | Texto corrigido; todos os back-edges e o critério da volta sem progresso (**achou `8C1C6D08`**); `BS_POLL_RET`; E7 em SKIP; extrapolação rebaixada |
+| 204336 | estado sem `VBR`/`SSR`/`SPC`/`SGR`/`DBR`; `Last` global (falso negativo em laço externo); proveniência; E7 com artefato vazio; "sem custo" | Estado completo; 16 laços ativos (resultado idêntico); proveniência com hash das fontes; `Same` no E7; texto do custo |
+
+Verificado sem problema pelo Codex:
+- o produto sem sonda no caminho quente;
+- a nova espera no binário;
+- os 13 laços de endereço fixo como computação;
+- o tratamento do delay slot;
+- a conclusão de que o N2b-2 não está desbloqueado.
+
+### 2026-10-16: proposta de sequência para o N2b-2. Relatório em `reviews/codex-20261016-163758.md`
+
+| Achado | Decisão | Ação |
+|---|---|---|
+| [ALTA] A ociosidade no vídeo não decorre de um observador só de RAM | **Aceito** | Reformulada como indício; o P1 exige observador ampliado |
+| [ALTA] Esperas temporais não declaradas (SPG, ISTNRM; polling de DMA) | **Aceito**, confirmado no disassembly | E9 e etapa P0 |
+| [ALTA] A D11 podia esconder perda de eventos | **Aceito** | D11 como mudança de produto, só em trecho provado atômico |
+| [MÉDIA] Registro de escrita (P1b) insuficiente, custo subestimado | **Aceito** | Detector conservador de efeitos, com limites |
+| [MÉDIA] VBlanks mínimos por carga = espera fictícia | **Aceito** | Removido |
+| [BAIXA] Contadores do observador não zerados por sessão | **Aceito** | Corrigido em `cri_diag.cpp` (não commitado) |
 
 ### 2026-10-16: segunda e terceira revisões das correções. Relatórios em `reviews/codex-20261016-141648.md` e `reviews/codex-20261016-144322.md`
 

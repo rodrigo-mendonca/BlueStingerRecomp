@@ -12,6 +12,11 @@ option(BS_BUILD_TOOLS "Compilar tradutor, ferramentas de desenvolvimento e o Bui
 # Projeto editavel (mods): chamadas entre funcoes geradas passam por slots substituiveis e
 # os .cpp de BS_MODS_DIR entram no executavel (runtime/mods/mod_api.h).
 option(BS_MODS "Compilar com a camada de mods" OFF)
+# N2b (diagnostico de investigacao, nunca o produto): sonda no caminho de escrita (cpu/write_watch.h)
+option(BS_WRITE_WATCH "Diagnostico: registro de efeitos de escrita" OFF)
+if(BS_WRITE_WATCH)
+  add_compile_definitions(BS_WRITE_WATCH=1)
+endif()
 set(BS_MODS_DIR "" CACHE PATH "Pasta com os mods (.cpp) do projeto editavel")
 
 if(MSVC)

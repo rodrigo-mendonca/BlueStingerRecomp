@@ -10,6 +10,7 @@
 #include "aica/aica_regs.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
+#include "pvr/holly_intc.h"
 
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
@@ -175,6 +176,38 @@ void trace(bool write, uint32_t p, uint32_t v, uint64_t cycles, uint32_t pr) {
             }
     s.lastValue = v, s.lastCycle = cycles;
 }
+// Diagnostico (N2b-2): BS_AICA_LOG=<arquivo> grava, a cada 4 096 escritas da CPU na AICA (RAM de
+// som e registradores de audio), o numero de escritas, o hash cumulativo (endereco, valor,
+// tamanho) e o VBlank. Nao depende da linha do tempo: compara a sequencia de comandos ao audio
+// entre modos de tempo em que o mesmo trabalho cai em VBlanks diferentes. Desligado por padrao.
+std::FILE* g_audioLog = nullptr;
+uint64_t   g_audioWrites = 0, g_audioHash = 1469598103934665603ull;
+void audioLogFlush() {
+    if (!g_audioLog) return;
+    std::fprintf(g_audioLog, "%llu\t%016llX\tfim\n", (unsigned long long)g_audioWrites, (unsigned long long)g_audioHash);
+    std::fclose(g_audioLog);
+    g_audioLog = nullptr;
+}
+void audioLog(uint32_t p, uint32_t v, unsigned size) {
+    static const bool on = [] {
+        const char* e = std::getenv("BS_AICA_LOG");
+        if (e && *e && (g_audioLog = std::fopen(e, "w"))) {
+            std::fprintf(g_audioLog, "escritas\thash\tvblank\n");
+            std::atexit(audioLogFlush);
+        }
+        return g_audioLog != nullptr;
+    }();
+    if (!on) return;
+    // BS_AICA_LOG_TUDO=1: uma linha por escrita (endereco, valor, tamanho, VBlank), para separar
+    // os escritores (driver, streams) quando o hash cumulativo diverge
+    static const bool all = std::getenv("BS_AICA_LOG_TUDO") != nullptr;
+    if (all)
+        std::fprintf(g_audioLog, "w\t%08X\t%08X\t%u\t%llu\n", p, v, size, (unsigned long long)holly_vblank_count());
+    for (uint32_t x : {p, v, uint32_t(size)}) g_audioHash = (g_audioHash ^ x) * 1099511628211ull;
+    if (++g_audioWrites % 4096 == 0)
+        std::fprintf(g_audioLog, "%llu\t%016llX\t%llu\n", (unsigned long long)g_audioWrites,
+                     (unsigned long long)g_audioHash, (unsigned long long)holly_vblank_count());
+}
 } // namespace
 
 bool aica_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
@@ -212,6 +245,7 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         const bool skip = logged && target && (p & ~3u) == target;
         if (skip) target = 0;  // so a primeira
         if (!skip) std::memcpy(&g_ram[p & (kAicaRamSize - 1)], &v, size);
+        audioLog(p, v, size);
         trace(true, p, v, time_now(c), c->pr);
         if (g_clock_log) clock_log_read(ClockRead::Aud, p), clock_log_read(ClockRead::Aud, v);
         return true;
@@ -222,6 +256,7 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     if (p < 0x00700000 || p >= 0x00720000) return false;
     if (size != 4) return false;
     if (g_clock_log) clock_log_read(ClockRead::Aud, p), clock_log_read(ClockRead::Aud, v);
+    audioLog(p, v, size);
     trace(true, p, v, time_now(c), c->pr);  // diagnostico: registradores tambem (BS_AICA_TRACE)
     if (p == kCtrl) {
         if (std::getenv("BS_AICA_TRACE"))  // diagnostico: reset/liberacao do ARM7 (bit 0)
