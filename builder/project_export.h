@@ -9,6 +9,7 @@
 //     compilar.cmd         compilacao direta (CMake + Ninja do Visual Studio), sem instalar
 //     CMakeLists.txt, app/, runtime/, tools/extractor/, config/, LICENSE, VERSION
 //     third_party/SDL3/    fontes do SDL3 (zlib)
+//     third_party/tomlplusplus/  fontes do toml++ (MIT; arquivo de controles, N3-1)
 //     generated/           C++ gerado a partir do 1ST_READ.BIN (derivado da copia do usuario)
 //     mods/                mods em C++ (*.cpp, compilados com BS_MODS=ON) e mods/assets/
 //                          (arquivos que substituem os do disco); nunca sobrescrita
@@ -23,6 +24,7 @@ namespace bs::builder {
 
 struct ExportInputs {
     std::filesystem::path kit, sdl3;    // fontes (kit do Builder ou o proprio repositorio)
+    std::filesystem::path toml;         // fontes do toml++ (toml_dir)
     std::filesystem::path generated;    // C++ gerado (cache do Builder)
     std::filesystem::path functionsTsv; // analysis/functions.tsv (origem e tamanho)
     std::string           versionLabel; // identificacao da versao do Builder/kit

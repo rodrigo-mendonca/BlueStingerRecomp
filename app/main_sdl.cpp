@@ -19,6 +19,8 @@
 #include "game_host.h"
 #include "gdfs_adapter.h"
 #include "input/input.h"
+#include "input_bridge.h"
+#include "platform/input.h"
 
 #include <SDL3/SDL.h>
 
@@ -39,6 +41,8 @@
 #include <shellapi.h>
 
 namespace fs = std::filesystem;
+namespace ni = bs::native::input;
+namespace ib = bs::transitional::input_bridge;
 
 namespace {
 
@@ -301,7 +305,82 @@ int runHeadless(bs::GameHost& host, const Args& a) {
     return 0;
 }
 
-int runWindow(bs::GameHost& host, bs::KeyEventInput* keys, const Args& a, SDL_Window* window,
+void gamepadEvent(ni::InputSystem& sys, const SDL_Event& e);
+
+// Diagnostico BS_CONTROLE_VIRTUAL=<roteiro> (N3-1, so desenvolvimento): um controle virtual do SDL3
+// percorre o caminho real dos controles (eventos do SDL -> InputSystem -> ponte -> Maple) sem
+// hardware. Linhas "<ms desde a abertura> <comando> [valor]"; comandos: conectar, desconectar, sair
+// e os nomes do SDL de botoes (valor 0/1) e eixos (-32768..32767; gatilhos 0..32767).
+class VirtualPad {
+public:
+    explicit VirtualPad(const std::string& text) {
+        std::istringstream in(text);
+        std::string        line;
+        while (std::getline(in, line)) {
+            line = line.substr(0, line.find('#'));
+            std::istringstream ls(line);
+            Ev                 ev;
+            if (!(ls >> ev.ms >> ev.what)) continue;
+            ls >> ev.value;
+            evs_.push_back(ev);
+        }
+        t0_ = SDL_GetTicks();
+        // o teste roda sem foco garantido: sem isto o SDL descarta os eventos do controle em segundo plano
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    }
+    ~VirtualPad() { disconnect(); }
+
+    // Aplica o que venceu; true = pedido de sair.
+    bool step() {
+        bool quit = false;
+        for (; next_ < evs_.size() && SDL_GetTicks() - t0_ >= evs_[next_].ms; ++next_) {
+            const Ev& e = evs_[next_];
+            std::printf("[controle virtual] %llu ms: %s %d\n", static_cast<unsigned long long>(e.ms), e.what.c_str(), e.value);
+            if (e.what == "conectar") connect();
+            else if (e.what == "desconectar") disconnect();
+            else if (e.what == "sair") quit = true;
+            else if (!pad_) continue;
+            else if (const SDL_GamepadButton b = SDL_GetGamepadButtonFromString(e.what.c_str()); b != SDL_GAMEPAD_BUTTON_INVALID)
+                SDL_SetJoystickVirtualButton(pad_, b, e.value != 0);
+            else if (const SDL_GamepadAxis x = SDL_GetGamepadAxisFromString(e.what.c_str()); x != SDL_GAMEPAD_AXIS_INVALID) {
+                const bool trig = x == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || x == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+                // gatilho virtual: bruto -32768..32767 vira 0..32767 no gamepad
+                SDL_SetJoystickVirtualAxis(pad_, x, Sint16(std::clamp(trig ? 2 * e.value - 32768 : e.value, -32768, 32767)));
+            }
+        }
+        return quit;
+    }
+
+private:
+    struct Ev {
+        uint64_t    ms = 0;
+        std::string what;
+        int         value = 0;
+    };
+    void connect() {
+        if (pad_) return;
+        SDL_VirtualJoystickDesc d;
+        SDL_INIT_INTERFACE(&d);
+        d.type     = SDL_JOYSTICK_TYPE_GAMEPAD;
+        d.naxes    = SDL_GAMEPAD_AXIS_COUNT;
+        d.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+        d.name     = "Controle virtual";
+        id_        = SDL_AttachVirtualJoystick(&d);
+        pad_       = id_ ? SDL_OpenJoystick(id_) : nullptr;
+        if (!pad_) std::fprintf(stderr, "[controle virtual] falhou: %s\n", SDL_GetError());
+    }
+    void disconnect() {
+        if (pad_) SDL_CloseJoystick(pad_), pad_ = nullptr;
+        if (id_) SDL_DetachVirtualJoystick(id_), id_ = 0;
+    }
+    std::vector<Ev> evs_;
+    size_t          next_ = 0;
+    uint64_t        t0_   = 0;
+    SDL_JoystickID  id_   = 0;
+    SDL_Joystick*   pad_  = nullptr;
+};
+
+int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Window* window,
               SDL_Renderer* renderer) {
     SDL_Texture*  texture = nullptr;
     uint32_t      texW = 0, texH = 0;
@@ -312,7 +391,10 @@ int runWindow(bs::GameHost& host, bs::KeyEventInput* keys, const Args& a, SDL_Wi
     int           captures  = 0;
     int           gfxFailures = 0;
     std::string   gfxError;
+    std::unique_ptr<VirtualPad> virtualPad;
+    if (const char* v = std::getenv("BS_CONTROLE_VIRTUAL"); v && *v) virtualPad = std::make_unique<VirtualPad>(readFile(v));
     while (!quit) {
+        if (virtualPad && virtualPad->step()) quit = true;
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             switch (e.type) {
@@ -334,13 +416,16 @@ int runWindow(bs::GameHost& host, bs::KeyEventInput* keys, const Args& a, SDL_Wi
                     break;
                 }
                 const std::string n = keyName(e.key.key);
-                if (!n.empty()) keys->key(n, e.type == SDL_EVENT_KEY_DOWN);
+                if (!n.empty()) input.key(n, e.type == SDL_EVENT_KEY_DOWN);
                 break;
             }
-            case SDL_EVENT_WINDOW_FOCUS_LOST: keys->releaseAll(); break;
-            default: break;
+            case SDL_EVENT_WINDOW_FOCUS_LOST: input.release_keyboard(); break;
+            default: gamepadEvent(input, e); break;
             }
         }
+        for (const ni::ConnectionEvent& ev : input.drain_events())
+            std::printf("[controles] %s: %s\n", ev.kind == ni::ConnectionEvent::Kind::Connected ? "conectado" : "desconectado",
+                        ev.name.c_str());
         // falhas de apresentacao viram erro (janela preta com codigo 0 pareceria sucesso):
         // criar a textura falha de vez; as demais so se persistirem (~2 s seguidos)
         bool ok = true;
@@ -386,19 +471,88 @@ int runWindow(bs::GameHost& host, bs::KeyEventInput* keys, const Args& a, SDL_Wi
     return err.empty() && gfxError.empty() ? 0 : 1;
 }
 
-// Entrada: teclado pela janela (mapa opcional) + XInput; roteiro so para testes.
-bs::KeyEventInput* setupInput(const Args& a) {
-    if (std::getenv("BS_INPUT_SCRIPT")) {
-        bs::input_configure_from_env();
-        return nullptr;
+// Mapa de acoes (N3-1): controles.toml na pasta do usuario, criado com o padrao na primeira
+// execucao; --map (formato antigo "ACAO = TECLA") substitui o teclado. Arquivo invalido: aviso e
+// mapa padrao (o jogo abre do mesmo jeito).
+ni::ActionMap loadActionMap(const Args& a, std::string& warning) {
+    const fs::path path = userDir() / L"controles.toml";
+    std::error_code ec;
+    if (!fs::exists(path, ec)) {
+        std::ofstream out(path, std::ios::binary);
+        out << ni::ActionMap::default_text();
     }
-    auto  kb   = bs::make_key_event_input(a.map.empty() ? "" : readFile(a.map));
-    auto* keys = kb.get();
-    std::vector<std::unique_ptr<bs::InputSource>> src;
-    src.push_back(std::move(kb));
-    src.push_back(bs::make_xinput_input());
-    bs::input_set_source(bs::make_combined_input(std::move(src)));
-    return keys;
+    ni::ActionMap m = ni::ActionMap::defaults();
+    std::string   err;
+    if (fs::exists(path, ec)) {
+        auto parsed = ni::ActionMap::parse(readFile(path), &err);
+        if (parsed) m = parsed.value();
+        else warning = "O arquivo de controles tem um erro e foi ignorado (valem os controles padrao):\n" +
+                       utf8(path) + "\n" + err;
+    }
+    if (!a.map.empty() && !m.set_keyboard_legacy(readFile(a.map), &err))
+        warning += (warning.empty() ? "" : "\n\n") + std::string("Mapa de teclado (--map) ignorado: ") + err;
+    std::printf("[controles] mapa: %s%s\n", utf8(path).c_str(), a.map.empty() ? "" : " (teclado de --map)");
+    return m;
+}
+
+// Entrada (N3-1): tudo passa pelo nucleo nativo (native/platform/input.h) e o Maple le dele pela
+// ponte (transitional/input_bridge.h). Janela: teclado e controles (SDL3 Gamepad ou XInput).
+// Testes: roteiro (BS_INPUT_SCRIPT) ou gameplay assistido como fonte exclusiva. Sem nada disso no
+// headless, nenhuma fonte (testes diferenciais nao dependem do teclado de quem roda).
+std::unique_ptr<ni::InputSystem> setupInput(const Args& a, bool window, std::string& warning,
+                                            std::shared_ptr<bs::LiveScriptInput> live = nullptr) {
+    std::unique_ptr<ni::InputSystem> sys;
+    if (live) {
+        sys = std::make_unique<ni::InputSystem>();
+        sys->set_test_source(ib::from_runtime_source(live));
+    } else if (const char* script = std::getenv("BS_INPUT_SCRIPT")) {
+        sys = std::make_unique<ni::InputSystem>();
+        sys->set_test_source(ib::from_runtime_source(std::shared_ptr<bs::InputSource>(bs::make_scripted_input(readFile(script)))));
+        std::fprintf(stderr, "[input] roteiro %s\n", script);
+    } else if (window) {
+        sys = std::make_unique<ni::InputSystem>(loadActionMap(a, warning));
+        if (sys->map().options.backend == "xinput") sys->enable_xinput();
+    } else if (const char* host = std::getenv("BS_INPUT"); host && std::string(host) == "host") {
+        // headless com o teclado do Windows e XInput (diagnostico, como antes do N3-1)
+        std::vector<std::unique_ptr<bs::InputSource>> v;
+        const char* map = std::getenv("BS_INPUT_MAP");
+        v.push_back(bs::make_keyboard_input(map ? readFile(map) : ""));
+        v.push_back(bs::make_xinput_input());
+        sys = std::make_unique<ni::InputSystem>();
+        sys->set_test_source(ib::from_runtime_source(std::shared_ptr<bs::InputSource>(bs::make_combined_input(std::move(v)))));
+        std::fprintf(stderr, "[input] teclado%s + XInput\n", map ? " (mapa do usuario)" : "");
+    }
+    ib::install(sys.get());
+    return sys;
+}
+
+// Controles pelo SDL3 (N3-1): o SDL ja traz o banco de mapeamentos de Xbox, PlayStation, Switch e
+// genericos; os nomes de botoes e eixos do SDL sao os do arquivo de controles.
+void gamepadEvent(ni::InputSystem& sys, const SDL_Event& e) {
+    switch (e.type) {
+    case SDL_EVENT_GAMEPAD_ADDED:
+        if (SDL_Gamepad* g = SDL_OpenGamepad(e.gdevice.which)) {
+            const char* n = SDL_GetGamepadName(g);
+            sys.gamepad_added(e.gdevice.which, n ? n : "controle");
+        }
+        break;
+    case SDL_EVENT_GAMEPAD_REMOVED:
+        sys.gamepad_removed(e.gdevice.which);
+        if (SDL_Gamepad* g = SDL_GetGamepadFromID(e.gdevice.which)) SDL_CloseGamepad(g);
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+        if (const char* n = SDL_GetGamepadStringForButton(SDL_GamepadButton(e.gbutton.button)))
+            sys.gamepad_button(e.gbutton.which, n, e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+        break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        if (const char* n = SDL_GetGamepadStringForAxis(SDL_GamepadAxis(e.gaxis.axis))) {
+            const bool trig = e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+            sys.gamepad_axis(e.gaxis.which, n, trig ? ni::trigger_from_s16(e.gaxis.value) : ni::axis_from_s16(e.gaxis.value));
+        }
+        break;
+    default: break;
+    }
 }
 
 bs::GameOptions gameOptions(const Args& a) {
@@ -422,7 +576,9 @@ const char* kUsage =
     "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
     "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao: nativo;\n"
     "       experimental = N2b-2, tempo logico sem ciclos estimados, em validacao)\n"
-    "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n";
+    "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
+    "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
+    "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";
 
 const char* kNoCdi =
     "O jogo nao le mais o CDI: os dados ficam na pasta data\\ ao lado do executavel, preparada\n"
@@ -435,15 +591,16 @@ int mainHeadless(Args& a) {
         return 1;
     }
     // desenvolvimento: gameplay assistido (app/assist.h); a entrada vem so dos comandos
-    std::unique_ptr<bs::Assist> assist;
+    std::unique_ptr<bs::Assist>      assist;
+    std::unique_ptr<ni::InputSystem> input;
+    std::string                      warning;  // sem janela: nao ha mapa de usuario a avisar
     if (const wchar_t* dir = _wgetenv(L"BS_ASSISTIDO"); dir && *dir) {
         if (std::getenv("BS_INPUT_SCRIPT")) throw std::runtime_error("BS_ASSISTIDO e BS_INPUT_SCRIPT sao exclusivos");
-        auto  live = bs::make_live_script_input();
-        auto* in   = live.get();
-        bs::input_set_source(std::move(live));
-        assist = std::make_unique<bs::Assist>(fs::path(dir), in);
+        std::shared_ptr<bs::LiveScriptInput> live = bs::make_live_script_input();
+        assist = std::make_unique<bs::Assist>(fs::path(dir), live.get());
+        input  = setupInput(a, false, warning, live);
     }
-    else setupInput(a);
+    else input = setupInput(a, false, warning);
     bs::GameOptions opt = gameOptions(a);
     if (assist) opt.vblankHook = [&assist](const bs::GameOptions::VblankView& v) { return assist->onVblank(v); };
     bs::GameHost host;
@@ -451,7 +608,7 @@ int mainHeadless(Args& a) {
     const int rc = runHeadless(host, a);
     host.requestStop();
     host.join();
-    bs::input_set_source(nullptr);
+    ib::install(nullptr);  // a thread do jogo ja parou: a fonte pode sair antes do InputSystem
     return rc;
 }
 
@@ -503,22 +660,35 @@ int mainWindow(Args& a) {
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
-    int                rc   = 0;
-    bs::KeyEventInput* keys = setupInput(a);
+    int rc = 0;
+    if (std::getenv("BS_INPUT_SCRIPT")) {
+        errorBox(window, "BS_INPUT_SCRIPT exige --headless");
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 2;
+    }
+    std::string                      warning;
+    std::unique_ptr<ni::InputSystem> input = setupInput(a, true, warning);
+    // controles pelo SDL3; sem o subsistema de controles, o XInput de reserva
+    if (input->map().options.backend == "sdl" && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+        std::fprintf(stderr, "[controles] SDL3 Gamepad indisponivel (%s): usando XInput\n", SDL_GetError());
+        input->enable_xinput();
+    }
+    if (!warning.empty()) {
+        std::fprintf(stderr, "aviso: %s\n", warning.c_str());
+        nativeBox(warning, MB_ICONWARNING);
+    }
     {
         bs::GameHost host;
         host.start(gameOptions(a));
-        if (keys) rc = runWindow(host, keys, a, window, renderer);
-        else {
-            errorBox(window, "BS_INPUT_SCRIPT exige --headless");
-            rc = 2;
-        }
+        rc = runWindow(host, *input, a, window, renderer);
         // a thread do jogo le a fonte de entrada: para e espera ANTES de destrui-la, em todos
         // os caminhos (revisao Codex 2026-10-14)
         host.requestStop();
         host.join();
     }
-    bs::input_set_source(nullptr);
+    ib::install(nullptr);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();

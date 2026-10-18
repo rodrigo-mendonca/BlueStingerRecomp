@@ -88,7 +88,34 @@ BS_TEST(input_script_indexed_by_game_step) {
     BS_CHECK(pad_state_text(pad_state_from_text("-")) == "-");
     BS_CHECK(throws([] { pad_state_from_text("TURBO"); }));
     BS_CHECK(throws([] { make_scripted_input("5 A\nindice passo\n"); }));  // indice depois dos passos
-    BS_CHECK(throws([] { make_scripted_input("indice vblank\n"); }));
+    BS_CHECK(throws([] { make_scripted_input("indice quadro\n"); }));  // indice desconhecido
+}
+
+// N3-0: valores exatos de eixos e gatilhos, presenca roteirizada e indice da transicao injetada.
+BS_TEST(input_exact_values_presence_and_transition_index) {
+    const PadState v = pad_state_from_text("A+AX=79+AY=176+LT=127+RT=128");
+    BS_CHECK(v.buttons == kPadA && v.joyx == 79 && v.joyy == 176 && v.ltrig == 127 && v.rtrig == 128 && v.connected);
+    BS_CHECK(pad_state_text(v) == "A+LT=127+RT=128+AY=176+AX=79");
+    BS_CHECK(pad_state_from_text(pad_state_text(v)).joyx == 79);
+    BS_CHECK(pad_state_text(pad_state_from_text("AX=0+AY=255+LT=255")) == "LT+ANALOG_DOWN+ANALOG_LEFT");
+    BS_CHECK(pad_state_text(pad_state_from_text("AX=128+LT=0")) == "-");  // centro e solto
+    const PadState d = pad_state_from_text("desconectado");
+    BS_CHECK(!d.connected && pad_state_text(d) == "DESCONECTADO");
+    BS_CHECK(throws([] { pad_state_from_text("AX=256"); }));
+    BS_CHECK(throws([] { pad_state_from_text("AX="); }));
+    BS_CHECK(throws([] { pad_state_from_text("AZ=3"); }));
+    BS_CHECK(throws([] { pad_state_from_text("A+DESCONECTADO"); }));  // so sozinho
+    BS_CHECK(pad_state_text(pad_state_from_text("A2X=3+A2Y=250")) == "A2X=3+A2Y=250");
+    const uint64_t base = input_transition_index();
+    // o indice e absoluto: o roteiro de teste comeca do indice atual
+    auto rel = make_scripted_input("indice transicao\n" + std::to_string(base) + " -\n" + std::to_string(base + 2) + " B\n" +
+                                   std::to_string(base + 3) + " DESCONECTADO\n");
+    BS_CHECK(rel->read(0, 99).buttons == 0);
+    input_transition_tick();
+    input_transition_tick();
+    BS_CHECK(rel->read(0, 0).buttons == kPadB);
+    input_transition_tick();
+    BS_CHECK(!rel->read(0, 0).connected);
 }
 
 // O Maple pede a condicao do controle da porta A: com roteiro, a 2a leitura (seq 1) ja
@@ -176,11 +203,9 @@ BS_TEST(input_maple_serializes_every_button_and_axis) {
     fixed->s.ltrig  = 0xA5;
     fixed->s.joyx   = 0x23;
     fixed->s.joyy   = 0x67;
+    fixed->s.joy2x  = 0x89;  // segundo analogico (N3-0: vem da fonte, como o primeiro)
+    fixed->s.joy2y  = 0xCD;
     input_set_source(std::move(fixed));
-    MapleControllerState second;  // segundo analogico vem do estado fixo do Maple
-    second.joy2x = 0x89;
-    second.joy2y = 0xCD;
-    maple_set_controller(second);
     uint32_t w[3];
     getCondition(h.c, 0x20, w);
     BS_CHECK(w[1] == (0x0000FFFFu | (0x12u << 16) | (0xA5u << 24)));
@@ -199,4 +224,44 @@ BS_TEST(maple_main_device_only_at_own_port_address) {
     sh4_write32(&h.c, 0xAC100008, 0x00006001);  // info, destino 0x60
     sh4_write32(&h.c, 0xA05F6C18, 1);
     BS_CHECK(sh4_read32(&h.c, 0xAC200000) == 0xFFFFFFFF);
+}
+
+// N3-0: um estado DESCONECTADO deixa a porta A vazia (DEVICE_INFO e GET_CONDITION sem resposta);
+// ao reconectar, a porta responde de novo.
+BS_TEST(maple_scripted_presence_empties_port) {
+    MapleInputHw h;
+    maple_reset();
+    auto  owned = std::make_unique<FixedInput>();
+    auto* in    = owned.get();
+    input_set_source(std::move(owned));
+    in->s.buttons = kPadA;
+    uint32_t w[3];
+    getCondition(h.c, 0x20, w);
+    BS_CHECK(w[0] == 0x01000000 && (w[1] & 0xFFFF) == (0xFFFFu & ~uint32_t(kPadA)));
+    in->s.connected = false;
+    getCondition(h.c, 0x20, w);
+    BS_CHECK(sh4_read32(&h.c, 0xAC200000) == 0xFFFFFFFF);  // ninguem responde
+    BS_CHECK(maple_cond_seq(0) == 1);                       // porta vazia nao conta leitura
+    in->s           = {};
+    in->s.buttons   = kPadB;
+    getCondition(h.c, 0x20, w);
+    BS_CHECK(w[0] == 0x01000000 && (w[1] & 0xFFFF) == (0xFFFFu & ~uint32_t(kPadB)) && maple_cond_seq(0) == 2);
+    // roteiro por leitura com DESCONECTADO travaria (porta vazia nao gera leitura): recusado
+    BS_CHECK(throws([] { make_scripted_input("0 -\n5 DESCONECTADO\n"); }));
+    BS_CHECK(!throws([] { make_scripted_input("indice passo\n0 -\n5 DESCONECTADO\n"); }));
+}
+
+// N3-0: a transicao injetada avanca uma vez por VBlank-In, no primeiro acesso ao MDST (o tratador
+// do SDK le o MDST antes de disparar o DMA); sem VBlank-In, ler o MDST nao avanca nada.
+BS_TEST(maple_transition_ticks_on_first_mdst_read_after_vblank) {
+    MapleInputHw h;
+    maple_reset();
+    const uint64_t base = input_transition_index();
+    sh4_read32(&h.c, 0xA05F6C18);
+    BS_CHECK(input_transition_index() == base);
+    maple_vblank_in();
+    BS_CHECK(input_transition_index() == base);  // a entrega do VBlank-In nao avanca
+    sh4_read32(&h.c, 0xA05F6C18);
+    sh4_read32(&h.c, 0xA05F6C18);
+    BS_CHECK(input_transition_index() == base + 1);
 }

@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <mutex>
@@ -23,6 +24,17 @@ namespace {
 
 std::unique_ptr<InputSource> g_source;
 uint64_t (*g_stepCounter)() = nullptr;
+uint64_t g_transitionIndex = 0;  // input_transition_tick() (roteiros "indice transicao")
+
+// Negativo do N3-0 (BS_PAD_MUTACAO=passo_adiantado): o roteiro por passo le o passo seguinte,
+// como um provedor que amostrasse a entrada um passo antes. Desligado por padrao.
+bool stepAheadMutation() {
+    static const bool on = [] {
+        const char* v = std::getenv("BS_PAD_MUTACAO");
+        return v && std::strstr(v, "passo_adiantado");
+    }();
+    return on;
+}
 
 std::string upper(std::string s) {
     for (char& ch : s) ch = char(std::toupper(static_cast<unsigned char>(ch)));
@@ -40,11 +52,12 @@ std::string trim(const std::string& s) {
 class Scripted : public LiveScriptInput {
 public:
     std::vector<std::pair<uint64_t, PadState>> steps;  // ordenado pelo indice
-    bool                                       byStep = false;  // indice: passo de jogo (senao leitura)
+    bool                                       byStep   = false;  // indice: passo de jogo (senao leitura)
+    bool                                       byTransition = false;  // indice: input_transition_tick() (N3-0)
 
     PadState read(int port, uint64_t seq) override {
         if (port != 0) return {};
-        const uint64_t at = byStep ? input_step() : seq;
+        const uint64_t at = byTransition ? g_transitionIndex : byStep ? input_step() + (stepAheadMutation() ? 1 : 0) : seq;
         PadState       s;
         for (const auto& [from, st] : steps) {
             if (from > at) break;
@@ -246,29 +259,65 @@ uint16_t pad_button_from_name(const std::string& name) {
 
 PadState pad_state_from_text(const std::string& text) {
     if (text == "-") return {};
+    if (upper(text) == "DESCONECTADO") {
+        PadState s;
+        s.connected = false;
+        return s;
+    }
     uint32_t           act = 0;
     std::istringstream bs(text);
     std::string        b;
+    int                value[6] = {-1, -1, -1, -1, -1, -1};  // AX, AY, LT, RT, A2X, A2Y exatos
     while (std::getline(bs, b, '+')) {
-        const uint32_t a = actionFromName(upper(b));
+        const std::string u  = upper(b);
+        const size_t      eq = u.find('=');
+        if (eq != std::string::npos) {
+            static const char* const kKeys[] = {"AX", "AY", "LT", "RT", "A2X", "A2Y"};
+            const std::string        key     = u.substr(0, eq), num = u.substr(eq + 1);
+            char*                    end     = nullptr;
+            const long               v       = std::strtol(num.c_str(), &end, 10);
+            int                      k       = 0;
+            while (k < 6 && key != kKeys[k]) ++k;
+            if (k == 6 || num.empty() || *end || v < 0 || v > 255) throw std::runtime_error("valor " + b);
+            value[k] = int(v);
+            continue;
+        }
+        const uint32_t a = actionFromName(u);
         if (!a) throw std::runtime_error("botao " + b);
         act |= a;
     }
-    return stateFromActions(act);
+    PadState s = stateFromActions(act);
+    if (value[0] >= 0) s.joyx = uint8_t(value[0]);
+    if (value[1] >= 0) s.joyy = uint8_t(value[1]);
+    if (value[2] >= 0) s.ltrig = uint8_t(value[2]);
+    if (value[3] >= 0) s.rtrig = uint8_t(value[3]);
+    if (value[4] >= 0) s.joy2x = uint8_t(value[4]);
+    if (value[5] >= 0) s.joy2y = uint8_t(value[5]);
+    return s;
 }
 
 std::string pad_state_text(const PadState& s) {
+    if (!s.connected) return "DESCONECTADO";
     static const char* const kNames[] = {"C", "B", "A", "START", "UP", "DOWN", "LEFT", "RIGHT", "Z", "Y", "X", "D"};
     std::string out;
-    auto        add = [&](const char* n) { out += (out.empty() ? "" : "+") + std::string(n); };
+    auto        add = [&](const std::string& n) { out += (out.empty() ? "" : "+") + n; };
     for (int i = 0; i < 12; ++i)
         if (s.buttons & (1u << i)) add(kNames[i]);
-    if (s.ltrig) add("LT");
-    if (s.rtrig) add("RT");
-    if (s.joyy < 0x80) add("ANALOG_UP");
-    if (s.joyy > 0x80) add("ANALOG_DOWN");
-    if (s.joyx < 0x80) add("ANALOG_LEFT");
-    if (s.joyx > 0x80) add("ANALOG_RIGHT");
+    auto trig = [&](uint8_t v, const char* name) {
+        if (v == 255) add(name);
+        else if (v) add(std::string(name) + "=" + std::to_string(v));
+    };
+    trig(s.ltrig, "LT");
+    trig(s.rtrig, "RT");
+    auto axis = [&](uint8_t v, const char* low, const char* high, const char* key) {
+        if (v == 0) add(low);
+        else if (v == 255) add(high);
+        else if (v != 0x80) add(std::string(key) + "=" + std::to_string(v));
+    };
+    axis(s.joyy, "ANALOG_UP", "ANALOG_DOWN", "AY");
+    axis(s.joyx, "ANALOG_LEFT", "ANALOG_RIGHT", "AX");
+    if (s.joy2x != 0x80) add("A2X=" + std::to_string(s.joy2x));
+    if (s.joy2y != 0x80) add("A2Y=" + std::to_string(s.joy2y));
     return out.empty() ? "-" : out;
 }
 
@@ -287,9 +336,11 @@ std::unique_ptr<InputSource> make_scripted_input(const std::string& text) {
         if (first == "indice") {
             std::string kind;
             ls >> kind;
-            if (!s->steps.empty() || (kind != "passo" && kind != "leitura"))
-                throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) + ": indice passo|leitura, antes dos passos");
-            s->byStep = kind == "passo";
+            if (!s->steps.empty() || (kind != "passo" && kind != "leitura" && kind != "transicao"))
+                throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) +
+                                         ": indice passo|leitura|transicao, antes dos passos");
+            s->byStep   = kind == "passo";
+            s->byTransition = kind == "transicao";
             continue;
         }
         char*          end = nullptr;
@@ -303,6 +354,9 @@ std::unique_ptr<InputSource> make_scripted_input(const std::string& text) {
         }
         if (!s->steps.empty() && seq < s->steps.back().first)
             throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) + ": fora de ordem");
+        if (!st.connected && !s->byStep && !s->byTransition)
+            throw std::runtime_error("roteiro de entrada, linha " + std::to_string(n) +
+                                     ": DESCONECTADO exige indice passo ou transicao (porta vazia nao gera leitura)");
         s->steps.push_back({seq, st});
     }
     return s;
@@ -321,6 +375,11 @@ uint64_t input_step() {
         throw std::runtime_error("roteiro indexado por passo de jogo exige o provedor de tempo nativo ou experimental");
     return g_stepCounter();
 }
+
+uint64_t input_step_or(uint64_t fallback) { return g_stepCounter ? g_stepCounter() : fallback; }
+
+void     input_transition_tick() { ++g_transitionIndex; }
+uint64_t input_transition_index() { return g_transitionIndex; }
 
 std::unique_ptr<InputSource> make_keyboard_input(const std::string& mapping) {
     auto k = std::make_unique<Keyboard>();

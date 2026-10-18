@@ -254,7 +254,16 @@ std::string check_kit(const fs::path& kit, const fs::path& sdl3) {
         if (!fs::is_regular_file(kit / f, ec)) return "kit de fontes incompleto: falta " + path_text(kit / f);
     if (!fs::is_regular_file(sdl3 / L"CMakeLists.txt", ec))
         return "fontes do SDL3 nao encontradas em " + path_text(sdl3);
+    if (const fs::path toml = toml_dir(kit, sdl3); !fs::is_regular_file(toml / L"CMakeLists.txt", ec))
+        return "fontes do toml++ nao encontradas em " + path_text(toml);
     return {};
+}
+
+fs::path toml_dir(const fs::path& kit, const fs::path& sdl3) {
+    std::error_code ec;
+    const fs::path  inKit = kit / L"third_party" / L"tomlplusplus";
+    if (fs::is_regular_file(inKit / L"CMakeLists.txt", ec)) return inKit;
+    return sdl3.parent_path() / L"tomlplusplus-src";
 }
 
 namespace {
@@ -631,7 +640,8 @@ Result build(const Request& req, const Callbacks& cb) {
         // 5. CMake, no cache. Kit com caminho fora da pagina ANSI ou longo: copia (so o que
         // mudou) para o cache. Build incremental recriado se o kit ou o compilador mudaram.
         enter(Step::Configure);
-        fs::path srcKit = kit, srcSdl3 = sdl3;
+        const fs::path toml   = toml_dir(kit, sdl3);
+        fs::path       srcKit = kit, srcSdl3 = sdl3, srcToml = toml;
         if (!ansi_safe(kit) || kit.native().size() > kMaxDirectKit) {
             srcKit = cache / L"kit";
             log("copiando o kit para " + path_text(srcKit));
@@ -641,6 +651,11 @@ Result build(const Request& req, const Callbacks& cb) {
             srcSdl3 = cache / L"sdl3";
             log("copiando as fontes do SDL3 para " + path_text(srcSdl3));
             syncTree(sdl3, srcSdl3);
+        }
+        if (!ansi_safe(toml) || toml.native().size() > kMaxDirectKit) {
+            srcToml = cache / L"tomlplusplus";
+            log("copiando as fontes do toml++ para " + path_text(srcToml));
+            syncTree(toml, srcToml);
         }
         // mods do projeto (so com --de-projeto): espelhados no cache (o Ninja precisa de caminho
         // curto e ANSI); os .cpp de mods/ entram no executavel com BS_MODS=ON
@@ -655,8 +670,8 @@ Result build(const Request& req, const Callbacks& cb) {
             log("mods em C++: " + std::to_string(n));
         }
         const fs::path    buildDir = cache / L"cmake";
-        const std::string stamp    = path_text(kit) + "\n" + path_text(sdl3) + "\n" + path_text(tc.installRoot) + "\n" +
-                                  tc.msvcVersion;
+        const std::string stamp    = path_text(kit) + "\n" + path_text(sdl3) + "\n" + path_text(toml) + "\n" +
+                                  path_text(tc.installRoot) + "\n" + tc.msvcVersion;
         if (req.clean || readText(buildDir / L".bs-kit") != stamp) {
             if (fs::exists(buildDir, ec)) log("build incremental descartado (kit, compilador ou pedido)");
             fs::remove_all(buildDir, ec);
@@ -673,6 +688,7 @@ Result build(const Request& req, const Callbacks& cb) {
                                L" -DBS_BUILD_TOOLS=OFF -DBS_BUILD_TESTS=OFF -DBS_BUILD_GAME=ON" +
                                L" " + quote_arg(L"-DBS_GENERATED_DIR=" + cmakePath(cache / L"generated")) +
                                L" " + quote_arg(L"-DFETCHCONTENT_SOURCE_DIR_SDL3=" + cmakePath(srcSdl3)) +
+                               L" " + quote_arg(L"-DFETCHCONTENT_SOURCE_DIR_TOMLPLUSPLUS=" + cmakePath(srcToml)) +
                                L" -DFETCHCONTENT_FULLY_DISCONNECTED=ON" +
                                L" " + quote_arg(L"-DBS_VERSION_OVERRIDE=" + widen(version)) +
                                (fromProject ? L" -DBS_MODS=ON " + quote_arg(L"-DBS_MODS_DIR=" + cmakePath(modsSrc))
@@ -725,6 +741,8 @@ Result build(const Request& req, const Callbacks& cb) {
         fs::copy_file(kit / L"LICENSE", stage / L"licencas" / L"BlueStingerRecompiled-MIT.txt");
         if (fs::is_regular_file(sdl3 / L"LICENSE.txt", ec))
             fs::copy_file(sdl3 / L"LICENSE.txt", stage / L"licencas" / L"SDL3-zlib.txt");
+        if (fs::is_regular_file(toml / L"LICENSE", ec))  // N3-1: o jogo le controles.toml com o toml++
+            fs::copy_file(toml / L"LICENSE", stage / L"licencas" / L"tomlplusplus-MIT.txt");
         // dados do jogo: hard links dos preparados (sem copiar 700 MB; copia se o volume nao
         // aceitar links). Os arquivos nunca sao reescritos no lugar: o Builder prepara de novo
         // numa pasta nova, entao os links nao misturam versoes.
@@ -805,7 +823,7 @@ Result build(const Request& req, const Callbacks& cb) {
         if (!req.exportProject.empty()) {
             enter(Step::Export);
             try {
-                export_project({kit, sdl3, cache / L"generated", work / L"analysis" / L"functions.tsv", version},
+                export_project({kit, sdl3, toml, cache / L"generated", work / L"analysis" / L"functions.tsv", version},
                                fs::absolute(req.exportProject), log);
             } catch (const std::exception& e) {
                 throw StepError(std::string("falha ao exportar o projeto: ") + e.what());

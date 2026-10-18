@@ -1576,8 +1576,218 @@ mods e investigação; 213 unitários; ctest sem e com o disco 100%; `make_build
 `test_n2b2` 17/0 (2 SKIP declarados; N11: estável byte a byte igual ao executável anterior ao
 N2b-2), `test_assistido` 28/0.
 
+### N3: investigação e plano dos controles nativos (2026-10-17, depois de `3a3fc92`, sem commit)
+
+Autorização: **só investigação e planejamento**. Nenhum código mudou. Plano: `docs/N3-PLANO.md`.
+Artefatos privados: `analysis/n3/` (dumps, comandos, hashes).
+
+**Retomada depois do desligamento:**
+- `master` limpo em `3a3fc92`, `git fsck` sem erros;
+- builds de 11:06–11:23 (código congelado antes da regressão);
+- Builder, Preview, backups `dist/*.assistido-3a3fc92`, `*.n2b2-8bfa94e`, `*.p0p1-246e6b3` e
+  `analysis/rollback-antes-n2b2` presentes;
+- a sonda interrompida só tinha o início do boot e foi refeita.
+
+**Método:**
+- sessão assistida (`passo_cgate` até o passo 7 972) com `BS_MAPLE_DEBUG`;
+- 7 dumps de RAM com botões controlados e diferença por correlação;
+- leituras `ram` com UP, ANALOG_LEFT e LT+RT;
+- literais no `1ST_READ.BIN`, grafo de chamadas e disassembly.
+
+**Medido:**
+- Protocolo: DEVICE_INFO 1× na porta A, depois GET_CONDITION por VBlank; DEVICE_INFO nas portas
+  vazias por VBlank; nenhum comando de VMU, LCD ou vibração.
+- SDK `pd`:
+  - servidor `8C15C4E6` (24 × `PDS_PERIPHERAL` de 0x34 em `8C2D8970`);
+  - decodificador `8C15C24C`;
+  - `pdGetPeripheral` `8C15C668`;
+  - `old` vem da própria RAM.
+- Jogo `8C064878`:
+  - só a porta A; escolhe o controle pelas máscaras de `support`;
+  - **escreve na estrutura do SDK** (zera sem controle, direcional → ±126, zona morta 20);
+  - soft reset A+B+X+Y+START.
+- Jogo `8C03AC2E`: 11 ações, limiar 48, auto-repetição.
+- 28 funções do jogo usam o ponteiro `8C24CCB0`.
+- `pdLcd` (`8C15E6D8`) e `bu` usam a mesma camada Maple (N4).
+- Com o Maple sem dispositivos, o boot "VMU not found" é idêntico (14 quadros).
+- As fronteiras "controles" `8C08B9E0/BA06/BA30` do N0 são *wrappers* de vídeo/VBlank, não de
+  entrada.
+
+**Plano:**
+- fronteira no `pd` (slots no servidor e no getter; o init original continua);
+- latch no ponto do disparo do DMA;
+- `--controles nativo|legado`;
+- subetapas N3-0 a N3-4, testes C1–C9, riscos e rollback.
+
+**Revisão do Codex** (`reviews/codex-20261017-145645.md`): 1 ALTA, 4 MÉDIA e 2 BAIXA, todos
+aceitos e incorporados (seção 8 do plano). O ALTA foi conferido no binário.
+
+### N3-0: contrato, instrumentação e testes de referência dos controles (2026-10-17, sem commit)
+
+Autorização: plano do N3 aprovado; **só o N3-0**. Decisões do mantenedor:
+- SDL3 Gamepad, com XInput de reserva;
+- remapeamento em TOML na pasta do usuário;
+- no caminho nativo, sem controle virtual Maple e sem DMA de controle; o Maple fica só para a VMU
+  até o N4;
+- mouse fora do N3.
+
+Relatório: `docs/N3-0-RELATORIO.md`. Suíte: `tools/dist/test_controles.ps1`. Artefatos: `analysis/n3/`.
+Rollback: `analysis/rollback-antes-n3/` (executáveis de `3a3fc92` com hashes).
+
+**Entrou (tudo desligado por padrão):**
+- contrato puro do servidor `pd` (`transitional/pad_contract`);
+- sonda que confere o servidor legado contra ele (`BS_PAD_CONTRATO`, build com mods), com mutações
+  negativas e `BS_PAD_MODO`;
+- traço por passo `BS_PAD_TRACE` e leituras `BS_PAD_LEITURAS`;
+- nos roteiros: presença (`DESCONECTADO`), valores exatos (`AX`/`AY`/`A2X`/`A2Y`/`LT`/`RT=n`),
+  `indice transicao` (transição injetada no primeiro acesso ao MDST depois do VBlank-In);
+- mutações de traço `BS_PAD_MUTACAO`, `BS_MAPLE_FUNCAO`;
+- ferramentas `pad_roteiros.py`, `pad_traco.py`, `converte_roteiro.py`, `pds_consumidores.py`;
+- roteiros convertidos `passo_newgame_area1.txt` e `passo_newgame_exploracao.txt` (os originais
+  ficam).
+- Mudança de comportamento só em entrada de desenvolvimento: o segundo analógico vem da fonte de
+  entrada (o padrão continua 0x80).
+
+**Resultados:**
+- **Contrato = legado** em todas as passadas observadas:
+  - matriz com os 256 valores de R, L, x1, y1, x2, y2, 12 botões, 66 pares e os 4 padrões de `old`;
+  - as 64 combinações de `support`;
+  - modo 1;
+  - gameplay, conexão e boot;
+  - 4 rotas assistidas, cerca de 40 mil passadas.
+- **Negativos acusados:**
+  - contrato: A↔B, gatilho 127, `old` nativo, info sem conectado;
+  - traço: A↔B, amostra adiantada um passo, amostra no VBlank-In com transição injetada.
+- **Limiares do jogo**, nos 30 pontos de fronteira:
+  - zona morta estrita `-20 < v < 20`;
+  - direcional só com |v| > 48;
+  - gatilho digital com byte ≥ 128.
+- **Conexão:** desconectar com A, reconectar neutro e reconectar com A (borda no 1º passo), sem
+  aviso na tela.
+- **Campos não usados** (`r`, `l`, `x2`, `y2`, `old`, `name`, `extend`): com lixo, quadros, traço e
+  estado do jogo a cada passo ficam iguais nas 4 rotas.
+- **Roteiros convertidos** = originais (traço e quadros por VBlank).
+- **Padrão inalterado:** quadros e leituras iguais ao executável de `3a3fc92` em `passo_cgate`,
+  `passo_heliporto` e `newgame_area1`.
+
+**Achados:**
+- o jogo escreve na estrutura do SDK, e `old` vem da RAM;
+- a tela de título consome a borda `press`;
+- **soft reset A+B+X+Y+START chama o menu do BIOS (syscall em 8C001008), sem HLE: a execução
+  termina com erro (legado, anterior ao N3)**;
+- inventário de consumidores: 28 funções do jogo, conservador, não prova de fechamento.
+
+**Revisão do Codex:** duas rodadas (`reviews/codex-20261017-164009.md`, `-173236.md`), todos os
+achados aceitos (seção abaixo).
+
+**Regressão completa:** com o executor novo retomável `tools/dev/regressao.ps1`; a primeira tentativa
+foi interrompida no `test_n2b` por uma reinicialização da sessão e retomada sem refazer as etapas
+aprovadas (fonte idêntica conferida). Resultado:
+- builds release, debug, mods e investigação;
+- 221 unitários; ctest sem e com o disco 100%;
+- `make_builder`, `make_preview`;
+- `test_preview`, `test_gameplay`, `test_builder`, `test_projeto`, `test_arquivos`, `test_ordem`,
+  `test_tempo`, `test_n2b`, `test_cri`, `test_efeito`, `test_n2b2`, `test_assistido` 28/0: todas
+  verdes;
+- `test_controles` 39/0.
+
+**Percentuais estimados do roadmap** (peso no esforço total entre parênteses):
+- N0 100% (5), N1 100% (4), N2a 100% (3), N2b ~85% (8), N3 ~25% (4: investigação, plano e N3-0);
+- N4, N5, N6, N7a, N7b, N2c, N8 e N9: 0%;
+- total ≈ 20%.
+
+### N3-1: núcleo nativo de entrada (2026-10-17/18, sem commit)
+
+Autorização: **só o N3-1**. Relatório: `docs/N3-1-RELATORIO.md`. Retomado em 2026-10-18 depois do
+limite de sessão: o código gravado foi conferido (integração do toml++ no Builder e na exportação
+já estava no disco), nenhum build ou processo pendente, nada descartado.
+
+**Entrou:**
+- `native/platform/input.h`, `input_map.cpp`, `input_system.cpp`: `ControllerState`, `ActionMap`
+  (TOML via toml++, padrão, `--map` antigo), `InputSystem` (teclado, SDL3 Gamepad, XInput de
+  reserva, escolha e troca de controle, conexão, zona morta radial opcional, latch);
+- `transitional/input_bridge`: o Maple legado tira a amostra do núcleo e só traduz; conversões
+  exatas nos 256 valores;
+- `InputSource::connected`: os comandos do Maple que não leem o estado só perguntam a presença
+  (uma amostra por GET_CONDITION);
+- `app/main_sdl.cpp`: toda entrada pelo núcleo; `controles.toml` na pasta do usuário; foco solta
+  só o teclado; diagnóstico `BS_CONTROLE_VIRTUAL` (controle virtual do SDL3);
+- toml++ no produto (CMake raiz), no kit do Builder (`third_party/tomlplusplus`, licença) e no
+  projeto exportado (`compilar.cmd` offline);
+- `test_controles.ps1`: `-RotasK13`, e `-Casos`/`-RotasK13` aceitam lista com vírgula sob `-File`.
+
+**Padrão inalterado:** o jogo continua no Maple legado (N3-2 não iniciado); VMU, escalonador e
+tempo intocados.
+
+**Verificado (método no relatório, seção 4):**
+- builds limpos debug, release, mods e investigação;
+- 229 unitários (+8); `ctest` sem e com o disco 100%;
+- `make_builder`, `make_preview`, `test_builder` 18/0, `test_projeto` 13/0, `test_preview` 9/0,
+  `test_gameplay` 4/0, `test_controles` 39/0, `test_assistido` 28/0;
+- K13 (quadros e leituras iguais ao executável de `3a3fc92`): `passo_cgate`, `passo_heliporto`,
+  `newgame_area1`, e também `passo_combate` e `passo_load_opcoes` (`-RotasK13`): as quatro rotas
+  assistidas e a `newgame_area1`;
+- projeto exportado compilado só com `compilar.cmd`, rede bloqueada: ok, toml++ local;
+- janela: controle virtual do SDL3 e teclado real (`keybd_event`) chegam ao jogo com os valores
+  esperados, inclusive desconexão com botão apertado, reconexão e remapeamento por
+  `controles.toml`.
+
+**Não verificado:** controle físico (nenhum conectado nesta máquina); fica o teste manual na
+Preview.
+
+**Percentuais estimados:** N3 ~45% (4); total ≈ 21%.
+
 
 ## Revisões independentes (Codex)
+
+### 2026-10-18: N3-1 (núcleo nativo de entrada). Relatório em `reviews/codex-20261018-120344.md`
+
+Aceitos e corrigidos (com testes):
+- [MÉDIA] controle recém-conectado e neutro tomava o jogador 1: conectar não é mais atividade;
+- [MÉDIA] perder o foco limpava os controles SDL, e o SDL não reenvia o botão mantido: o foco solta
+  só o teclado (`release_keyboard`);
+- [BAIXA] latch também em DEVICE_INFO/ALL_STATUS: `InputSource::connected`, uma amostra por
+  GET_CONDITION (teste com DMA de dois quadros);
+- [BAIXA] `misc2`..`misc5` rejeitados no TOML: aceitos, e também `misc6`, que existe no SDL3
+  fixado.
+
+Rejeitados: nenhum.
+
+### 2026-10-17: N3-0, duas rodadas. Relatórios em `reviews/codex-20261017-164009.md` e `-173236.md`
+
+1ª rodada, todos aceitos e corrigidos:
+- [MÉDIA] o negativo do VBlank-In divergia por construção (lia antes de avançar o índice). A
+  transição injetada passou para o primeiro acesso ao MDST, que fica entre a entrega do VBlank-In e
+  o disparo do DMA. A ordem foi conferida no binário (8C08F27C → 8C08F332 → 8C0976DE, depois 8C0975C0)
+  e no runtime;
+- [MÉDIA] K13 sem `-ExeRef` passava em silêncio. Agora é obrigatório e cobre 3 rotas;
+- [MÉDIA] x2/y2 e os padrões de `old` não eram exercitados. Entraram `A2X`/`A2Y`, a matriz 2 com
+  `support` completo e a cobertura de `old` na sonda;
+- [MÉDIA] a conclusão sobre os consumidores excedia a prova. Agora há passadas conservadora e
+  otimista com revisão manual, a K11 compara o estado do jogo a cada passo e a conclusão vale só
+  para as rotas;
+- [BAIXA] K5 não testava determinismo: duas execuções por build, mais a paridade;
+- [BAIXA] o conversor citava K9 (o caso é K12) e o relatório não tinha os resultados.
+
+2ª rodada:
+- [BAIXA] o comparador aceitava passos de um lado só. Agora exige os mesmos passos e cabeçalhos;
+- [BAIXA] resultados no relatório (registrados).
+
+Nenhum rejeitado.
+
+### 2026-10-17: plano do N3 (controles nativos). Relatório em `reviews/codex-20261017-145645.md`
+
+Aceitos:
+- [ALTA] o init `8C15C10C` não pode ser substituído (chama o init `per`/Maple `8C08F0E0`,
+  conferido em `8C15C180-198`);
+- [MÉDIA] o ponto de amostragem é o MDST no tratador `8C08EFF8`, não o VBlank-In;
+- [MÉDIA] `BS_MAPLE_PORTS` não serve de oráculo de desconexão (lido uma vez);
+- [MÉDIA] o produtor de `info`/`name` no modo nativo;
+- [MÉDIA] a cobertura "100%" do contrato;
+- [BAIXA] limiares e quantização;
+- [BAIXA] artefatos auditáveis (`analysis/n3/`).
+
+Rejeitados: nenhum.
 
 ### 2026-10-17: gameplay assistido e comparação por passo. Relatório em `reviews/codex-20261017-110130.md`
 

@@ -131,9 +131,10 @@ int main() {
     CHECK(rd.submit(frame) && dev.frames == 1 && dev.draws == 1);
     CHECK(rd.create_texture({0, 0}, {}).error() == Error::Unsupported);
 
-    input::PadState pad;
+    input::ControllerState pad;
     pad.buttons = input::A | input::Start;
-    CHECK((pad.buttons & input::Start) && !(pad.buttons & input::B));
+    pad.axis(input::Axis::StickY) = 1.0f;
+    CHECK((pad.buttons & input::Start) && !(pad.buttons & input::B) && pad.axis(input::Axis::StickY) == 1.0f);
     saves::SaveInfo si{"BLUESTIN.000", "BLUE STINGER", 10, 0, 1};
     CHECK(si.blocks == 10);
     constexpr time::TimeBase tb;  // campo NTSC exato

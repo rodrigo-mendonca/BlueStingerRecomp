@@ -27,6 +27,9 @@ bool maple_write(Sh4Context* c, uint32_t a, uint32_t v);
 // Fim de DMA pendente (ciclo, 0 = nenhum). holly_intc acende ISTNRM bit 12 e chama take.
 // Pedidos de condicao (GetCond) feitos ao controle da porta: o indice do roteiro de entrada.
 uint64_t maple_cond_seq(int port);
+// Entrega do VBlank-In (o host chama antes do tratador do jogo): ponto de amostragem alternativo
+// dos negativos do N3-0 e indice dos roteiros "indice vblank". Sem efeito no padrao.
+void     maple_vblank_in();
 uint64_t maple_dma_due();
 void     maple_dma_take();
 

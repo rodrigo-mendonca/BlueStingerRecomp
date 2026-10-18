@@ -5,10 +5,10 @@ target_include_directories(bs_native_api INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(bs_native_api INTERFACE cxx_std_20)
 
 # Implementacoes nativas (produto). N1: arquivos do jogo sobre a pasta de recursos. N2a: relogio
-# logico e fila de eventos.
+# logico e fila de eventos. N3-1: nucleo de entrada (controles, mapa de acoes em TOML, XInput de reserva).
 add_library(bs_native STATIC platform/data_files.cpp platform/clock.cpp platform/event_queue.cpp
-            platform/progress.cpp)
-target_link_libraries(bs_native PUBLIC bs_native_api)
+            platform/progress.cpp platform/input_map.cpp platform/input_system.cpp)
+target_link_libraries(bs_native PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus xinput)
 
 if(BS_BUILD_TESTS AND BS_BUILD_TOOLS)
   # Compila todos os cabecalhos so com native/ no include path: nada do legado pode vazar.

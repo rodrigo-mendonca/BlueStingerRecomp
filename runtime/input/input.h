@@ -31,6 +31,8 @@ struct PadState {
     uint16_t buttons = 0;              // PadButton, 1 = apertado
     uint8_t  ltrig = 0, rtrig = 0;     // 0 solto .. 255 fundo
     uint8_t  joyx = 0x80, joyy = 0x80; // 0x80 = centro; 0 esquerda/cima, 255 direita/baixo
+    uint8_t  joy2x = 0x80, joy2y = 0x80; // segundo analogico (bytes 6-7 da condicao; o controle padrao nao tem)
+    bool     connected = true;         // false: a porta fica vazia no Maple (testes de conexao, N3-0)
 };
 
 // Fonte de entrada: devolve o estado do controle `port` na leitura numero `seq` (contagem
@@ -39,6 +41,9 @@ class InputSource {
 public:
     virtual ~InputSource() = default;
     virtual PadState read(int port, uint64_t seq) = 0;
+    // Presenca na leitura `seq`, sem tirar amostra: o Maple pergunta isto nos comandos que nao leem
+    // o estado (DEVICE_INFO, ALL_STATUS...); so o GET_CONDITION chama read (N3-1). Padrao: o de read.
+    virtual bool connected(int port, uint64_t seq) { return read(port, seq).connected; }
 };
 
 // Nome de botao <-> bit ("START", "A", "UP", ...); 0 se desconhecido.
@@ -51,13 +56,24 @@ uint16_t pad_button_from_name(const std::string& name);
 // Indice: por padrao, o numero da leitura do controle. A linha "indice passo" (antes dos
 // passos) troca para o passo de jogo (input_step): um roteiro por passo vale igual nos modos
 // de tempo, porque as cargas nao contam passos (o estavel le o controle mais vezes nelas).
+// "indice transicao" (testes do ponto de amostragem, N3-0): o indice e a contagem de
+// input_transition_tick(), que o Maple chama no primeiro acesso ao MDST depois de cada VBlank-In:
+// dentro do tratador do SDK (8C08EFF8 -> 8C08F332), depois da entrega do VBlank-In e antes do disparo do
+// DMA (8C0975C0). E a transicao injetada entre os dois pontos de amostragem possiveis.
 std::unique_ptr<InputSource> make_scripted_input(const std::string& text);
 
 // Estado <-> texto do roteiro ("UP+A+RT", "-"). Lanca std::runtime_error para nome invalido.
-// So o subconjunto digital: gatilhos no fundo ou soltos, analogico no centro ou no limite. Um
-// estado com valor intermediario (vindo de um controle real) vira o extremo do mesmo lado no texto.
+// Valores exatos (N3-0): AX=n, AY=n (analogico, 0..255, 128 = centro), A2X=n, A2Y=n (segundo
+// analogico), LT=n, RT=n (gatilhos, 0..255). "DESCONECTADO" (sozinho): a porta fica vazia. No texto, os extremos continuam com os
+// nomes digitais (LT, ANALOG_LEFT...) e os valores intermediarios saem como AX=n etc.
 PadState    pad_state_from_text(const std::string& text);
 std::string pad_state_text(const PadState& s);
+
+// Transicao injetada (N3-0): avanca o indice dos roteiros "indice transicao" (ver acima).
+void     input_transition_tick();
+uint64_t input_transition_index();
+// Passo de jogo ou `fallback` sem contador (diagnosticos que nao podem lancar).
+uint64_t input_step_or(uint64_t fallback);
 
 // Roteiro alimentado durante a execucao (gameplay assistido, so desenvolvimento): o estado
 // vale a partir do passo de jogo `step`. Mesma semantica de um roteiro "indice passo", entao a

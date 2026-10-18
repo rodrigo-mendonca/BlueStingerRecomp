@@ -59,6 +59,7 @@ A pasta `generated/` contém código derivado do executável do disco: use-o só
 | `tools/extractor/` | Leitura dos dados do jogo (`data\` preparada pelo Builder). |
 | `mods/` | **Seus mods** (C++ e arquivos). O Builder nunca sobrescreve esta pasta. |
 | `third_party/SDL3/` | SDL3 (licença zlib). |
+| `third_party/tomlplusplus/` | toml++ (licença MIT): leitura do arquivo de controles. |
 
 ## Como recompilar
 
@@ -166,7 +167,8 @@ call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 cd /d "%~dp0"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl ^
   -DBS_BUILD_TOOLS=OFF -DBS_BUILD_TESTS=OFF -DBS_BUILD_GAME=ON -DBS_MODS=ON "-DBS_MODS_DIR=%CD%\mods" ^
-  "-DBS_GENERATED_DIR=%CD%\generated" "-DFETCHCONTENT_SOURCE_DIR_SDL3=%CD%\third_party\SDL3" -DFETCHCONTENT_FULLY_DISCONNECTED=ON || exit /b 1
+  "-DBS_GENERATED_DIR=%CD%\generated" "-DFETCHCONTENT_SOURCE_DIR_SDL3=%CD%\third_party\SDL3" ^
+  "-DFETCHCONTENT_SOURCE_DIR_TOMLPLUSPLUS=%CD%\third_party\tomlplusplus" -DFETCHCONTENT_FULLY_DISCONNECTED=ON || exit /b 1
 cmake --build build --target bluestinger || exit /b 1
 echo Pronto: build\app\bluestinger.exe (use --data ^<instalacao^>\data)
 )";
@@ -176,7 +178,8 @@ echo Pronto: build\app\bluestinger.exe (use --data ^<instalacao^>\data)
 std::string check_project(const fs::path& dir) {
     std::error_code ec;
     for (const wchar_t* f : {L"CMakeLists.txt", L"generated/generated.cmake", L"generated/funcs.h", L"runtime/CMakeLists.txt",
-                             L"app/CMakeLists.txt", L"third_party/SDL3/CMakeLists.txt", L"config/bluestinger_us.toml"})
+                             L"app/CMakeLists.txt", L"third_party/SDL3/CMakeLists.txt", L"third_party/tomlplusplus/CMakeLists.txt",
+                             L"config/bluestinger_us.toml"})
         if (!fs::is_regular_file(dir / f, ec)) return "projeto incompleto: falta " + path_text(dir / f);
     return {};
 }
@@ -186,9 +189,10 @@ void export_project(const ExportInputs& in, const fs::path& dest, const std::fun
     fs::create_directories(dest, ec);
     if (ec) throw std::runtime_error("nao foi possivel criar o projeto em " + path_text(dest) + " (" + error_text(ec) + ")");
 
-    // fontes do runtime/app (edicoes mais novas no projeto ficam) e SDL3
+    // fontes do runtime/app (edicoes mais novas no projeto ficam), SDL3 e toml++
     for (const wchar_t* e : kKitEntries) syncTree(in.kit / e, dest / e);
     syncTree(in.sdl3, dest / L"third_party" / L"SDL3");
+    syncTree(in.toml, dest / L"third_party" / L"tomlplusplus");
 
     // C++ gerado: o anterior (talvez editado) e guardado, nunca perdido
     const fs::path gen = dest / L"generated";

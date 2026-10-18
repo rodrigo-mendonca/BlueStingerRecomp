@@ -346,7 +346,13 @@ BS_TEST(builder_rejects_bad_inputs_without_side_effects) {
                              L"transitional/CMakeLists.txt", L"tools/build/msvc_srcdeps.cmake",
                              L"third_party/SDL3/CMakeLists.txt"})
         writeFile(kit / f, "");
+    // N3-1: sem as fontes do toml++ (nem no kit nem ao lado do SDL3) o kit esta incompleto
+    BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").find("toml++") != std::string::npos);
+    writeFile(kit / L"third_party/tomlplusplus/CMakeLists.txt", "");
     BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").empty());
+    BS_CHECK(toml_dir(kit, kit / L"third_party" / L"SDL3") == kit / L"third_party" / L"tomlplusplus");
+    BS_CHECK(toml_dir(tmp.p / L"repo", tmp.p / L"build" / L"_deps" / L"sdl3-src") ==
+             tmp.p / L"build" / L"_deps" / L"tomlplusplus-src");
     BS_CHECK(!check_kit(tmp.p / L"vazio", tmp.p / L"vazio").empty());
 
     auto run = [&](Request r) {

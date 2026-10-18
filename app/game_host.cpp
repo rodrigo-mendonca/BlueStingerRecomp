@@ -10,6 +10,8 @@
 #include "debug/call_trace.h"
 #include "debug/cri_diag.h"
 #include "gdfs_adapter.h"
+#include "pad_contract.h"
+#include "pad_probe.h"
 #include "input/input.h"
 #include "time_adapter.h"
 #include "cri_idle.h"
@@ -66,7 +68,45 @@ struct StepLog {
     const GameHost* host  = nullptr;
 } g_stepLog;
 
+// Diagnostico BS_PAD_TRACE (N3-0): a cada passo de jogo, no inicio do passo (antes do servidor
+// pd do passo), o PDS_PERIPHERAL da porta A0 como o jogo o deixou no passo anterior (depois do
+// servidor e do pos-processamento 8C064878), o ponteiro que o jogo usa, a info apontada e a
+// palavra de acoes do jogo (8C24C5D0..E0, 8C03AC2E) e o pedido de soft reset (bit 2 de 8C24F878).
+// Comparavel entre execucoes passo a passo (tools/dev/compara_pad.py): e a referencia do N3-2.
+FILE*          g_padTrace = nullptr;
+const uint8_t* g_padRam   = nullptr;
+
+void padTraceWrite(uint64_t step) {
+    namespace pad = transitional::pad;
+    const uint8_t* ram = g_padRam;
+    auto u32 = [&](uint32_t a) {
+        uint32_t v;
+        std::memcpy(&v, ram + (a & 0xFFFFFF), 4);
+        return v;
+    };
+    const pad::Pds p     = pad::pds_load(ram + (pad::kTable & 0xFFFFFF));
+    const uint32_t ptr   = u32(pad::kGamePdsPtr);
+    const bool     infoOk = (p.info >> 24) == 0x8C;
+    std::string    name;
+    if ((p.name >> 24) == 0x8C)
+        for (uint32_t i = 0; i < 32; ++i) {
+            const char ch = char(ram[(p.name + i) & 0xFFFFFF]);
+            if (ch < 0x20 || ch > 0x7E) break;
+            name += ch;
+        }
+    std::fprintf(g_padTrace,
+                 "%llu\t%llu\t%llu\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%u\t%u\t%d\t%d\t%d\t%d\t%08X\t%08X\t%s\t%08X\t%08X\t"
+                 "%08X\t%08X\t%08X\t%u\n",
+                 static_cast<unsigned long long>(step), static_cast<unsigned long long>(g_stepLog.host->vblanks()),
+                 static_cast<unsigned long long>(maple_cond_seq(0)), ptr, p.id, p.support, p.on, p.off, p.press, p.release,
+                 p.r, p.l, p.x1, p.y1, p.x2, p.y2, p.old, infoOk ? u32(p.info) : 0u, name.empty() ? "-" : name.c_str(),
+                 u32(0x8C24C5D0), u32(0x8C24C5D4), u32(0x8C24C5D8), u32(0x8C24C5DC), u32(0x8C24C5E0),
+                 (u32(0x8C24F878) >> 2) & 1u);
+    if (step % 250 == 0) std::fflush(g_padTrace);
+}
+
 void stepLogWrite(uint64_t step, void*) {
+    if (g_padTrace) padTraceWrite(step);
     if (!g_stepLog.f || step % g_stepLog.every) return;
     const uint8_t* ram = g_stepLog.ram;
     uint64_t       h   = 0xCBF29CE484222325ull;
@@ -123,6 +163,7 @@ void GameHost::onVblank(void* self) { static_cast<GameHost*>(self)->vblank(); }
 // atende pedidos de parada.
 void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
+    maple_vblank_in();  // N3-0: indice "vblank" dos roteiros e negativo do ponto de amostragem
     // Diagnostico: BS_RAM_DUMP=<vblank>[,<vblank>...]:<arquivo> grava os 16 MB da RAM do guest
     // nesses VBlanks (com mais de um, em <arquivo>_<vblank>)
     static const std::pair<std::vector<uint64_t>, std::string> kRamDump = [] {
@@ -259,6 +300,7 @@ void GameHost::threadMain() {
         bs::mods::init_all();  // mods compilados no executavel (projeto editavel; BS_MOD)
         bs::call_trace_install();  // diagnostico BS_CALL_TRACE (desligado por padrao)
         bs::cri_diag_install();    // diagnostico BS_CRI_DIAG (N2b-0; desligado por padrao)
+        transitional::pad::probe_install();  // teste de contrato BS_PAD_CONTRATO (N3-0; desligado por padrao)
         // N1: arquivos pelo provedor nativo (API gdFs sobre a pasta de recursos)
         if (!opt_.data.empty() && opt_.files == FilesProvider::Native) {
             files_ = std::make_unique<native::files::DataFileSystem>(opt_.data / L"disc", opt_.modAssets);
@@ -290,11 +332,18 @@ void GameHost::threadMain() {
                 g_stepLog.every = 10;
                 if (const char* k = std::getenv("BS_STATE_PASSO_CADA"))
                     g_stepLog.every = std::max<uint64_t>(1, std::strtoull(k, nullptr, 10));
-                g_stepLog.ram  = c.ram;
-                g_stepLog.host = this;
                 std::fprintf(g_stepLog.f, "passo\tvblank\testado\tvida\tx\ty\tz\n");
-                transitional::time::set_step_observer(&stepLogWrite, nullptr);
             }
+            if (const char* v = std::getenv("BS_PAD_TRACE"); v && *v) {
+                g_padTrace = std::fopen(v, "w");
+                if (!g_padTrace) throw std::runtime_error(std::string("BS_PAD_TRACE: nao abre ") + v);
+                std::fprintf(g_padTrace, "passo\tvblank\tleituras\tptr\tid\tsupport\ton\toff\tpress\trelease\tr\tl\tx1\ty1\t"
+                                         "x2\ty2\told\tinfo\tnome\tacao0\tacao1\tacao2\tacao3\tacao4\treset\n");
+                g_padRam = c.ram;
+            }
+            g_stepLog.ram  = c.ram;
+            g_stepLog.host = this;
+            if (g_stepLog.f || g_padTrace) transitional::time::set_step_observer(&stepLogWrite, nullptr);
         }
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);
@@ -323,12 +372,14 @@ void GameHost::threadMain() {
     if (traceOn()) std::fprintf(stderr, "[host] fibras liberadas\n");
     gdrom_set_disc(nullptr);  // fecha a imagem de disco
     std::fputs(cri_diag_summary().c_str(), stderr);
+    transitional::pad::probe_finish();
     // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
     std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
     if (transitional::time::installed()) {
         input_set_step_counter(nullptr);
         transitional::time::set_step_observer(nullptr, nullptr);
         if (g_stepLog.f) std::fclose(g_stepLog.f), g_stepLog.f = nullptr;
+        if (g_padTrace) std::fclose(g_padTrace), g_padTrace = nullptr;
         transitional::time::uninstall();
         std::fputs(transitional::time::progress_summary().c_str(), stderr);
         const auto s = transitional::time::stats();

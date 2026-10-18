@@ -45,6 +45,15 @@ else()
   add_compile_options(-Wall -Wextra)
 endif()
 
+# toml++ (MIT): configuracao do tradutor e, desde o N3-1, o arquivo de controles do produto. No kit do
+# Builder as fontes vem em third_party/tomlplusplus (FETCHCONTENT_SOURCE_DIR_TOMLPLUSPLUS, sem rede).
+include(FetchContent)
+FetchContent_Declare(tomlplusplus
+  GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+  GIT_TAG        v3.4.0
+  GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(tomlplusplus)
+
 add_subdirectory(tools/extractor)
 add_subdirectory(tools/dcmap)
 if(BS_BUILD_TOOLS)

@@ -1,9 +1,4 @@
-include(FetchContent)
-FetchContent_Declare(tomlplusplus
-  GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-  GIT_TAG        v3.4.0
-  GIT_SHALLOW    TRUE)
-FetchContent_MakeAvailable(tomlplusplus)
+# toml++: declarado no CMakeLists.txt da raiz (o produto tambem usa, N3-1)
 
 # Biblioteca compartilhada por analisador, gerador e testes.
 add_library(bs_translator STATIC

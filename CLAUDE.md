@@ -37,6 +37,18 @@ Ferramentas:
 - `tools/dist/make_preview.ps1 -Disc <img.cdi>` (pelo próprio Builder), `make_builder.ps1`: distribuições
   em `dist/`; testes `test_preview.ps1`, `test_gameplay.ps1` (NEW GAME até a 1ª área),
   `test_builder.ps1 -Disc <img.cdi>`, `test_projeto.ps1 -Disc <img.cdi>` (projeto editável e mods).
+- Regressão completa retomável: `powershell -File tools/dev/regressao.ps1` (builds, unitários, ctest
+  com e sem disco, Builder, Preview e todas as suítes em sequência). Pode ser interrompida; rodar de
+  novo continua da primeira etapa não aprovada (estado em `%LOCALAPPDATA%\BlueStingerRecomp\regressao`;
+  código alterado recomeça do zero). `-Listar` mostra o estado, `-Novo` descarta, `-Desde <etapa>` refaz.
+  Política (mantenedor, 2026-10-18): durante uma subetapa, unitários e testes dos componentes
+  alterados; ao fechar uma subetapa, a integração relacionada (inclusive gameplay assistido); a
+  regressão completa só ao fechar a etapa principal e antes de mudar um padrão ou remover um
+  mecanismo legado. Risco concreto para outros subsistemas: explicar e ampliar os testes.
+- Controles (N3-1): `controles.toml` na pasta do usuário (criado na 1ª execução); diagnóstico
+  `BS_CONTROLE_VIRTUAL=<roteiro>` (controle virtual do SDL3, janela) com `BS_PAD_LEITURAS`;
+  `test_controles.ps1 [-Casos K13] [-RotasK13 r1,r2]`. Não rodar suítes que leem
+  `dist\BlueStinger-Preview\data` junto com o `make_preview` (a troca da instalação é recusada).
 - Diagnóstico do jogo: `bluestinger --headless N --dump-every K --capture <dir>` com
   `BS_INPUT_SCRIPT=tools/dist/roteiros/newgame_area1.txt`.
 - Gameplay assistido (só desenvolvimento, `app/assist.h`): `python tools/dev/assistido.py iniciar <pasta>`

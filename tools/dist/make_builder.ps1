@@ -83,6 +83,15 @@ Get-ChildItem -LiteralPath $sdl -Force | Where-Object { $skip -notcontains $_.Na
     Copy-Item -Recurse -LiteralPath $_.FullName -Destination (Join-Path $sdlKit $_.Name)
 }
 
+# toml++ (MIT, N3-1: o jogo le controles.toml): sem testes, documentacao e exemplos
+$tomlSrc = Join-Path $build "_deps\tomlplusplus-src"
+$tomlKit = Join-Path $kit "third_party\tomlplusplus"
+New-Item -ItemType Directory -Force -Path $tomlKit | Out-Null
+$tomlSkip = @(".git", ".github", ".circleci", "docs", "tests", "examples", "toml-test", "vendor")
+Get-ChildItem -LiteralPath $tomlSrc -Force | Where-Object { $tomlSkip -notcontains $_.Name } | ForEach-Object {
+    Copy-Item -Recurse -LiteralPath $_.FullName -Destination (Join-Path $tomlKit $_.Name)
+}
+
 # licencas e textos
 Copy-Item -LiteralPath (Join-Path $repo "LICENSE") -Destination "$stage\licencas\BlueStingerRecompiled-MIT.txt"
 Copy-Item -LiteralPath (Join-Path $sdl "LICENSE.txt") -Destination "$stage\licencas\SDL3-zlib.txt"

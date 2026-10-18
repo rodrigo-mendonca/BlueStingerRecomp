@@ -1,0 +1,25 @@
+# Convertido de tools/dist/roteiros/newgame_area1.txt por tools/dev/converte_roteiro.py (estado da ultima leitura de cada passo)
+indice passo
+0 -
+94 START
+108 -
+593 START
+608 -
+793 START
+808 -
+993 START
+1008 -
+2630 UP
+2780 -
+2805 LEFT
+2855 -
+2880 UP
+3030 -
+3055 RIGHT
+3130 -
+3155 UP
+3280 -
+3305 A
+3310 -
+3330 DOWN
+3430 -

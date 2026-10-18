@@ -51,6 +51,37 @@ uint64_t                        g_due = 0;
 MapleControllerState            g_pad;
 uint64_t                        g_condSeq[4] = {};  // pedidos de condicao por porta (roteiro)
 
+// Diagnosticos e negativos do N3-0 (desligados por padrao; nenhum muda o jogo sem a variavel):
+//   BS_MAPLE_FUNCAO=<hex>  dados da funcao do controle no DEVICE_INFO (cobertura do `support`)
+//   BS_PAD_LEITURAS=<arq>  cada GET_CONDITION da porta A: leitura, passo, VBlank, estado servido
+//   BS_PAD_MUTACAO=troca_ab           A e B trocados no estado servido
+//   BS_PAD_MUTACAO=amostra_vblank_in  a amostra vem da entrega do VBlank-In (maple_vblank_in),
+//                                     nao do disparo do DMA
+struct PadDiag {
+    bool     funcSet = false;
+    uint32_t func    = 0xFE060F00;
+    FILE*    reads   = nullptr;
+    bool     swapAB = false, sampleAtVblank = false;
+};
+const PadDiag& padDiag() {
+    static const PadDiag d = [] {
+        PadDiag x;
+        if (const char* v = std::getenv("BS_MAPLE_FUNCAO"); v && *v) x.funcSet = true, x.func = uint32_t(std::strtoul(v, nullptr, 16));
+        if (const char* v = std::getenv("BS_PAD_LEITURAS"); v && *v) {
+            x.reads = std::fopen(v, "w");
+            if (x.reads) std::fprintf(x.reads, "leitura\tpasso\tvblank\testado\n");
+        }
+        if (const char* v = std::getenv("BS_PAD_MUTACAO"); v && *v) {
+            x.swapAB         = std::strstr(v, "troca_ab") != nullptr;
+            x.sampleAtVblank = std::strstr(v, "amostra_vblank_in") != nullptr;
+        }
+        return x;
+    }();
+    return d;
+}
+PadState g_vblankSample;          // amostra_vblank_in: a amostra guardada na entrega do VBlank-In
+bool     g_transitionArmed = false;  // o primeiro acesso ao MDST depois do VBlank-In avanca a transicao
+
 uint32_t& reg(uint32_t p) { return g_regs[(p - kBase) / 4]; }
 
 uint8_t* ramAt(Sh4Context* c, uint32_t phys, uint32_t bytes) {
@@ -75,7 +106,7 @@ void putStr(uint8_t* dst, const char* s, size_t n) {
 void devInfo(uint32_t* w) {
     std::memset(w, 0, 28 * 4);
     w[0]        = kFuncController;
-    w[1]        = 0xFE060F00;
+    w[1]        = padDiag().func;
     auto* b     = reinterpret_cast<uint8_t*>(w);
     b[16]       = 0xFF;  // area
     b[17]       = 0;     // direcao do conector
@@ -98,6 +129,17 @@ uint32_t respond(uint32_t port, uint32_t hdr, const uint32_t* data, uint32_t* ou
         return e && std::strcmp(e, "none") == 0;
     }();
     if (none || port != 0 || !main) return 0;  // so o controle da porta A existe
+    // Fonte de entrada do host/roteiro (runtime/input), se houver. N3-0: um estado
+    // "DESCONECTADO" deixa a porta vazia para todos os comandos (sondagem de conexao do SDK).
+    // N3-1: a amostra (latch) so no GET_CONDITION; os outros comandos so perguntam a presenca.
+    InputSource* in = input_source();
+    PadState     s;
+    if (in) {
+        if (padDiag().sampleAtVblank) s = g_vblankSample;
+        else if (cmd == kCmdGetCond) s = in->read(int(port), g_condSeq[port]);
+        else s.connected = in->connected(int(port), g_condSeq[port]);
+    }
+    if (!s.connected) return 0;
     const uint8_t me = uint8_t(port << 6) | 0x20;  // sem unidades de expansao
     auto frame = [&](uint8_t rcmd, uint32_t words) {
         out[0] = rcmd | (uint32_t(src) << 8) | (uint32_t(me) << 16) | (words << 24);
@@ -116,13 +158,21 @@ uint32_t respond(uint32_t port, uint32_t hdr, const uint32_t* data, uint32_t* ou
         return frame(kRspAck, 0);
     case kCmdGetCond: {
         if (data[0] != kFuncController) return frame(kRspFuncUnsupported, 0);
-        // Fonte de entrada do host/roteiro (runtime/input), se houver; senao o estado fixo
-        // de maple_set_controller. O barramento e ativo em 0; a entrada, em 1.
+        // A fonte de entrada (lida acima, na leitura corrente); sem fonte, o estado fixo de
+        // maple_set_controller. O barramento e ativo em 0; a entrada, em 1.
         MapleControllerState pad = g_pad;
-        if (InputSource* in = input_source()) {
-            const PadState s = in->read(int(port), g_condSeq[port]++);
-            pad.buttons      = uint16_t(~s.buttons);
+        if (in) {
+            const PadDiag& d = padDiag();
+            if (d.reads)
+                std::fprintf(d.reads, "%llu\t%lld\t%llu\t%s\n", static_cast<unsigned long long>(g_condSeq[port]),
+                             static_cast<long long>(input_step_or(~0ull)), static_cast<unsigned long long>(input_transition_index()),
+                             pad_state_text(s).c_str());
+            ++g_condSeq[port];
+            uint16_t b = s.buttons;
+            if (d.swapAB) b = uint16_t((b & ~(kPadA | kPadB)) | (b & kPadA ? kPadB : 0) | (b & kPadB ? kPadA : 0));
+            pad.buttons = uint16_t(~b);
             pad.ltrig = s.ltrig, pad.rtrig = s.rtrig, pad.joyx = s.joyx, pad.joyy = s.joyy;
+            pad.joy2x = s.joy2x, pad.joy2y = s.joy2y;
         }
         out[1] = kFuncController;
         out[2] = pad.buttons | (uint32_t(pad.rtrig) << 16) | (uint32_t(pad.ltrig) << 24);
@@ -178,6 +228,8 @@ void maple_reset() {
     time_provider().maple_cancel();
     g_pad = {};
     for (auto& n : g_condSeq) n = 0;
+    g_vblankSample    = {};
+    g_transitionArmed = false;
 }
 
 void maple_set_controller(const MapleControllerState& s) { g_pad = s; }
@@ -187,6 +239,7 @@ bool maple_read(Sh4Context* c, uint32_t a, uint32_t& v) {
     if (p < kBase || p >= kBase + kSize) return false;
     v = reg(p);
     if (p == kMdst) {
+        if (g_transitionArmed) g_transitionArmed = false, input_transition_tick();  // N3-0: transicao injetada
         v = (g_due && time_now(c) < g_due) ? 1 : 0;
         if (g_clock_log) clock_log_read(ClockRead::Mdst, v);
     }
@@ -214,6 +267,13 @@ bool maple_write(Sh4Context* c, uint32_t a, uint32_t v) {
     return true;
 }
 
+void maple_vblank_in() {
+    // amostra_vblank_in (negativo do N3-0): guarda a amostra na entrega do VBlank-In. A transicao
+    // dos roteiros "indice transicao" so acontece depois, no primeiro acesso ao MDST (maple_read)
+    if (padDiag().sampleAtVblank)
+        if (InputSource* in = input_source()) g_vblankSample = in->read(0, g_condSeq[0]);
+    g_transitionArmed = true;
+}
 uint64_t maple_dma_due() { return g_due; }
 uint64_t maple_cond_seq(int port) { return port >= 0 && port < 4 ? g_condSeq[port] : 0; }
 

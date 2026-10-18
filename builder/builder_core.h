@@ -86,4 +86,9 @@ void install_swap(const std::filesystem::path& stage, const std::filesystem::pat
 // Kit de fontes valido? Vazio = sim; senao, o que falta.
 std::string check_kit(const std::filesystem::path& kitDir, const std::filesystem::path& sdl3Dir);
 
+// Fontes do toml++ (N3-1: o produto le o arquivo de controles): <kit>\third_party\tomlplusplus
+// (distribuicao e projeto editavel) ou, no repositorio, ao lado das fontes do SDL3
+// (build\...\_deps\tomlplusplus-src).
+std::filesystem::path toml_dir(const std::filesystem::path& kitDir, const std::filesystem::path& sdl3Dir);
+
 } // namespace bs::builder
