@@ -1737,8 +1737,55 @@ Preview.
 
 **Percentuais estimados:** N3 ~45% (4); total ≈ 21%.
 
+### N3-2: provedor nativo do SDK de controles (2026-10-18, depois de `e16e42f`, sem commit)
+
+Autorização: N3-1 commitado em `e16e42f` (commit único autorizado) e **só o N3-2**. Relatório:
+`docs/N3-2-RELATORIO.md`. Rollback: `analysis/rollback-n3-1/` (executáveis de `e16e42f` com hashes) e
+`dist/BlueStinger-Preview.n3-1-e16e42f`.
+
+**Entrou:**
+- `--controles legado|nativo` (padrão `legado`), `GameOptions::controls`/`input`;
+- `transitional/pad_adapter`: slots em `8C0975C0` (amostra no disparo efetivo do DMA da camada `per`;
+  o original roda), `8C15C4E6` (servidor `pd` pelo contrato do N3-0) e `8C15C668` (getter); modelo de
+  presença e coleta da camada `per`; info da porta A na área nativa do BIOS HLE;
+- reserva formal `kHleNativeAreaBase = 0x8C004000` (0x100 B) em `runtime/hle/bios.h`, com guarda;
+- `runtime/maple`: `maple_set_controller_present` (sem controle no nativo) e `MapleCounters`;
+- `config/bluestinger_us.toml`: 3 slots; C++ regenerado (só os slots);
+- diagnósticos `BS_PAD_FECHAMENTO` e `BS_PAD_NATIVO_MUTACAO`;
+- `tools/dist/test_pd_nativo.ps1` (P1–P8, também no `tools/dev/regressao.ps1`); 5 unitários.
+
+**Medido e corrigido no caminho:**
+- `8C0975C0` volta sem disparar (−1/−2/−3): a amostra só com r0 ≥ 0;
+- a camada `per` troca o **conteúdo** do buffer de info na coleta: ponteiro fixo, conteúdo pelo modelo;
+- a coleta acontece no fim do DMA, que cai depois do servidor com tempo por ciclos e na espera seguinte
+  com o experimental (dumps de RAM a cada VBlank em volta de uma desconexão): regra por modo.
+
+**Verificado** (código final, builds limpos):
+- 235 unitários; `ctest` com disco 100%;
+- `test_pd_nativo` 76/0: legado = nativo nas 5 rotas e nos 6 cenários, nos dois modos de tempo
+  (quadros, leituras, cargas, estado, áudio, traço com tempo), fechamento (0 entradas no servidor,
+  decodificador e getter originais; 0 GET_CONDITION, respostas e leituras da fonte no Maple), 7
+  negativos, determinismo, mods, área nativa e prova estática;
+- `test_controles` 39/0 (K13: legado = `3a3fc92`), `test_assistido` 28/0;
+- `make_builder`, `make_preview`, `test_builder` 18/0, `test_projeto` 13/0, `test_preview` 9/0, `test_gameplay` 4/0.
+
+**Pendente:** teste manual com controles físicos (aceitação do N3 completo).
+
+**Percentuais estimados:** N3 ~70% (4); total ≈ 22%.
+
 
 ## Revisões independentes (Codex)
+
+### 2026-10-18: N3-2 (provedor nativo do pd). Relatórios em `reviews/codex-20261018-182417.md` e `-220359.md`
+
+- [MÉDIA] coleta não amarrada ao fim real do DMA: aceito em parte. O fim exato exigiria emular o tempo
+  do barramento do controle. Entrou o invariante "uma passada do servidor por disparo", cobrado na
+  suíte; a limitação residual está documentada.
+- [MÉDIA] unidades ≠ A0 com resposta forçada: aceito; a descrição bruta da camada `per` (`8C08F4B6`).
+- [BAIXA] soft reset sem conferência semântica: aceito.
+- [BAIXA] SKIP com sucesso: aceito (código 2).
+
+2ª rodada: as quatro correções confirmadas; [MÉDIA] janela temporal residual aceita como limitação explícita; [BAIXA] faltava unitário da unidade-base B0 pela descrição bruta: aceito (235 unitários). Rejeitados: nenhum.
 
 ### 2026-10-18: N3-1 (núcleo nativo de entrada). Relatório em `reviews/codex-20261018-120344.md`
 

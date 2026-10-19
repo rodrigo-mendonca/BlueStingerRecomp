@@ -28,6 +28,7 @@ add_executable(bs_unit_tests
   unit/test_n2.cpp
   unit/test_pad_contract.cpp
   unit/test_input_native.cpp
+  unit/test_pad_adapter.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core bs_hwscan bs_transitional)

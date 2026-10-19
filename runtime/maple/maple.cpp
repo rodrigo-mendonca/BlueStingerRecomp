@@ -79,6 +79,8 @@ const PadDiag& padDiag() {
     }();
     return d;
 }
+bool          g_controllerPresent = true;  // N3-2: false no --controles nativo
+MapleCounters g_counters;
 PadState g_vblankSample;          // amostra_vblank_in: a amostra guardada na entrega do VBlank-In
 bool     g_transitionArmed = false;  // o primeiro acesso ao MDST depois do VBlank-In avanca a transicao
 
@@ -128,7 +130,9 @@ uint32_t respond(uint32_t port, uint32_t hdr, const uint32_t* data, uint32_t* ou
         const char* e = std::getenv("BS_MAPLE_PORTS");
         return e && std::strcmp(e, "none") == 0;
     }();
-    if (none || port != 0 || !main) return 0;  // so o controle da porta A existe
+    (cmd == kCmdDevInfo ? g_counters.devInfo : cmd == kCmdGetCond ? g_counters.getCond : g_counters.other)[port & 3]++;
+    // so o controle da porta A existe; no --controles nativo (N3-2), nem ele
+    if (none || !g_controllerPresent || port != 0 || !main) return 0;
     // Fonte de entrada do host/roteiro (runtime/input), se houver. N3-0: um estado
     // "DESCONECTADO" deixa a porta vazia para todos os comandos (sondagem de conexao do SDK).
     // N3-1: a amostra (latch) so no GET_CONDITION; os outros comandos so perguntam a presenca.
@@ -136,10 +140,11 @@ uint32_t respond(uint32_t port, uint32_t hdr, const uint32_t* data, uint32_t* ou
     PadState     s;
     if (in) {
         if (padDiag().sampleAtVblank) s = g_vblankSample;
-        else if (cmd == kCmdGetCond) s = in->read(int(port), g_condSeq[port]);
-        else s.connected = in->connected(int(port), g_condSeq[port]);
+        else if (cmd == kCmdGetCond) s = in->read(int(port), g_condSeq[port]), ++g_counters.sourceReads;
+        else s.connected = in->connected(int(port), g_condSeq[port]), ++g_counters.sourceReads;
     }
     if (!s.connected) return 0;
+    ++g_counters.controllerResponses;
     const uint8_t me = uint8_t(port << 6) | 0x20;  // sem unidades de expansao
     auto frame = [&](uint8_t rcmd, uint32_t words) {
         out[0] = rcmd | (uint32_t(src) << 8) | (uint32_t(me) << 16) | (words << 24);
@@ -194,6 +199,7 @@ void runDma(Sh4Context* c) {
     static const bool debug = std::getenv("BS_MAPLE_DEBUG") != nullptr;
     uint32_t          addr  = reg(kMdstar) & 0x1FFFFFE0;
     uint64_t          bits  = 0;
+    ++g_counters.dmas;
     // segue os descritores ate o bit LAST (revisao Codex 2026-10-14); sem LAST em 1024
     // descritores, a tabela esta corrompida: erro fatal, nunca resposta parcial em silencio
     for (int n = 0;; ++n) {
@@ -230,6 +236,7 @@ void maple_reset() {
     for (auto& n : g_condSeq) n = 0;
     g_vblankSample    = {};
     g_transitionArmed = false;
+    g_counters        = {};
 }
 
 void maple_set_controller(const MapleControllerState& s) { g_pad = s; }
@@ -270,10 +277,14 @@ bool maple_write(Sh4Context* c, uint32_t a, uint32_t v) {
 void maple_vblank_in() {
     // amostra_vblank_in (negativo do N3-0): guarda a amostra na entrega do VBlank-In. A transicao
     // dos roteiros "indice transicao" so acontece depois, no primeiro acesso ao MDST (maple_read)
-    if (padDiag().sampleAtVblank)
+    if (padDiag().sampleAtVblank && g_controllerPresent)
         if (InputSource* in = input_source()) g_vblankSample = in->read(0, g_condSeq[0]);
     g_transitionArmed = true;
 }
+void          maple_set_controller_present(bool present) { g_controllerPresent = present; }
+bool          maple_controller_present() { return g_controllerPresent; }
+MapleCounters maple_counters() { return g_counters; }
+void          maple_counters_reset() { g_counters = {}; }
 uint64_t maple_dma_due() { return g_due; }
 uint64_t maple_cond_seq(int port) { return port >= 0 && port < 4 ? g_condSeq[port] : 0; }
 

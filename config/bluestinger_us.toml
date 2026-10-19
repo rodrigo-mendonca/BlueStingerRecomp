@@ -121,6 +121,10 @@ slots = [
   0x8C15BDA4,  # callback 2 (gdfs, func, obj)
   0x8C15BDDE,  # callback de erro (gdfs, func, obj)
   0x8C15AE28,  # servidor do gdFs (interno): conclui os pedidos assincronos nativos
+  # N3-2 (docs/N3-PLANO.md, --controles nativo; no legado os slots apontam para o gerado):
+  0x8C15C4E6,  # servidor pd (24 PDS_PERIPHERAL): transitional/pad_adapter os escreve
+  0x8C15C668,  # pdGetPeripheral(porta), tambem chamado por registrador (8C064878)
+  0x8C0975C0,  # disparo do DMA da camada per no VBlank: ponto de amostragem (latch); o original roda
 ]
 # N2b (docs/N2b-PLANO.md, secao 1.2): back-edges dos lacos que esperam uma condicao acesa por
 # evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por

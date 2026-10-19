@@ -33,4 +33,20 @@ void     maple_vblank_in();
 uint64_t maple_dma_due();
 void     maple_dma_take();
 
+// N3-2 (--controles nativo): sem controle na porta A, como BS_MAPLE_PORTS=none. O DMA da camada
+// per continua (sondagem das portas; a VMU usa a mesma camada ate o N4), mas nenhum dispositivo
+// responde e a fonte de entrada nunca e lida. Padrao: com controle. maple_reset nao muda isto.
+void maple_set_controller_present(bool present);
+bool maple_controller_present();
+
+// Contadores do barramento (prova de fechamento do N3-2; sempre ligados, so somas).
+struct MapleCounters {
+    uint64_t dmas = 0;                                     // disparos (MDST = 1)
+    uint64_t devInfo[4] = {}, getCond[4] = {}, other[4] = {};  // quadros enviados por porta
+    uint64_t controllerResponses = 0;                       // quadros respondidos pelo controle da porta A
+    uint64_t sourceReads = 0;                               // consultas a fonte de entrada (read/connected)
+};
+MapleCounters maple_counters();
+void          maple_counters_reset();
+
 } // namespace bs

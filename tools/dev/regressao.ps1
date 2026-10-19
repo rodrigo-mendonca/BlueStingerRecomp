@@ -66,7 +66,8 @@ $steps = @(
     @{ N = "test_efeito";   T = "suite"; A = @("$dist\test_efeito.ps1") },
     @{ N = "test_n2b2";     T = "suite"; A = @("$dist\test_n2b2.ps1") },
     @{ N = "test_assistido"; T = "suite"; A = @("$dist\test_assistido.ps1") },
-    @{ N = "test_controles"; T = "suite"; A = @("$dist\test_controles.ps1") }
+    @{ N = "test_controles"; T = "suite"; A = @("$dist\test_controles.ps1") },
+    @{ N = "test_pd_nativo"; T = "suite"; A = @("$dist\test_pd_nativo.ps1") }
 )
 $names = $steps | ForEach-Object { $_.N }
 foreach ($x in @($Desde, $Ate)) { if ($x -and $names -notcontains $x) { Write-Host "ERRO: etapa desconhecida '$x'. Etapas: $($names -join ', ')"; exit 2 } }

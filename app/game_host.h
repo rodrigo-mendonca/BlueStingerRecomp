@@ -44,6 +44,15 @@ enum class FilesProvider { Native, Legacy };
 // nos pontos de espera, ate o proximo evento. O padrao continua nativo.
 enum class TimeProviderKind { Native, Legacy, Experimental };
 
+namespace native::input {
+class InputSystem;
+}
+
+// Provedor dos controles (N3-2, docs/N3-PLANO.md): legado (padrao) = o Maple responde como controle
+// e le o InputSystem pela ponte; nativo = o SDK pd e alimentado direto (transitional/pad_adapter),
+// sem controle no Maple.
+enum class ControlsProvider { Legacy, Native };
+
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
     std::filesystem::path data;
@@ -51,6 +60,9 @@ struct GameOptions {
     std::filesystem::path modAssets;  // mods de arquivos (mods\assets), opcional
     FilesProvider         files = FilesProvider::Native;
     TimeProviderKind      time  = TimeProviderKind::Native;
+    ControlsProvider      controls = ControlsProvider::Legacy;
+    // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).
+    native::input::InputSystem* input = nullptr;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
     std::function<void()> registerFunctions;
     // Prepara RAM e registradores. Padrao: boot nativo a partir de `data`. Testes trocam.

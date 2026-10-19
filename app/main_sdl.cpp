@@ -58,6 +58,7 @@ struct Args {
     bool     verifyData = false;
     bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
     bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado (N2a)
+    bs::ControlsProvider controls = bs::ControlsProvider::Legacy;  // --controles legado|nativo (N3-2)
 };
 
 std::string utf8(const fs::path& p) { return bs::disc::pathText(p); }
@@ -98,6 +99,11 @@ bool parseArgs(Args& a) {
             if (*v == L"nativo") a.time = bs::TimeProviderKind::Native;
             else if (*v == L"legado") a.time = bs::TimeProviderKind::Legacy;
             else if (*v == L"experimental") a.time = bs::TimeProviderKind::Experimental;  // N2b-2
+            else return false;
+        }
+        else if (s == L"--controles" && (v = next())) {
+            if (*v == L"legado") a.controls = bs::ControlsProvider::Legacy;
+            else if (*v == L"nativo") a.controls = bs::ControlsProvider::Native;  // N3-2, em validacao
             else return false;
         }
         else if (s == L"--version") a.version = true;
@@ -522,6 +528,15 @@ std::unique_ptr<ni::InputSystem> setupInput(const Args& a, bool window, std::str
         sys->set_test_source(ib::from_runtime_source(std::shared_ptr<bs::InputSource>(bs::make_combined_input(std::move(v)))));
         std::fprintf(stderr, "[input] teclado%s + XInput\n", map ? " (mapa do usuario)" : "");
     }
+    // N3-2: no --controles nativo o pd nativo tira as amostras e o Maple nao tem controle nem
+    // fonte (a ponte so fica no negativo BS_PAD_NATIVO_MUTACAO=maple). Sem fonte nenhuma, um
+    // InputSystem vazio: controle presente e neutro, como o estado fixo do Maple no legado.
+    if (a.controls == bs::ControlsProvider::Native) {
+        if (!sys) sys = std::make_unique<ni::InputSystem>();
+        const char* m = std::getenv("BS_PAD_NATIVO_MUTACAO");
+        ib::install(m && std::strstr(m, "maple") ? sys.get() : nullptr);
+        return sys;
+    }
     ib::install(sys.get());
     return sys;
 }
@@ -562,6 +577,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.flash             = a.flash;
     opt.files             = a.files;
     opt.time              = a.time;
+    opt.controls          = a.controls;
     opt.registerFunctions = [] { bsg::register_functions(); };
     opt.realtime          = a.headless == 0;
     opt.vblankLimit       = a.headless;
@@ -576,6 +592,8 @@ const char* kUsage =
     "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
     "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao: nativo;\n"
     "       experimental = N2b-2, tempo logico sem ciclos estimados, em validacao)\n"
+    "     --controles legado|nativo: provedor dos controles (padrao: legado = pelo Maple; nativo = N3-2,\n"
+    "       o SDK de controles alimentado direto, sem controle no Maple; em validacao)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";
@@ -602,6 +620,7 @@ int mainHeadless(Args& a) {
     }
     else input = setupInput(a, false, warning);
     bs::GameOptions opt = gameOptions(a);
+    opt.input           = input.get();
     if (assist) opt.vblankHook = [&assist](const bs::GameOptions::VblankView& v) { return assist->onVblank(v); };
     bs::GameHost host;
     host.start(std::move(opt));
@@ -681,7 +700,9 @@ int mainWindow(Args& a) {
     }
     {
         bs::GameHost host;
-        host.start(gameOptions(a));
+        bs::GameOptions opt = gameOptions(a);
+        opt.input           = input.get();
+        host.start(std::move(opt));
         rc = runWindow(host, *input, a, window, renderer);
         // a thread do jogo le a fonte de entrada: para e espera ANTES de destrui-la, em todos
         // os caminhos (revisao Codex 2026-10-14)

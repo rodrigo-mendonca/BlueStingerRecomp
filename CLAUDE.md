@@ -47,7 +47,9 @@ Ferramentas:
   mecanismo legado. Risco concreto para outros subsistemas: explicar e ampliar os testes.
 - Controles (N3-1): `controles.toml` na pasta do usuário (criado na 1ª execução); diagnóstico
   `BS_CONTROLE_VIRTUAL=<roteiro>` (controle virtual do SDL3, janela) com `BS_PAD_LEITURAS`;
-  `test_controles.ps1 [-Casos K13] [-RotasK13 r1,r2]`. Não rodar suítes que leem
+  `test_controles.ps1 [-Casos K13] [-RotasK13 r1,r2]`. N3-2: `--controles legado|nativo` (padrão
+  legado), `BS_PAD_FECHAMENTO=<arq>` (prova de que servidor/decodificador do SDK e o Maple não atendem o
+  controle), `BS_PAD_NATIVO_MUTACAO` (negativos), suíte `test_pd_nativo.ps1 [-Casos P1,...]`. Não rodar suítes que leem
   `dist\BlueStinger-Preview\data` junto com o `make_preview` (a troca da instalação é recusada).
 - Diagnóstico do jogo: `bluestinger --headless N --dump-every K --capture <dir>` com
   `BS_INPUT_SCRIPT=tools/dist/roteiros/newgame_area1.txt`.

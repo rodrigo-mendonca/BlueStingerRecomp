@@ -10,6 +10,7 @@
 #include "debug/call_trace.h"
 #include "debug/cri_diag.h"
 #include "gdfs_adapter.h"
+#include "pad_adapter.h"
 #include "pad_contract.h"
 #include "pad_probe.h"
 #include "input/input.h"
@@ -76,6 +77,10 @@ struct StepLog {
 FILE*          g_padTrace = nullptr;
 const uint8_t* g_padRam   = nullptr;
 
+// Leituras do controle da porta A: no legado, os GET_CONDITION respondidos pelo Maple; no
+// --controles nativo (N3-2), as leituras do modelo do pd nativo (mesmo indice).
+uint64_t controllerReads() { return transitional::pad::installed() ? transitional::pad::reads() : maple_cond_seq(0); }
+
 void padTraceWrite(uint64_t step) {
     namespace pad = transitional::pad;
     const uint8_t* ram = g_padRam;
@@ -98,7 +103,7 @@ void padTraceWrite(uint64_t step) {
                  "%llu\t%llu\t%llu\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%08X\t%u\t%u\t%d\t%d\t%d\t%d\t%08X\t%08X\t%s\t%08X\t%08X\t"
                  "%08X\t%08X\t%08X\t%u\n",
                  static_cast<unsigned long long>(step), static_cast<unsigned long long>(g_stepLog.host->vblanks()),
-                 static_cast<unsigned long long>(maple_cond_seq(0)), ptr, p.id, p.support, p.on, p.off, p.press, p.release,
+                 static_cast<unsigned long long>(controllerReads()), ptr, p.id, p.support, p.on, p.off, p.press, p.release,
                  p.r, p.l, p.x1, p.y1, p.x2, p.y2, p.old, infoOk ? u32(p.info) : 0u, name.empty() ? "-" : name.c_str(),
                  u32(0x8C24C5D0), u32(0x8C24C5D4), u32(0x8C24C5D8), u32(0x8C24C5DC), u32(0x8C24C5E0),
                  (u32(0x8C24F878) >> 2) & 1u);
@@ -243,7 +248,7 @@ void GameHost::vblank() {
         uint64_t h = 0xCBF29CE484222325ull ^ (uint64_t(scratch_.width) << 32 | scratch_.height);
         for (uint32_t px : scratch_.argb) h = (h ^ px) * 0x100000001B3ull;
         std::fprintf(frameLog, "%llu\t%016llX\t%llu\t%llu\n", static_cast<unsigned long long>(n),
-                     static_cast<unsigned long long>(h), static_cast<unsigned long long>(maple_cond_seq(0)),
+                     static_cast<unsigned long long>(h), static_cast<unsigned long long>(controllerReads()),
                      static_cast<unsigned long long>(transitional::time::game_steps()));
         if (n % 250 == 0) std::fflush(frameLog);
     }
@@ -253,7 +258,7 @@ void GameHost::vblank() {
         ++frameSeq_;
     }
     if (opt_.vblankHook &&
-        !opt_.vblankHook({n, transitional::time::game_steps(), maple_cond_seq(0), frame_, ram_}))
+        !opt_.vblankHook({n, transitional::time::game_steps(), controllerReads(), frame_, ram_}))
         stop_.store(true);
     if (stop_.load() || (opt_.vblankLimit && n >= opt_.vblankLimit)) {
         if (traceOn()) std::fprintf(stderr, "[host] parada vista no VBlank %llu\n", (unsigned long long)n);
@@ -301,6 +306,20 @@ void GameHost::threadMain() {
         bs::call_trace_install();  // diagnostico BS_CALL_TRACE (desligado por padrao)
         bs::cri_diag_install();    // diagnostico BS_CRI_DIAG (N2b-0; desligado por padrao)
         transitional::pad::probe_install();  // teste de contrato BS_PAD_CONTRATO (N3-0; desligado por padrao)
+        transitional::pad::closure_install();  // prova de fechamento BS_PAD_FECHAMENTO (N3-2; desligado por padrao)
+        // N3-2: controles pelo provedor nativo do SDK pd; o Maple fica sem controle (a camada per
+        // continua, para a VMU ate o N4). A mutacao "maple" (negativo) deixa o controle no Maple.
+        if (opt_.controls == ControlsProvider::Native) {
+            if (!opt_.input) throw std::runtime_error("--controles nativo sem fonte de entrada (InputSystem)");
+            if (std::getenv("BS_PAD_CONTRATO")) throw std::runtime_error("BS_PAD_CONTRATO confere o servidor legado: use --controles legado");
+            const char*    mv  = std::getenv("BS_PAD_NATIVO_MUTACAO");
+            const uint32_t mut = transitional::pad::parse_mutations(mv ? mv : "");
+            maple_set_controller_present((mut & transitional::pad::kNatMaple) != 0);
+            // coleta onde o legado entrega o fim do DMA: logo depois do servidor com tempo por ciclos
+            // (nativo/legado), no disparo seguinte com o tempo experimental (pad_adapter.cpp, collect)
+            transitional::pad::install(transitional::boundary_registry(), *opt_.input, mut,
+                                       opt_.time != TimeProviderKind::Experimental);
+        }
         // N1: arquivos pelo provedor nativo (API gdFs sobre a pasta de recursos)
         if (!opt_.data.empty() && opt_.files == FilesProvider::Native) {
             files_ = std::make_unique<native::files::DataFileSystem>(opt_.data / L"disc", opt_.modAssets);
@@ -373,6 +392,20 @@ void GameHost::threadMain() {
     gdrom_set_disc(nullptr);  // fecha a imagem de disco
     std::fputs(cri_diag_summary().c_str(), stderr);
     transitional::pad::probe_finish();
+    transitional::pad::closure_finish(transitional::pad::installed());
+    if (transitional::pad::installed()) {
+        std::fputs(transitional::pad::summary().c_str(), stderr);
+        transitional::pad::uninstall(transitional::boundary_registry());
+    }
+    maple_set_controller_present(true);
+    {
+        const MapleCounters m = maple_counters();
+        std::fprintf(stderr, "[maple] DMAs %llu; porta A: DEVICE_INFO %llu, GET_CONDITION %llu; respostas do controle %llu, "
+                             "leituras da fonte %llu\n",
+                     static_cast<unsigned long long>(m.dmas), static_cast<unsigned long long>(m.devInfo[0]),
+                     static_cast<unsigned long long>(m.getCond[0]), static_cast<unsigned long long>(m.controllerResponses),
+                     static_cast<unsigned long long>(m.sourceReads));
+    }
     // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
     std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
     if (transitional::time::installed()) {
