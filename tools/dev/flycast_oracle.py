@@ -22,6 +22,7 @@ Snapshots contem memoria do jogo: grave-os em snapshots/ (fora do git).
 """
 import argparse
 import os
+import re
 import socket
 import subprocess
 import struct
@@ -108,6 +109,13 @@ class Gdb:
             addr += k
             n -= k
         return bytes(out)
+
+    def write(self, addr, data: bytes):
+        for i in range(0, len(data), CHUNK):
+            k = data[i:i + CHUNK]
+            r = self.cmd(f"M{addr + i:x},{len(k):x}:{k.hex()}")
+            if r != "OK":
+                raise SystemExit(f"GDB: escrita falhou em {addr + i:08X}: {r}")
 
     def bp(self, addr, on=True):
         r = self.cmd(f"{'Z' if on else 'z'}0,{addr:x},2")
@@ -489,6 +497,313 @@ def cmd_regs(a):
     finish(a, g)
 
 
+# --- bu-trace: oraculo de SAVE/LOAD do N4 (docs/N4-PREPARACAO.md, "Investigacao do oraculo") ---
+# Entradas da API publica `bu` (inventario do N4). 8C08C696 (estado) e 8C08C112 (ultimo erro) nao
+# entram aqui: o servidor interno 8C08BF50 chama 8C08C696 8 vezes por passada; elas sao lidas nos
+# retornos dos pontos de chamada do jogo (BU_RETORNOS).
+BU_ENTRADAS = {
+    0x8C08BDEC: "init", 0x8C08C074: "reg_conclusao", 0x8C08C07A: "reg_progresso", 0x8C08CA34: "mount",
+    0x8C08C1FC: "disk_info", 0x8C08C636: "exists", 0x8C08C8D4: "load", 0x8C08C818: "save",
+    0x8C08BEBC: "exit", 0x8C08CC58: "vms_blocos", 0x8C08CA5C: "vms_monta", 0x8C08C7BE: "c7be",
+}
+BU_RETORNOS = {  # endereco logo depois do jsr + slot no jogo
+    0x8C01C826: "status", 0x8C01CC48: "status", 0x8C01CD90: "status", 0x8C01CE7E: "status",
+    0x8C01C830: "ultimo_erro",
+}
+BU_CALLBACKS = {0x8C01C2D2: "cb_conclusao", 0x8C01C364: "cb_progresso"}
+BU_PAINEL = 0x8C01D200            # controlador de save/load do jogo (r4 0 no jogo, 1 no titulo: H1)
+BU_PAINEL_MODO = (0x8C01D240, 0x8C01D244)  # literais com os enderecos das palavras de modo
+BU_ESTADO = (0x8C1F3710, 2 * 92)  # bloco de 92 bytes por unidade (0 e 1)
+BU_PAYLOAD = (0x8C24F93C, 1200)
+BU_OPS_DE_CARTAO = (1, 2, 0x12)   # ops do callback que nao sao fim de LOAD/SAVE
+PD_RETORNO = 0x8C1730BE           # volta do servidor pd 8C15C4E6 (uma passada por passo de jogo)
+PDS_PORTA_A = 0x8C2D8970          # PDS_PERIPHERAL da porta A, unidade 0 (transitional/pad_contract.h)
+# bits de `on` (ordem de tools/dev/pad_roteiros.py); LT/RT como o decodificador do SDK (>= 128)
+PD_BITS = {"C": 0, "B": 1, "A": 2, "START": 3, "UP": 4, "DOWN": 5, "LEFT": 6, "RIGHT": 7,
+           "Z": 8, "Y": 9, "X": 10, "D": 11, "RT": 16, "LT": 17}
+FLYCAST_VMU = "T13001N_vmu_save_A1.bin"  # VMU por jogo do Flycast (build/data)
+
+
+def roteiro_bu(path):
+    """Roteiro "indice passo" (o formato de tools/dist/roteiros) com duas diretivas:
+       @pulsos <estado> <intervalo>  ate a proxima ancora, <estado> por 3 passos a cada <intervalo>
+       @ancora <endereco>            os indices seguintes contam do primeiro passo depois da
+                                     primeira execucao de <endereco> (o tempo de boot do Flycast nao e
+                                     o do recompilado; a ancora alinha o roteiro a um ponto do jogo)
+    Devolve uma lista de segmentos {ancora, pulsos, eventos[(passo, mascara)]}."""
+    segs = [{"ancora": None, "pulsos": None, "eventos": []}]
+    for n, line in enumerate(open(path, encoding="utf-8"), 1):
+        line = line.split("#", 1)[0].strip()
+        if not line or line == "indice passo":
+            continue
+        f = line.split()
+        if f[0] == "@ancora":
+            segs.append({"ancora": int(f[1], 16) & 0x1FFFFFFF, "pulsos": None, "eventos": []})
+        elif f[0] == "@pulsos":
+            segs[-1]["pulsos"] = (mascara_pd(f[1], path, n), int(f[2]))
+        elif f[0].isdigit() and len(f) == 2:
+            segs[-1]["eventos"].append((int(f[0]), mascara_pd(f[1], path, n)))
+        else:
+            raise SystemExit(f"{path}:{n}: esperado '<passo> <estado>', '@ancora <end>' ou '@pulsos <estado> <n>'")
+    return segs
+
+
+def mascara_pd(estado, path, n):
+    if estado == "-":
+        return 0
+    m = 0
+    for b in estado.split("+"):
+        if b not in PD_BITS:
+            raise SystemExit(f"{path}:{n}: botao desconhecido '{b}' (validos: {', '.join(PD_BITS)})")
+        m |= 1 << PD_BITS[b]
+    return m
+
+
+class EntradaBu:
+    """Aplica o roteiro na volta do servidor pd: on, off, press e release da porta A, as bordas pela
+    regra do modo 0 do SDK (pad_contract: press = (on^old) & on). O servidor reescreve o PDS a cada
+    passo a partir do controle do Flycast (parado), entao um botao segurado e reescrito a cada passo."""
+
+    def __init__(self, segs):
+        # passos a partir de 1, como os roteiros do recompilado ("1 START" vale desde o 1o passo);
+        # aqui um passo e uma passada do servidor pd
+        self.segs, self.i, self.base, self.old, self.passo = segs, 0, 0, 0, 1
+        self.ancoras = {s["ancora"] for s in segs if s["ancora"] is not None}
+
+    def ancora(self, pc):
+        nxt = self.i + 1
+        if nxt < len(self.segs) and self.segs[nxt]["ancora"] == pc:
+            self.i, self.base = nxt, self.passo - 1  # o 1o passo depois da ancora e o passo 1
+            return True
+        return False
+
+    def mascara(self):
+        s, rel = self.segs[self.i], self.passo - self.base
+        m = 0
+        for p, mk in s["eventos"]:
+            if p <= rel:
+                m = mk
+        if s["pulsos"] and not s["eventos"]:
+            mk, every = s["pulsos"]
+            m = mk if rel % every < 3 else 0
+        return m
+
+    def aplica(self, g):
+        on = self.mascara()
+        # todo passo, inclusive o neutro: senao o controle do Flycast (teclado, foco) vazaria para o PDS
+        press, release = (on ^ self.old) & on, (on ^ self.old) & ~on & 0xFFFFFFFF
+        g.write(PDS_PORTA_A + 0x08, struct.pack("<IIII", on, ~on & 0xFFFFFFFF, press, release))
+        self.old = on
+        self.passo += 1
+        return on
+
+
+def fecha_flycast(a, g):
+    """Encerra o Flycast com WM_CLOSE: a VMU so vai inteira para o disco no fclose (o Flycast grava
+    os blocos com fwrite sem fflush; matar o processo pode perder o save). Kill so como ultimo recurso."""
+    proc = getattr(a, "_proc", None)
+    if g is not None:
+        try:
+            g.send("D")
+        except BaseException:
+            pass
+        g.s.close()
+    if proc is None:
+        return True
+    import ctypes
+    from ctypes import wintypes
+    u32 = ctypes.windll.user32
+    found = []
+    cb = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(h, _):
+        pid = wintypes.DWORD()
+        u32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        if pid.value == proc.pid and u32.IsWindowVisible(h):
+            found.append(h)
+        return True
+    u32.EnumWindows(cb(each), 0)
+    for h in found:
+        u32.PostMessageW(h, 0x0010, 0, 0)  # WM_CLOSE
+    try:
+        proc.wait(timeout=30)
+        ok = True
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        ok = False
+    a._proc = None
+    return ok
+
+
+def cmd_bu_trace(a):
+    import shutil
+    if a.attach and (a.vmu or a.vmu_saida or a.sem_vmu):
+        # a VMU so vai inteira para o disco quando o Flycast fecha, e um Flycast anexado nao e nosso
+        raise SystemExit("--attach nao combina com --vmu/--vmu-saida/--sem-vmu: o Flycast precisa ser aberto por este comando")
+    base = os.path.dirname(a.flycast or FLYCAST)
+    vmu = os.path.join(base, "data", FLYCAST_VMU)
+    cfg = os.path.join(base, "emu.cfg")
+    trocas = []  # (arquivo, guarda): restaurados no fim, inclusive se a preparacao falhar
+    for f in ([vmu] if a.vmu else []) + ([cfg] if a.vmu or a.sem_vmu else []):
+        if os.path.exists(f + ".bs-original"):
+            raise SystemExit(f"{f}.bs-original existe (sessao anterior interrompida?): restaure-o antes")
+    entrada = EntradaBu(roteiro_bu(a.roteiro)) if a.roteiro else None
+    g = None
+    fechou = True
+    try:
+        if a.vmu:  # a VMU do oraculo (13/10) nunca e alterada: fica guardada e volta no fim
+            trocas.append((vmu, vmu + ".bs-original"))
+            if os.path.exists(vmu):
+                shutil.copyfile(vmu, vmu + ".bs-original")
+            shutil.copyfile(a.vmu, vmu)
+        if a.vmu or a.sem_vmu:
+            # slot A1 (device1.1) so nesta sessao: MDT_SegaVMU = 1 com a VMU, MDT_None = 10 sem
+            # cartao (core/hw/maple/maple_cfg.h); o emu.cfg de 14/10 tem 10, ou seja, sem VMU
+            trocas.append((cfg, cfg + ".bs-original"))
+            shutil.copyfile(cfg, cfg + ".bs-original")
+            txt = open(cfg, encoding="utf-8").read()
+            if not re.search(r"(?m)^device1\.1 = \d+$", txt):
+                raise SystemExit(f"{cfg}: esperava uma linha 'device1.1 = <tipo>' (slot A1)")
+            open(cfg, "w", encoding="utf-8").write(
+                re.sub(r"(?m)^device1\.1 = \d+$", "device1.1 = " + ("1" if a.vmu else "10"), txt))
+        if a.dump:
+            os.makedirs(a.dump, exist_ok=True)
+        g = connect(a)
+        enter_game(g)
+        fixos = set(BU_ENTRADAS) | set(BU_RETORNOS) | set(BU_CALLBACKS) | {BU_PAINEL}
+        if entrada or a.passos:
+            fixos.add(PD_RETORNO)
+        eventos = set(fixos)  # enderecos que sao eventos por si (ficam ate o fim)
+        if entrada:
+            fixos |= {0x80000000 | x for x in entrada.ancoras}
+        marcas = {x & 0x1FFFFFFF for x in a.marcas}
+        fixos |= {0x80000000 | x for x in marcas}
+        for x in fixos:
+            g.bp(x)
+        pend = {}   # retorno (sem espelho) -> [(rotulo, r15, seq)]
+        modo_ant, seq, passo, fim, t0 = None, 0, 0, None, time.time()
+        load_dst = None
+        modo_end = [struct.unpack("<I", g.read(x, 4))[0] for x in BU_PAINEL_MODO]
+        out = open(a.out, "w", encoding="utf-8")
+        out.write("seq\tpasso\tms\ttipo\trotulo\tpc\tpr\tr4\tr5\tr6\tr7\ts0\ts1\tr0\textra\n")
+
+        def linha(tipo, rot, r, r0="", extra=""):
+            nonlocal seq
+            s0, s1 = struct.unpack("<II", g.read(r[15], 8))
+            out.write(f"{seq}\t{passo}\t{int((time.time() - t0) * 1000)}\t{tipo}\t{rot}\t{r[R_PC]:08X}\t{r[R_PR]:08X}\t"
+                      + "\t".join(f"{r[i]:08X}" for i in (4, 5, 6, 7)) + f"\t{s0:08X}\t{s1:08X}\t{r0}\t{extra}\n")
+            out.flush()
+            seq += 1
+
+        def espera_retorno(rot, r):
+            ret = r[R_PR] & 0x1FFFFFFF
+            pend.setdefault(ret, []).append((rot, r[15]))
+            if ret not in g.bps:
+                g.bp(0x80000000 | ret)
+
+        def despejo(nome, addr, n):
+            if not a.dump:
+                return ""
+            b = g.read(addr, n)
+            path = os.path.join(a.dump, f"{seq:05d}_{nome}.bin")
+            open(path, "wb").write(b)
+            import hashlib
+            return f"{nome}={os.path.basename(path)} sha256={hashlib.sha256(b).hexdigest()[:16]}"
+
+        g.cont(limit=a.limite)
+        while True:
+            r = g.regs()
+            pc = r[R_PC] & 0x1FFFFFFF
+            if time.time() - t0 > a.limite:
+                print(f"limite de {a.limite:.0f}s atingido")
+                break
+            if pc in pend:  # retorno de uma entrada (inclusive tail call: PR de quem chamou a entrada)
+                ficam = []
+                for rot, sp in pend[pc]:
+                    if sp == r[15]:
+                        extra = ""
+                        if rot == "cb_conclusao":
+                            extra = "estado=" + g.read(*BU_ESTADO).hex()
+                        linha("retorno", rot, r, f"{r[0]:08X}", extra)
+                    else:
+                        ficam.append((rot, sp))
+                if ficam:
+                    pend[pc] = ficam
+                else:
+                    del pend[pc]
+                    if (0x80000000 | pc) not in fixos:
+                        g.bp(0x80000000 | pc, False)
+            key = 0x80000000 | pc
+            if key in BU_ENTRADAS:
+                rot = BU_ENTRADAS[key]
+                extra = ""
+                if rot == "save":
+                    extra = despejo("save_src", r[6], r[7] * 512) + " " + despejo("payload", *BU_PAYLOAD)
+                elif rot == "load":
+                    load_dst = r[6]
+                linha("entrada", rot, r, "", extra.strip())
+                espera_retorno(rot, r)
+            elif key in BU_RETORNOS:
+                linha("retorno", BU_RETORNOS[key], r, f"{r[0]:08X}")
+            elif key in BU_CALLBACKS:
+                rot = BU_CALLBACKS[key]
+                extra = ""
+                if rot == "cb_conclusao" and r[5] not in BU_OPS_DE_CARTAO:
+                    if load_dst is not None:
+                        extra = despejo("load_dst", load_dst, 3 * 512)
+                        load_dst = None
+                    if fim is None and a.fim_apos:
+                        a.fim_apos -= 1
+                        if a.fim_apos == 0:
+                            fim = passo + a.passos_extra
+                linha("callback", rot, r, "", extra)
+                espera_retorno(rot, r)
+            elif key == BU_PAINEL:
+                modo = tuple(struct.unpack("<H", g.read(x, 2))[0] for x in modo_end)
+                atual = (r[4], r[5], r[R_PR], modo)
+                if a.forcar_modo_save and (r[R_PR] & 0x1FFFFFFF) == (a.forcar_modo_save + 4) & 0x1FFFFFFF and r[4] != 0:
+                    g.set_reg(4, 0)
+                    linha("forcado", "painel_r4_0", r, "", f"modo={modo[0]:04X},{modo[1]:04X}")
+                elif atual != modo_ant:
+                    linha("painel", "painel", r, "", f"modo={modo[0]:04X},{modo[1]:04X}")
+                modo_ant = atual
+            elif key == PD_RETORNO:
+                passo += 1
+                if entrada:
+                    entrada.aplica(g)
+                if (a.passos and passo >= a.passos) or (fim is not None and passo >= fim):
+                    break
+            # ancoras e marcas podem cair num endereco que tambem e evento (o painel, por exemplo)
+            if entrada and pc in entrada.ancoras and entrada.ancora(pc):
+                linha("ancora", f"{key:08X}", r)
+                if all(s["ancora"] != pc for s in entrada.segs[entrada.i + 1:]) and key not in eventos:
+                    fixos.discard(key)  # consumida: nao parar mais a cada execucao
+                    g.bp(key, False)
+            if pc in marcas:
+                linha("marca", f"{key:08X}", r)
+                marcas.discard(pc)
+                if key not in eventos and not (entrada and pc in entrada.ancoras):
+                    fixos.discard(key)
+                    g.bp(key, False)
+            g.step()
+            r2 = g.regs()
+            if (r2[R_PC] & 0x1FFFFFFF) not in g.bps:
+                g.cont(limit=max(1.0, a.limite - (time.time() - t0)))
+        out.close()
+        print(f"{seq} eventos, {passo} passos -> {a.out}")
+    finally:
+        fechou = fecha_flycast(a, g)
+        if a.vmu and a.vmu_saida and os.path.exists(vmu):
+            shutil.copyfile(vmu, a.vmu_saida)
+            print(f"VMU depois da sessao -> {a.vmu_saida}" + ("" if fechou else " (AVISO: Flycast morto, VMU pode estar incompleta)"))
+        for f, guarda in trocas:
+            if os.path.exists(guarda):
+                os.replace(guarda, f)
+            elif os.path.exists(f):
+                os.remove(f)  # nao havia original: tira a copia da sessao
+    return 0 if fechou else 3
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=3263)
@@ -531,9 +846,25 @@ def main():
     m.add_argument("len", type=lambda s: int(s, 0))
     m.add_argument("--hit", type=int, default=1)
     m.add_argument("--depois", type=lambda s: int(s, 0), help="para antes uma vez neste endereco (ancora)")
+    b = sp.add_parser("bu-trace", help="oraculo de SAVE/LOAD (N4): API bu, callbacks, polling, VMU")
+    b.add_argument("out", help="TSV de eventos")
+    b.add_argument("--roteiro", help="roteiro 'indice passo' com @ancora e @pulsos (entrada na porta A)")
+    b.add_argument("--vmu", help="imagem de VMU (128 KB) usada nesta sessao; a do Flycast volta no fim")
+    b.add_argument("--vmu-saida", help="copia da VMU depois da sessao (com --vmu)")
+    b.add_argument("--sem-vmu", action="store_true", help="slot A1 vazio nesta sessao (emu.cfg restaurado no fim)")
+    b.add_argument("--dump", help="pasta para os bytes de SAVE (origem, payload) e de LOAD (destino)")
+    b.add_argument("--forcar-modo-save", type=lambda s: int(s, 0),
+                   help="ponto de chamada do painel (jsr) cujo r4 vira 0 (H1: 0x8C0792C8, LOAD GAME do titulo)")
+    b.add_argument("--passos", type=int, default=0, help="para depois de N passos de jogo (0 = sem limite)")
+    b.add_argument("--fim-apos", type=int, default=0, help="para depois de N conclusoes de LOAD/SAVE...")
+    b.add_argument("--passos-extra", type=int, default=120, help="...mais estes passos")
+    b.add_argument("--limite", type=float, default=3600.0, help="tempo maximo do host (s)")
+    b.add_argument("--marcas", type=lambda s: [int(x, 16) for x in s.split(",")], default=[],
+                   help="enderecos (hex, virgula) cujo primeiro passo e registrado: calibra o roteiro")
     a = p.parse_args()
     try:
-        return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs, "snap-free": cmd_snap_free, "mem": cmd_mem}[a.cmd](a) or 0
+        return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs,
+                "snap-free": cmd_snap_free, "mem": cmd_mem, "bu-trace": cmd_bu_trace}[a.cmd](a) or 0
     finally:
         finish(a, None)  # erro no meio do comando: nao deixar Flycast orfao
 

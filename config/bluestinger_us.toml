@@ -125,6 +125,20 @@ slots = [
   0x8C15C4E6,  # servidor pd (24 PDS_PERIPHERAL): transitional/pad_adapter os escreve
   0x8C15C668,  # pdGetPeripheral(porta), tambem chamado por registrador (8C064878)
   0x8C0975C0,  # disparo do DMA da camada per no VBlank: ponto de amostragem (latch); o original roda
+  # N4 (docs/N4-PREPARACAO.md, --saves nativo; no legado os slots apontam para o gerado): API bu
+  0x8C08BDEC,  # init(capacidade, mascara, work, callback): registra o servidor 8C08BDE8
+  0x8C08BDE8,  # servidor periodico da bu (bra 8C08BF50): conclusoes e callbacks
+  0x8C08C074,  # registro do callback de conclusao
+  0x8C08C07A,  # registro do callback de progresso
+  0x8C08CA34,  # mount(drive, work, tamanho)
+  0x8C08C1FC,  # disk_info(drive, destino)
+  0x8C08C636,  # exists(drive, nome)
+  0x8C08C8D4,  # load(drive, nome, destino, bloco, nblocos), op 0x0E
+  0x8C08C818,  # save(drive, nome, origem, blocos, tempo*, flag), op 0x0C
+  0x8C08C696,  # status(drive): -1 ocupada
+  0x8C08C112,  # ultimo erro(drive)
+  0x8C08BEBC,  # exit (so por literal, sem chamador)
+  0x8C08C7BE,  # op 0x0B (so por literal, sem chamador): sem suporte
 ]
 # N2b (docs/N2b-PLANO.md, secao 1.2): back-edges dos lacos que esperam uma condicao acesa por
 # evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por

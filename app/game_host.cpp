@@ -9,6 +9,7 @@
 #include "hle/flashrom.h"
 #include "debug/call_trace.h"
 #include "debug/cri_diag.h"
+#include "bu_adapter.h"
 #include "gdfs_adapter.h"
 #include "pad_adapter.h"
 #include "pad_contract.h"
@@ -320,6 +321,16 @@ void GameHost::threadMain() {
             transitional::pad::install(transitional::boundary_registry(), *opt_.input, mut,
                                        opt_.time != TimeProviderKind::Experimental);
         }
+        // N4: saves pelo provedor nativo (API bu sobre arquivos; sem VMU nem Maple)
+        if (opt_.saves == SavesProvider::Native) {
+            if (opt_.savesRoot.empty()) throw std::runtime_error("--saves nativo sem pasta de saves");
+            native::saves::FileStoreOptions so;
+            so.log = [](const std::string& m) { std::fprintf(stderr, "[saves] %s\n", m.c_str()); };
+            saves_ = native::saves::make_file_store(opt_.savesRoot, so);
+            std::fprintf(stderr, "[saves] nativo: %s\n", disc::pathText(opt_.savesRoot).c_str());
+            transitional::bu::install(transitional::boundary_registry(), *saves_);
+            transitional::bu::h1_install();
+        }
         // N1: arquivos pelo provedor nativo (API gdFs sobre a pasta de recursos)
         if (!opt_.data.empty() && opt_.files == FilesProvider::Native) {
             files_ = std::make_unique<native::files::DataFileSystem>(opt_.data / L"disc", opt_.modAssets);
@@ -425,6 +436,11 @@ void GameHost::threadMain() {
                      static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions),
                      static_cast<unsigned long long>(s.vblankCollapsed));
     }
+    if (transitional::bu::installed()) {
+        std::fputs(transitional::bu::summary().c_str(), stderr);
+        transitional::bu::uninstall(transitional::boundary_registry());
+    }
+    saves_.reset();
     if (files_) {
         const auto s = transitional::gdfs::stats();
         std::fprintf(stderr, "[arquivos] nativo: %llu aberturas, %llu leituras, %llu bytes, %llu nao encontrados\n",

@@ -39,6 +39,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#pragma comment(lib, "shell32.lib")  // SHGetKnownFolderPath (pasta dos saves)
+#pragma comment(lib, "ole32.lib")    // CoTaskMemFree
 
 namespace fs = std::filesystem;
 namespace ni = bs::native::input;
@@ -58,7 +61,10 @@ struct Args {
     bool     verifyData = false;
     bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
     bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado (N2a)
-    bs::ControlsProvider controls = bs::ControlsProvider::Legacy;  // --controles legado|nativo (N3-2)
+    bs::ControlsProvider controls = bs::ControlsProvider::Native;  // --controles nativo|legado (N3; legado = fallback)
+    bs::SavesProvider saves = bs::SavesProvider::Legacy;  // --saves nativo|legado (N4; nativo em validacao)
+    fs::path savesDir;          // --saves-pasta <dir>
+    bool     savesPortable = false;  // --saves-portatil: saves\ ao lado do executavel
 };
 
 std::string utf8(const fs::path& p) { return bs::disc::pathText(p); }
@@ -103,9 +109,16 @@ bool parseArgs(Args& a) {
         }
         else if (s == L"--controles" && (v = next())) {
             if (*v == L"legado") a.controls = bs::ControlsProvider::Legacy;
-            else if (*v == L"nativo") a.controls = bs::ControlsProvider::Native;  // N3-2, em validacao
+            else if (*v == L"nativo") a.controls = bs::ControlsProvider::Native;
             else return false;
         }
+        else if (s == L"--saves" && (v = next())) {
+            if (*v == L"legado") a.saves = bs::SavesProvider::Legacy;
+            else if (*v == L"nativo") a.saves = bs::SavesProvider::Native;  // N4, em validacao
+            else return false;
+        }
+        else if (s == L"--saves-pasta" && (v = next())) a.savesDir = *v;
+        else if (s == L"--saves-portatil") a.savesPortable = true;
         else if (s == L"--version") a.version = true;
         else if (s == L"--verify-data") a.verifyData = true;
         else if (!s.empty() && s[0] != L'-' && a.positional.empty()) a.positional = s;
@@ -429,9 +442,12 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             default: gamepadEvent(input, e); break;
             }
         }
-        for (const ni::ConnectionEvent& ev : input.drain_events())
-            std::printf("[controles] %s: %s\n", ev.kind == ni::ConnectionEvent::Kind::Connected ? "conectado" : "desconectado",
-                        ev.name.c_str());
+        for (const ni::ConnectionEvent& ev : input.drain_events()) {
+            if (ev.kind == ni::ConnectionEvent::Kind::Disconnected) std::printf("[controles] desconectado: %s\n", ev.name.c_str());
+            else  // o GUID e o que o usuario copia para um [perfis."<guid>"]
+                std::printf("[controles] conectado: %s (GUID %s; %s)\n", ev.name.c_str(), ev.guid.empty() ? "-" : ev.guid.c_str(),
+                            ev.profile.empty() ? "mapa [controle]" : ("perfil " + ev.profile).c_str());
+        }
         // falhas de apresentacao viram erro (janela preta com codigo 0 pareceria sucesso):
         // criar a textura falha de vez; as demais so se persistirem (~2 s seguidos)
         bool ok = true;
@@ -505,10 +521,60 @@ ni::ActionMap loadActionMap(const Args& a, std::string& warning) {
 // ponte (transitional/input_bridge.h). Janela: teclado e controles (SDL3 Gamepad ou XInput).
 // Testes: roteiro (BS_INPUT_SCRIPT) ou gameplay assistido como fonte exclusiva. Sem nada disso no
 // headless, nenhuma fonte (testes diferenciais nao dependem do teclado de quem roda).
+// Diagnostico BS_CONTROLE_FISICO=<roteiro> (N3-3, so headless): o roteiro (formato de sempre, indice por
+// passo ou leitura) descreve CONTROLES FISICOS na posicao padrao (A = botao a, UP = dpup, AX = leftx,
+// LT = lefttrigger...), aplicados a um controle simulado num InputSystem real com o mapa de
+// BS_CONTROLES_TOML (padrao: o mapa padrao) e o GUID de BS_CONTROLE_GUID. Prova que o remapeamento e os
+// perfis produzem no jogo o efeito das acoes equivalentes (test_pd_nativo P9).
+ni::SampleFn physicalScript(const char* path) {
+    ni::ActionMap m = ni::ActionMap::defaults();
+    if (const char* toml = std::getenv("BS_CONTROLES_TOML"); toml && *toml) {
+        std::string err;
+        auto        parsed = ni::ActionMap::parse(readFile(toml), &err);
+        if (!parsed) throw std::runtime_error("BS_CONTROLES_TOML: " + err);
+        m = parsed.value();
+    }
+    auto              phys = std::make_shared<ni::InputSystem>(m);
+    const std::string guidText(std::getenv("BS_CONTROLE_GUID") ? std::getenv("BS_CONTROLE_GUID") : "");
+    const char*       guid = guidText.empty() ? nullptr : guidText.c_str();
+    phys->gamepad_added(1, "controle do roteiro", guidText);
+    auto plugged = std::make_shared<bool>(true);
+    std::shared_ptr<bs::InputSource> src(bs::make_scripted_input(readFile(path)));
+    std::fprintf(stderr, "[input] roteiro fisico %s (mapa %s, GUID %s)\n", path,
+                 std::getenv("BS_CONTROLES_TOML") ? std::getenv("BS_CONTROLES_TOML") : "padrao", guid ? guid : "-");
+    // DESCONECTADO tira o controle (ele solta tudo; o teclado continua, entao a porta do jogo fica
+    // presente e neutra); o estado seguinte o reconecta com o mesmo GUID (o perfil volta a valer)
+    return [phys, src, plugged, guidText](const ni::SampleContext& ctx) {
+        const bs::PadState p = src->read(0, ctx.sample);
+        if (!p.connected) {
+            if (*plugged) phys->gamepad_removed(1), *plugged = false;
+            return phys->latch(ctx);
+        }
+        if (!*plugged) phys->gamepad_added(1, "controle do roteiro", guidText), *plugged = true;
+        if (p.buttons & (bs::kPadC | bs::kPadZ | bs::kPadD)) throw std::runtime_error("BS_CONTROLE_FISICO: C/Z/D nao tem botao fisico padrao");
+        static const std::pair<uint16_t, const char*> kButtons[] = {
+            {bs::kPadA, "a"},       {bs::kPadB, "b"},          {bs::kPadX, "x"},          {bs::kPadY, "y"},
+            {bs::kPadStart, "start"}, {bs::kPadUp, "dpup"},    {bs::kPadDown, "dpdown"}, {bs::kPadLeft, "dpleft"},
+            {bs::kPadRight, "dpright"}};
+        for (const auto& [bit, name] : kButtons) phys->gamepad_button(1, name, (p.buttons & bit) != 0);
+        phys->gamepad_axis(1, "leftx", ib::axis_from_byte(p.joyx));
+        phys->gamepad_axis(1, "lefty", ib::axis_from_byte(p.joyy));
+        phys->gamepad_axis(1, "rightx", ib::axis_from_byte(p.joy2x));
+        phys->gamepad_axis(1, "righty", ib::axis_from_byte(p.joy2y));
+        phys->gamepad_axis(1, "lefttrigger", ib::trigger_from_byte(p.ltrig));
+        phys->gamepad_axis(1, "righttrigger", ib::trigger_from_byte(p.rtrig));
+        return phys->latch(ctx);
+    };
+}
+
 std::unique_ptr<ni::InputSystem> setupInput(const Args& a, bool window, std::string& warning,
                                             std::shared_ptr<bs::LiveScriptInput> live = nullptr) {
     std::unique_ptr<ni::InputSystem> sys;
-    if (live) {
+    if (const char* fis = std::getenv("BS_CONTROLE_FISICO"); fis && *fis && !window && !live) {
+        if (std::getenv("BS_INPUT_SCRIPT")) throw std::runtime_error("BS_CONTROLE_FISICO e BS_INPUT_SCRIPT sao exclusivos");
+        sys = std::make_unique<ni::InputSystem>();
+        sys->set_test_source(physicalScript(fis));
+    } else if (live) {
         sys = std::make_unique<ni::InputSystem>();
         sys->set_test_source(ib::from_runtime_source(live));
     } else if (const char* script = std::getenv("BS_INPUT_SCRIPT")) {
@@ -548,7 +614,9 @@ void gamepadEvent(ni::InputSystem& sys, const SDL_Event& e) {
     case SDL_EVENT_GAMEPAD_ADDED:
         if (SDL_Gamepad* g = SDL_OpenGamepad(e.gdevice.which)) {
             const char* n = SDL_GetGamepadName(g);
-            sys.gamepad_added(e.gdevice.which, n ? n : "controle");
+            char        guid[33] = {};  // N3-3: perfis por GUID ([perfis."<guid>"] no controles.toml)
+            SDL_GUIDToString(SDL_GetGamepadGUIDForID(e.gdevice.which), guid, sizeof guid);
+            sys.gamepad_added(e.gdevice.which, n ? n : "controle", guid);
         }
         break;
     case SDL_EVENT_GAMEPAD_REMOVED:
@@ -570,6 +638,24 @@ void gamepadEvent(ni::InputSystem& sys, const SDL_Event& e) {
     }
 }
 
+// Pasta dos saves nativos (N4, decisao do mantenedor 2026-10-19): Documentos\DC-Recomp\Blue Stinger\saves
+// (FOLDERID_Documents, que segue o redirecionamento do Windows); --saves-pasta <dir> ou --saves-portatil
+// (saves\ ao lado do executavel) escolhem outra. Sem a pasta Documentos, a pasta do usuario do log.
+fs::path savesRoot(const Args& a) {
+    if (!a.savesDir.empty()) return a.savesDir;
+    if (a.savesPortable) return exeDir() / L"saves";
+    PWSTR docs = nullptr;
+    fs::path root;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_CREATE, nullptr, &docs)) && docs)
+        root = fs::path(docs) / L"DC-Recomp" / L"Blue Stinger" / L"saves";
+    CoTaskMemFree(docs);
+    if (root.empty()) {
+        root = userDir() / L"saves";
+        std::fprintf(stderr, "[saves] pasta Documentos indisponivel: usando %s\n", utf8(root).c_str());
+    }
+    return root;
+}
+
 bs::GameOptions gameOptions(const Args& a) {
     bs::GameOptions opt;
     opt.data              = a.gameData;
@@ -578,6 +664,8 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.files             = a.files;
     opt.time              = a.time;
     opt.controls          = a.controls;
+    opt.saves             = a.saves;
+    if (a.saves == bs::SavesProvider::Native) opt.savesRoot = savesRoot(a);
     opt.registerFunctions = [] { bsg::register_functions(); };
     opt.realtime          = a.headless == 0;
     opt.vblankLimit       = a.headless;
@@ -592,8 +680,11 @@ const char* kUsage =
     "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
     "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao: nativo;\n"
     "       experimental = N2b-2, tempo logico sem ciclos estimados, em validacao)\n"
-    "     --controles legado|nativo: provedor dos controles (padrao: legado = pelo Maple; nativo = N3-2,\n"
-    "       o SDK de controles alimentado direto, sem controle no Maple; em validacao)\n"
+    "     --controles nativo|legado: provedor dos controles (padrao: nativo = o SDK de controles alimentado\n"
+    "       direto, sem controle no Maple; legado = pelo Maple emulado, fallback temporario)\n"
+    "     --saves legado|nativo: saves (padrao: legado = sem VMU; nativo = em validacao, arquivos em\n"
+    "       Documentos\\DC-Recomp\\Blue Stinger\\saves; --saves-portatil = saves\\ ao lado do executavel;\n"
+    "       --saves-pasta <dir> = outra pasta)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";

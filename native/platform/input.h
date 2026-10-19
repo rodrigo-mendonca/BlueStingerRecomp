@@ -75,12 +75,26 @@ struct Options {
     std::string preferred        = "";     // parte do nome do controle preferido (vazio: o ultimo usado)
 };
 
+// Perfil de um modelo de controle (N3-3), pelo GUID do dispositivo (o do SDL3, 32 digitos hexadecimais,
+// minusculos; "xinput" para os controles do XInput de reserva). As acoes listadas substituem as do
+// [controle]; as demais herdam dele. Controle sem perfil: o [controle] (fallback).
+struct Profile {
+    std::string          guid;
+    std::string          name;      // so para o log
+    std::vector<Binding> gamepad;   // ligacoes ja resolvidas (herdadas + as do perfil)
+    float                deadzone = -1;  // < 0: a de [opcoes]
+};
+
 // Remapeamento: ligacoes do teclado e do controle para acoes, mais opcoes.
 class ActionMap {
 public:
     Options              options;
     std::vector<Binding> keyboard;
     std::vector<Binding> gamepad;
+    std::vector<Profile> profiles;
+
+    // Perfil do GUID (sem diferenca de maiusculas), ou nullptr.
+    const Profile* profile_for(std::string_view guid) const;
 
     // Mapa padrao: teclado (setas, ENTER = START, Z/X/A/S = A/B/X/Y, Q/W = gatilhos, I/J/K/L =
     // analogico) e controle por posicao (Xbox: A embaixo, B a direita, X a esquerda, Y em cima).
@@ -104,6 +118,8 @@ struct ConnectionEvent {
     enum class Kind : uint8_t { Connected, Disconnected } kind;
     int         device;
     std::string name;
+    std::string guid;     // N3-3: para o usuario montar um perfil
+    std::string profile;  // nome do perfil aplicado (vazio: o [controle]), na conexao e na desconexao
 };
 
 // Dispositivos e jogador 1. Seguro entre threads: os eventos chegam pela thread da janela e a
@@ -120,7 +136,7 @@ public:
     void release_keyboard();
 
     // Controles (backend SDL3 Gamepad, ou outro com nomes iguais). `id` e do backend.
-    int  gamepad_added(uint32_t id, std::string_view name);
+    int  gamepad_added(uint32_t id, std::string_view name, std::string_view guid = {});
     void gamepad_removed(uint32_t id);
     void gamepad_button(uint32_t id, std::string_view control, bool down);
     void gamepad_axis(uint32_t id, std::string_view control, float value);  // -1..1; gatilhos 0..1

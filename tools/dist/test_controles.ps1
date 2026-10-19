@@ -71,13 +71,15 @@ function VBlanksFor($file) {
 
 # --- execucoes (paralelas, no maximo $Paralelo) ---
 $jobs = [System.Collections.ArrayList]::new()
-function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe) {
+# K1-K12 leem o contrato do Maple (BS_PAD_CONTRATO) e trocam a funcao do controle: so existem no
+# provedor legado, que deixou de ser o padrao no fim do N3. K13 roda sem a opcao (o padrao).
+function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado") {
     $p = Join-Path $Saida $tag
     $e = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $script; BS_FRAME_LOG = "$p.fr.tsv"; BS_FILE_LOG = "$p.fl.tsv" }
     if (-not $NoTrace) { $e.BS_PAD_TRACE = "$p.trace.tsv" }
     if ($Probe) { $e.BS_PAD_CONTRATO = "$p.ct.tsv" }
     foreach ($k in $envs.Keys) { $e[$k] = $envs[$k] }
-    [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; P = $p })
+    [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; P = $p; Ctl = $ctl })
 }
 function RunAll() {
     $running = @()
@@ -85,7 +87,7 @@ function RunAll() {
         while (@($running | Where-Object { -not $_.HasExited }).Count -ge $Paralelo) { Start-Sleep -Milliseconds 500 }
         $cmd = ""
         foreach ($k in $j.Env.Keys) { $cmd += "set `"$k=$($j.Env[$k])`"&& " }
-        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo) --headless $($j.N) > `"$($j.P).out`" 2>&1"
+        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" }) --headless $($j.N) > `"$($j.P).out`" 2>&1"
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -PassThru
         $null = $proc.Handle
         $running += $proc
@@ -140,11 +142,11 @@ if ($want.K13) {
     $ExeRef = (Resolve-Path $ExeRef).Path
     foreach ($r in $RotasK13) {
         $n = if ($r -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r.txt" }
-        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace
-        Job "k13_ref_$r" $ExeRef "$rot\$r.txt" $n -NoTrace
+        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace -ctl ""
+        Job "k13_ref_$r" $ExeRef "$rot\$r.txt" $n -NoTrace -ctl ""
     }
     $r0 = $RotasK13[0]  # traco ligado: na primeira rota
-    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" })
+    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) -ctl ""
 }
 RunAll
 

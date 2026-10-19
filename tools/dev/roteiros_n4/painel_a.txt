@@ -1,0 +1,19 @@
+# Oraculo do N4 (flycast_oracle.py bu-trace): do boot ao painel de save/load do titulo e A no painel.
+# Prefixo: tools/dist/roteiros/passo_load_opcoes.txt ate LOAD GAME (passos do recompilado; calibrar
+# pela primeira execucao com --marcas, o boot do Flycast pode durar outro numero de passos).
+# Depois da ancora (entrada do painel 8C01D200), A por 3 passos a cada 90: escolhe o soquete, o
+# slot e confirma. O mesmo roteiro serve ao LOAD (painel normal) e ao SAVE (--forcar-modo-save
+# 0x8C0792C8, H1).
+indice passo
+1 START
+4 -
+602 START
+605 -
+802 START
+805 -
+1001 DOWN
+1003 -
+1013 START
+1016 -
+@ancora 8C0792C8
+@pulsos A 90

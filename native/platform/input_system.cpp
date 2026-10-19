@@ -19,6 +19,8 @@ namespace {
 struct Pad {
     uint32_t                     id = 0;
     std::string                  name;
+    std::string                  guid;     // N3-3: perfil por modelo ([perfis."<guid>"])
+    std::string                  profile;  // nome do perfil resolvido na conexao (vazio: o [controle])
     bool                         connected = true;
     std::set<std::string>        down;   // botoes apertados (nomes do controle)
     std::map<std::string, float> axes;   // eixos (nomes do controle)
@@ -40,7 +42,8 @@ ControllerState padState(const Pad& p, const ActionMap& m) {
         const auto it = p.axes.find(n);
         return it == p.axes.end() ? 0.0f : it->second;
     };
-    for (const Binding& b : m.gamepad) {
+    const Profile* prof = m.profile_for(p.guid);  // sem perfil: o [controle]
+    for (const Binding& b : prof ? prof->gamepad : m.gamepad) {
         const Target& t             = b.target;
         const bool    isTriggerAxis = b.control == "lefttrigger" || b.control == "righttrigger";
         const bool    isAxis        = isTriggerAxis || b.control == "leftx" || b.control == "lefty" ||
@@ -65,8 +68,9 @@ ControllerState padState(const Pad& p, const ActionMap& m) {
         }
         }
     }
-    apply_radial_deadzone(s.axis(Axis::StickX), s.axis(Axis::StickY), m.options.deadzone);
-    apply_radial_deadzone(s.axis(Axis::Stick2X), s.axis(Axis::Stick2Y), m.options.deadzone);
+    const float dz = prof && prof->deadzone >= 0 ? prof->deadzone : m.options.deadzone;
+    apply_radial_deadzone(s.axis(Axis::StickX), s.axis(Axis::StickY), dz);
+    apply_radial_deadzone(s.axis(Axis::Stick2X), s.axis(Axis::Stick2Y), dz);
     return s;
 }
 
@@ -143,9 +147,14 @@ struct InputSystem::Impl {
     }
     // conectar nao e atividade: um controle neutro que chega nao toma o jogador 1 (revisao Codex
     // 2026-10-18); sem atividade em nenhum, vale o primeiro conectado
-    int added(uint32_t id, std::string_view name) {
-        pads.push_back({id, std::string(name), true, {}, {}, 0});
-        events.push_back({ConnectionEvent::Kind::Connected, int(pads.size() - 1), std::string(name)});
+    int added(uint32_t id, std::string_view name, std::string_view guid, const ActionMap& m) {
+        Pad p;
+        p.id   = id;
+        p.name = std::string(name);
+        p.guid = lower(guid);
+        if (const Profile* prof = m.profile_for(guid)) p.profile = prof->name;
+        events.push_back({ConnectionEvent::Kind::Connected, int(pads.size()), p.name, p.guid, p.profile});
+        pads.push_back(std::move(p));
         return int(pads.size() - 1);
     }
     void removed(uint32_t id) {
@@ -154,7 +163,7 @@ struct InputSystem::Impl {
                 pads[i].connected = false;
                 pads[i].down.clear();
                 pads[i].axes.clear();
-                events.push_back({ConnectionEvent::Kind::Disconnected, int(i), pads[i].name});
+                events.push_back({ConnectionEvent::Kind::Disconnected, int(i), pads[i].name, pads[i].guid, pads[i].profile});
             }
     }
     int active(const Options& o) const {
@@ -171,7 +180,7 @@ struct InputSystem::Impl {
         }
         return best;
     }
-    void pollXInput() {
+    void pollXInput(const ActionMap& m) {
         for (DWORD slot = 0; slot < XUSER_MAX_COUNT; ++slot) {
             InputSystem::XInputPad x;
             const bool             ok = xreader ? xreader(int(slot), x) : readXInput(slot, x);
@@ -181,7 +190,7 @@ struct InputSystem::Impl {
                 if (p) removed(id);
                 continue;
             }
-            if (!p) p = &pads[size_t(added(id, "XInput " + std::to_string(slot + 1)))];
+            if (!p) p = &pads[size_t(added(id, "XInput " + std::to_string(slot + 1), "xinput", m))];
             const WORD b = x.buttons;
             struct M {
                 WORD        bit;
@@ -195,8 +204,8 @@ struct InputSystem::Impl {
                                      {XINPUT_GAMEPAD_RIGHT_SHOULDER, "rightshoulder"},
                                      {XINPUT_GAMEPAD_LEFT_THUMB, "leftstick"}, {XINPUT_GAMEPAD_RIGHT_THUMB, "rightstick"}};
             std::set<std::string> down;
-            for (const M& m : kMap)
-                if (b & m.bit) down.insert(m.name);
+            for (const M& k : kMap)
+                if (b & k.bit) down.insert(k.name);
             std::map<std::string, float> axes;
             axes["leftx"]        = axis_from_s16(x.lx);
             axes["lefty"]        = -axis_from_s16(x.ly);  // XInput: y para cima
@@ -240,10 +249,10 @@ bool InputSystem::connected(const SampleContext& ctx) {
     return impl_->test ? impl_->test(ctx).connected : true;
 }
 
-int InputSystem::gamepad_added(uint32_t id, std::string_view name) {
+int InputSystem::gamepad_added(uint32_t id, std::string_view name, std::string_view guid) {
     std::lock_guard lk(impl_->mu);
     if (impl_->find(id)) return -1;
-    return impl_->added(id, name);
+    return impl_->added(id, name, guid, map_);
 }
 
 void InputSystem::gamepad_removed(uint32_t id) {
@@ -282,7 +291,7 @@ void InputSystem::set_test_source(SampleFn fn) {
 ControllerState InputSystem::latch(const SampleContext& ctx) {
     std::lock_guard lk(impl_->mu);
     if (impl_->test) return impl_->last = impl_->test(ctx);
-    if (impl_->xinput) impl_->pollXInput();
+    if (impl_->xinput) impl_->pollXInput(map_);
     std::vector<ControllerState> parts;
     parts.push_back(keyboardState(impl_->keys, map_));
     if (const int a = impl_->active(map_.options); a >= 0) parts.push_back(padState(impl_->pads[size_t(a)], map_));

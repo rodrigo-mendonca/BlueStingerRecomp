@@ -1,4 +1,4 @@
-# N2b-2 (--tempo experimental): criterios e negativos (docs/N2b2-RELATORIO.md). O modo
+﻿# N2b-2 (--tempo experimental): criterios e negativos (docs/N2b2-RELATORIO.md). O modo
 # experimental tira os ciclos estimados do tempo: o instante logico so anda nos pontos de espera
 # declarados, ate o proximo evento. O estavel (--tempo nativo) continua o padrao e nao pode mudar.
 # Roteiros NEW GAME (relogio fixo), com o estavel como referencia.
@@ -67,6 +67,7 @@ function Launch($c) {
     foreach ($k in $all.Keys) { Set-Item "env:$k" $all[$k] }
     $args2 = "--data `"$Data`" --tempo $($c.tempo) --arquivos $($c.arquivos) --headless $($c.n)"
     if ($c.ev) { $args2 += " --dump `"${p}_q.bmp`"" }
+    if ($c.controles) { $args2 += " --controles $($c.controles)" }
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -WindowStyle Hidden -ArgumentList "/c `"`"$($c.exe)`" $args2 > `"${p}_saida.txt`" 2>&1`""
         $null = $proc.Handle
@@ -84,8 +85,8 @@ function RunBatch($casos) {
     }
     return $runs
 }
-function Caso($tag, $exe, $tempo, $n, $roteiro, [hashtable]$env = @{}, [switch]$ev, [switch]$audioAll, $arquivos = "nativo") {
-    return @{ tag = $tag; exe = $exe; tempo = $tempo; n = $n; roteiro = $roteiro; env = $env; ev = [bool]$ev; audioAll = [bool]$audioAll; arquivos = $arquivos }
+function Caso($tag, $exe, $tempo, $n, $roteiro, [hashtable]$env = @{}, [switch]$ev, [switch]$audioAll, $arquivos = "nativo", $controles = "") {
+    return @{ tag = $tag; exe = $exe; tempo = $tempo; n = $n; roteiro = $roteiro; env = $env; ev = [bool]$ev; audioAll = [bool]$audioAll; arquivos = $arquivos; controles = $controles }
 }
 
 function ReadLines($f) { if (Test-Path -LiteralPath $f) { [IO.File]::ReadAllLines($f) } else { @() } }
@@ -143,7 +144,9 @@ $lote1 = @(
     (Caso "exp_a1" $Exe "experimental" $VBlanks "newgame_area1" -audioAll),
     (Caso "est_novo" $Exe "nativo" $VBlanks "newgame_area1" -ev -audioAll)
 )
-if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev) }
+# N11 compara com ciclos contra o executavel anterior ao N2b-2 (Maple com controle): o lado novo usa o
+# provedor legado de controles, porque no nativo o DMA do Maple termina ~9 600 ciclos antes (N3-2).
+if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" -ev -controles "legado") }
 if ($hasMods) { $lote1 += (Caso "exp_mods" $ExeMods "experimental" $VBlanks "newgame_area1") }
 $r = RunBatch $lote1
 
@@ -288,11 +291,11 @@ if ($hasOld) {
     # artefatos selecionados (trace de ordem com ciclos, leituras, relogio, estado, tempo, quadro final),
     # todos presentes e nao vazios, e as duas execucoes terminadas
     $arts = @("ev.tsv", "fl.tsv", "cl.tsv", "sl.tsv", "tt.tsv", "q.bmp")
-    $miss = $arts | Where-Object { -not (Test-Path -LiteralPath "$($r.est_novo.P)_$_") -or (Get-Item -LiteralPath "$($r.est_novo.P)_$_").Length -lt 64 -or
+    $miss = $arts | Where-Object { -not (Test-Path -LiteralPath "$($r.est_n11.P)_$_") -or (Get-Item -LiteralPath "$($r.est_n11.P)_$_").Length -lt 64 -or
                                    -not (Test-Path -LiteralPath "$($r.est_antigo.P)_$_") -or (Get-Item -LiteralPath "$($r.est_antigo.P)_$_").Length -lt 64 }
-    $d = $arts | Where-Object { (Hash "$($r.est_novo.P)_$_") -ne (Hash "$($r.est_antigo.P)_$_") }
-    Check "N11 estavel inalterado: --tempo nativo = executavel anterior ao N2b-2 (artefatos byte a byte)" `
-        ((Ended $r.est_novo $VBlanks) -and (Ended $r.est_antigo $VBlanks) -and $miss.Count -eq 0 -and $d.Count -eq 0) "diferem: $($d -join ','); ausentes ou vazios: $($miss -join ',')"
+    $d = $arts | Where-Object { (Hash "$($r.est_n11.P)_$_") -ne (Hash "$($r.est_antigo.P)_$_") }
+    Check "N11 estavel inalterado: --tempo nativo (--controles legado) = executavel anterior ao N2b-2 (artefatos byte a byte)" `
+        ((Ended $r.est_n11 $VBlanks) -and (Ended $r.est_antigo $VBlanks) -and $miss.Count -eq 0 -and $d.Count -eq 0) "diferem: $($d -join ','); ausentes ou vazios: $($miss -join ',')"
 } else { $skips += "N11 sem o executavel anterior ($ExeAntigo)" }
 
 # ---- N13: mods ----

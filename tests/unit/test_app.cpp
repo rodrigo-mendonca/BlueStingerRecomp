@@ -150,6 +150,7 @@ Sh4FuncEntry g_table[2];
 
 GameOptions fakeOptions(Sh4Func entry, bool withThread = false) {
     GameOptions o;
+    o.controls = ControlsProvider::Legacy;  // jogo falso: sem o SDK pd para o provedor nativo
     o.registerFunctions = [entry, withThread] {
         g_table[0] = {0x0C010000, entry};
         g_table[1] = {0x0C020000, fakeThread};

@@ -22,13 +22,19 @@
 #      jogo nao a usa); no nativo, a info la (0x78 bytes) e igual ao buffer da camada per do legado
 #   P8 estatico: no C++ gerado, toda chamada a 8C15C4E6 e 8C0975C0 passa pelo slot (BSG_SLOT), nenhuma
 #      direta a 8C15C4E6, 8C15C668 ou 8C0975C0; os tres estao em [native] slots
+#   P9 remapeamento e perfis por GUID (N3-3), no nativo: o roteiro de limiares como CONTROLES FISICOS
+#      (BS_CONTROLE_FISICO) da o traco e os quadros do roteiro logico com o mapa padrao; com A e B
+#      trocados no roteiro e no [controle], e com a troca so num [perfis."<guid>"] e o controle com esse
+#      GUID, tambem; negativo: o perfil de outro GUID nao vale (fallback para o [controle]) e o traco diverge
+#   P10 padrao (fim do N3): sem --controles o provedor e o nativo: fechamento do nativo (modo=nativo, Maple
+#      sem controle) e traco com tempo, quadros, leituras, estado e audio iguais aos do --controles nativo
 #   powershell -File tools/dist/test_pd_nativo.ps1 [-Exe <release>] [-ExeMods <mods>] [-Casos P1,P2,...] [-Paralelo 8]
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$Paralelo = 8,
-    [string[]]$Casos = @("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"),
+    [string[]]$Casos = @("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"),
     [string]$Saida = (Join-Path $env:TEMP "bs-pd-nativo-teste")
 )
 $ErrorActionPreference = "Stop"
@@ -65,6 +71,9 @@ function VBlanksFor($file) {
 
 # --- execucoes (paralelas, no maximo $Paralelo); prefixo P: P_fr, P_fl, P_st, P_au, P_trace, P_fech ---
 $jobs = [System.Collections.ArrayList]::new()
+$procs = @{}  # tag -> processo (codigo de saida, revisao Codex)
+function ExitOk($tag) { $p = $script:procs[$tag]; return $p -and $p.HasExited -and $p.ExitCode -eq 0 -and (Test-Path (Join-Path $S "${tag}_trace.tsv")) -and (Get-Item (Join-Path $S "${tag}_trace.tsv")).Length -gt 0 }
+function Diverges($x) { return $x.Out -match "diferentes (\d+)" -and [int]$Matches[1] -gt 0 }
 function Job($tag, $exe, $script, $n, $controles, $tempo = "nativo", $envs = @{}, [switch]$Dump) {
     $p = Join-Path $S $tag
     $e = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $script; BS_FRAME_LOG = "${p}_fr.tsv"; BS_FILE_LOG = "${p}_fl.tsv"
@@ -80,9 +89,10 @@ function RunAll() {
         while (@($running | Where-Object { -not $_.HasExited }).Count -ge $Paralelo) { Start-Sleep -Milliseconds 500 }
         $cmd = ""
         foreach ($k in $j.Env.Keys) { $cmd += "set `"$k=$($j.Env[$k])`"&& " }
-        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo) --controles $($j.Ctl) --headless $($j.N) > `"$($j.P)_saida.txt`" 2>&1"
+        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" }) --headless $($j.N) > `"$($j.P)_saida.txt`" 2>&1"
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -PassThru
         $null = $proc.Handle
+        $script:procs[$j.Tag] = $proc
         $running += $proc
     }
     $running | Wait-Process -Timeout 7200
@@ -155,6 +165,33 @@ if ($want.P6) {
     Job "neg_presenca_imediata" $Exe "$S\pad_conexao_boot.txt" 1500 "nativo" "nativo" @{ BS_PAD_NATIVO_MUTACAO = "presenca_imediata" }
     Job "neg_maple" $Exe "$S\pad_conexao_boot.txt" 1500 "nativo" "nativo" @{ BS_PAD_NATIVO_MUTACAO = "maple" }
 }
+if ($want.P9) {
+    $guid = "030000005e0400008e02000000007200"
+    $swap = Join-Path $S "fisico_troca_ab.txt"
+    $lines = foreach ($l in [IO.File]::ReadLines("$S\passo_limiares.txt")) {
+        if ($l -match "^(\d+)\s+(\S+)(.*)$") { $st = ($Matches[2] -split "\+" | ForEach-Object { if ($_ -eq "A") { "B" } elseif ($_ -eq "B") { "A" } else { $_ } }) -join "+"; "$($Matches[1]) $st$($Matches[3])" } else { $l }
+    }
+    [IO.File]::WriteAllLines($swap, [string[]]$lines)
+    [IO.File]::WriteAllText((Join-Path $S "troca_controle.toml"), "versao = 1`n[controle]`nA = `"b`"`nB = `"a`"`n")
+    [IO.File]::WriteAllText((Join-Path $S "troca_perfil.toml"), "versao = 1`n[perfis.`"$guid`"]`nnome = `"teste`"`nA = `"b`"`nB = `"a`"`n")
+    $fis = @{ BS_INPUT_SCRIPT = "" }
+    Job "r_logico" $Exe "$S\passo_limiares.txt" $nLim "nativo"
+    Job "r_identidade" $Exe "" $nLim "nativo" "nativo" @{ BS_INPUT_SCRIPT = ""; BS_CONTROLE_FISICO = "$S\passo_limiares.txt" }
+    Job "r_controle" $Exe "" $nLim "nativo" "nativo" @{ BS_INPUT_SCRIPT = ""; BS_CONTROLE_FISICO = $swap; BS_CONTROLES_TOML = "$S\troca_controle.toml" }
+    Job "r_perfil" $Exe "" $nLim "nativo" "nativo" @{ BS_INPUT_SCRIPT = ""; BS_CONTROLE_FISICO = $swap; BS_CONTROLES_TOML = "$S\troca_perfil.toml"; BS_CONTROLE_GUID = $guid }
+    # conexao com perfil: DESCONECTADO tira o controle (o teclado fica: a porta do jogo fica neutra) e o
+    # proximo estado o reconecta com o mesmo GUID; equivale ao roteiro logico com DESCONECTADO -> "-"
+    $conSwap = Join-Path $S "fisico_conexao_troca_ab.txt"; $conNeutro = Join-Path $S "conexao_neutra.txt"
+    $cl = foreach ($l in [IO.File]::ReadLines("$S\passo_conexao.txt")) { if ($l -match "^(\d+)\s+(\S+)(.*)$") { $st = ($Matches[2] -split "\+" | ForEach-Object { if ($_ -eq "A") { "B" } elseif ($_ -eq "B") { "A" } else { $_ } }) -join "+"; "$($Matches[1]) $st$($Matches[3])" } else { $l } }
+    [IO.File]::WriteAllLines($conSwap, [string[]]$cl)
+    $cn = foreach ($l in [IO.File]::ReadLines("$S\passo_conexao.txt")) { $l -replace "^(\d+)\s+DESCONECTADO", '$1 -' }
+    [IO.File]::WriteAllLines($conNeutro, [string[]]$cn)
+    $nCon2 = VBlanksFor "$S\passo_conexao.txt"
+    Job "r_con_logico" $Exe $conNeutro $nCon2 "nativo"
+    Job "r_con_perfil" $Exe "" $nCon2 "nativo" "nativo" @{ BS_INPUT_SCRIPT = ""; BS_CONTROLE_FISICO = $conSwap; BS_CONTROLES_TOML = "$S\troca_perfil.toml"; BS_CONTROLE_GUID = $guid }
+    Job "r_perfil_outro" $Exe "" $nLim "nativo" "nativo" @{ BS_INPUT_SCRIPT = ""; BS_CONTROLE_FISICO = $swap; BS_CONTROLES_TOML = "$S\troca_perfil.toml"; BS_CONTROLE_GUID = "03000000aaaaaaaabbbbbbbb00000000" }
+}
+if ($want.P10) { Job "padrao" $Exe "$S\passo_limiares.txt" $nLim ""; Job "padrao_nat" $Exe "$S\passo_limiares.txt" $nLim "nativo" }  # "" = sem a opcao
 $t0 = Get-Date
 RunAll
 Write-Host ("execucoes: {0:n0} s" -f ((Get-Date) - $t0).TotalSeconds)
@@ -201,9 +238,9 @@ if ($want.P5) {
 }
 if ($want.P6) {
     foreach ($m in "press_on", "release_zero", "amostra_adiantada", "info_sem_conectado") {
-        $x = TraceDiff "c_limiares_nativo_nat" "neg_$m"; Check "P6 negativo acusado: $m" ($x.Code -ne 0) (($x.Out -split "`n")[0])
+        $x = TraceDiff "c_limiares_nativo_nat" "neg_$m"; Check "P6 negativo acusado: $m" ((ExitOk "neg_$m") -and (Diverges $x)) (($x.Out -split "`n")[0])
     }
-    $x = TraceDiff "c_boot_nativo_nat" "neg_presenca_imediata"; Check "P6 negativo acusado: presenca_imediata" ($x.Code -ne 0) (($x.Out -split "`n")[0])
+    $x = TraceDiff "c_boot_nativo_nat" "neg_presenca_imediata"; Check "P6 negativo acusado: presenca_imediata" ((ExitOk "neg_presenca_imediata") -and (Diverges $x)) (($x.Out -split "`n")[0])
     $x = ClosureOk "neg_maple"; Check "P6 negativo acusado: maple (retorno ao Maple)" (-not $x.Ok) $x.Det
     $x = TraceDiff "c_limiares_nativo_nat" "neg_old_host"; Check "P6 controle old_host: o jogo nao reescreve on nas rotas (traco igual)" ($x.Code -eq 0) (($x.Out -split "`n")[0])
 }
@@ -225,6 +262,22 @@ if ($want.P8) {
     Check "P8 estatico: chamadas so pelo slot" ($direct.Count -eq 0 -and $slotCalls.Count -eq 3 -and $inCfg) "diretas $($direct.Count), pelo slot $($slotCalls.Count), config $inCfg"
 }
 
+if ($want.P9) {
+    foreach ($c in "r_identidade", "r_controle", "r_perfil") {
+        $x = TraceDiff "r_logico" $c
+        Check "P9 remapeamento: $c = roteiro logico (traco com tempo e quadros)" ($x.Code -eq 0 -and (Same "r_logico_fr.tsv" "${c}_fr.tsv")) (($x.Out -split "`n")[0])
+    }
+    $x = TraceDiff "r_con_logico" "r_con_perfil"
+    Check "P9 conexao com perfil: desconectar com botao, reconectar (mesmo GUID) = roteiro logico com a porta neutra" ($x.Code -eq 0 -and (Same "r_con_logico_fr.tsv" "r_con_perfil_fr.tsv")) (($x.Out -split "`n")[0])
+    $bad = @("r_logico", "r_identidade", "r_controle", "r_perfil", "r_perfil_outro", "r_con_logico", "r_con_perfil" | Where-Object { -not (ExitOk $_) })
+    Check "P9 execucoes terminaram sem erro e com traco" ($bad.Count -eq 0) ($bad -join ",")
+    $x = TraceDiff "r_logico" "r_perfil_outro"; Check "P9 negativo: perfil de outro GUID nao vale (fallback para o [controle])" ((ExitOk "r_perfil_outro") -and (Diverges $x)) (($x.Out -split "`n")[0])
+    $o = Get-Content (Join-Path $S "r_perfil_saida.txt") -Raw; Check "P9 o roteiro fisico passou pelo mapa e pelo GUID" ($o -match "roteiro fisico" -and $o -match [regex]::Escape($guid)) ""
+}
+if ($want.P10) {
+    $x = ClosureOk "padrao"; Check "P10 sem --controles: fechamento do nativo (modo=nativo)" $x.Ok $x.Det
+    $x = Pair "padrao_nat" "padrao"; Check "P10 sem --controles = --controles nativo (traco com tempo, quadros, leituras, estado, audio)" $x.Ok $x.Det
+}
 $fails = @($results | Where-Object { -not $_.Ok }).Count
 Write-Host ("test_pd_nativo: {0} casos, {1} falhas" -f $results.Count, $fails)
 exit $(if ($fails) { 1 } else { 0 })

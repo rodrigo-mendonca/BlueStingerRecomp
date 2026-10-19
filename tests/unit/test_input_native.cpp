@@ -340,3 +340,106 @@ BS_TEST(input_native_latch_only_on_get_condition) {
     BS_CHECK(ni::ActionMap::parse("[controle]\nA = \"misc2\"\nB = \"misc6\"\nX = \"paddle1\"\n", &err));
     BS_CHECK(!ni::ActionMap::parse("[controle]\nA = \"misc7\"\n", &err));
 }
+
+// N3-3: perfis por GUID de dispositivo. O perfil herda do [controle] e substitui so as acoes que
+// lista; controle sem perfil (GUID desconhecido ou vazio) usa o [controle]; zona morta por perfil;
+// perfil "xinput" para o XInput de reserva; erros com o motivo.
+BS_TEST(input_native_profiles_by_guid) {
+    const std::string xbox = "030000005e0400008e02000000007200";
+    std::string       err;
+    auto              m = ni::ActionMap::parse("[controle]\nX = \"y\"\n"
+                                               "[perfis.\"030000005E0400008E02000000007200\"]\nnome = \"Xbox 360\"\nzona_morta = 0.5\n"
+                                               "A = \"b\"\nB = \"a\"\n"
+                                               "[perfis.xinput]\nSTART = \"back\"\n",
+                                  &err);
+    BS_CHECK(m);
+    if (!m) return;
+    const ni::ActionMap& v = m.value();
+    const ni::Profile*   p = v.profile_for(xbox);
+    BS_CHECK(p && p->name == "Xbox 360" && std::fabs(p->deadzone - 0.5f) < 1e-6f);
+    BS_CHECK(v.profile_for("030000005E0400008E02000000007200") == p && !v.profile_for("") && !v.profile_for("ffff"));
+    if (p) {
+        BS_CHECK(bound(p->gamepad, "b", ni::A) && bound(p->gamepad, "a", ni::B));  // do perfil
+        BS_CHECK(bound(p->gamepad, "y", ni::X) && bound(p->gamepad, "start", ni::Start));  // herdados do [controle]
+    }
+    BS_CHECK(v.profile_for("xinput") && bound(v.profile_for("xinput")->gamepad, "back", ni::Start));
+    // no InputSystem: perfil pelo GUID; sem perfil, o [controle]
+    ni::InputSystem sys(v);
+    sys.gamepad_added(1, "Xbox 360 Controller", xbox);
+    sys.gamepad_button(1, "a", true);
+    sys.gamepad_axis(1, "leftx", 0.4f);  // dentro da zona morta do perfil
+    ni::ControllerState s = sys.latch({});
+    BS_CHECK(s.buttons == ni::B && s.axis(ni::Axis::StickX) == 0.0f);
+    auto ev = sys.drain_events();
+    BS_CHECK(ev.size() == 1 && ev[0].guid == xbox && ev[0].profile == "Xbox 360");
+    sys.gamepad_removed(1);
+    sys.gamepad_added(2, "Generico", "03000000aaaaaaaabbbbbbbb00000000");  // sem perfil
+    sys.gamepad_button(2, "a", true);
+    sys.gamepad_axis(2, "leftx", 0.4f);
+    s = sys.latch({});
+    BS_CHECK(s.buttons == ni::A && std::fabs(s.axis(ni::Axis::StickX) - 0.4f) < 1e-6f);
+    ev = sys.drain_events();
+    BS_CHECK(ev.size() == 2 && ev[1].profile.empty());
+    // erros
+    BS_CHECK(!ni::ActionMap::parse("[perfis.\"123\"]\nA = \"b\"\n", &err) && err.find("32") != std::string::npos);
+    BS_CHECK(!ni::ActionMap::parse("[perfis.\"" + xbox + "\"]\nTURBO = \"b\"\n", &err) && err.find("TURBO") != std::string::npos);
+    BS_CHECK(!ni::ActionMap::parse("[perfis.\"" + xbox + "\"]\nzona_morta = 2\n", &err));
+    BS_CHECK(!ni::ActionMap::parse("perfis = 3\n", &err));
+    BS_CHECK(!ni::ActionMap::parse("[perfis.\"" + xbox + "\"]\nA = \"b\"\n[perfis.\"030000005E0400008E02000000007200\"]\nB = \"a\"\n", &err));
+    // o arquivo padrao continua valido e sem perfis
+    auto d = ni::ActionMap::parse(ni::ActionMap::default_text(), &err);
+    BS_CHECK(d && d.value().profiles.empty());
+}
+
+// N3-3 (revisao Codex): perfis com desconexao/reconexao, dois controles com perfis diferentes na troca
+// automatica e com o preferido, o perfil no evento de desconexao, e [perfis.xinput] no XInput de reserva.
+BS_TEST(input_native_profiles_with_hotplug_and_xinput) {
+    const std::string gA = "030000005e0400008e02000000007200", gB = "030000004c050000cc09000000006800";
+    std::string       err;
+    auto m = ni::ActionMap::parse("[perfis.\"" + gA + "\"]\nnome = \"xbox\"\nA = \"b\"\nB = \"a\"\n"
+                                  "[perfis.\"" + gB + "\"]\nnome = \"ps\"\nA = \"x\"\nX = \"a\"\n[perfis.xinput]\nnome = \"xi\"\nSTART = \"back\"\n",
+                                  &err);
+    BS_CHECK(m);
+    if (!m) return;
+    {
+        ni::InputSystem sys(m.value());
+        sys.gamepad_added(1, "Xbox", gA);
+        sys.gamepad_added(2, "DualShock", gB);
+        sys.gamepad_button(1, "a", true);  // xbox: a -> B
+        BS_CHECK(sys.active_gamepad() == 0 && sys.latch({}).buttons == ni::B);
+        sys.gamepad_button(2, "x", true);  // ps: x -> A; troca automatica
+        BS_CHECK(sys.active_gamepad() == 1 && sys.latch({}).buttons == ni::A);
+        // desconectar o ps (com x apertado): volta ao xbox, com o perfil dele; o evento leva o perfil
+        sys.gamepad_removed(2);
+        BS_CHECK(sys.active_gamepad() == 0 && sys.latch({}).buttons == ni::B);
+        auto ev = sys.drain_events();
+        BS_CHECK(ev.size() == 3 && ev[2].kind == ni::ConnectionEvent::Kind::Disconnected && ev[2].profile == "ps" &&
+                 ev[2].guid == gB);
+        // reconectar o mesmo GUID: o perfil volta a valer
+        sys.gamepad_added(3, "DualShock", gB);
+        sys.gamepad_button(3, "x", true);
+        BS_CHECK(sys.active_gamepad() == 2 && sys.latch({}).buttons == ni::A);
+        ev = sys.drain_events();
+        BS_CHECK(ev.size() == 1 && ev[0].profile == "ps");
+    }
+    {
+        ni::ActionMap pref       = m.value();
+        pref.options.preferred   = "xbox";
+        ni::InputSystem sys(pref);
+        sys.gamepad_added(1, "Xbox One", gA);
+        sys.gamepad_added(2, "DualShock", gB);
+        sys.gamepad_button(2, "x", true);  // atividade no ps nao tira o preferido
+        sys.gamepad_button(1, "a", true);
+        BS_CHECK(sys.active_gamepad() == 0 && sys.latch({}).buttons == ni::B);
+    }
+    {
+        ni::InputSystem sys(m.value());
+        sys.enable_xinput([](int slot, ni::InputSystem::XInputPad& out) {
+            out.buttons = 0x0020;  // XINPUT_GAMEPAD_BACK
+            return slot == 0;
+        });
+        BS_CHECK(sys.latch({}).buttons == ni::Start);  // [perfis.xinput]: START = back
+        auto ev = sys.drain_events();
+        BS_CHECK(ev.size() == 1 && ev[0].guid == "xinput" && ev[0].profile == "xi");
+    }
+}

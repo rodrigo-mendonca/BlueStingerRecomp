@@ -135,8 +135,8 @@ int main() {
     pad.buttons = input::A | input::Start;
     pad.axis(input::Axis::StickY) = 1.0f;
     CHECK((pad.buttons & input::Start) && !(pad.buttons & input::B) && pad.axis(input::Axis::StickY) == 1.0f);
-    saves::SaveInfo si{"BLUESTIN.000", "BLUE STINGER", 10, 0, 1};
-    CHECK(si.blocks == 10);
+    saves::SaveEntry si{"BLUESTIN.000", 4, 0};
+    CHECK(si.blocks == 4 && saves::valid_save_name(si.name));
     constexpr time::TimeBase tb;  // campo NTSC exato
     CHECK(tb.frame(tb.frame_start(120)) == 120);
     static_assert(tb.ns(tb.frame_start(60000)) == 1001000000000ull);

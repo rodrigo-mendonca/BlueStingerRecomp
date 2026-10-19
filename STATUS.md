@@ -1773,8 +1773,132 @@ Autorização: N3-1 commitado em `e16e42f` (commit único autorizado) e **só o 
 
 **Percentuais estimados:** N3 ~70% (4); total ≈ 22%.
 
+### N3-3: recursos de controles do produto (2026-10-18/19, depois de `ba4fc2f`, sem commit)
+
+N3-2 commitado em `ba4fc2f` (commit único autorizado); rollback `analysis/rollback-n3-2/`. Autorização:
+**N3-3** e a regressão de fechamento do N3. Relatório: `docs/N3-3-RELATORIO.md`.
+
+**Entrou:**
+- perfis por GUID (`[perfis."<guid>"]`, `xinput`), com herança do `[controle]` e fallback;
+- GUID do SDL3 e perfil no log de conexão e desconexão;
+- documentação `docs/CONTROLES.md`, `LEIA-ME.txt` e exemplo comentado no arquivo padrão;
+- mapa de teclado revisado e mantido;
+- diagnóstico `BS_CONTROLE_FISICO` (com `DESCONECTADO`), `BS_CONTROLES_TOML`, `BS_CONTROLE_GUID`;
+- `test_pd_nativo` P9; os negativos exigem execução sem erro e divergência real.
+
+**Fora do escopo:** vibração (`pdVib` sem uso) e mouse (excluído no N3-0).
+
+**Verificado:**
+- 237 unitários;
+- P9 7/7: roteiro físico pelo mapa padrão, pelo `[controle]` trocado e pelo perfil do GUID = roteiro
+  lógico (traço com tempo e quadros, 9 558 passos); conexão com perfil = roteiro lógico com a porta
+  neutra (9 498); perfil de outro GUID acusado;
+- janela: GUID do SDL3 no log e perfil aplicado no caminho real.
+
+**Pendente:** controles físicos Xbox e PlayStation (aceitação manual do N3), sem hardware nesta máquina.
+
+### Fechamento do N3 e promoção do nativo a padrão (2026-10-19, sem commit)
+
+**Regressão completa** (`tools/dev/regressao.ps1`, fonte `803FB171F8544023`, de 18/10 23:06 a 19/10
+03:32, retomada sem refazer etapas aprovadas): **19 de 19 etapas, 0 falhas**. Cobriu builds,
+unitários, `ctest` com e sem disco, Builder, Preview e as 16 suítes. Ela validou o código com o padrão
+anterior (`legado`); a promoção foi aplicada depois.
+
+**Promoção** (decisão do mantenedor; `docs/N3-3-RELATORIO.md`, seção 5): sem a opção,
+`--controles nativo` passa a valer. O `--controles legado` fica como fallback temporário pelo Maple.
+- Executável e `GameOptions`: padrão nativo.
+- `test_controles`: K1–K12 fixados no legado, porque são as sondas do Maple. O K13 roda no padrão.
+- `test_n2b2`: o N11, que compara ciclos com o executável anterior ao N2b-2, roda no legado.
+- `test_pd_nativo`: P10 novo, para a execução sem a opção.
+
+**Verificado depois da promoção:**
+- builds release, debug, mods e watch;
+- 245 unitários (237 do N3 e 8 do domínio de saves do N4);
+- `ctest` com e sem disco;
+- suítes afetadas, 0 falhas:
+
+  | Suíte | Casos |
+  |---|---|
+  | `make_builder`, `make_preview` | ok |
+  | `test_preview` | 9 |
+  | `test_gameplay` | 4 |
+  | `test_builder` | 18 |
+  | `test_projeto` | 13 |
+  | `test_arquivos` | 6 |
+  | `test_tempo` | 35 |
+  | `test_n2b2` | 17 |
+  | `test_assistido` | 28 |
+  | `test_controles` | 39 |
+  | `test_pd_nativo` | 85 |
+
+  - **K13:** o padrão novo dá quadros e leituras iguais aos do executável anterior ao N3.
+  - **P10:** sem a opção, o fechamento indica nativo e os artefatos são iguais aos do nativo explícito.
+- **Preview em janela, sem parâmetros:**
+  - o controle virtual do SDL3 conecta, com o GUID no log;
+  - START e A chegam ao PDS;
+  - servidor `pd` original com 0 entradas e Maple sem controle.
+- **Preview com `--controles legado`:** o caminho é o Maple, como antes.
+
+**Pendente:**
+- o teste manual com controle Xbox/PS físico, pelo roteiro em `docs/N3-3-RELATORIO.md`, seção 6. Não é
+  declarado aprovado;
+- Painel de Recomps: o antigo ficou sem acesso de edição nesta conta; em 2026-10-19 foi substituído
+  por um painel novo desta conta, já com o estado do fechamento do N3 e do N4 em andamento.
+
+
+### N4: oráculo SAVE/LOAD e provedor nativo dos saves (2026-10-19, em andamento)
+
+**Checkpoint (2026-10-19, commit único autorizado com o fechamento do N3):** o N4 entra parcial. O
+provedor nativo continua opt-in (`--saves nativo`; padrão `legado`) e **o SAVE/LOAD jogável segue em
+investigação** (save do título lido como corrompido; falta um save de gameplay real). Rollback da
+separação abandonada: `analysis/rollback-pre-commits-n3-n4/`.
+
+Detalhes em `docs/N4-PREPARACAO.md`, seções "Oráculo SAVE/LOAD no Flycast: resultados" e "Piloto
+Ghidra".
+
+- **Oráculo (Flycast, VMU de trabalho; original intacta):**
+  - o `emu.cfg` tinha `device1.1 = 10` (`MDT_None`); agora fica `1` (VMU) e `10` (`--sem-vmu`) só
+    na sessão;
+  - o boot detecta o cartão (inserção, mount, `disk_info`, 6 `exists = FF05`);
+  - SAVE pelo título (H1 confirmada): `save` devolve 0, 11 consultas ocupadas, callback
+    `(0x0C, 0)`, `status` 0;
+  - VMS validado: CRC `BEDB`, payload = RAM;
+  - persistência num processo novo: LOAD completo com payload em `+0x80`.
+- **Provedor nativo (`--saves nativo`, opt-in; o padrão continua `legado`):**
+  - `transitional/bu_machine` (protocolo sobre o `ISaveStore`) e `transitional/bu_adapter` (13
+    slots e o servidor `8C08BDE8` registrado no agendador do jogo);
+  - pasta `Documentos\DC-Recomp\Blue Stinger\saves`, `--saves-portatil`, `--saves-pasta`;
+  - diagnóstico `BS_SAVES_H1=1` (build com mods).
+- **Verificado:**
+  - 250 unitários (5 novos da `bu`, com a sequência do oráculo como referência);
+  - `ctest` com disco 100%;
+  - `--saves legado` com quadros e leituras iguais ao executável anterior (`passo_load_opcoes`,
+    `passo_cgate`);
+  - no runtime nativo, o painel de SAVE mostra 6 slots, "Save completed" e o slot "ELIOT
+    CLEARED";
+  - o `BLUESTIN.000.bsv` tem o VMS **byte a byte igual ao do Flycast** (SHA-256 `a13a1266…`);
+  - num processo novo, o LOAD GAME lista o slot e entrega à RAM os bytes do arquivo (`8C24F8BC` e
+    `8C1F385C`), sem regravar o save.
+- **Em aberto:**
+  - o jogo diz "This save data is corrupt" ao carregar um save feito no título. A hipótese, não
+    verificada, é que é a verificação do conteúdo pelo próprio jogo. Fecha com um save de gameplay
+    real;
+  - matriz de erros e repetição do oráculo;
+  - revisão do Codex;
+  - regressão de fechamento;
+  - promoção a padrão.
 
 ## Revisões independentes (Codex)
+
+### 2026-10-18: N3-3 e planejamento do N4
+
+- N3-3 (`reviews/codex-20261018-224640.md`), todos aceitos:
+  - [MÉDIA] negativo do P9 sem conferir a execução: código de saída e divergência real exigidos;
+  - [MÉDIA] perfis com desconexão e troca não exercitados: `DESCONECTADO` no roteiro físico, P9 de
+    conexão e unitário de hotplug;
+  - [BAIXA] perfil fora do evento de desconexão: corrigido.
+- N4, só planejamento (`-220833.md` inventário, `-225209.md` revisão arquitetural): incorporados em
+  `docs/N4-PREPARACAO.md`, com as decisões que ficam com o mantenedor.
 
 ### 2026-10-18: N3-2 (provedor nativo do pd). Relatórios em `reviews/codex-20261018-182417.md` e `-220359.md`
 

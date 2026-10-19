@@ -5,6 +5,7 @@
 // eventos; a frequencia de apresentacao dele e independente da do jogo.
 #include "cpu/sh4_context.h"
 #include "platform/data_files.h"
+#include "platform/saves.h"
 
 #include <atomic>
 #include <chrono>
@@ -48,10 +49,15 @@ namespace native::input {
 class InputSystem;
 }
 
-// Provedor dos controles (N3-2, docs/N3-PLANO.md): legado (padrao) = o Maple responde como controle
-// e le o InputSystem pela ponte; nativo = o SDK pd e alimentado direto (transitional/pad_adapter),
-// sem controle no Maple.
+// Provedor dos controles (N3, docs/N3-PLANO.md): nativo (padrao desde o fim do N3) = o SDK pd e
+// alimentado direto (transitional/pad_adapter), sem controle no Maple; legado (fallback temporario)
+// = o Maple responde como controle e le o InputSystem pela ponte.
 enum class ControlsProvider { Legacy, Native };
+
+// Provedor dos saves (N4, docs/N4-PREPARACAO.md): legado (padrao durante o desenvolvimento) = a
+// biblioteca bu original, sem VMU no Maple (o jogo mostra "VMU not found"); nativo = a API bu
+// atendida por transitional/bu_adapter sobre arquivos em `savesRoot` (um envelope por slot).
+enum class SavesProvider { Legacy, Native };
 
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
@@ -60,7 +66,9 @@ struct GameOptions {
     std::filesystem::path modAssets;  // mods de arquivos (mods\assets), opcional
     FilesProvider         files = FilesProvider::Native;
     TimeProviderKind      time  = TimeProviderKind::Native;
-    ControlsProvider      controls = ControlsProvider::Legacy;
+    ControlsProvider      controls = ControlsProvider::Native;
+    SavesProvider         saves = SavesProvider::Legacy;
+    std::filesystem::path savesRoot;  // saves nativos: <raiz>\card0\BLUESTIN.00n.bsv
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).
     native::input::InputSystem* input = nullptr;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
@@ -121,6 +129,7 @@ private:
     GameStats                             stats_;  // protegido por mutex_
     double                                workSumMs_ = 0;
     std::unique_ptr<native::files::DataFileSystem> files_;  // provedor nativo de arquivos (N1)
+    std::unique_ptr<native::saves::ISaveStore>     saves_;  // provedor nativo de saves (N4)
     uint8_t*                                       ram_ = nullptr;  // RAM do guest (diagnostico)
 };
 

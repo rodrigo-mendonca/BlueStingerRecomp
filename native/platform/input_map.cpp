@@ -49,6 +49,12 @@ std::string upper(std::string_view s) {
     return out;
 }
 
+std::string lower(std::string_view s) {
+    std::string out(s);
+    for (char& ch : out) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    return out;
+}
+
 bool validKey(const std::string& k) {
     if (k.size() == 1 && std::isalnum(static_cast<unsigned char>(k[0]))) return true;
     static const std::set<std::string> named = {"ENTER", "SPACE", "ESC", "TAB", "BACKSPACE", "SHIFT", "CTRL",
@@ -99,12 +105,13 @@ bool fail(std::string* error, const std::string& msg) {
 }
 
 // Uma secao [teclado] ou [controle]: cada acao presente substitui as ligacoes padrao dela.
-bool parseSection(const toml::table& t, bool gamepad, std::vector<Binding>& out, std::string* error) {
-    const char* section = gamepad ? "controle" : "teclado";
+bool parseSection(const toml::table& t, bool gamepad, std::vector<Binding>& out, std::string* error,
+                  const std::string& section, const std::set<std::string>& skip = {}) {
     for (const auto& [key, node] : t) {
+        if (skip.count(std::string(key.str()))) continue;
         const std::string action = upper(key.str());
         const ActionDef*  def    = findAction(action, gamepad);
-        const auto        where  = std::string("[") + section + "] " + std::string(key.str()) + " (linha " +
+        const auto        where  = "[" + section + "] " + std::string(key.str()) + " (linha " +
                            std::to_string(node.source().begin.line) + ")";
         if (!def) return fail(error, where + ": acao desconhecida");
         std::vector<std::string> controls;
@@ -196,13 +203,55 @@ Result<ActionMap> ActionMap::parse(std::string_view text, std::string* error) {
         } else if (k == "teclado" || k == "controle") {
             const toml::table* t = node.as_table();
             if (!t) return fail(error, "[" + k + "] deve ser uma secao"), Error::Corrupt;
-            if (!parseSection(*t, k == "controle", k == "controle" ? m.gamepad : m.keyboard, error)) return Error::Corrupt;
+            if (!parseSection(*t, k == "controle", k == "controle" ? m.gamepad : m.keyboard, error, k)) return Error::Corrupt;
+        } else if (k == "perfis") {
+            if (!node.as_table()) return fail(error, "[perfis] deve ser uma secao"), Error::Corrupt;
         } else {
-            fail(error, "chave desconhecida: " + k + " (secoes: [opcoes], [teclado], [controle])");
+            fail(error, "chave desconhecida: " + k + " (secoes: [opcoes], [teclado], [controle], [perfis.\"<guid>\"])");
             return Error::Corrupt;
         }
     }
+    // perfis por GUID (N3-3): depois de [controle], do qual herdam o que nao listam
+    if (const toml::table* perfis = doc["perfis"].as_table()) {
+        for (const auto& [gk, gn] : *perfis) {
+            Profile     p;
+            p.guid            = lower(gk.str());
+            const auto where  = "[perfis.\"" + std::string(gk.str()) + "\"] (linha " + std::to_string(gn.source().begin.line) + ")";
+            const bool hex32  = p.guid.size() == 32 && std::all_of(p.guid.begin(), p.guid.end(), [](char ch) {
+                return std::isxdigit(static_cast<unsigned char>(ch)) != 0;
+            });
+            if (!hex32 && p.guid != "xinput")
+                return fail(error, where + ": o GUID tem 32 digitos hexadecimais (o log mostra o do controle) ou e \"xinput\""),
+                       Error::Corrupt;
+            if (m.profile_for(p.guid)) return fail(error, where + ": perfil repetido"), Error::Corrupt;
+            const toml::table* t = gn.as_table();
+            if (!t) return fail(error, where + ": deve ser uma secao"), Error::Corrupt;
+            if (const toml::node* n = t->get("nome")) {
+                auto v = n->value<std::string>();
+                if (!v) return fail(error, where + " nome: texto"), Error::Corrupt;
+                p.name = *v;
+            }
+            if (const toml::node* n = t->get("zona_morta")) {
+                auto v = n->value<double>();
+                if (!v || *v < 0 || *v > 0.9) return fail(error, where + " zona_morta: numero de 0 a 0.9"), Error::Corrupt;
+                p.deadzone = float(*v);
+            }
+            p.gamepad = m.gamepad;
+            if (!parseSection(*t, true, p.gamepad, error, "perfis.\"" + std::string(gk.str()) + "\"", {"nome", "zona_morta"}))
+                return Error::Corrupt;
+            if (p.name.empty()) p.name = p.guid;
+            m.profiles.push_back(std::move(p));
+        }
+    }
     return m;
+}
+
+const Profile* ActionMap::profile_for(std::string_view guid) const {
+    if (guid.empty()) return nullptr;
+    const std::string g = lower(guid);
+    for (const Profile& p : profiles)
+        if (p.guid == g) return &p;
+    return nullptr;
 }
 
 Result<void> ActionMap::set_keyboard_legacy(std::string_view text, std::string* error) {
@@ -250,6 +299,14 @@ std::string ActionMap::default_text() {
     t += "\n[controle]  # a b x y start back dpup dpdown dpleft dpright leftshoulder rightshoulder\n"
          "           # leftstick rightstick; eixos leftx lefty rightx righty lefttrigger righttrigger\n";
     for (const auto& kv : kDefaultGamepad) t += std::string(kv[0]) + " = \"" + kv[1] + "\"\n";
+    t += "\n# Perfis por modelo de controle: o log (bluestinger.log) mostra o GUID de cada controle conectado.\n"
+         "# Um perfil herda o [controle] e substitui so as acoes que lista; controle sem perfil usa o [controle].\n"
+         "# [perfis.\"030000005e0400008e02000000007200\"]\n"
+         "# nome = \"Xbox 360\"\n"
+         "# zona_morta = 0.1     # opcional; senao, a de [opcoes]\n"
+         "# A = \"b\"\n"
+         "# B = \"a\"\n"
+         "# Controles pelo XInput de reserva: [perfis.xinput]\n";
     return t;
 }
 

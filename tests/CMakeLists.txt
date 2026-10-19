@@ -28,6 +28,8 @@ add_executable(bs_unit_tests
   unit/test_n2.cpp
   unit/test_pad_contract.cpp
   unit/test_input_native.cpp
+  unit/test_saves_native.cpp
+  unit/test_bu_machine.cpp
   unit/test_pad_adapter.cpp
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
