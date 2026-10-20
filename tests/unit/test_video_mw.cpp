@@ -116,7 +116,7 @@ BS_TEST(video_mw_core_prep_polls) {
     BS_CHECK(c.start("E001.SFD", 0) == tv::kMwPrep && c.status(0) == tv::kMwPrep && c.status(16 * kMs) == tv::kMwPrep);
     BS_CHECK(c.status(33 * kMs) == tv::kMwPlaying);
     nv::VideoFrame fr;
-    BS_CHECK(c.frame(fr) && ((fr.argb[0] >> 16) & 0xFF) <= 12);  // quadro 0 no inicio da reproducao
+    BS_CHECK(c.frame(fr) && ((fr.argb[0] >> 16) & 0xFF) <= 28);  // quadro 0 no inicio da reproducao (faixa de TV: 0 -> 16)
 }
 
 // ausente no disco (OPENING) e nao convertido: estado de filme ausente (PENDENTE O1b: hipotese 4);
@@ -157,7 +157,7 @@ BS_TEST(video_mw_core_interrupt_and_restart) {
     BS_CHECK(c.state() == tv::kMwStop);
     BS_CHECK(c.start("E001.SFD", 5000 * kMs) == tv::kMwPrep && c.status(5000 * kMs) == tv::kMwPlaying);
     nv::VideoFrame fr;
-    BS_CHECK(c.frame(fr) && ((fr.argb[0] >> 16) & 0xFF) <= 12);  // recomecou do quadro 0
+    BS_CHECK(c.frame(fr) && ((fr.argb[0] >> 16) & 0xFF) <= 28);  // recomecou do quadro 0
 }
 
 // audio: dispositivo perdido -> saida nula e o filme continua ate o fim; audio atrasado (fila nunca

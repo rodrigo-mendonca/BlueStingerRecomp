@@ -28,6 +28,8 @@
 #       por leitura); o traco ligado nao muda os quadros
 #   powershell -File tools/dist/test_controles.ps1 [-Exe <release>] [-ExeMods <release com mods>]
 #       [-ExeRef <exe anterior>] [-Data <data>] [-Paralelo 8] [-Casos K1,K2,...] [-RotasK13 r1,r2]
+# video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
+# desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
@@ -73,6 +75,7 @@ function VBlanksFor($file) {
 $jobs = [System.Collections.ArrayList]::new()
 # K1-K12 leem o contrato do Maple (BS_PAD_CONTRATO) e trocam a funcao do controle: so existem no
 # provedor legado, que deixou de ser o padrao no fim do N3. K13 roda sem a opcao (o padrao).
+# Todos com --video legado (escopo historico com o Sofdec; revisao Codex 2026-10-20: K1-K11 caiam no padrao nativo).
 function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado", $saves = "") {
     $p = Join-Path $Saida $tag
     $e = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $script; BS_FRAME_LOG = "$p.fr.tsv"; BS_FILE_LOG = "$p.fl.tsv" }
@@ -87,7 +90,7 @@ function RunAll() {
         while (@($running | Where-Object { -not $_.HasExited }).Count -ge $Paralelo) { Start-Sleep -Milliseconds 500 }
         $cmd = ""
         foreach ($k in $j.Env.Keys) { $cmd += "set `"$k=$($j.Env[$k])`"&& " }
-        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" })$(if ($j.Saves) { " --saves $($j.Saves)" }) --headless $($j.N) > `"$($j.P).out`" 2>&1"
+        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" })$(if ($j.Saves) { " --saves $($j.Saves)" })$(" --video legado") --headless $($j.N) > `"$($j.P).out`" 2>&1"
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -PassThru
         $null = $proc.Handle
         $running += $proc

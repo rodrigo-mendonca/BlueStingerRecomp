@@ -59,9 +59,9 @@ enum class ControlsProvider { Legacy, Native };
 // legado (fallback temporario) = a biblioteca bu original, sem VMU no Maple ("VMU not found").
 enum class SavesProvider { Legacy, Native };
 
-// Provedor dos filmes (N5, docs/N5-PLANO.md): legado (padrao durante a validacao) = Sofdec original;
-// nativo = as entradas MW da funcao de video do jogo atendidas por transitional/video_adapter (MP4 do
-// Builder em data\video, Media Foundation e XAudio2; mods em mods\video).
+// Provedor dos filmes (N5, docs/N5-PLANO.md): nativo (padrao desde o fim do N5) = as entradas MW da
+// funcao de video do jogo atendidas por transitional/video_adapter (MP4 do Builder em data\video,
+// Media Foundation e XAudio2; mods em mods\video); legado (fallback temporario) = Sofdec original.
 enum class VideoProvider { Legacy, Native };
 
 struct GameOptions {
@@ -74,7 +74,7 @@ struct GameOptions {
     ControlsProvider      controls = ControlsProvider::Native;
     SavesProvider         saves = SavesProvider::Native;
     std::filesystem::path savesRoot;  // saves nativos: <raiz>\card0\BLUESTIN.00n.bsv
-    VideoProvider         video = VideoProvider::Legacy;
+    VideoProvider         video = VideoProvider::Native;
     std::filesystem::path modVideo;  // mods de filmes e legendas (mods\video), opcional
     std::string           subtitles;  // idioma das legendas dos filmes ("" = sem)
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).

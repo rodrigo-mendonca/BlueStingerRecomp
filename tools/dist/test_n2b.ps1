@@ -19,6 +19,8 @@
 # estabelecidas; com o cartao nativo (padrao desde o N4) o boot segue o codigo de cartao do jogo, cujo
 # ritmo depende do tempo, e D7/controles so de tempo deixam de valer (achado registrado para o retorno
 # ao N2: STATUS.md, fechamento do N4).
+# video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
+# desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\BlueStinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
@@ -57,7 +59,7 @@ function Run($tag, $tempo, $n, [hashtable]$envs = @{}, $arquivos = "nativo", $ro
     $log = "${p}_saida.txt"
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --headless $n --dump `"${p}_q.bmp`" > `"$log`" 2>&1`""
+            "/c `"`"$exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --video legado --headless $n --dump `"${p}_q.bmp`" > `"$log`" 2>&1`""
         $null = $proc.Handle
         if (-not $proc.WaitForExit($LimiteSegundos * 1000)) { & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null; $code = "tempo-limite" }
         else { $code = $proc.ExitCode }

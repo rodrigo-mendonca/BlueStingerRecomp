@@ -24,6 +24,8 @@
 # N3-2). Com o controle nativo (padrao desde b1c76ec) o DMA do Maple termina antes e a ordem das
 # interrupcoes (IRQF) muda sob as perturbacoes de tempo; A/B de 2026-10-19: atual com --controles
 # legado --saves legado = 33/33. Reavaliar no retorno ao N2.
+# video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
+# desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-watch\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
@@ -73,7 +75,7 @@ foreach ($tag in $casos.Keys) {
     foreach ($e in $all.Keys) { Set-Item "env:$e" $all[$e] }
     try {
         $procs[$tag] = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --saves legado --controles legado --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
+            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --saves legado --controles legado --video legado --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
         $null = $procs[$tag].Handle
     } finally { foreach ($e in $all.Keys) { Set-Item "env:$e" "" } }
 }

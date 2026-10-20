@@ -29,7 +29,7 @@ function Run($n) {
     $trace = Join-Path $Saida "ordem_$n.tsv"
     $env:BS_INPUT_SCRIPT = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt")
     $env:BS_EVENT_TRACE = $trace
-    try { $out = cmd /c "`"$Exe`" --data `"$Data`" --headless $VBlanks 2>&1" | Out-String }
+    try { $out = cmd /c "`"$Exe`" --data `"$Data`" --video legado --headless $VBlanks 2>&1" | Out-String }
     finally { $env:BS_INPUT_SCRIPT = ""; $env:BS_EVENT_TRACE = "" }
     return @{ Code = $LASTEXITCODE; Trace = $trace; Out = $out }
 }

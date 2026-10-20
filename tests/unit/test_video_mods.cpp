@@ -98,6 +98,49 @@ BS_TEST(video_mods_subtitle_language_fallback) {
     BS_CHECK(bottomWhite("es-MX") > 30);
 }
 
+// cor do sprite (O1b): filme do Builder na faixa de TV e modulado pela cor base; offset aditivo; um mod
+// fica na faixa cheia (so a cor base e o offset do jogo)
+BS_TEST(video_color_base_offset_and_range) {
+    Dir d;
+    movie(d.data / "E001.mp4", 320, 240, 30, 9);  // cinza 0x40 = 64
+    std::ofstream(d.data / "manifest.toml") << "[[filme]]\nid = 3\noriginal = \"E001.SFD\"\narquivo = \"E001.mp4\"\n";
+    auto channel = [&](uint32_t base, uint32_t off) {
+        tv::MwCoreOptions o;
+        o.catalog = {d.data, d.mods};
+        o.color   = {true, true, true};  // o modelo medido no O1b (o padrao e a identidade)
+        tv::MwPlayerCore c(o);
+        c.set_base(base), c.set_offset(off);
+        c.start("E001.SFD", 0);
+        c.status(0), c.status(100 * kMs);
+        nv::VideoFrame f;
+        c.frame(f);
+        return int((f.argb[f.argb.size() / 2] >> 8) & 0xFF);
+    };
+    // 0xC0/255 x (16 + 64 x 219/255) = 53,4
+    BS_CHECK(std::abs(channel(0xC0, 0) - 53) <= 2);
+    BS_CHECK(std::abs(channel(0xFF, 0) - 71) <= 2);           // so a faixa de TV
+    BS_CHECK(std::abs(channel(0xC0, 0x20) - (53 + 32)) <= 2);  // offset somado
+    movie(d.mods / "E001.mp4", 320, 240, 30, 9);              // mod: faixa cheia
+    BS_CHECK(std::abs(channel(0xC0, 0) - 48) <= 2);           // 64 x 0,753
+    BS_CHECK(std::abs(channel(0xFF, 0) - 64) <= 2);           // identidade
+}
+
+// sem modelo (o padrao ate o O1b confirmar): o quadro sai como o arquivo, qualquer que seja a cor do jogo
+BS_TEST(video_color_default_is_identity) {
+    Dir d;
+    movie(d.data / "E001.mp4", 320, 240, 30, 9);
+    std::ofstream(d.data / "manifest.toml") << "[[filme]]\nid = 3\noriginal = \"E001.SFD\"\narquivo = \"E001.mp4\"\n";
+    tv::MwCoreOptions o;
+    o.catalog = {d.data, d.mods};
+    tv::MwPlayerCore c(o);
+    c.set_base(0xC0), c.set_offset(0x20);
+    c.start("E001.SFD", 0);
+    c.status(0), c.status(100 * kMs);
+    nv::VideoFrame f;
+    c.frame(f);
+    BS_CHECK(std::abs(int((f.argb[f.argb.size() / 2] >> 8) & 0xFF) - 64) <= 2);
+}
+
 // mod incompativel (o Media Foundation nao decodifica): estado de erro com diagnostico; o jogo segue
 BS_TEST(video_mods_incompatible_file) {
     Dir d;

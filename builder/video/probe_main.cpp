@@ -4,7 +4,11 @@
 //   bs-video-probe <pasta BSDATA ou arquivo .SFD> [...]
 //   bs-video-probe --converter <pasta de saida> <pasta BSDATA ou .SFD> [...]: converte em MP4 e mede a
 //   fidelidade (PSNR/SSIM por quadro, atraso e SNR do AAC)
+//   bs-video-probe --tocar <data\video> [mods\video]: toca os 17 IDs pelo catalogo, sem reconverter
+#include "util/hash.h"
 #include "video/movie_build.h"
+#include "video/movie_catalog.h"
+#include "video/movie_playback.h"
 #include "video/sfd_convert.h"
 #include "video/sfd_media.h"
 
@@ -105,7 +109,85 @@ static int probe(const fs::path& p) {
     return ok ? 0 : 1;
 }
 
+std::string fileSha(const fs::path& p) {
+    std::ifstream     f(p, std::ios::binary);
+    bs::util::Sha256  sha;
+    std::vector<char> buf(1 << 20);
+    while (f) {
+        f.read(buf.data(), std::streamsize(buf.size()));
+        sha.update(buf.data(), size_t(f.gcount()));
+    }
+    return sha.hexdigest();
+}
+
+// --tocar <data\video> [mods\video]: os 17 IDs pelo catalogo (com mods), sem reconverter. Confere o
+// SHA-256 do MP4 do Builder contra o manifesto e toca cada filme pelo MoviePlayback com o relogio logico
+// a 60 Hz e os mesmos parametros do jogo (priming do AAC e fins da fonte). Uma linha por ID (TSV):
+// id original origem sha quadros pulados fim_video_ms fim_audio_ms dif_ms amostras fim_ms eof_mp4_ms resultado
+// fim_video/fim_audio: os fins que governam o fim no jogo (filme do Builder: os da FONTE, no manifesto;
+// mod: os do arquivo). eof_mp4: o fim do audio decodificado do MP4 (diagnostico do preenchimento do AAC).
+// O instante do fim (fim_ms) tem que cair no VBlank do mais tardio dos dois (regra LaterOfBoth).
+int playAll(const fs::path& dataDir, const fs::path& modsDir) {
+    namespace nv          = bs::native::video;
+    const auto       cat  = nv::MovieCatalog::load({dataDir, modsDir});
+    int              bad  = 0;
+    for (const auto& p : cat.problems()) std::printf("# problema no manifesto: %s\n", p.c_str());
+    std::printf("id\toriginal\torigem\tsha\tquadros\tpulados\tfim_video_ms\tfim_audio_ms\tdif_ms\tamostras\tfim_ms\teof_mp4_ms\tresultado\n");
+    for (uint32_t id = 0; id < 17; ++id) {
+        const nv::MovieEntry* e = cat.find(id);
+        const std::string     orig = e ? e->original : bv::kMovieNames[id];
+        if (!e) {  // nem o manifesto do Builder nem um mod falam deste ID: manifesto faltando ou incompleto
+            std::printf("%u\t%s\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\tFORA DO CATALOGO\n", id, orig.c_str());
+            ++bad;
+            continue;
+        }
+        if (e->absent) {  // declarado ausente (nao existe no disco, ou nao convertido)
+            std::printf("%u\t%s\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\tausente\n", id, orig.c_str());
+            continue;
+        }
+        std::string sha = "-";
+        if (!e->mod && !e->sha256.empty()) sha = fileSha(e->file) == e->sha256 ? "ok" : "DIFERENTE";
+        nv::PlaybackOptions po;
+        if (!e->mod) po.audioSkipFrames = e->audioDelaySamples, po.sourceVideoEnd100ns = e->videoEnd100ns, po.sourceAudioEnd100ns = e->audioEnd100ns;
+        nv::MoviePlayback pb;
+        std::string       err;
+        if (!pb.open(e->file, po, &err)) {
+            std::printf("%u\t%s\t%s\t%s\t-\t-\t-\t-\t-\t-\t-\t-\tERRO: %s\n", id, orig.c_str(), e->mod ? "mod" : "builder", sha.c_str(), err.c_str());
+            ++bad;
+            continue;
+        }
+        uint64_t samples = 0;
+        int64_t  pos = 0, end = -1;
+        const int64_t limit = std::max<int64_t>(pb.format().duration100ns, int64_t(e->frames / std::max(1.0, e->fps) * 1e7)) + 100'000'000;
+        for (; pos <= limit && err.empty(); pos += 166'667) {  // um VBlank de 60 Hz por consulta
+            pb.advance(pos, &err);
+            samples += pb.take_audio(pos, &err).size();
+            if (pb.finished(pos)) {
+                end = pos;
+                break;
+            }
+        }
+        const bool    src = !e->mod && e->videoEnd100ns > 0 && e->audioEnd100ns > 0;
+        const int64_t ve  = src ? e->videoEnd100ns : pb.video_end100ns();
+        const int64_t ae  = src ? e->audioEnd100ns : pb.audio_end100ns();
+        // o fim tem que cair na primeira consulta (60 Hz) depois do mais tardio dos dois fins
+        const int64_t later  = std::max(ve, ae);
+        const bool    endOk  = end >= later && end < later + 166'667;
+        const bool    ok = err.empty() && end >= 0 && endOk && sha != "DIFERENTE" &&
+                        (e->mod || e->frames == 0 || pb.frames_shown() + pb.frames_skipped() == e->frames);
+        bad += !ok;
+        std::printf("%u\t%s\t%s\t%s\t%llu\t%llu\t%lld\t%lld\t%lld\t%llu\t%lld\t%lld\t%s\n", id, orig.c_str(), e->mod ? "mod" : "builder",
+                    sha.c_str(), static_cast<unsigned long long>(pb.frames_shown()), static_cast<unsigned long long>(pb.frames_skipped()),
+                    static_cast<long long>(ve / 10000), static_cast<long long>(ae / 10000), static_cast<long long>((ve - ae) / 10000),
+                    static_cast<unsigned long long>(samples / std::max(1u, pb.format().channels)), static_cast<long long>(end / 10000),
+                    static_cast<long long>(pb.audio_end100ns() / 10000),
+                    ok ? "ok" : (err.empty() ? (endOk ? "FALHA" : "FALHA (instante do fim)") : ("ERRO: " + err).c_str()));
+    }
+    return bad ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
+    if (argc >= 3 && std::string(argv[1]) == "--tocar") return playAll(argv[2], argc >= 4 ? argv[3] : "");
     if (argc == 4 && std::string(argv[1]) == "--builder") {  // o passo do Builder: <BSDATA> <data/video>
         bv::MovieBuildOptions o;
         o.log      = [](const std::string& m) { std::printf("%s\n", m.c_str()); };

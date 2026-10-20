@@ -13,6 +13,8 @@
 #   Negativos: cada mutacao do provedor nativo tem de terminar normalmente (rc 0) e divergir da
 #   referencia no artefato esperado (ordem ou leituras).
 #   powershell -File tools/dist/test_tempo.ps1 [-Exe <bluestinger.exe>] [-Data <data>]
+# video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
+# desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\BlueStinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
@@ -56,7 +58,7 @@ function Run($tempo, $arquivos, $n, $mutacao = "") {
         # tempo-limite: um travamento (por exemplo uma mutacao que para o tempo) falha o caso em
         # vez de prender a suite
         $p = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$Exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --headless $n --dump `"$($r.Bmp)`" > `"$log`" 2>&1`""
+            "/c `"`"$Exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --video legado --headless $n --dump `"$($r.Bmp)`" > `"$log`" 2>&1`""
         $null = $p.Handle  # sem o handle guardado, ExitCode volta vazio depois de WaitForExit(ms)
         if (-not $p.WaitForExit($LimiteSegundos * 1000)) {
             & taskkill /PID $p.Id /T /F 2>&1 | Out-Null

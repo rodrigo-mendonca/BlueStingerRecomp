@@ -26,6 +26,8 @@
 #       alternadas, sequenciais)
 #   N13 mods (B10): o build com mods no experimental = build sem mods (leituras e quadros)
 #   powershell -File tools/dist/test_n2b2.ps1 [-Exe <exe>] [-ExeMods <exe>] [-ExeAntigo <exe>] [-Data <data>]
+# video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
+# desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
@@ -69,6 +71,7 @@ function Launch($c) {
     if ($c.ev) { $args2 += " --dump `"${p}_q.bmp`"" }
     if ($c.controles) { $args2 += " --controles $($c.controles)" }
     if ($c.saves) { $args2 += " --saves $($c.saves)" }
+    if ($c.saves -eq "legado") { $args2 += " --video legado" }  # escopo historico: Sofdec original (N5)
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -WindowStyle Hidden -ArgumentList "/c `"`"$($c.exe)`" $args2 > `"${p}_saida.txt`" 2>&1`""
         $null = $proc.Handle
@@ -314,7 +317,7 @@ $work = @{ nativo = @(); experimental = @() }
 foreach ($i in 1..3) {
     foreach ($m in "nativo", "experimental") {
         $env:BS_RELOGIO_FIXO = "1700000000"; $env:BS_INPUT_SCRIPT = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt")
-        $o = cmd /c "`"$Exe`" --data `"$Data`" --tempo $m --headless 3000 2>&1" | Out-String
+        $o = cmd /c "`"$Exe`" --data `"$Data`" --tempo $m --video legado --headless 3000 2>&1" | Out-String  # escopo historico (Sofdec)
         $env:BS_RELOGIO_FIXO = ""; $env:BS_INPUT_SCRIPT = ""
         $w = [regex]::Match($o, "media ([\d.]+) ms")
         if ($w.Success) { $work[$m] += [double]::Parse($w.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture) }

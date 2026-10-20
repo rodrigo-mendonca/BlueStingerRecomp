@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 #include <stdexcept>
 
 namespace bs {
@@ -83,6 +84,55 @@ const uint8_t* g_padRam   = nullptr;
 // Leituras do controle da porta A: no legado, os GET_CONDITION respondidos pelo Maple; no
 // --controles nativo (N3-2), as leituras do modelo do pd nativo (mesmo indice).
 uint64_t controllerReads() { return transitional::pad::installed() ? transitional::pad::reads() : maple_cond_seq(0); }
+
+// Diagnostico BS_RAM_WATCH=<arquivo>:<end>[,<end>...] (N5, START durante os filmes): a cada VBlank, as
+// palavras de 32 bits vigiadas que mudaram (vblank, passo, leituras do controle, endereco, valor). Durante
+// um filme o passo de jogo nao anda (o laco do filme roda dentro de um passo), entao o BS_PAD_TRACE e o
+// BS_STATE_PASSO nao veem o que acontece ali. Desligado por padrao.
+struct RamWatch {
+    FILE*                 f = nullptr;
+    std::vector<uint32_t> addr, last;
+    bool                  first = true;
+} g_ramWatch;
+
+void ramWatchInit() {
+    const char* v = std::getenv("BS_RAM_WATCH");
+    if (!v || !*v) return;
+    const std::string s(v);
+    const size_t      colon = s.rfind(':');
+    if (colon == std::string::npos || colon < 2) throw std::runtime_error("BS_RAM_WATCH=<arquivo>:<end>[,<end>]");
+    for (size_t i = colon + 1; i < s.size();) {
+        const size_t j = s.find(',', i);
+        g_ramWatch.addr.push_back(uint32_t(std::strtoul(s.substr(i, j - i).c_str(), nullptr, 16)));
+        i = j == std::string::npos ? s.size() : j + 1;
+    }
+    g_ramWatch.f = std::fopen(s.substr(0, colon).c_str(), "w");
+    if (!g_ramWatch.f) throw std::runtime_error("BS_RAM_WATCH: nao abre " + s.substr(0, colon));
+    std::fprintf(g_ramWatch.f, "vblank\tpasso\tleituras\tendereco\tvalor\n");
+    g_ramWatch.last.assign(g_ramWatch.addr.size(), 0);
+}
+
+// fecha o arquivo e limpa o estado global em todo retorno da sessao (inclusive excecao na configuracao)
+struct RamWatchGuard {
+    ~RamWatchGuard() {
+        if (g_ramWatch.f) std::fclose(g_ramWatch.f);
+        g_ramWatch = {};
+    }
+};
+
+void ramWatchVblank(const uint8_t* ram, uint64_t vblank) {
+    if (!g_ramWatch.f || !ram) return;
+    for (size_t i = 0; i < g_ramWatch.addr.size(); ++i) {
+        uint32_t v;
+        std::memcpy(&v, ram + (g_ramWatch.addr[i] & 0x00FFFFFCu), 4);
+        if (g_ramWatch.first || v != g_ramWatch.last[i])
+            std::fprintf(g_ramWatch.f, "%llu\t%llu\t%llu\t%08X\t%08X\n", static_cast<unsigned long long>(vblank),
+                         static_cast<unsigned long long>(transitional::time::game_steps()),
+                         static_cast<unsigned long long>(controllerReads()), g_ramWatch.addr[i], v);
+        g_ramWatch.last[i] = v;
+    }
+    g_ramWatch.first = false;
+}
 
 void padTraceWrite(uint64_t step) {
     namespace pad = transitional::pad;
@@ -262,6 +312,7 @@ void GameHost::vblank() {
         std::swap(frame_, scratch_);
         ++frameSeq_;
     }
+    ramWatchVblank(ram_, n);
     if (opt_.vblankHook &&
         !opt_.vblankHook({n, transitional::time::game_steps(), controllerReads(), frame_, ram_}))
         stop_.store(true);
@@ -303,8 +354,10 @@ void GameHost::threadMain() {
     }
     Sh4Context c{};
     c.ram = watched ? watched : ram.data();
-    ram_  = c.ram;  // so diagnostico (BS_RAM_DUMP)
+    ram_  = c.ram;  // so diagnostico (BS_RAM_DUMP, BS_RAM_WATCH)
+    RamWatchGuard ramWatchGuard;
     try {
+        ramWatchInit();  // configuracao invalida vira error() da sessao, nao std::terminate na thread
         if (opt_.registerFunctions) opt_.registerFunctions();
         bs::mods::reset();     // sessao nova: nada herdado de uma anterior
         bs::mods::init_all();  // mods compilados no executavel (projeto editavel; BS_MOD)
@@ -349,6 +402,9 @@ void GameHost::threadMain() {
             transitional::video::MwCoreOptions vo;
             vo.catalog      = {opt_.data / L"video", opt_.modVideo};
             vo.subtitleLang = opt_.subtitles;
+            // cor do sprite confirmada pelo O1b (NEWGAME e E001 no Flycast, tools/dev/n5_cor.py): RGB do Sofdec
+            // na faixa de TV, modulado pela cor base; offset aditivo (offset color do PVR)
+            vo.color = {true, true, true};
             // com o passo de jogo: os roteiros por passo (START durante o filme) saem deste log
             vo.log = [](const std::string& m) {
                 std::fprintf(stderr, "%s (passo %llu)\n", m.c_str(), static_cast<unsigned long long>(transitional::time::game_steps()));

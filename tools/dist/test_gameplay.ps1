@@ -31,7 +31,7 @@ function Check($name, [bool]$ok, $detail = "") {
 function Play($scriptFile, $vblanks, $dir) {
     $env:BS_INPUT_SCRIPT = $scriptFile
     # via cmd: stderr nativo com ErrorActionPreference=Stop abortaria o script no PowerShell 5.1
-    try { $out = cmd /c "`"$exe`" --headless $vblanks --dump-every 50 --capture `"$dir`" 2>&1" | Out-String }
+    try { $out = cmd /c "`"$exe`" --video legado --headless $vblanks --dump-every 50 --capture `"$dir`" 2>&1" | Out-String }
     finally { $env:BS_INPUT_SCRIPT = "" }
     return @{ Code = $LASTEXITCODE; Out = $out }
 }

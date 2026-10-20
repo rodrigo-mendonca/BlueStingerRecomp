@@ -6,7 +6,7 @@ target_include_directories(bs_video_convert PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} P
 target_link_libraries(bs_video_convert PUBLIC bs_native_video PRIVATE bs_disc tomlplusplus::tomlplusplus)
 target_compile_features(bs_video_convert PUBLIC cxx_std_20)
 add_executable(bs-video-probe video/probe_main.cpp)  # desenvolvimento: confere os SFD do disco
-target_link_libraries(bs-video-probe PRIVATE bs_video_convert)
+target_link_libraries(bs-video-probe PRIVATE bs_video_convert bs_disc)
 target_include_directories(bs-video-probe PRIVATE ${CMAKE_SOURCE_DIR}/third_party/pl_mpeg)
 
 add_library(bs_builder_core STATIC builder_core.cpp toolchain.cpp child_process.cpp project_export.cpp)

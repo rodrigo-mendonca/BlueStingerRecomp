@@ -11,7 +11,7 @@
 #   2. rota passo_newgame_area1 (7300 VBlanks, headless) com --video legado e com --video nativo
 #   3. rota com START durante o E001 (ctl=01: o START pode encerrar o filme), no passo do inicio do
 #      filme da execucao 2 + o equivalente a -StartAposMs
-# Verificacoes (V1-V8, abaixo). O NEWGAME (ctl=00) nao e convertido aqui: no nativo fica ausente e o
+# Verificacoes (V1-V9, abaixo). O NEWGAME (ctl=00) nao e convertido aqui: no nativo fica ausente e o
 # estado de ausente e o PENDENTE do O1b (hipotese 4, como o Flycast observou).
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
@@ -123,12 +123,18 @@ if ($win.Count -gt 0) {
     ($cab + ($corpo | Sort-Object { [int64]($_.Split(" ")[0]) })) | Set-Content -LiteralPath $rotaStart
     $st = Run "start" "nativo" $rotaStart
     $par = [regex]::Match($st.Out, "\[video\] parado pelo jogo em (\d+) ms logicos")
-    # Se o START deve encerrar o E001 aqui e PENDENTE do O1b (Flycast): o laco do filme le uma palavra de
-    # estado do jogo (@(r14+0x25AC), bits 4/8), nao o controle; o legado nao serve de referencia (encerra o
-    # filme sozinho em ~152 VBlanks). Medida, nao criterio: o jogo segue sem erro com o START no meio do
-    # filme, e o resultado (parado ou fim natural) e comparado ao Flycast no O1b.
-    Check "V8 START durante o E001: o jogo segue sem erro (efeito no filme: PENDENTE O1b)" (& $ended $st) $(if ($par.Success) { "parado pelo jogo em $($par.Groups[1].Value) ms" } else { "o filme foi ate o fim natural (START na leitura $alvo)" })
+    # O1b-B (Flycast, 2026-10-20): no original o START durante o E001 NAO encerra o filme (1937 iteracoes com
+    # START, 1936 sem); o legado nao serve de referencia (o Sofdec emulado encerra sozinho em ~152 VBlanks).
+    # Criterio: o jogo segue sem erro e o filme vai ate o fim natural (prova detalhada: tools/dev/n5_start.ps1).
+    Check "V8 START durante o E001: fim natural, como no original (O1b-B)" ((& $ended $st) -and -not $par.Success) $(if ($par.Success) { "parado pelo jogo em $($par.Groups[1].Value) ms (o original nao para)" } else { "o filme foi ate o fim natural (START na leitura $alvo)" })
 }
+# V9: o PADRAO, sem --video, e o provedor nativo (revisao Codex 2026-10-20: as rotas acima passam --video sempre)
+$p9 = Join-Path $Saida "padrao"
+$env:BS_RELOGIO_FIXO = "1700000000"
+try { cmd /c "`"$Exe`" --data `"$data`" --headless 120 > `"${p9}_saida.txt`" 2>&1"; $rc9 = $LASTEXITCODE } finally { Remove-Item env:BS_RELOGIO_FIXO -ErrorAction SilentlyContinue }
+$o9 = Get-Content -LiteralPath "${p9}_saida.txt" -Raw
+$l9 = ($o9 -split "`r?`n" | Where-Object { $_ -match "\[video\] nativo:" } | Select-Object -First 1)
+Check "V9 sem --video o provedor e o nativo" ($rc9 -eq 0 -and [bool]$l9) "$l9"
 $f = @($results | Where-Object { -not $_.Ok }).Count
 Write-Host "$($results.Count) casos, $f falhas; saidas em $Saida"
 exit $(if ($f) { 1 } else { 0 })

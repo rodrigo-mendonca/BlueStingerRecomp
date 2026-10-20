@@ -33,7 +33,7 @@ function Run($prov) {
     $bmp = Join-Path $Saida "quadro_$prov.bmp"
     $env:BS_INPUT_SCRIPT = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt")
     $env:BS_FILE_LOG = $log
-    try { $out = cmd /c "`"$Exe`" --data `"$Data`" --arquivos $prov --headless $VBlanks --dump `"$bmp`" 2>&1" | Out-String }
+    try { $out = cmd /c "`"$Exe`" --data `"$Data`" --arquivos $prov --video legado --headless $VBlanks --dump `"$bmp`" 2>&1" | Out-String }
     finally { $env:BS_INPUT_SCRIPT = ""; $env:BS_FILE_LOG = "" }
     return @{ Code = $LASTEXITCODE; Log = $log; Bmp = $bmp; Out = $out }
 }

@@ -47,10 +47,13 @@ Ferramentas:
   suíte refaz só ela; uma regressão por vez, `ativo.txt` com a etapa em andamento e batimento a cada 30 s, limite de tempo
   por etapa com rc=124, durações no fim; `python tools/dev/tempos.py` mostra as etapas mais caras). `-Listar`
   mostra o estado, `-Novo` descarta, `-Desde <etapa>` refaz. Teste sintético do executor: `tools/dev/test_regressao.ps1`.
-  Política (mantenedor, 2026-10-18): durante uma subetapa, unitários e testes dos componentes
-  alterados; ao fechar uma subetapa, a integração relacionada (inclusive gameplay assistido); a
-  regressão completa só ao fechar a etapa principal e antes de mudar um padrão ou remover um
-  mecanismo legado. Risco concreto para outros subsistemas: explicar e ampliar os testes.
+  Política (mantenedor, 2026-10-20, substitui a de 2026-10-18): **nível 1** (desenvolvimento) build
+  incremental, unitários e testes ligados à mudança; **nível 2** (fechamento de N5, N6, N7) testes
+  completos do subsistema, integração dirigida e comparação com o legado ou o Flycast, sem a regressão
+  integral; **nível 3** (marcos críticos) regressão integral obrigatória antes da remoção do legado no N8,
+  depois dela (com referências independentes) e na revisão final do N9. Mudança transversal com testes
+  dirigidos insuficientes pode exigir uma regressão ampla antes; resultados aprovados e válidos pela chave
+  não se repetem. Nunca enfraquecer validação para aprovar.
 - Controles (N3-1): `controles.toml` na pasta do usuário (criado na 1ª execução); diagnóstico
   `BS_CONTROLE_VIRTUAL=<roteiro>` (controle virtual do SDL3, janela) com `BS_PAD_LEITURAS`;
   `test_controles.ps1 [-Casos K13] [-RotasK13 r1,r2]`. N3: `--controles nativo|legado` (padrão
@@ -64,7 +67,7 @@ Ferramentas:
   `--saves-importar/--saves-exportar <vms>` [`--saves-nome`]. Suíte `test_saves.ps1 [-VmuFlycast <vmu> -PosFlycast x,y,z]`.
   Diagnósticos (build com mods): `BS_SAVES_H1=1` (SAVE pelo título) e `BS_SAVES_H2=<passo>` (simula só o
   save point no gameplay). Oráculo: `flycast_oracle.py bu-trace` (`--forcar-save-point`, `--ler-fim`), `n4_vmu.py`.
-- Filmes (N5): `--video nativo|legado` (padrão legado durante a validação; nativo = MP4 do Builder em
+- Filmes (N5): `--video nativo|legado` (padrão nativo desde o fim do N5; legado = fallback temporário; nativo = MP4 do Builder em
   `data\video` + `mods\video`, Media Foundation/XAudio2) e `--legendas <idioma>`. O Builder converte os SFD
   (`--sem-filmes` desliga e apaga). `bs-video-probe [--builder <BSDATA> <saida> | --converter <dir> <SFD>]`;
   primeiro filme no jogo: `tools/dev/n5_e001.ps1`; matriz dos 17 IDs: `tools/dev/n5_matriz.py`; oráculo

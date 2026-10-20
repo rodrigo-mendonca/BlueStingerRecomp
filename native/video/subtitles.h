@@ -25,15 +25,25 @@ bool parse_subtitles(std::string_view utf8, std::vector<SubtitleCue>& cues, std:
 // Texto ativo no instante (cues sobrepostos: juntados em ordem); vazio se nenhum.
 std::wstring subtitle_at(const std::vector<SubtitleCue>& cues, int64_t t100ns);
 
-class SubtitleRenderer {
+// Rasterizacao do texto da legenda sobre o quadro ARGB (o parser acima e portavel).
+class ISubtitleRasterizer {
+public:
+    virtual ~ISubtitleRasterizer() = default;
+    virtual bool ok() const = 0;  // backend disponivel
+    // Desenha `text` centralizado embaixo, branco com contorno escuro, sobre o quadro.
+    virtual void draw(std::span<uint32_t> argb, uint32_t width, uint32_t height, const std::wstring& text) = 0;
+};
+// O rasterizador da plataforma (Windows: SubtitleRenderer, DirectWrite/Direct2D).
+std::unique_ptr<ISubtitleRasterizer> make_subtitle_rasterizer();
+
+class SubtitleRenderer final : public ISubtitleRasterizer {
 public:
     SubtitleRenderer();
     ~SubtitleRenderer();
     SubtitleRenderer(const SubtitleRenderer&)            = delete;
     SubtitleRenderer& operator=(const SubtitleRenderer&) = delete;
-    bool ok() const;  // DirectWrite/Direct2D disponiveis
-    // Desenha `text` centralizado embaixo, branco com contorno escuro, sobre o quadro.
-    void draw(std::span<uint32_t> argb, uint32_t width, uint32_t height, const std::wstring& text);
+    bool ok() const override;  // DirectWrite/Direct2D disponiveis
+    void draw(std::span<uint32_t> argb, uint32_t width, uint32_t height, const std::wstring& text) override;
 
 private:
     struct Impl;

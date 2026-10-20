@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". N5 (vídeos) integrado, com o primeiro filme nativo no jogo (E001; `--video nativo` opcional): ver "N5: integração e primeiro filme nativo no jogo". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". |
 
 ## Versão suportada
 
@@ -2139,6 +2139,22 @@ nativos (`docs/PLANO-PORT-NATIVO.md`).
 **O N4 está concluído, com a pendência formal do save point real declarada.** Não é aprovação
 integral.
 
+
+### N5: fechamento por testes dirigidos (2026-10-20)
+
+Política de testes de 2026-10-20 (`CLAUDE.md`, nível 2): sem a regressão integral no fechamento das etapas.
+Relatório: `docs/N5-RELATORIO.md`.
+
+| Data | Item | Como foi verificado |
+|---|---|---|
+| 2026-10-20 | START durante o E001 no original (O1b-B, Flycast): o filme **não** é encurtado (fim na passada 8190, estado 3, `r0 = 0`, 1 937 iterações; 1 936 sem START). Nenhum fade (cor base e offset constantes) | `tools/dev/n5_oraculo.py`, rota do oráculo com UP desde 2630 e START em 6672–6690 (`analysis/n5/o1b`) |
+| 2026-10-20 | START no nativo igual ao original: START dentro da janela (leitura 31 865 de 31 446–32 273), sem condição de saída, sem parada, mesmo fim (VBlank 32 293), retorno ao gameplay; linha do tempo até o START idêntica (31 884 registros de quadro). O legado não é referência (o Sofdec emulado encerra os filmes sozinho) | `tools/dev/n5_start.ps1` com veredito (`exit 1` em divergência): **rc = 0**, 1 438 s |
+| 2026-10-20 | E001 no jogo com a cor do O1b ligada e o padrão novo | `tools/dev/n5_e001.ps1` **10/10**: V8 fim natural com START, V9 sem `--video` = `[video] nativo` |
+| 2026-10-20 | Promoção: `--video nativo` padrão (`GameOptions` e argumentos), `--video legado` fallback até o N8; suítes históricas fixadas em `--video legado` (inclusive `test_controles` K1–K11 e o N12 do `test_n2b2`) | V9; revisão do Codex |
+| 2026-10-20 | Builds e unitários depois das correções | ctest **15/15** (Debug) |
+| 2026-10-20 | Regressão integral **ADIADA POR DECISÃO DO PROJETO** (mantenedor), não aprovada: 16 etapas aprovadas no mesmo código (builds, unitários, ctest com e sem disco, `make_builder`, `make_preview`, `test_preview`, `test_gameplay`, `test_builder`, `test_projeto`, `test_arquivos`, `test_ordem`, `test_tempo`); `test_n2b` **cancelada** depois de 13 min (só a árvore de processos dela encerrada); não executadas: `test_cri`, `test_efeito`, `test_n2b2`, `test_assistido`, `test_controles`, `test_pd_nativo`, `test_saves`, `n5_e001` | `regressao.log` e `cancelada.txt` em `%LOCALAPPDATA%\BlueStingerRecompegressao` |
+| 2026-10-20 | Defeito do executor achado: a chave depende da página de código do console que o lança (o `git diff` decodificado pela codificação do console); lançado do mesmo jeito, a chave das 16 etapas confere com a árvore | `-Listar` pelo bash (48865586EB109711) e por um PowerShell com `chcp 65001` (outra chave). Correção pendente (mudaria as chaves): fixar a codificação no início do executor |
+| 2026-10-20 | Revisão do Codex do fechamento (`reviews/codex-20261020-115542.md`): 5 achados aceitos e corrigidos: `BS_RAM_WATCH` fora do `try` (unitário novo), `n5_start` sem código de saída, conversão passo → leitura (provada pela linha do tempo idêntica), suítes caindo no padrão nativo, falta de prova do padrão (V9) | testes acima |
 ### 2026-10-20: lote de build e testes parado 6,5 h (infraestrutura de testes)
 
 | Data | Item | Como foi verificado |

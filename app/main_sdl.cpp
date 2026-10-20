@@ -68,7 +68,7 @@ struct Args {
     bs::ControlsProvider controls = bs::ControlsProvider::Native;  // --controles nativo|legado (N3; legado = fallback)
     bs::SavesProvider saves = bs::SavesProvider::Native;  // --saves nativo|legado (N4; legado = fallback)
     fs::path savesDir;          // --saves-pasta <dir>
-    bs::VideoProvider video = bs::VideoProvider::Legacy;  // --video nativo|legado (N5; nativo em validacao)
+    bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
     std::string       subtitles;  // --legendas <idioma>
     bool     savesPortable = false;  // --saves-portatil: saves\ ao lado do executavel
     fs::path savesImport, savesExport;       // --saves-importar/--saves-exportar <arquivo.vms>
@@ -128,7 +128,7 @@ bool parseArgs(Args& a) {
         else if (s == L"--saves-pasta" && (v = next())) a.savesDir = *v;
         else if (s == L"--video" && (v = next())) {
             if (*v == L"legado") a.video = bs::VideoProvider::Legacy;
-            else if (*v == L"nativo") a.video = bs::VideoProvider::Native;  // N5, em validacao
+            else if (*v == L"nativo") a.video = bs::VideoProvider::Native;
             else return false;
         }
         else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v));
@@ -760,8 +760,8 @@ const char* kUsage =
     "       --saves-pasta <dir> = outra pasta)\n"
     "     --saves-importar <arquivo.vms> | --saves-exportar <arquivo.vms> [--saves-nome BLUESTIN.00n]:\n"
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
-    "     --video legado|nativo: filmes (padrao: legado = Sofdec original; nativo = em validacao, MP4 do\n"
-    "       Builder em data\\video, mods em mods\\video); --legendas <idioma> (pt, en, pt-br...)\n"
+    "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
+    "       legado = Sofdec original, fallback temporario); --legendas <idioma> (pt, en, pt-br...)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";

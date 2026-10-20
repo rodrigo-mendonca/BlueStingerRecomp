@@ -137,6 +137,8 @@ struct SubtitleRenderer::Impl {
     }
 };
 
+std::unique_ptr<ISubtitleRasterizer> make_subtitle_rasterizer() { return std::make_unique<SubtitleRenderer>(); }
+
 SubtitleRenderer::SubtitleRenderer() : impl_(std::make_unique<Impl>()) {
     // falhou alguma: ok() == false (exige as tres) e o destrutor do Impl libera as que foram criadas
     DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&impl_->dw));

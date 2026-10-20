@@ -45,6 +45,14 @@ Documentos\DC-Recomp\Blue Stinger\saves\card0 (BLUESTIN.000 a .005, com copia an
 Arquivo danificado nunca e apagado: fica como .corrompido. Se algo der errado: --saves legado (sem
 cartao, modo antigo, temporario) e informe o caso.
 
+Filmes
+------
+Os filmes do jogo tocam como MP4 convertidos pelo Builder a partir do seu disco (data\video),
+com Media Foundation. Mods de video em mods\video; legendas: --legendas <idioma>. Sem a pasta
+data\video (pacote montado sem filmes), o jogo pula os filmes.
+Se algum filme se comportar diferente do esperado: BlueStinger.exe --video legado (decodificador
+original, temporario) e informe o caso.
+
 Dados e problemas
 -----------------
 - BlueStinger.exe --verify-data confere o SHA-256 de todos os arquivos de data\.

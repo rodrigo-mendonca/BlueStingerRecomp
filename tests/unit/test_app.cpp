@@ -14,6 +14,7 @@
 #include "pvr/vram.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -152,6 +153,7 @@ GameOptions fakeOptions(Sh4Func entry, bool withThread = false) {
     GameOptions o;
     o.controls = ControlsProvider::Legacy;  // jogo falso: sem o SDK pd para o provedor nativo
     o.saves    = SavesProvider::Legacy;     // nem a bu
+    o.video    = VideoProvider::Legacy;     // nem o MW (Sofdec) para os filmes nativos
     o.registerFunctions = [entry, withThread] {
         g_table[0] = {0x0C010000, entry};
         g_table[1] = {0x0C020000, fakeThread};
@@ -189,6 +191,23 @@ BS_TEST(game_host_publishes_frames_and_stops_at_limit) {
     BS_CHECK(f.width == 640 && f.height == 480);
     BS_CHECK(f.argb[0] == 0xFFF8F8F8);
     BS_CHECK(!h.latestFrame(f, seq));  // nada novo
+}
+
+// Diagnostico BS_RAM_WATCH mal configurado vira erro da sessao (nao std::terminate na thread do host) e o
+// estado global e limpo: a sessao seguinte comeca normal (revisao Codex 2026-10-20)
+BS_TEST(game_host_ram_watch_bad_config_is_session_error) {
+    _putenv_s("BS_RAM_WATCH", "sem-dois-pontos");
+    GameHost    h;
+    GameOptions o = fakeOptions(fakeEntry);
+    o.vblankLimit = 2;
+    h.start(o);
+    h.join();
+    _putenv_s("BS_RAM_WATCH", "");
+    BS_CHECK(!h.running() && h.error().find("BS_RAM_WATCH") != std::string::npos);
+    GameHost h2;
+    h2.start(o);
+    h2.join();
+    BS_CHECK(h2.error().empty() && h2.vblanks() == 2);
 }
 
 // Encerramento pedido de fora (janela fechada), com uma thread do guest numa fibra: a

@@ -13,7 +13,7 @@ add_library(bs_native STATIC platform/data_files.cpp platform/clock.cpp platform
 target_link_libraries(bs_native PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus xinput)
 
 # N5: filmes nativos (catalogo por ID com mods, leitura e gravacao MP4 por Media Foundation)
-add_library(bs_native_video STATIC video/movie_catalog.cpp video/mf_movie.cpp video/movie_playback.cpp video/subtitles.cpp)
+add_library(bs_native_video STATIC video/movie_catalog.cpp video/mf_movie.cpp video/movie_playback.cpp video/subtitles.cpp video/movie_color.cpp)
 target_link_libraries(bs_native_video PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus mfplat mfreadwrite mfuuid ole32 d2d1 dwrite windowscodecs)
 # N5 (D2): saida de audio (XAudio2 e nula) atras de IAudioOutput; o N6 reaproveita
 add_library(bs_native_audio STATIC audio/audio_output.cpp)

@@ -25,6 +25,7 @@ int32_t MwPlayerCore::start(std::string_view fname, int64_t now) {
     ++stats_.starts;
     const std::string name = baseName(fname);
     entry_                 = catalog_.find(name);
+    colorDirty_            = true;  // a faixa de TV depende da origem (Builder ou mod)
     start100ns_ = now, lastPos_ = 0;
     if (!entry_ || entry_->absent || entry_->file.empty()) {
         if (o_.log) o_.log("[video] filme sem recurso: " + name + (entry_ && entry_->absent ? " (ausente no disco original)" : " (nao convertido pelo Builder)"));
@@ -68,7 +69,7 @@ int32_t MwPlayerCore::start(std::string_view fname, int64_t now) {
             if (!nv::load_subtitles(it->second, subs_, &err, &warn) && o_.log) o_.log("[video] " + err);
             for (const auto& w : warn)
                 if (o_.log) o_.log("[video] " + w);
-            if (!subRenderer_) subRenderer_ = std::make_unique<nv::SubtitleRenderer>();
+            if (!subRenderer_) subRenderer_ = nv::make_subtitle_rasterizer();
         }
     }
     prepLeft_ = std::max(1, o_.prepPolls);
@@ -156,11 +157,18 @@ void MwPlayerCore::pause(bool p) {
 bool MwPlayerCore::frame(nv::VideoFrame& out) {
     if (!play_ || !play_->has_frame()) return false;
     out = play_->frame();
+    // cor do sprite (modelo das opcoes; a faixa de TV so para os filmes do Builder), antes da legenda
+    if (colorDirty_) {
+        nv::MovieColorModel m = o_.color;
+        if (!entry_ || entry_->mod) m.tvRange = false;
+        color_.set(m, base_, offset_);
+        colorDirty_ = false;
+    }
+    color_.apply(out.argb);
     if (!subs_.empty() && subRenderer_ && subRenderer_->ok()) {
         const std::wstring t = nv::subtitle_at(subs_, lastPos_);
         if (!t.empty()) subRenderer_->draw(out.argb, out.width, out.height, t);
     }
-    // PENDENTE (O1b): cor base (base_) e offset (offset_) sobre o quadro
     return true;
 }
 

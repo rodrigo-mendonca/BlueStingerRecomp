@@ -12,10 +12,13 @@
 // PENDENTE (O1b; parametrizado, sem regra inventada):
 //   - quantas consultas ficam em 1 (preparando) antes do 2 (O1: ~7 passos do oraculo);
 //   - o instante do estado 3 (fim do video, do audio ou o mais tardio): EndRule;
-//   - a matematica da cor base (0xC0) e do offset (fade) sobre o quadro;
 //   - o estado para filme ausente (hipotese: 4, erro de abertura do Sofdec).
+// Cor do sprite (video/movie_color.h): modelo parametrizado em MwCoreOptions::color, identidade por
+// padrao ate a evidencia do O1b ser confirmada (analysis/n5/o1b, tools/dev/n5_cor.py). A faixa de TV
+// so vale para os filmes do Builder (o decodificador original); um mod fica na faixa cheia.
 #include "audio/audio.h"
 #include "video/movie_catalog.h"
+#include "video/movie_color.h"
 #include "video/movie_playback.h"
 #include "video/subtitles.h"
 
@@ -35,6 +38,7 @@ struct MwCoreOptions {
     native::video::EndRule        endRule = native::video::EndRule::LaterOfBoth;  // PENDENTE (O1b)
     int32_t                       missingStat = kMwError;  // PENDENTE (O1b): hipotese
     std::string                   subtitleLang;  // "" = sem legendas; senao o idioma (pt, en...)
+    native::video::MovieColorModel color;  // cor base/offset do sprite (identidade ate o O1b confirmar)
     std::function<std::unique_ptr<native::audio::IAudioOutput>()> makeAudio;  // vazio = saida nula
     std::function<void(const std::string&)>                       log;
 };
@@ -55,8 +59,8 @@ public:
     int32_t status(int64_t now100ns);
     void    stop();
     void    pause(bool paused);  // pausa do host (o relogio logico tambem para)
-    void    set_base(uint32_t v) { base_ = v; }
-    void    set_offset(uint32_t v) { offset_ = v; }
+    void    set_base(uint32_t v) { base_ = v, colorDirty_ = true; }
+    void    set_offset(uint32_t v) { offset_ = v, colorDirty_ = true; }
     uint32_t base() const { return base_; }
     uint32_t offset() const { return offset_; }
 
@@ -77,11 +81,13 @@ private:
     std::unique_ptr<native::audio::IAudioOutput>  audio_;
     std::vector<native::video::SubtitleCue>       subs_;
     std::vector<int16_t>                          pending_;  // audio decodificado que ainda nao coube na fila
-    std::unique_ptr<native::video::SubtitleRenderer> subRenderer_;
+    std::unique_ptr<native::video::ISubtitleRasterizer> subRenderer_;
     int64_t                                       start100ns_ = 0, lastPos_ = 0;
     int32_t                                       state_ = kMwStop;
     int                                           prepLeft_ = 0;
     uint32_t                                      base_ = 0xFF, offset_ = 0;
+    native::video::MovieColor                     color_;
+    bool                                          colorDirty_ = true;
     MwCoreStats                                   stats_;
 };
 

@@ -4,11 +4,12 @@
 // mostra o ultimo quadro com tempo <= posicao (pula quadros se o relogio correr, repete se parar) e
 // entrega o audio decodificado ate a posicao mais a antecedencia pedida. Sem relogio de parede: o
 // mesmo resultado no headless e na janela, nos dois modos de tempo.
-#include "video/mf_movie.h"
+#include "video/movie_decoder.h"
 
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,8 +34,10 @@ struct PlaybackOptions {
 
 class MoviePlayback {
 public:
+    // Sem argumento: o decodificador da plataforma; os testes passam um sintetico.
+    explicit MoviePlayback(std::unique_ptr<IMovieDecoder> decoder = make_movie_decoder()) : reader_(std::move(decoder)) {}
     bool open(const std::filesystem::path& file, const PlaybackOptions& o = {}, std::string* err = nullptr);
-    const MovieFormat& format() const { return reader_.format(); }
+    const MovieFormat& format() const { return reader_->format(); }
 
     // Avanca ate `position100ns` (tempo do filme). Devolve true se o quadro atual mudou.
     bool advance(int64_t position100ns, std::string* err = nullptr);
@@ -53,7 +56,7 @@ public:
     int64_t audio_end100ns() const { return audioEnd_; }
 
 private:
-    MfMovieReader    reader_;
+    std::unique_ptr<IMovieDecoder> reader_;
     PlaybackOptions  o_;
     VideoFrame       current_, next_;
     bool             hasCurrent_ = false, hasNext_ = false, videoEof_ = false, audioEof_ = false;

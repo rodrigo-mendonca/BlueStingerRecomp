@@ -3,6 +3,8 @@
 // MfMovieReader decodifica um arquivo (MP4/H.264 + AAC do Builder, ou o de um mod) em quadros RGB32
 // e PCM 16 bits, em ordem, sem relogio proprio: quem toca decide QUAL quadro mostrar pela posicao do
 // relogio logico do jogo. MfMovieWriter codifica (Builder e testes sinteticos). So Windows.
+#include "video/movie_decoder.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -12,21 +14,8 @@
 
 namespace bs::native::video {
 
-struct MovieFormat {
-    uint32_t width = 0, height = 0;
-    double   fps = 0;
-    int64_t  duration100ns = 0;  // 0 se o arquivo nao informa
-    bool     hasAudio = false;
-    uint32_t sampleRate = 0, channels = 0;
-};
-
-struct VideoFrame {
-    std::vector<uint32_t> argb;  // width * height, de cima para baixo, alfa 0xFF
-    uint32_t              width = 0, height = 0;
-    int64_t               time100ns = 0, duration100ns = 0;
-};
-
-class MfMovieReader {
+// IMovieDecoder pelo Media Foundation (o decodificador do Windows: make_movie_decoder()).
+class MfMovieReader final : public IMovieDecoder {
 public:
     MfMovieReader();
     ~MfMovieReader();
@@ -35,15 +24,16 @@ public:
 
     // Falha com mensagem clara: arquivo ausente, formato sem decodificador, sem video.
     // nv12 = true: quadros em NV12 (o YUV do arquivo, sem conversao) em next_frame_nv12
-    bool               open(const std::filesystem::path& file, std::string* err = nullptr, bool nv12 = false);
-    const MovieFormat& format() const { return fmt_; }
+    bool               open(const std::filesystem::path& file, std::string* err, bool nv12);
+    bool               open(const std::filesystem::path& file, std::string* err = nullptr) override { return open(file, err, false); }
+    const MovieFormat& format() const override { return fmt_; }
     // Proximo quadro de video; false no fim do stream (ou erro, em `err`).
-    bool next_frame(VideoFrame& f, std::string* err = nullptr);
+    bool next_frame(VideoFrame& f, std::string* err = nullptr) override;
     // Com open(..., nv12 = true): plano Y (width*height) e CbCr intercalado, sem alinhamento.
     bool next_frame_nv12(std::vector<uint8_t>& nv12, int64_t& time100ns, std::string* err = nullptr);
     // Proximo bloco de audio (PCM 16 bits intercalado) e o seu tempo; false no fim.
-    bool next_audio(std::vector<int16_t>& pcm, int64_t& time100ns, std::string* err = nullptr);
-    void close();
+    bool next_audio(std::vector<int16_t>& pcm, int64_t& time100ns, std::string* err = nullptr) override;
+    void close() override;
 
 private:
     struct Impl;
