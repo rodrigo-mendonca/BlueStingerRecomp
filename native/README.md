@@ -18,8 +18,9 @@ No N0 só existem as **interfaces**. Os provedores entram etapa por etapa:
 | `audio::IAudioEngine`, `audio::IAudioOutput` | `audio/audio.h` | AICA, ARM7, `MANATEE.DRV` | N6 |
 | `render::IRenderDevice` + IR (`CommandList`) | `render/render.h` | TA, store queues, VRAM, PowerVR2 | N7a/N7b |
 
-Decisões do mantenedor (2026-10-15): renderizador em Direct3D 11 atrás de
-`IRenderDevice`; saída de áudio XAudio2 atrás de `IAudioOutput`, com a lógica do Manatee e
+Decisões do mantenedor (2026-10-15; renderizador revisto em 2026-10-19, `docs/DECISAO-VULKAN-LINUX.md`):
+renderizador em **Vulkan** atrás de `IRenderDevice` (antes Direct3D 11), com Linux como plataforma
+futura; saída de áudio XAudio2 atrás de `IAudioOutput`, com a lógica do Manatee e
 os bancos reconstruídos nativamente; vídeos convertidos pelo Builder e tocados com Media
 Foundation atrás de `IVideoPlayer`, desde que formato e fidelidade sejam validados (senão,
 apresentar alternativas).

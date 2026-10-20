@@ -1,7 +1,7 @@
 #pragma once
 // Renderizacao (N7a/N7b). A IR de comandos captura o que hoje chega ao TA (store queues,
-// DMA, escrita direta) como listas de desenho nativas; o dispositivo (Direct3D 11, decisao
-// do mantenedor) as executa. Os conceitos do PowerVR que importam para a imagem (listas
+// DMA, escrita direta) como listas de desenho nativas; o dispositivo (Vulkan, decisao do
+// mantenedor de 2026-10-19: docs/DECISAO-VULKAN-LINUX.md) as executa. Os conceitos do PowerVR que importam para a imagem (listas
 // opaca/translucida/punch-through, volumes modificadores, cor de deslocamento, fog por
 // tabela) aparecem como estado de desenho, sem registradores nem enderecos de VRAM.
 #include "core/handle.h"

@@ -7,6 +7,19 @@ por causa deste plano.
 - v2: 2026-10-15.
 
 Diretriz (mantenedor, 2026-10-15): o produto final é um port nativo para Windows x64.
+Revisão (mantenedor, 2026-10-19): **Linux x86_64 é plataforma futura** e o renderer do N7 é
+**Vulkan**. Windows x64 continua a plataforma de desenvolvimento, validação e distribuição. A
+arquitetura não pode exigir reescrever renderer ou gameplay para o Linux:
+- C++20 e CMake portáveis;
+- SDL3 e Vulkan nas duas plataformas;
+- APIs de plataforma só em backends.
+- Contratos nativos (`native/**.h`) independentes do sistema operacional.
+- Backends substituíveis de áudio (`IAudioOutput`), vídeo (decodificador) e legendas
+  (rasterização): Media Foundation, XAudio2 e DirectWrite são os backends Windows.
+- Nada de Vulkan nem de Linux implementado antes do N7.
+- A ordem do roteiro não muda: o retorno ao N2 continua depois do N7 e antes do N8.
+
+Ver `docs/DECISAO-VULKAN-LINUX.md`.
 - Não é um Dreamcast simulado: sem CPU virtual (SH-4/ARM7), sem PowerVR2, AICA, BIOS,
   GD-ROM, Maple/VMU simulados, sem registradores/endereços do Dreamcast como mecanismo de
   execução, sem emulador e sem CDI em tempo de execução.
@@ -260,7 +273,9 @@ Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: 
 1. **N4**: saves nativos (em andamento).
 2. **N5**: vídeos nativos.
 3. **N6**: áudio nativo.
-4. **N7**: renderização nativa Direct3D 11 (N7a, IR de comandos; N7b, provedores Ninja/Kamui).
+4. **N7**: renderização nativa em **Vulkan** (decisão de 2026-10-19; antes Direct3D 11, que nunca teve
+   código): N7a, IR de comandos; N7b, provedores Ninja/Kamui. Requisitos e contrato em
+   `docs/DECISAO-VULKAN-LINUX.md`, seção 2.
 5. **Retorno ao N2**: encerrar as pendências do N2b e implementar o N2c.
 6. **N8**: remoção dos componentes de emulação.
 7. **N9**: gameplay C++ editável e suporte a mods.
@@ -397,8 +412,9 @@ do produto.
 
 1. **Aprovar o plano** (ou ajustar a ordem). A proposta é começar só pela **N0**, que não
    muda o comportamento.
-2. **Backend de GPU**: Direct3D 11 (recomendado para começar, atrás de interface),
-   Direct3D 12 ou Vulkan.
+2. **Backend de GPU**: ~~Direct3D 11 (recomendado para começar, atrás de interface), Direct3D 12 ou
+   Vulkan~~. **Decidido em 2026-10-19: Vulkan** (atrás de `IRenderDevice`), com Linux como plataforma
+   futura (`docs/DECISAO-VULKAN-LINUX.md`).
 3. **Saída de áudio**: XAudio2 (recomendado) ou SDL3.
 4. **Decodificador de vídeo**: próprio, biblioteca de licença compatível revisada, ou Media
    Foundation.

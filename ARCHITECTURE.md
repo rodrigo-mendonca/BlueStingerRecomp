@@ -753,9 +753,10 @@ Registradas em 2026-10-13.
 | D6 | Compilador | Clang-cl como alvo principal e MSVC sempre compilando. Enquanto o clang-cl não estiver instalado, o MSVC é usado. |
 | D7 | Distribuição | **Builder** (2026-10-14): o usuário recompila na própria máquina a partir do CDI, com janela Win32 nativa e kit de fontes compilado pelo CMake/Ninja do Visual Studio dele. Ver "Builder" na seção 6. |
 | D8 | Port nativo | **`docs/PLANO-PORT-NATIVO.md` v2 aprovado como diretriz** (2026-10-15). Nada de emulação ou interpretação de CPU, BIOS ou dispositivos do Dreamcast na arquitetura final. C++20, Windows x64, editável e moddável. Autorização inicial só para o N0 (`docs/N0-RELATORIO.md`). |
-| D9 | GPU | **Direct3D 11** atrás de uma interface independente de backend (`native/render/render.h`, `IRenderDevice` + IR de comandos). |
+| D9 | GPU | ~~Direct3D 11~~ **Substituída** (2026-10-19): **Vulkan** como renderer principal (N7), atrás da interface independente de backend (`native/render/render.h`, `IRenderDevice` + IR de comandos), nas duas plataformas da D13. Nenhum código Direct3D 11 existia. Ver `docs/DECISAO-VULKAN-LINUX.md`. |
 | D10 | Áudio | **XAudio2** (`IAudioOutput`), com reconstrução nativa da lógica do Manatee e dos bancos (`IAudioEngine`). O `MANATEE.DRV` só é analisado estaticamente. |
 | D11 | Vídeo | **Media Foundation** para vídeos convertidos pelo Builder (`IVideoPlayer`), desde que formato e fidelidade sejam validados. Senão, apresentar alternativas ao mantenedor. |
+| D13 | Plataformas | (2026-10-19) **Windows x64**: desenvolvimento, validação e distribuição atuais. **Linux x86_64**: plataforma futura, sem port agora. C++20 e CMake portáveis, SDL3 para janela, entrada e sistema, Vulkan nas duas. Nenhuma dependência nova de Win32 no gameplay, no código recompilado ou nos contratos compartilhados: APIs de plataforma só em implementações de backend. Media Foundation, XAudio2 e DirectWrite seguem como backends Windows. Auditoria e alternativas em `docs/DECISAO-VULKAN-LINUX.md`. |
 | D12 | Módulos | `native/`, `legacy/` e `transitional/` são alvos CMake desde o N0. Os arquivos só mudam de lugar quando o subsistema migrar. A leitura de CDI saiu do produto (`bs_runtime_cdi`). |
 
 ## 9. Riscos
