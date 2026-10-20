@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 
 namespace bs::native::audio {
@@ -62,6 +63,19 @@ public:
     virtual size_t       writable_frames() const = 0;
     virtual Result<void> write(std::span<const int16_t> interleaved) = 0;
     virtual void         close() = 0;
+    // N5 (politica de sincronia, docs/N5-PLANO.md 4.2): pausa da voz (pausa do host), descarte do que
+    // esta na fila (salto ou atraso alem do teto) e quadros ja tocados (medida do atraso).
+    virtual void     pause(bool paused) = 0;
+    virtual void     flush() = 0;
+    virtual uint64_t played_frames() const = 0;
+    // false depois de perder o dispositivo: quem toca troca para a saida nula (com log).
+    virtual bool healthy() const = 0;
 };
+
+// Saida XAudio2 (decisao do mantenedor 2026-10-15; no N5 so o audio dos filmes). `latency_ms` e o
+// teto da fila: writable_frames() nunca deixa passar disso.
+std::unique_ptr<IAudioOutput> make_xaudio2_output(uint32_t latency_ms = 200);
+// Saida nula (headless e dispositivo ausente): aceita e descarta, conta os quadros como tocados.
+std::unique_ptr<IAudioOutput> make_null_output();
 
 } // namespace bs::native::audio

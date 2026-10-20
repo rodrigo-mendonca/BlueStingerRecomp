@@ -32,7 +32,9 @@ function Check($name, [bool]$ok, $detail = "") {
     $script:results += [pscustomobject]@{ Caso = $name; Ok = $ok }
     Write-Host ("[{0}] {1} {2}" -f ($(if ($ok) { "ok" } else { "FALHA" })), $name, $detail)
 }
-function Run($exe, [string[]]$argv, $timeoutMs = 1800000) {
+# N5: as compilacoes destes casos nao tratam dos filmes (--sem-filmes); o caso 13 os converte.
+function Run($exe, [string[]]$argv, $timeoutMs = 1800000, [switch]$Filmes) {
+    if (-not $Filmes -and (Split-Path -Leaf $exe) -eq "bs-builder.exe") { $argv = @($argv) + "--sem-filmes" }
     $psi = New-Object System.Diagnostics.ProcessStartInfo $exe
     $psi.Arguments = ($argv | ForEach-Object { if ($_ -match '[\s"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join ' '
     $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
@@ -161,7 +163,7 @@ Stop-Process -Id $game.Id -Force; $game.WaitForExit()
 Check "jogo aberto: troca recusada, instalada intacta" ($r.Code -eq 1 -and $r.Out -match 'falhou em "instalando"' -and (Hash $exe1) -eq $installed -and (NoStage $out1)) (FailLine $r)
 
 # 10. janela: cancelar no meio (fechar em modo --auto) -> codigo 3, instalada intacta
-$p = Start-Process -FilePath $gui -ArgumentList "--disc `"$cdi`" --out `"$out1`" --auto" -PassThru
+$p = Start-Process -FilePath $gui -ArgumentList "--disc `"$cdi`" --out `"$out1`" --auto --sem-filmes" -PassThru
 $t0 = Get-Date; while ($p.MainWindowHandle -eq 0 -and ((Get-Date) - $t0).TotalSeconds -lt 20) { Start-Sleep -Milliseconds 200; $p.Refresh() }
 Start-Sleep -Seconds 3
 $p.CloseMainWindow() | Out-Null
@@ -169,7 +171,7 @@ $closed = $p.WaitForExit(120000)
 Check "janela: cancelar mantem a instalada" ($closed -and $p.ExitCode -eq 3 -and (Hash $exe1) -eq $installed -and (NoStage $out1)) "codigo $($p.ExitCode)"
 
 # 11. janela em modo --auto ate o fim; arquivos do usuario preservados
-$p = Start-Process -FilePath $gui -ArgumentList "--disc `"$cdi`" --out `"$out1`" --auto" -PassThru
+$p = Start-Process -FilePath $gui -ArgumentList "--disc `"$cdi`" --out `"$out1`" --auto --sem-filmes" -PassThru
 $closed = $p.WaitForExit(1800000)
 $ini = [IO.File]::ReadAllText((Join-Path $out1 "BlueStinger\bluestinger.ini"))
 Check "janela: compilacao ate o fim, ini do usuario preservado" ($closed -and $p.ExitCode -eq 0 -and $ini -eq "cdi=preservado") "codigo $($p.ExitCode)"
@@ -181,6 +183,21 @@ New-Item -ItemType Directory -Path $nokit | Out-Null
 Copy-Item (Join-Path $app "*.exe"), (Join-Path $app "*.dll") $nokit
 $r = Run (Join-Path $nokit "bs-builder.exe") @("--disc", $cdi, "--out", $out1)
 Check "sem kit: recusa clara" ($r.Code -eq 1 -and $r.Out -match "kit de fontes incompleto" -and (Hash $exe1) -eq $installed) (FailLine $r)
+
+# 13. N5: filmes convertidos pelo Builder (data\video com o manifesto dos 17 IDs) e reaproveitados
+# por SHA-256 na compilacao seguinte; o pacote os leva
+$r = Run $cli @("--disc", $cdi, "--out", $out1) -Filmes
+$man = Join-Path $out1 "BlueStinger\data\video\manifest.toml"
+$blog = Join-Path $out1 ".bs-build\builder.log"  # a CLI so mostra o log com BS_BUILDER_VERBOSE
+$conv = [regex]::Match([IO.File]::ReadAllText($blog), "filmes: (\d+) convertidos, (\d+) reaproveitados, (\d+) ausentes")
+$mp4 = @(Get-ChildItem -LiteralPath (Join-Path $out1 "BlueStinger\data\video") -Filter *.mp4 -ErrorAction SilentlyContinue).Count
+$ids = if (Test-Path -LiteralPath $man) { ([regex]::Matches([IO.File]::ReadAllText($man), "(?m)^id = ")).Count } else { 0 }
+Check "filmes: 16 convertidos, OPENING ausente, manifesto com os 17 IDs no pacote" ($r.Code -eq 0 -and $conv.Success -and $conv.Groups[1].Value -eq "16" -and $conv.Groups[3].Value -eq "1" -and $mp4 -eq 16 -and $ids -eq 17) "$($conv.Value); mp4 no pacote: $mp4; IDs: $ids"
+$r = Run $cli @("--disc", $cdi, "--out", $out1) -Filmes
+$conv = [regex]::Match([IO.File]::ReadAllText($blog), "filmes: (\d+) convertidos, (\d+) reaproveitados")
+Check "filmes: reaproveitados na compilacao seguinte (SHA-256)" ($r.Code -eq 0 -and $conv.Success -and $conv.Groups[1].Value -eq "0" -and $conv.Groups[2].Value -eq "16") $conv.Value
+$r = Run $cli @("--disc", $cdi, "--out", $out1)
+Check "--sem-filmes: os filmes da compilacao anterior saem do pacote" ($r.Code -eq 0 -and -not (Test-Path -LiteralPath $man)) (FailLine $r)
 
 $env:BS_BUILDER_CACHE = ""
 $fails = @($results | Where-Object { -not $_.Ok }).Count

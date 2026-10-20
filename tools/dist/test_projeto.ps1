@@ -43,7 +43,7 @@ $proj = Join-Path $out "projeto"
 $exe = Join-Path $out "BlueStinger\BlueStinger.exe"
 
 # 1. compilacao do CDI exportando o projeto
-$r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$out`" --projeto `"$proj`""
+$r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$out`" --sem-filmes --projeto `"$proj`""
 $mapa = Join-Path $proj "mapa_funcoes.tsv"
 $okFiles = (Test-Path -LiteralPath (Join-Path $proj "LEIA-ME-PROJETO.md")) -and (Test-Path -LiteralPath (Join-Path $proj "generated\funcs.h")) -and
            (Test-Path -LiteralPath (Join-Path $proj "mods\exemplos\exemplo_contador.cpp")) -and (Test-Path -LiteralPath (Join-Path $proj "third_party\SDL3\CMakeLists.txt"))
@@ -101,7 +101,7 @@ BS_MOD(teste_espera) {
 # 3. recompila do projeto com o CDI inacessivel
 Rename-Item -LiteralPath $cdi -NewName "imagem ç.cdi.fora"
 try {
-    $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`""
+    $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`" --sem-filmes"
     Check "recompila do projeto sem o CDI" ($LASTEXITCODE -eq 0 -and $r -match "instalado:") (($r -split "`n" | Where-Object { $_ -match "falhou" } | Select-Object -First 1))
     # 4. efeitos no jogo instalado (roteiro ate o NEW GAME)
     $env:BS_INPUT_SCRIPT = Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"
@@ -138,7 +138,7 @@ try {
     Remove-Item -LiteralPath $bogus
     # 5b. remover o mod e recompilar: o efeito some (o cache espelha mods/, nada sobra la)
     Remove-Item -LiteralPath (Join-Path $proj "mods\exemplo_contador.cpp")
-    $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`""
+    $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`" --sem-filmes"
     $env:BS_INPUT_SCRIPT = Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"
     $g = RunCmd "`"$exe`" --headless 2300"
     $env:BS_INPUT_SCRIPT = ""
@@ -151,7 +151,7 @@ try {
 # 6. reexportar: mods/ preservada, generated/ editado guardado, edicao (mais nova) em runtime/ mantida
 $rtFile = Join-Path $proj "runtime\aica\aica_regs.cpp"
 Add-Content -LiteralPath $rtFile -Value "// edicao do usuario no projeto (teste)"
-$r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$out`" --projeto `"$proj`""
+$r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$out`" --sem-filmes --projeto `"$proj`""
 $kept = Test-Path -LiteralPath (Join-Path $proj "mods\exemplo_contador.cpp")
 $backup = @(Get-ChildItem -LiteralPath $proj -Directory -Filter "generated.anterior-*").Count -eq 1
 $genEdit = Select-String -LiteralPath (Get-ChildItem -LiteralPath (Get-ChildItem -LiteralPath $proj -Directory -Filter "generated.anterior-*").FullName -Filter "funcs_*.cpp").FullName -Pattern "edicao controlada" -Quiet

@@ -38,6 +38,9 @@ struct Request {
     std::filesystem::path vswhere, vcvars;  // localizacao do compilador (vazio = automatica)
     unsigned              verifyVblanks = 120;  // boot headless na verificacao
     bool                  clean         = false;  // apaga o build incremental antes
+    // N5: converte os filmes do disco (SFD) em data\video\*.mp4 + manifest.toml. Sem eles o jogo
+    // segue (os filmes ficam ausentes); --sem-filmes poupa a conversao nos testes que nao os usam.
+    bool                  movies        = true;
 };
 
 struct Callbacks {

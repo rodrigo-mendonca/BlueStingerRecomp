@@ -58,6 +58,11 @@ Ferramentas:
   `--saves-importar/--saves-exportar <vms>` [`--saves-nome`]. Suíte `test_saves.ps1 [-VmuFlycast <vmu> -PosFlycast x,y,z]`.
   Diagnósticos (build com mods): `BS_SAVES_H1=1` (SAVE pelo título) e `BS_SAVES_H2=<passo>` (simula só o
   save point no gameplay). Oráculo: `flycast_oracle.py bu-trace` (`--forcar-save-point`, `--ler-fim`), `n4_vmu.py`.
+- Filmes (N5): `--video nativo|legado` (padrão legado durante a validação; nativo = MP4 do Builder em
+  `data\video` + `mods\video`, Media Foundation/XAudio2) e `--legendas <idioma>`. O Builder converte os SFD
+  (`--sem-filmes` desliga e apaga). `bs-video-probe [--builder <BSDATA> <saida> | --converter <dir> <SFD>]`;
+  primeiro filme no jogo: `tools/dev/n5_e001.ps1`; matriz dos 17 IDs: `tools/dev/n5_matriz.py`; oráculo
+  `tools/dev/n5_oraculo.py`. Unitários `bs_video_tests` (ctest `video`). Mods: `docs/MODS-VIDEO.md`.
 - Modo espectador (janela): `BS_INPUT_SCRIPT=<roteiro>` sem `--headless` reproduz o roteiro na Preview
   SDL3 (só o roteiro controla; título com passo, sala e botões). Ex.: `$env:BS_RELOGIO_FIXO="1700000000";
   $env:BS_INPUT_SCRIPT="tools\dist\roteiros\passo_cgate.txt"; build\msvc-release\app\bluestinger.exe --data dist\BlueStinger-Preview\data`.

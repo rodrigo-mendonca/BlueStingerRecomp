@@ -59,6 +59,11 @@ enum class ControlsProvider { Legacy, Native };
 // legado (fallback temporario) = a biblioteca bu original, sem VMU no Maple ("VMU not found").
 enum class SavesProvider { Legacy, Native };
 
+// Provedor dos filmes (N5, docs/N5-PLANO.md): legado (padrao durante a validacao) = Sofdec original;
+// nativo = as entradas MW da funcao de video do jogo atendidas por transitional/video_adapter (MP4 do
+// Builder em data\video, Media Foundation e XAudio2; mods em mods\video).
+enum class VideoProvider { Legacy, Native };
+
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
     std::filesystem::path data;
@@ -69,6 +74,9 @@ struct GameOptions {
     ControlsProvider      controls = ControlsProvider::Native;
     SavesProvider         saves = SavesProvider::Native;
     std::filesystem::path savesRoot;  // saves nativos: <raiz>\card0\BLUESTIN.00n.bsv
+    VideoProvider         video = VideoProvider::Legacy;
+    std::filesystem::path modVideo;  // mods de filmes e legendas (mods\video), opcional
+    std::string           subtitles;  // idioma das legendas dos filmes ("" = sem)
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).
     native::input::InputSystem* input = nullptr;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
@@ -130,6 +138,7 @@ private:
     double                                workSumMs_ = 0;
     std::unique_ptr<native::files::DataFileSystem> files_;  // provedor nativo de arquivos (N1)
     std::unique_ptr<native::saves::ISaveStore>     saves_;  // provedor nativo de saves (N4)
+    GameFrame                                      movie_;  // ultimo quadro do filme nativo (N5)
     uint8_t*                                       ram_ = nullptr;  // RAM do guest (diagnostico)
 };
 

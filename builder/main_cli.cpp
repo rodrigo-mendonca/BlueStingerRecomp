@@ -1,6 +1,6 @@
 // bs-builder: o fluxo completo do Builder pela linha de comando (automacao e testes).
 //   bs-builder --disc <imagem.cdi> --out <pasta> [--kit <pasta>] [--sdl3 <pasta>]
-//              [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean] [--verify-vblanks N]
+//              [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean] [--verify-vblanks N] [--sem-filmes]
 //              [--name <subpasta>]   (padrao BlueStinger; o jogo instalado nao precisa do CDI)
 //              [--projeto <pasta>]   exporta tambem o projeto C++ editavel (project_export.h)
 //   bs-builder --de-projeto <pasta> --out <pasta> [--disc <cdi>]   compila um projeto editado
@@ -68,13 +68,14 @@ int main() {
         else if (a == L"--projeto" && more) req.exportProject = args[++i];
         else if (a == L"--de-projeto" && more) req.fromProject = args[++i];
         else if (a == L"--clean") req.clean = true;
+        else if (a == L"--sem-filmes") req.movies = false;
         else {
             std::fprintf(stderr,
                          "uso: bs-builder --disc <imagem.cdi> --out <pasta> [--kit <pasta>] [--sdl3 <pasta>]\n"
                          "                [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean] [--name <subpasta>]\n"
                          "                [--projeto <pasta>]      exporta o projeto C++ editavel\n"
                          "  bs-builder --de-projeto <pasta> --out <pasta> [--disc <cdi>]   compila o projeto (mods)\n"
-                         "                [--verify-vblanks N]\n");
+                         "                [--verify-vblanks N] [--sem-filmes]\n");
             return 2;
         }
     }

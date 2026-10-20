@@ -16,6 +16,8 @@
 #include "pad_probe.h"
 #include "input/input.h"
 #include "time_adapter.h"
+#include "video_adapter.h"
+#include "audio/audio.h"
 #include "cri_idle.h"
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
@@ -236,6 +238,8 @@ void GameHost::vblank() {
         }
     }
     pvr_video_frame(scratch_.argb, scratch_.width, scratch_.height);
+    // N5: durante um filme nativo o quadro exibido e o dele (o PVR nao desenha o filme)
+    if (transitional::video::playing() && movie_.width) scratch_ = movie_;
     // Diagnostico (N2b-2): BS_FRAME_LOG=<arquivo> grava o hash do quadro exibido a cada VBlank
     // (compara a sequencia de quadros entre modos de tempo com linhas do tempo deslocadas)
     static FILE* frameLog = [] {
@@ -340,6 +344,24 @@ void GameHost::threadMain() {
             transitional::gdfs::check_sizes(*files_);
             transitional::gdfs::install(transitional::boundary_registry(), *files_);
         }
+        // N5: filmes pelo provedor nativo (MP4 do Builder em data\video, mods em mods\video)
+        if (opt_.video == VideoProvider::Native) {
+            transitional::video::MwCoreOptions vo;
+            vo.catalog      = {opt_.data / L"video", opt_.modVideo};
+            vo.subtitleLang = opt_.subtitles;
+            // com o passo de jogo: os roteiros por passo (START durante o filme) saem deste log
+            vo.log = [](const std::string& m) {
+                std::fprintf(stderr, "%s (passo %llu)\n", m.c_str(), static_cast<unsigned long long>(transitional::time::game_steps()));
+            };
+            // som do filme no dispositivo so em tempo real; no headless, saida nula (mesmo relogio logico)
+            if (opt_.realtime) vo.makeAudio = [] { return native::audio::make_xaudio2_output(); };
+            movie_ = {};
+            transitional::video::install(transitional::boundary_registry(), std::move(vo),
+                                         [this](const native::video::VideoFrame& f) {
+                                             movie_.argb = f.argb, movie_.width = f.width, movie_.height = f.height;
+                                         });
+            std::fprintf(stderr, "[video] nativo: %s\n", disc::pathText(opt_.data / L"video").c_str());
+        }
         // N2a: tempo e eventos pelo provedor nativo (antes do boot: o reset do hardware o inicia)
         if (opt_.time == TimeProviderKind::Native || opt_.time == TimeProviderKind::Experimental) {
             transitional::time::Options to;
@@ -435,6 +457,10 @@ void GameHost::threadMain() {
                      static_cast<unsigned long long>(s.delivered[4]), static_cast<unsigned long long>(s.posted),
                      static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions),
                      static_cast<unsigned long long>(s.vblankCollapsed));
+    }
+    if (transitional::video::installed()) {
+        std::fputs(transitional::video::summary().c_str(), stderr);
+        transitional::video::uninstall(transitional::boundary_registry());
     }
     if (transitional::bu::installed()) {
         std::fputs(transitional::bu::summary().c_str(), stderr);

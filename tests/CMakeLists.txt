@@ -34,6 +34,12 @@ add_executable(bs_unit_tests
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core bs_hwscan bs_transitional)
+
+# N5: unitarios dos filmes (so native/video e a conversao; build leve, sem o runtime)
+add_executable(bs_video_tests unit/main.cpp unit/test_video_native.cpp unit/test_video_audio.cpp unit/test_video_subs.cpp unit/test_video_mw.cpp unit/test_video_fixes.cpp unit/test_video_adapter.cpp unit/test_video_build.cpp unit/test_video_mods.cpp unit/test_video_slot.cpp)
+target_include_directories(bs_video_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
+target_link_libraries(bs_video_tests PRIVATE bs_native_video bs_native_audio bs_video_convert bs_video_mw bs_video_adapter)
+add_test(NAME video COMMAND bs_video_tests)
 add_test(NAME unit COMMAND bs_unit_tests)
 
 # Usa a imagem do usuario se BS_DISC_IMAGE estiver definido; senao, SKIP.

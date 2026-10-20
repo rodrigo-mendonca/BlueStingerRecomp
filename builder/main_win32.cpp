@@ -52,7 +52,7 @@ struct App {
     fs::path           kit, sdl3;
     std::thread        worker;
     std::atomic<bool>  cancelFlag{false};
-    bool               running = false, closeAfter = false, autoMode = false;
+    bool               running = false, closeAfter = false, autoMode = false, noMovies = false;
     int                exitCode = 0;
     Result             last;
 } g;
@@ -170,6 +170,7 @@ void startBuild() {
     req.kitDir = g.kit;
     req.sdl3Dir = g.sdl3;
     req.clean  = SendMessageW(g.clean, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    req.movies = !g.noMovies;
     // projeto C++ editavel: sempre em <saida>\projeto (exportar, ou compilar a partir dele com os mods)
     const bool fromProj = SendMessageW(g.fromProj, BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (SendMessageW(g.exportProj, BM_GETCHECK, 0, 0) == BST_CHECKED && !fromProj) req.exportProject = req.outDir / L"projeto";
@@ -398,6 +399,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
         else if (args[i] == L"--kit" && more) g.kit = args[++i];
         else if (args[i] == L"--sdl3" && more) g.sdl3 = args[++i];
         else if (args[i] == L"--auto") g.autoMode = true;
+        else if (args[i] == L"--sem-filmes") g.noMovies = true;  // testes: sem a conversao dos filmes (N5)
     }
     if (out.empty()) out = defaultOut().native();
     if (const std::string k = check_kit(g.kit, g.sdl3.empty() ? g.kit / L"third_party" / L"SDL3" : g.sdl3); !k.empty()) {

@@ -139,6 +139,16 @@ slots = [
   0x8C08C112,  # ultimo erro(drive)
   0x8C08BEBC,  # exit (so por literal, sem chamador)
   0x8C08C7BE,  # op 0x0B (so por literal, sem chamador): sem suporte
+  # N5 (docs/N5-PLANO.md, --video nativo; no legado os slots apontam para o gerado): entradas MW da
+  # funcao de video do jogo (8C08B544); os metodos sao chamados pela tabela 8C1DD168
+  0x8C157FC4,  # create (pool estatico 32 x 120 B em [8C1580B8]+4)
+  0x8C158D42,  # parametro(h, n)
+  0x8C158D92,  # cor base(h, c)
+  0x8C158DAE,  # cor de offset(h, c) (fade)
+  0x8C1580E4,  # +0x14 destroy(h)
+  0x8C15814A,  # +0x18 start(h, nome)
+  0x8C158250,  # +0x1C stop(h)
+  0x8C1582C0,  # +0x20 estado(h)
 ]
 # N2b (docs/N2b-PLANO.md, secao 1.2): back-edges dos lacos que esperam uma condicao acesa por
 # evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por

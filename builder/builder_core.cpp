@@ -8,6 +8,7 @@
 #include "disc/cdi_image.h"
 #include "runtime_data.h"
 #include "toolchain.h"
+#include "video/movie_build.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -606,6 +607,27 @@ Result build(const Request& req, const Callbacks& cb) {
         } else {
             log("dados ja preparados e conferidos: reaproveitados");
         }
+        // N5: filmes do disco -> data\video (MP4 + manifesto). Reaproveita por SHA-256 da fonte, do
+        // conversor e do MP4; sem o codificador do Windows os filmes ficam ausentes e a compilacao segue.
+        if (req.movies) {
+            video::MovieBuildOptions mo;
+            mo.progress = [&](double f, const std::string& w) { progress(f, "filmes: " + w); };
+            mo.log      = log;
+            mo.cancel   = cb.cancel;
+            video::MovieBuildResult mr;
+            std::string             merr;
+            if (!video::build_movies(dataDir / L"disc" / L"BSDATA", dataDir / L"video", mo, mr, &merr)) {
+                if (cb.cancel && cb.cancel->load()) throw Cancelled{};
+                throw StepError("falha ao converter os filmes: " + merr);
+            }
+            log("filmes: " + std::to_string(mr.converted) + " convertidos, " + std::to_string(mr.reused) +
+                " reaproveitados, " + std::to_string(mr.absent.size()) + " ausentes no disco");
+        } else {
+            // os de uma compilacao anterior nesta saida tambem saem (o pacote copia data\ inteiro)
+            std::string merr;
+            if (!video::clear_movies(dataDir / L"video", &merr)) throw StepError(merr);
+            log("filmes: conversao desligada (--sem-filmes); o jogo os trata como ausentes");
+        }
 
         // 4. analise + C++ (so os arquivos que mudaram sao regravados)
         enter(Step::Recompile);
@@ -766,6 +788,12 @@ Result build(const Request& req, const Callbacks& cb) {
             fs::create_directories(stage / L"mods" / L"assets");
             fs::copy(kit / L"mods" / L"assets", stage / L"mods" / L"assets", fs::copy_options::recursive);
             log("mods de arquivos copiados para o pacote");
+        }
+        // N5: filmes e legendas de mods do projeto: <instalacao>\mods\video (substituem os convertidos)
+        if (fromProject && fs::is_directory(kit / L"mods" / L"video", ec)) {
+            fs::create_directories(stage / L"mods" / L"video");
+            fs::copy(kit / L"mods" / L"video", stage / L"mods" / L"video", fs::copy_options::recursive);
+            log("mods de video copiados para o pacote");
         }
 
         // 8. verificacao do executavel montado, SEM o CDI: responde, da boot com os dados do

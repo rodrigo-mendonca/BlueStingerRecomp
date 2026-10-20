@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". N5 (vídeos) integrado, com o primeiro filme nativo no jogo (E001; `--video nativo` opcional): ver "N5: integração e primeiro filme nativo no jogo". |
 
 ## Versão suportada
 
@@ -1919,6 +1919,107 @@ Detalhes em `docs/N4-PREPARACAO.md`, seção "SAVE e LOAD de gameplay".
   - Codex;
   - regressão de fechamento;
   - promoção.
+
+### N5: início em paralelo à regressão do N4 (2026-10-19, sem commit)
+
+Autorizado em paralelo à regressão do N4. Plano em `docs/N5-PLANO.md`.
+
+- **Isolamento.** O código fica na worktree `../recomp-BStinger-n5`, a partir de `b1c76ec`, com
+  build próprio (`build
+5`, `-j 2`). Nada nos arquivos que a regressão usa.
+- **Inventário:**
+  - 17 IDs na função de vídeo do jogo `8C08B544` (`r4` = ID, `r5` = controle); 16 SFD presentes e
+    `OPENING.SFD` ausente no disco US;
+  - todos os filmes são MPEG-1 320x240 a 30 fps com ADX estéreo a 44,1 kHz;
+  - o áudio de eventos `E*.WAV` (`8C08B860`) fica para o N6.
+- **Codex** (`reviews/codex-20261019-145826.md`): 9 achados, todos aceitos e incorporados ao plano:
+  - ABI de 2 argumentos;
+  - tabela de decisão de `r5`, flags, estados e interrupções;
+  - as chamadas eram gráficas (alocador de 3 MiB, fade, texto), não de som;
+  - V1 limitado aos filmes (a init do Sofdec fica para o WAV do N6);
+  - regra de fim pelo O1;
+  - relógio injetável;
+  - duas referências de fidelidade;
+  - matriz de testes;
+  - 17 IDs e 16 recursos.
+- **N5-1 (worktree):**
+  - demux SFD e decodificador ADX (`builder/video`);
+  - catálogo com mods e legendas, leitor e gravador MP4 por Media Foundation e reprodução pelo
+    relógio lógico (`native/video`);
+  - `bs-video-probe`.
+- **Verificado:**
+  - `bs_video_tests` 7/7, só com amostras sintéticas;
+  - os 16 SFD reais com demux e ADX ok (quadros ÷ 30 = amostras ÷ 44 100 em todos);
+  - **ADX idêntico bit a bit ao ffmpeg**, usado só como referência de desenvolvimento, em E017,
+    E200A e NEWGAME (44 milhões de amostras). O probe achou um defeito: os coeficientes eram
+    truncados e precisavam ser arredondados.
+- **Pendentes:**
+  - O1 (oráculo do contrato), em execução;
+  - decisões D1–D5 do mantenedor (seção 7 do plano);
+  - N5-3 e N5-4 depois do fechamento do N4.
+
+### N5: integração e primeiro filme nativo no jogo (2026-10-19)
+
+As mudanças da worktree (`../recomp-BStinger-n5`, base `b1c76ec`) vieram para a árvore principal
+por patch em três vias sobre o commit do N4 (`c5716f3`). Houve um só conflito, no texto de uso do
+`main_sdl.cpp` (mantidos os dois lados). Plano e mapa em `docs/N5-INTEGRACAO.md`.
+
+**O que entrou:**
+- `--video nativo|legado` (padrão: **legado** enquanto o N5 está em validação) e `--legendas <idioma>`.
+- Os 8 slots MW em `[native] slots`; código regenerado: 4 083 funções, 0 avisos.
+- `bs_video_adapter` ligado ao `bs_app_core`; o `GameHost` instala os slots antes do boot, mostra o
+  quadro do filme no lugar do quadro do PVR e imprime o resumo `[video]` no fim.
+- No Builder:
+  - os filmes são convertidos depois dos dados conferidos (`data\video`, manifesto dos 17 IDs),
+    reaproveitados por SHA-256;
+  - `--sem-filmes`, que também apaga os da compilação anterior;
+  - `mods\video` do projeto vai para o pacote;
+  - a licença do `pl_mpeg` vai em `licencas\`.
+
+Com isso os dois achados ALTA da segunda revisão do Codex estão **resolvidos e validados no
+executável final**.
+
+**Primeiro filme nativo** (`tools/dev/n5_e001.ps1`, rota `passo_newgame_area1`, 7 300 VBlanks,
+`--video legado` contra `--video nativo`): **9/9**.
+- **Abertura:** o E001 abre pelo manifesto (ID 3) no passo 2138.
+- **Sincronia:** fim natural em **13 713 ms lógicos, 411 quadros, 0 pulados**; 412 trocas de quadro
+  em 828 VBlanks, com o quadro do filme na tela.
+- **Nada do Sofdec:** nenhuma chamada aos originais do MW, entrada nunca exposta ao servidor por
+  handle (`8C1588D8`); o nativo lê **0** setores do `E001.SFD`, o legado lê 599.
+- **Volta ao gameplay:** depois do filme, **1 070 passos com quadros e estado lógico idênticos**
+  ao legado, e as mesmas salas (`RCG00`, `RCG00A`).
+- **NEWGAME não convertido nessa rota:** o estado de ausente (hipótese 4, PENDENTE O1b); o jogo
+  segue.
+- **Legado não serve de referência para a duração:** o filme do Sofdec emulado acaba em ~152
+  VBlanks. O filme nativo toca inteiro e o jogo volta no mesmo passo.
+
+**START durante o E001** (chamado com `ctl=01`): o filme vai até o fim natural, com controle
+nativo e com controle legado.
+- O laço do filme não lê o controle: lê uma palavra de estado do jogo (`@(r14+0x25AC)`, bits 4/8).
+- Se o E001 é interrompível ali é **PENDENTE do O1b** (Flycast).
+- O V8 do roteiro passou de afirmação (hipótese) a medida.
+
+**Testes afetados** (bateria de 2026-10-19):
+
+| Teste | Resultado |
+|---|---|
+| `ctest` | 13/13, com `video` (`bs_video_tests`, 36/36) |
+| `n5_e001` | 9/9 |
+| `test_preview` | ok, com os 16 MP4 na Preview (417 MB, manifesto dos 17 IDs) |
+| `test_projeto` | ok |
+| `test_gameplay` | 4/4 |
+| `test_assistido` | 28/28 (os dois modos de tempo com os slots novos) |
+| `test_builder` | **21/21**: 16 filmes convertidos, OPENING ausente, 17 IDs; na compilação seguinte, 0 convertidos e 16 reaproveitados por SHA-256; `--sem-filmes` tira os filmes do pacote |
+
+As suítes do Builder passam `--sem-filmes`, fora o caso 13: converte, reaproveita e confere que
+`--sem-filmes` tira os filmes do pacote.
+
+**O N5 não está concluído.** Falta:
+- **O1b:** cor base/offset, sondagens de preparação, regra de fim, estado de ausente, START;
+- conversão e medida dos 16 filmes (matriz `tools/dev/n5_matriz.py --conversao`);
+- as interfaces de decodificador e de rasterização de legendas (`docs/DECISAO-VULKAN-LINUX.md`,
+  seção 3);
+- promover `--video nativo` a padrão.
 
 ### N4: regressão de fechamento e encerramento (2026-10-19)
 

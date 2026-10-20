@@ -96,6 +96,7 @@ Get-ChildItem -LiteralPath $tomlSrc -Force | Where-Object { $tomlSkip -notcontai
 Copy-Item -LiteralPath (Join-Path $repo "LICENSE") -Destination "$stage\licencas\BlueStingerRecompiled-MIT.txt"
 Copy-Item -LiteralPath (Join-Path $sdl "LICENSE.txt") -Destination "$stage\licencas\SDL3-zlib.txt"
 Copy-Item -LiteralPath (Join-Path $build "_deps\tomlplusplus-src\LICENSE") -Destination "$stage\licencas\tomlplusplus-MIT.txt"
+Copy-Item -LiteralPath (Join-Path $repo "third_party\pl_mpeg\LICENSE") -Destination "$stage\licencas\pl_mpeg-MIT.txt"  # N5: decodificador MPEG-1 do conversor de filmes
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LEIA-ME-BUILDER.txt") -Destination "$stage\LEIA-ME.txt"
 
 # dependencias dos executaveis
