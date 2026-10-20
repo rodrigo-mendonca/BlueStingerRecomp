@@ -2206,6 +2206,23 @@ Detalhes em `docs/N6-PLANO.md` seções 14–17.
   testes).
 - Sem regressão integral (política de 2026-10-20).
 
+### Legendas em inglês por mod: inventário, transcrição local e pacote demonstrativo (2026-10-20; worktree n6-audio, sem commit)
+
+**Método:** `tools/dev/legendas/` (catálogo, transcrição com faster-whisper large-v3 na GPU num venv isolado, geração
+do pacote, prévia, testes); dados de trabalho em `%LOCALAPPDATA%\BlueStingerRecomp\legendas-en` (fora do Git).
+Detalhes em `docs/LEGENDAS-EN-PLANO.md`.
+
+- **Inventário:** 239 IDs, 233 WAV (um a um), 1 421 s; pela detecção de voz, 200 com fala e 32 sem fala; `E084`
+  estéreo bloqueado (também é uma pendência do N6). O decodificador do pipeline é igual ao do jogo (impressão FNV do
+  PCM em Python e em C++).
+- **Transcrição:** 685 linhas das falas (602 automáticas, 79 a revisar, 4 excluídas: incompreensíveis ou alucinação
+  do modelo) e 45 linhas em 8 filmes; nomes pelo texto do jogo (Eliot G. Ballade, ESER, Kimra, Kimratech).
+  **0 linhas revisadas por humano**: a transcrição automática não é dada como correta.
+- **Pacote** `mods\legendas-en` no formato do `SubtitleService` (e os filmes também no leiaute do N5): carrega no parser
+  do jogo sem problemas; no jogo, com `--audio-falas nativo --legendas en-US`, as linhas da `E002A` e da `E002B`
+  ficam ativas nos tempos certos (no log; o desenho das falas é do N7). Os filmes já são desenhados pelo player do N5.
+- **Testes:** `test_legendas.py` 11/11; `bs_audio_tests` 41/41; `bs_localization_tests` 8/8; `bs_video_tests` 42/42.
+
 ## Revisões independentes (Codex)
 
 ### 2026-10-19: N4 (saves nativos), duas rodadas. Relatórios em `reviews/codex-20261019-140151.md` e `-143748.md`

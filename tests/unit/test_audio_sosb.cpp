@@ -4,6 +4,7 @@
 
 #include "audio/aica_adpcm.h"
 #include "audio/sosb.h"
+#include "audio/sound_file.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -130,4 +131,28 @@ BS_TEST(audio_sosb_real_disc_matches_o6) {
         for (int r = 0; r < 128; ++r)
             if (const auto* e = m->find(bank, uint8_t(r)); e && (e->flags & 2)) ++lacos;
     BS_CHECK(lacos == 7);
+}
+
+// Legendas EN (docs/LEGENDAS-EN-PLANO.md): a copia em Python do decodificador (tools/dev/legendas/catalogo.py) tem que
+// dar o MESMO PCM que o do jogo (load_sound). FNV-1a 64 das amostras de 16 bits (little-endian) de duas falas reais;
+// os mesmos valores estao em tools/dev/legendas/test_legendas.py. Com BS_GAME_DATA=<disco> (pasta com BSDATA).
+BS_TEST(audio_voice_wav_decode_matches_pipeline) {
+    const char* gd = std::getenv("BS_GAME_DATA");
+    if (!gd) return;
+    struct Caso {
+        const char* nome;
+        size_t      amostras;
+        uint64_t    fnv;
+    };
+    for (const Caso& c : {Caso{"E002A.WAV", 460464, 0xdf82023065f43bd5ull}, Caso{"E012BENV.WAV", 265214, 0x38b40368024de61aull}}) {
+        std::string err;
+        auto        s = na::load_sound(std::filesystem::path(gd) / "BSDATA" / c.nome, &err);
+        BS_CHECK(s && s->pcm.size() == c.amostras && s->rate == 22050);
+        if (!s) continue;
+        uint64_t h = 0xcbf29ce484222325ull;
+        for (int16_t v : s->pcm)
+            for (int k = 0; k < 2; ++k) h = (h ^ uint8_t(uint16_t(v) >> (8 * k))) * 0x100000001b3ull;
+        BS_CHECK(h == c.fnv);
+        if (h != c.fnv) std::printf("  %s: FNV %016llx\n", c.nome, static_cast<unsigned long long>(h));
+    }
 }

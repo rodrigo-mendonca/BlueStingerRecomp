@@ -3,6 +3,7 @@
 
 #include "video/mf_movie.h"
 #include "video/movie_catalog.h"
+#include "video/subtitles.h"
 #include "video_mw_core.h"
 
 #include <filesystem>
@@ -153,4 +154,22 @@ BS_TEST(video_mods_incompatible_file) {
     tv::MwPlayerCore c(o);
     BS_CHECK(c.start("NEWGAME.SFD", 0) == tv::kMwError && c.status(0) == tv::kMwError);
     BS_CHECK(log.find("NEWGAME.SFD") != std::string::npos);
+}
+
+// Legendas EN (docs/LEGENDAS-EN-PLANO.md): as copias no leiaute do N5 (mods\video\<NOME>.en.srt) que o pacote gerado
+// traz em video\ sao achadas pelo catalogo de filmes e lidas pelo parser do N5 (que as desenha hoje). Com BS_LEGENDAS
+// (pasta de trabalho do pipeline) e BS_GAME_DATA (o disco; data\video ao lado).
+BS_TEST(video_legendas_en_geradas) {
+    const char* trab = std::getenv("BS_LEGENDAS");
+    const char* gd   = std::getenv("BS_GAME_DATA");
+    if (!trab || !gd) return;
+    const auto cat = bs::native::video::MovieCatalog::load(
+        {std::filesystem::path(gd).parent_path() / "video", std::filesystem::path(trab) / "mod" / "legendas-en" / "video"});
+    const auto* ng = cat.find("NEWGAME.SFD");
+    BS_CHECK(ng && ng->subtitles.count("en") == 1);
+    if (!ng || !ng->subtitles.count("en")) return;
+    std::vector<bs::native::video::SubtitleCue> cues;
+    std::string                                 err;
+    BS_CHECK(bs::native::video::load_subtitles(ng->subtitles.at("en"), cues, &err) && cues.size() >= 10);
+    for (size_t i = 1; i < cues.size(); ++i) BS_CHECK(cues[i - 1].end100ns <= cues[i].start100ns);
 }

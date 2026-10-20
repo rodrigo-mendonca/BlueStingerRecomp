@@ -220,3 +220,16 @@ Duração da dublagem modificada: `audio_dub_duration_policy` e `audio_sd_logica
    CVE-2023-45675…45682 (escritas fora dos limites com arquivo forjado) sem correção publicada (último commit
    2021); alternativas: `libvorbis`+`libogg` (Xiph, BSD-3, mantidas) ou o `stb_vorbis` com correções locais.
 7. **Desenho das legendas no gameplay:** só no N7. Até lá, só os filmes têm legendas na tela (N5).
+
+## 13. Primeiro pacote: legendas em inglês (2026-10-20)
+
+Detalhes em `docs/LEGENDAS-EN-PLANO.md`. O que muda aqui:
+- **existe um pacote real** no formato deste plano (`mods\legendas-en`, gerado pelo pipeline de
+  `tools/dev/legendas/`, fora do Git): 685 linhas das falas (por `voz/<nome>`) e 8 filmes com fala; o parser do jogo
+  o carrega sem problemas (`loc_mod_legendas_en_gerado`) e, com as falas nativas, as legendas ficam ativas no jogo
+  (registradas no log; o desenho é do N7);
+- a **transcrição** (`fontes/transcricoes.en-US.tsv`, com confiança e estado por linha) é a base da tradução PT-BR;
+- **filmes:** enquanto as duas formas de pastas de mods existirem (risco 5), o pacote traz as legendas dos filmes
+  também em `video\<NOME>.en.srt` (o leiaute do N5, que o player de filmes já desenha);
+- descobertas que valem para as legendas: 3 `ENV.WAV` têm fala e 11 falas sem `ENV` não têm fala detectada (a
+  categoria vem da detecção, não do nome); `E084.WAV` (ID 99) é ADPCM **estéreo** e ainda não toca no nativo.

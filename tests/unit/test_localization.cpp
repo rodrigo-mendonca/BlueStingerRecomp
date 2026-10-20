@@ -286,3 +286,53 @@ BS_TEST(loc_dialogue_bridge_voice_player) {
     vp.start("E999.WAV");
     BS_CHECK(vp.status() == na::kVoiceError && subs.active().empty());
 }
+
+// Legendas EN (docs/LEGENDAS-EN-PLANO.md): o pacote GERADO (BS_LEGENDAS=<pasta de trabalho>; fora do Git) carrega no
+// parser do jogo sem problemas; a fala E002A, tocada pelo player nativo e pela ponte, mostra as linhas do pacote nos
+// tempos certos (relativos ao inicio da fala, nao a sessao); o filme NEWGAME tem legendas no tempo de midia.
+BS_TEST(loc_mod_legendas_en_gerado) {
+    const char* trab = std::getenv("BS_LEGENDAS");
+    if (!trab) return;
+    namespace na = bs::native::audio;
+    const auto pacotes = nl::ModPackages::discover(fs::path(trab) / "mod");
+    BS_CHECK(pacotes.problems().empty());
+    nl::SubtitleService subs(pacotes, "en-US");
+    BS_CHECK(subs.problems().empty());
+    for (const auto& p : subs.problems()) std::printf("  %s\n", p.c_str());
+    na::AudioMixer         mixer(44100, 8);
+    nl::DialogueBridge     bridge(subs, 44100);
+    na::VoicePlayerOptions o;
+    o.onEvent = [&](const na::DialogueEvent& e) { bridge.on_event(e); };
+    na::VoicePlayer vp(mixer, [](std::string_view) {
+        na::VoiceSource s;
+        auto            d = std::make_shared<na::SoundData>();
+        d->rate           = 44100;
+        d->pcm.assign(size_t(20.883 * 44100), 1);  // a duracao do E002A.WAV
+        s.data = d, s.id = "voz/e002a";
+        return s;
+    }, o);
+    auto avancar = [&](double seg) {
+        std::vector<int16_t> out(2 * size_t(seg * 44100));
+        mixer.render(out);
+        for (const auto& e : mixer.take_events(mixer.now())) vp.on_mixer_event(e);
+        bridge.logical_frame(mixer.now());
+    };
+    avancar(37.5);  // a fala comeca num instante qualquer da sessao
+    vp.start("E002A.WAV");
+    for (int i = 0; i < 3; ++i) vp.game_step();
+    BS_CHECK(subs.active().empty() || subs.active()[0].id == "voz/e002a");
+    avancar(1.0);
+    auto a = subs.active();
+    BS_CHECK(a.size() == 1 && a[0].text.find(L"Eliot Ballade") != std::wstring::npos);  // a 1a linha, com o nome do jogo
+    avancar(3.5);  // 4,5 s: a 2a linha
+    a = subs.active();
+    BS_CHECK(a.size() == 1 && a[0].text.find(L"Janine") != std::wstring::npos);
+    vp.stop();  // interrompida: a legenda some
+    BS_CHECK(subs.active().empty());
+    subs.movie_started("NEWGAME");
+    subs.movie_time(int64_t(144.0 * 10000000));  // 2:24, dentro da 1a linha do filme
+    a = subs.active();
+    BS_CHECK(a.size() == 1 && a[0].source == nl::ActiveSubtitle::Source::Movie);
+    subs.movie_ended();
+    BS_CHECK(subs.active().empty());
+}
