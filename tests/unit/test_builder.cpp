@@ -6,6 +6,9 @@
 #include "builder_core.h"
 #include "child_process.h"
 #include "toolchain.h"
+#include "platform/install_config.h"
+
+#include <optional>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -216,6 +219,37 @@ BS_TEST(builder_install_swap_keeps_user_files_and_rolls_back) {
     install_swap(s3, dest, isPkg);
     BS_CHECK(readFile(dest / L"BlueStinger.exe") == "v3" && readFile(dest / L"bluestinger.ini") == "cdi=ç");
     BS_CHECK(!fs::exists(tmp.p / L"BlueStinger.old-deadbeef"));
+}
+
+// instalacao.toml (modo portatil) e da instalacao: escolhido, fica; recompilar sem escolha (Developer,
+// CLI) o preserva; trocar o modo regrava so ele, sem tocar nos saves de nenhum dos dois lugares
+BS_TEST(builder_install_swap_portable_config) {
+    namespace ni = bs::native::install;
+    TempDir        tmp;
+    const fs::path dest = tmp.p / L"BlueStinger";
+    auto           stage = [&](const std::string& ver, std::optional<bool> portable) {
+        const fs::path s = tmp.p / (L"BlueStinger.new-" + bs::builder::widen(ver));
+        writeFile(s / L"BlueStinger.exe", ver);
+        if (portable) ni::write_config(s, {*portable ? ni::SavesLocation::Portable : ni::SavesLocation::Documents});
+        return s;
+    };
+    BS_CHECK(!inspect_install(tmp.p).exists);
+    install_swap(stage("v1", true), dest, isPkg);
+    BS_CHECK(ni::read_config(dest).saves == ni::SavesLocation::Portable);
+    const InstallInfo i = inspect_install(tmp.p);
+    BS_CHECK(i.exists && i.ours && i.portable && i.previous == tmp.p / L"BlueStinger.anterior");
+    BS_CHECK(readFile(dest / kPackageManifest).find("instalacao.toml") == std::string::npos);  // fora da lista
+    writeFile(dest / L"saves" / L"card0" / L"BLUESTIN.000.bsv", "partida");
+    install_swap(stage("v2", std::nullopt), dest, isPkg);  // sem escolha: o arquivo anterior fica
+    BS_CHECK(readFile(dest / L"BlueStinger.exe") == "v2" && ni::read_config(dest).saves == ni::SavesLocation::Portable);
+    install_swap(stage("v3", false), dest, isPkg);  // troca para Documentos: a partida portatil continua
+    BS_CHECK(ni::read_config(dest).saves == ni::SavesLocation::Documents && !inspect_install(tmp.p).portable);
+    BS_CHECK(readFile(dest / L"saves" / L"card0" / L"BLUESTIN.000.bsv") == "partida");
+    // pasta alheia (sem a nossa marca) no lugar da instalacao
+    const fs::path other = tmp.p / L"outra";
+    writeFile(other / L"BlueStinger" / L"leia.txt", "meu");
+    const InstallInfo f = inspect_install(other);
+    BS_CHECK(f.exists && !f.ours && !f.portable);
 }
 
 BS_TEST(builder_install_swap_recovery_and_cancel) {

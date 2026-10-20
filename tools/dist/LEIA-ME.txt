@@ -36,7 +36,9 @@ Saves
 -----
 Sem cartao de memoria: o jogo ve um cartao (Socket 1) e grava cada slot como arquivo em
 Documentos\DC-Recomp\Blue Stinger\saves\card0 (BLUESTIN.000 a .005, com copia anterior .bak).
-  --saves-portatil ............. saves\ ao lado do BlueStinger.exe
+  --saves-portatil ............. saves\ ao lado do BlueStinger.exe (o "Modo portatil" do
+                                 BlueStinger-Recompiler grava isso em instalacao.toml, ao lado do
+                                 jogo: vale ao abrir o BlueStinger.exe direto e depois de mover a pasta)
   --saves-pasta <pasta> ........ outra pasta
   --saves-importar <arq.vms> ... traz um save de VMU/emulador (VMS) para o slot 1 (--saves-nome
                                  BLUESTIN.00n para outro slot); --saves-exportar <arq.vms> leva para fora

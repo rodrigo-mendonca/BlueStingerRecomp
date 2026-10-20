@@ -103,6 +103,7 @@ int main() {
     const Result r = build(req, cb);
     if (r.ok) {
         out("instalado: " + path_text(r.exe) + "\n");
+        if (!r.warning.empty()) out("aviso: " + r.warning + "\n");
         return 0;
     }
     out(std::string("falhou em \"") + step_name(r.failedStep) + "\": " + r.error + "\n");

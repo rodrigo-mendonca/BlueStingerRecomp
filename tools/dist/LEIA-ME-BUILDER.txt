@@ -26,9 +26,11 @@ Requisitos
 
 Como usar
 ---------
-1. Abra BlueStingerBuilder.exe.
-2. Escolha a imagem .cdi e a pasta de saida.
-3. Clique em "Gerar BlueStinger.exe". A primeira conversao leva alguns minutos; as
+1. Abra BlueStinger-Recompiler.exe (portugues ou ingles, na lista "Idioma").
+2. Escolha a imagem .cdi e a pasta de instalacao. "Modo portatil" (desmarcado por padrao) guarda
+   as partidas na pasta saves da instalacao em vez de Documentos\DC-Recomp\Blue Stinger\saves;
+   trocar o modo nao move as partidas existentes.
+3. Clique em "Recompilar". A primeira conversao leva alguns minutos; as
    seguintes reaproveitam o que ja foi feito.
 4. No fim, "Jogar" inicia o jogo e "Abrir pasta" mostra a pasta BlueStinger.
 
@@ -39,8 +41,8 @@ SEM o CDI (dados e boot curto) e so entao troca a versao instalada. Se qualquer 
 ou for cancelada, a versao anterior continua intacta. A versao anterior fica guardada em
 BlueStinger.anterior (para voltar, renomeie as pastas).
 
-Projeto C++ editavel e mods
----------------------------
+Projeto C++ editavel e mods (BlueStinger-Developer.exe)
+-------------------------------------------------------
 - "Exportar tambem o projeto C++ editavel": cria <saida>\projeto com o C++ gerado, o
   runtime, o mapa de funcoes (endereco SH-4 -> funcao C++), a pasta mods\ e a documentacao
   (LEIA-ME-PROJETO.md). E privado: nao publique.

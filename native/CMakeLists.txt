@@ -9,7 +9,7 @@ target_compile_features(bs_native_api INTERFACE cxx_std_20)
 # N4: saves (formato VMS/envelope e armazenamento atomico em disco).
 add_library(bs_native STATIC platform/data_files.cpp platform/clock.cpp platform/event_queue.cpp
             platform/progress.cpp platform/input_map.cpp platform/input_system.cpp
-            platform/saves_format.cpp platform/saves_store.cpp)
+            platform/saves_format.cpp platform/saves_store.cpp platform/install_config.cpp)
 target_link_libraries(bs_native PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus xinput)
 
 # N5: filmes nativos (catalogo por ID com mods, leitura e gravacao MP4 por Media Foundation)

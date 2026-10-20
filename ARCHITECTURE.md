@@ -499,7 +499,9 @@ builder/
   toolchain.*       vswhere -> vcvars64 (ambiente em UTF-16) -> CMake/Ninja/CRT do VS
   child_process.*   processos filhos: pipe, UTF-8/OEM/UTF-16, job object (cancela a árvore)
   main_cli.cpp      bs-builder.exe (automação, testes)
-  main_win32.cpp    BlueStingerBuilder.exe (janela Win32 nativa)
+  main_recompiler.cpp  BlueStinger-Recompiler.exe (janela simples: idioma, modo portatil)
+  main_developer.cpp   BlueStinger-Developer.exe (projeto C++ editavel, log tecnico)
+  ui/                  textos da janela simples por chave (pt-BR, en-US)
 translator/app/recomp.*   análise + geração como biblioteca (bs-recomp e Builder)
 ```
 

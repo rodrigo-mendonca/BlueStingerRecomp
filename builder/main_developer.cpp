@@ -1,7 +1,7 @@
-// Blue Stinger Builder (janela Win32): escolhe o CDI e a pasta de saida e roda o fluxo
-// completo do builder_core numa thread, com progresso, log e cancelamento. No fim, abre a
-// pasta ou inicia o jogo.
-//   BlueStingerBuilder.exe [--disc <cdi>] [--out <pasta>] [--kit <pasta>] [--sdl3 <pasta>]
+// Blue Stinger Developer (janela Win32): o fluxo completo do builder_core com as opcoes avancadas
+// (projeto C++ editavel, recompilar do zero) e o log tecnico, numa thread, com progresso e
+// cancelamento. A tela simples para o usuario final e o BlueStinger-Recompiler.exe (main_recompiler.cpp).
+//   BlueStinger-Developer.exe [--disc <cdi>] [--out <pasta>] [--kit <pasta>] [--sdl3 <pasta>]
 //                          [--auto]   (comeca sozinho e fecha no fim; codigo 0 = sucesso)
 #include "builder_core.h"
 #include "child_process.h"
@@ -36,7 +36,7 @@ enum : int {
     ID_PROGRESS, ID_STATUS, ID_LOG, ID_EXPORT, ID_FROMPROJ
 };
 
-const wchar_t* const kTitle = L"Blue Stinger Builder";
+const wchar_t* const kTitle = L"Blue Stinger Developer";
 
 struct Progress {
     Step         step;
@@ -414,7 +414,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     wc.hInstance     = inst;
     wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = HBRUSH(COLOR_BTNFACE + 1);
-    wc.lpszClassName = L"BlueStingerBuilder";
+    wc.lpszClassName = L"BlueStingerDeveloper";
     wc.hIcon         = LoadIconW(nullptr, IDI_APPLICATION);
     RegisterClassExW(&wc);
     const UINT dpi = GetDpiForSystem();

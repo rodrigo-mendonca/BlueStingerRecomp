@@ -1958,6 +1958,70 @@ Autorizado em paralelo à regressão do N4. Plano em `docs/N5-PLANO.md`.
   - decisões D1–D5 do mantenedor (seção 7 do plano);
   - N5-3 e N5-4 depois do fechamento do N4.
 
+### BlueStinger-Recompiler e BlueStinger-Developer; modo portátil no jogo (2026-10-20)
+
+Pedido do mantenedor de 2026-10-19 (`docs/RECOMPILER-UI.md`). Feito na worktree
+`../recomp-BStinger-ui` e integrado por patch em três vias sobre `bd7687a`. Conflitos resolvidos:
+- `builder_core.{h,cpp}`: filmes do N5 mais o modo portátil;
+- `builder/CMakeLists.txt`: `bs_video_convert` e `bs_native`;
+- `test_builder.ps1`.
+
+A renomeação `main_win32.cpp` → `main_developer.cpp` preservou o `--sem-filmes` do N5.
+
+**Entregue:**
+- **Dois executáveis sobre o mesmo `bs_builder_core`** (a CLI `bs-builder` fica):
+  - `BlueStinger-Recompiler.exe`, a tela simples: CDI (com o seletor na pasta do Recompiler e um
+    `.cdi` ao lado detectado sozinho), pasta, idioma, Modo portátil desmarcado por padrão,
+    Recompilar, Cancelar, Abrir pasta, Jogar e Ajuda;
+  - `BlueStinger-Developer.exe`, a janela antiga, com projeto C++ e log técnico.
+- **Idioma:** lista suspensa (`CBS_DROPDOWNLIST`) com pt-BR e en-US.
+  - Inicial: a preferência salva; sem ela, o idioma do Windows (pt-BR → português, o resto →
+    inglês).
+  - A troca retraduz a janela inteira na hora, inclusive o status já exibido.
+  - Catálogo por chave (`builder/ui`); um idioma novo é um arquivo e uma linha.
+- **Erros amigáveis por tipo** (`ErrorKind`): CDI inválido ou ausente, sem espaço, sem permissão,
+  caminho longo, ocupado, compilador, dados, compilação, teste, instalação. O detalhe fica no
+  `builder.log`.
+- **Avisos antes de tocar numa instalação:** existente (saves e mods preservados), pasta alheia,
+  troca de modo (as partidas não são transferidas e nada é apagado).
+- **Modo portátil no jogo:** `instalacao.toml` (`native/platform/install_config`), gravado no
+  pacote só quando a interface escolhe o modo e **fora da lista do pacote**: uma recompilação sem
+  escolha (Developer, CLI) o preserva.
+  - O `BlueStinger.exe` o lê ao iniciar.
+  - Precedência: `--saves-pasta` > `--saves-portatil` > `instalacao.toml` > no `--headless`,
+    cartão temporário > Documentos (`FOLDERID_Documents`).
+
+**Revisão do Codex** (`reviews/codex-20261019-232955.md`): 4 achados, todos aceitos e corrigidos.
+
+| Gravidade | Achado | Correção |
+|---|---|---|
+| MÉDIA | Falha ao arquivar a versão anterior **depois** da troca era mostrada como "nada foi alterado" | `ArchiveError`: sucesso com aviso (a nova está ativa; a anterior ficou numa pasta ao lado), na janela e na CLI |
+| MÉDIA | Falta de espaço e de permissão perdidas no `instalacao.toml`, na criação do pacote e na troca | Código do sistema propagado (`write_config(..., code)`, `SwapError`, `GetLastError` do pacote). Teste da classificação; o teste achou que o MSVC equipara `ERROR_SHARING_VIOLATION` (o jogo aberto) a `permission_denied`, e `error_kind_of` passou a olhar os códigos do Windows primeiro |
+| BAIXA | `instalacao.toml` inacessível virava Documentos sem aviso | Abertura e leitura conferidas, com aviso; teste com o arquivo travado |
+| BAIXA | CDI ao lado não detectado com preferência antiga inválida | Detecção também quando a preferência salva não existe mais; `--disc` vence |
+
+**Testes:**
+
+| Teste | Resultado |
+|---|---|
+| `bs_ui_tests` | 17/17: catálogo completo nos dois idiomas, idioma inicial, troca, modos, precedência, erros e classificação |
+| `ctest` | 14/14 |
+| `test_saves` | **25/25**, com os novos S15–S18 |
+| `test_builder` | **22/22** |
+
+Casos novos do `test_saves`:
+- S15: instalação portátil aberta direto carrega de `<instalação>\saves`;
+- S16: movida para outra pasta, continua;
+- S17: SAVE de gameplay grava na instalação;
+- S18: precedência, sem o arquivo usa o cartão temporário, inválido avisa.
+
+No `test_builder`, a etapa 11 roda o Recompiler com `--portatil --idioma en-US` e grava o modo; a
+11b roda o Developer e o preserva. A janela foi conferida em captura, em pt-BR e en-US.
+
+**Distribuição: bloqueada pelo compilador.** O Recompiler ainda exige o Visual Studio Build Tools
+instalado pelo usuário. Opções e recomendação em `docs/DISTRIBUICAO-COMPILADOR.md`; decisão do
+mantenedor pendente.
+
 ### N5: integração e primeiro filme nativo no jogo (2026-10-19)
 
 As mudanças da worktree (`../recomp-BStinger-n5`, base `b1c76ec`) vieram para a árvore principal

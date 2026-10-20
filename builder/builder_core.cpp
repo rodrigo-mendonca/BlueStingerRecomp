@@ -9,6 +9,7 @@
 #include "runtime_data.h"
 #include "toolchain.h"
 #include "video/movie_build.h"
+#include "platform/install_config.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -70,10 +71,15 @@ Range rangeOf(Step s) {
     return {0, 0};
 }
 
-// erro de uma etapa: mensagem para o usuario
+// erro de uma etapa: mensagem tecnica (log, Developer) e o tipo (mensagem traduzida do Recompiler)
 struct StepError : std::runtime_error {
-    using std::runtime_error::runtime_error;
+    ErrorKind kind = ErrorKind::Other;
+    explicit StepError(const std::string& m) : std::runtime_error(m) {}
+    StepError(ErrorKind k, const std::string& m) : std::runtime_error(m), kind(k) {}
 };
+
+// falta de espaco e de permissao pelo codigo do sistema (inclusive dentro de filesystem_error)
+ErrorKind kindOf(const std::error_code& ec, ErrorKind otherwise) { return error_kind_of(ec, otherwise); }
 struct Cancelled {};
 
 // linhas de log do processo: tambem para o resumo do erro
@@ -180,7 +186,8 @@ void probeWritable(const fs::path& dir) {
     HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_FLAG_DELETE_ON_CLOSE, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         const DWORD e = GetLastError();
-        throw StepError("sem permissao de gravacao em " + path_text(dir) + " (erro " + std::to_string(e) +
+        throw StepError(kindOf(std::error_code(int(e), std::system_category()), ErrorKind::NoPermission),
+                        "sem permissao de gravacao em " + path_text(dir) + " (erro " + std::to_string(e) +
                         "). Escolha outra pasta de saida.");
     }
     CloseHandle(h);
@@ -260,6 +267,56 @@ std::string check_kit(const fs::path& kit, const fs::path& sdl3) {
     return {};
 }
 
+ErrorKind error_kind_of(const std::error_code& ec, ErrorKind otherwise) {
+    // codigos do Windows primeiro: o MSVC equipara ERROR_SHARING_VIOLATION (arquivo em uso, o jogo aberto) a
+    // permission_denied, e isso nao e falta de permissao
+    if (ec.category() == std::system_category()) {
+        switch (ec.value()) {
+        case ERROR_DISK_FULL:
+        case ERROR_HANDLE_DISK_FULL: return ErrorKind::NoSpace;
+        case ERROR_ACCESS_DENIED:
+        case ERROR_WRITE_PROTECT: return ErrorKind::NoPermission;
+        default: return otherwise;
+        }
+    }
+    if (ec == std::errc::no_space_on_device) return ErrorKind::NoSpace;
+    if (ec == std::errc::permission_denied || ec == std::errc::read_only_file_system) return ErrorKind::NoPermission;
+    return otherwise;
+}
+
+const char* error_key(ErrorKind k) {
+    switch (k) {
+    case ErrorKind::None: return "";
+    case ErrorKind::Cancelled: return "status.cancelled";
+    case ErrorKind::MissingInput: return "err.missing_input";
+    case ErrorKind::DiscNotFound: return "err.disc_not_found";
+    case ErrorKind::InvalidDisc: return "err.invalid_disc";
+    case ErrorKind::NoSpace: return "err.no_space";
+    case ErrorKind::NoPermission: return "err.no_permission";
+    case ErrorKind::PathTooLong: return "err.path_too_long";
+    case ErrorKind::Busy: return "err.busy";
+    case ErrorKind::Toolchain: return "err.toolchain";
+    case ErrorKind::Data: return "err.data";
+    case ErrorKind::Build: return "err.build";
+    case ErrorKind::Verify: return "err.verify";
+    case ErrorKind::Install: return "err.install";
+    case ErrorKind::Other: return "err.other";
+    }
+    return "err.other";
+}
+
+InstallInfo inspect_install(const fs::path& outDir, const std::wstring& installName) {
+    InstallInfo     i;
+    std::error_code ec;
+    i.dir      = outDir / installName;
+    i.previous = outDir / (installName + L".anterior");
+    i.exists   = fs::is_directory(i.dir, ec) && fs::directory_iterator(i.dir, ec) != fs::directory_iterator();
+    if (!i.exists) return i;
+    i.ours     = installMarker(i.dir) != 0;
+    i.portable = native::install::read_config(i.dir).saves == native::install::SavesLocation::Portable;
+    return i;
+}
+
 fs::path toml_dir(const fs::path& kit, const fs::path& sdl3) {
     std::error_code ec;
     const fs::path  inKit = kit / L"third_party" / L"tomlplusplus";
@@ -303,7 +360,7 @@ void archivePrevious(const fs::path& parent, const fs::path& dest, const fs::pat
     if (ec) {
         std::error_code ec2;
         if (!aside.empty()) fs::rename(aside, parent / (dest.filename().native() + L".anterior"), ec2);
-        throw std::runtime_error("a versao nova foi instalada, mas a anterior nao pode ser guardada em " +
+        throw ArchiveError("a versao nova foi instalada, mas a anterior nao pode ser guardada em " +
                                  path_text(prev) + " (" + error_text(ec) + "); ela continua em " + path_text(backup));
     }
     if (!aside.empty()) fs::remove_all(aside, ec);  // a .anterior antiga (nossa) so sai agora
@@ -338,7 +395,9 @@ void install_swap(const fs::path& stage, const fs::path& dest, const std::functi
     {
         std::vector<std::wstring> files;
         for (const auto& e : fs::recursive_directory_iterator(stage))
-            if (e.is_regular_file()) files.push_back(fs::relative(e.path(), stage).generic_wstring());
+            // instalacao.toml fica fora da lista: e da instalacao (preservado numa troca sem escolha de modo)
+            if (e.is_regular_file() && lower(fs::relative(e.path(), stage).generic_wstring()) != lower(native::install::kConfigFile))
+                files.push_back(fs::relative(e.path(), stage).generic_wstring());
         std::ofstream m(stage / kPackageManifest, std::ios::binary | std::ios::trunc);
         for (const auto& f : files) m << narrow(f) << "\n";
         m << narrow(kPackageManifest) << "\n" << narrow(kInstallMarker) << "\n";
@@ -380,17 +439,19 @@ void install_swap(const fs::path& stage, const fs::path& dest, const std::functi
         fs::rename(stage, dest);
     } catch (const fs::filesystem_error& e) {
         const std::string why = error_text(e.code());
+        const std::error_code code = e.code();
         if (hadOld) {
             std::error_code ec2;
             if (!fs::exists(dest, ec2) && fs::exists(backup, ec2)) fs::rename(backup, dest, ec2);
             if (!fs::exists(dest / L"BlueStinger.exe", ec2))  // a restauracao tambem falhou: dizer onde esta
-                throw std::runtime_error("nao foi possivel trocar a versao instalada (" + why +
+                throw SwapError("nao foi possivel trocar a versao instalada (" + why +
                                          ") nem restaurar a anterior. A versao anterior esta em " + path_text(backup) +
                                          (installMarker(backup) ? " e volta sozinha na proxima execucao do Builder."
-                                                                : "; renomeie-a de volta para " + path_text(dest) + "."));
+                                                                : "; renomeie-a de volta para " + path_text(dest) + "."),
+                                code);
         }
-        throw std::runtime_error("nao foi possivel trocar a versao instalada (" + why +
-                                 "). O jogo esta aberto? A versao anterior foi mantida.");
+        throw SwapError("nao foi possivel trocar a versao instalada (" + why +
+                        "). O jogo esta aberto? A versao anterior foi mantida.", code);
     }
     // a nova esta no lugar: a anterior fica como <dest>.anterior para rollback (falha aqui nao
     // perde nada: o backup marcado sai na proxima execucao)
@@ -453,9 +514,9 @@ Result build(const Request& req, const Callbacks& cb) {
     try {
         // 1. entradas
         enter(Step::Validate);
-        if (req.disc.empty() && !fromProject) throw StepError("escolha a imagem CDI do jogo");
+        if (req.disc.empty() && !fromProject) throw StepError(ErrorKind::MissingInput, "escolha a imagem CDI do jogo");
         if (!req.disc.empty() && !fs::is_regular_file(req.disc, ec))
-            throw StepError("imagem nao encontrada: " + path_text(req.disc));
+            throw StepError(ErrorKind::DiscNotFound, "imagem nao encontrada: " + path_text(req.disc));
         if (fromProject)
             if (const std::string p = check_project(kit); !p.empty()) throw StepError(p);
         if (fromProject && !req.exportProject.empty())
@@ -468,7 +529,7 @@ Result build(const Request& req, const Callbacks& cb) {
                     throw StepError("a pasta do projeto nao pode ficar dentro de " + path_text(own));
             }
         }
-        if (req.outDir.empty()) throw StepError("escolha a pasta de saida");
+        if (req.outDir.empty()) throw StepError(ErrorKind::MissingInput, "escolha a pasta de saida");
         if (req.installName.empty() || req.installName.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos)
             throw StepError("nome de instalacao invalido");
         if (std::max(kit.native().size(), sdl3.native().size()) > kMaxOutPath)
@@ -477,20 +538,20 @@ Result build(const Request& req, const Callbacks& cb) {
         if (const std::string k = check_kit(kit, sdl3); !k.empty()) throw StepError(k + " (reinstale o Builder)");
         // a compilacao acontece no cache (caminho curto); na saida ficam o jogo e o trabalho
         if (out.native().size() > kMaxOutPath)
-            throw StepError("o caminho da pasta de saida e longo demais (" + std::to_string(out.native().size()) +
+            throw StepError(ErrorKind::PathTooLong, "o caminho da pasta de saida e longo demais (" + std::to_string(out.native().size()) +
                             " caracteres; maximo " + std::to_string(kMaxOutPath) + "). Escolha uma pasta mais curta, "
                             "por exemplo C:\\Jogos\\BlueStinger.");
         fs::create_directories(out, ec);
         if (ec || !fs::is_directory(out, ec))
-            throw StepError("nao foi possivel criar a pasta de saida " + path_text(out) + " (" + error_text(ec) + ")");
+            throw StepError(kindOf(ec, ErrorKind::NoPermission), "nao foi possivel criar a pasta de saida " + path_text(out) + " (" + error_text(ec) + ")");
         probeWritable(out);
         fs::create_directories(work, ec);
-        if (ec) throw StepError("nao foi possivel criar " + path_text(work) + " (" + error_text(ec) + ")");
+        if (ec) throw StepError(kindOf(ec, ErrorKind::NoPermission), "nao foi possivel criar " + path_text(work) + " (" + error_text(ec) + ")");
         // uma execucao por pasta de saida (o cache, o pacote e a troca sao dela)
         lock.h = CreateFileW((work / L".bs-lock").c_str(), GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
                              FILE_FLAG_DELETE_ON_CLOSE, nullptr);
         if (lock.h == INVALID_HANDLE_VALUE)
-            throw StepError("outra execucao do Builder esta usando " + path_text(out) + "; espere ela terminar");
+            throw StepError(ErrorKind::Busy, "outra execucao do Builder esta usando " + path_text(out) + "; espere ela terminar");
         // pacotes temporarios de uma execucao interrompida (so os marcados por nos)
         for (const auto& e : fs::directory_iterator(out, ec))
             if (e.is_directory() && e.path().filename().native().rfind(req.installName + L".new-", 0) == 0 &&
@@ -516,7 +577,7 @@ Result build(const Request& req, const Callbacks& cb) {
             try {
                 return find_toolchain({req.vswhere, req.vcvars}, log);
             } catch (const std::runtime_error& e) {
-                throw StepError(e.what());
+                throw StepError(ErrorKind::Toolchain, e.what());
             }
         }();
 
@@ -528,7 +589,7 @@ Result build(const Request& req, const Callbacks& cb) {
             try {
                 boot = boot_read_disc(req.disc);
             } catch (const std::exception& e) {
-                throw StepError(std::string("esta imagem nao pode ser usada: ") + e.what() +
+                throw StepError(ErrorKind::InvalidDisc, std::string("esta imagem nao pode ser usada: ") + e.what() +
                                 "\nE preciso a imagem CDI do Blue Stinger NTSC-U (T13001N V1.000).");
             }
             log("disco: " + boot.product + " " + boot.version + " (" + boot.versionId + ")");
@@ -548,7 +609,7 @@ Result build(const Request& req, const Callbacks& cb) {
         if (req.disc.empty()) {
             const std::string s = readText(dataStamp);
             if (s.rfind(fmtPrefix, 0) != 0)
-                throw StepError("os dados do jogo ainda nao foram preparados nesta pasta de saida: informe o CDI "
+                throw StepError(ErrorKind::Data, "os dados do jogo ainda nao foram preparados nesta pasta de saida: informe o CDI "
                                 "uma vez (eles ficam guardados para as proximas compilacoes)");
             stampText = s;
         }
@@ -569,7 +630,7 @@ Result build(const Request& req, const Callbacks& cb) {
             }
         }
         if (!reuse && req.disc.empty())
-            throw StepError("os dados preparados nesta saida estao alterados ou incompletos: informe o CDI para "
+            throw StepError(ErrorKind::Data, "os dados preparados nesta saida estao alterados ou incompletos: informe o CDI para "
                             "prepara-los de novo");
         if (!reuse) {
             fs::remove(dataStamp, ec);
@@ -585,7 +646,7 @@ Result build(const Request& req, const Callbacks& cb) {
                 const std::string diff = disc::verify_runtime_data(img, dataDir, [&](double f, const std::string&) {
                     progress(0.6 + 0.4 * f, "conferindo os dados setor a setor");
                 }, cb.cancel);
-                if (!diff.empty()) throw StepError("os dados preparados nao conferem com a imagem: " + diff);
+                if (!diff.empty()) throw StepError(ErrorKind::InvalidDisc, "os dados preparados nao conferem com a imagem: " + diff);
                 log("dados conferidos setor a setor com a imagem");
             } catch (const disc::RuntimeDataError& e) {
                 if (cb.cancel && cb.cancel->load()) throw Cancelled{};
@@ -716,7 +777,7 @@ Result build(const Request& req, const Callbacks& cb) {
                                (fromProject ? L" -DBS_MODS=ON " + quote_arg(L"-DBS_MODS_DIR=" + cmakePath(modsSrc))
                                             : std::wstring(L" -DBS_MODS=OFF -DBS_MODS_DIR="));
             if (run(cmd, buildDir, tc.env, nullptr) != 0)
-                throw StepError("a configuracao do CMake falhou:\n" + tail.summary());
+                throw StepError(ErrorKind::Build, "a configuracao do CMake falhou:\n" + tail.summary());
             std::ofstream(buildDir / L".bs-kit", std::ios::binary | std::ios::trunc) << stamp;  // binario: sem \r
         }
 
@@ -731,7 +792,7 @@ Result build(const Request& req, const Callbacks& cb) {
                     progress(double(n) / m, std::string(step_name(Step::Compile)) + " " + std::to_string(n) + "/" +
                                                 std::to_string(m));
             });
-            if (rc != 0) throw StepError("a compilacao falhou:\n" + tail.summary());
+            if (rc != 0) throw StepError(ErrorKind::Build, "a compilacao falhou:\n" + tail.summary());
         }
         const fs::path built = buildDir / L"app" / L"bluestinger.exe";
         if (!fs::is_regular_file(built, ec)) throw StepError("a compilacao nao produziu " + path_text(built));
@@ -742,9 +803,10 @@ Result build(const Request& req, const Callbacks& cb) {
         for (int i = 0; i < 16 && stage.empty(); ++i) {  // criacao exclusiva: nunca reaproveita uma pasta
             const fs::path s = out / (req.installName + L".new-" + widen(randomSuffix()));
             if (CreateDirectoryW(s.c_str(), nullptr)) stage = s;
-            else if (GetLastError() != ERROR_ALREADY_EXISTS)
-                throw StepError("nao foi possivel criar o pacote em " + path_text(out) + " (" +
-                                error_text(std::error_code(int(GetLastError()), std::system_category())) + ")");
+            else if (const DWORD le = GetLastError(); le != ERROR_ALREADY_EXISTS) {
+                const std::error_code c(int(le), std::system_category());
+                throw StepError(kindOf(c, ErrorKind::Other), "nao foi possivel criar o pacote em " + path_text(out) + " (" + error_text(c) + ")");
+            }
         }
         if (stage.empty()) throw StepError("nao foi possivel criar uma pasta de pacote exclusiva");
         std::ofstream(stage / kStageMarker, std::ios::binary) << "pacote temporario do Blue Stinger Builder\n";
@@ -765,6 +827,16 @@ Result build(const Request& req, const Callbacks& cb) {
             fs::copy_file(sdl3 / L"LICENSE.txt", stage / L"licencas" / L"SDL3-zlib.txt");
         if (fs::is_regular_file(toml / L"LICENSE", ec))  // N3-1: o jogo le controles.toml com o toml++
             fs::copy_file(toml / L"LICENSE", stage / L"licencas" / L"tomlplusplus-MIT.txt");
+        // local dos saves escolhido na interface (sem escolha: o instalacao.toml anterior fica, como
+        // arquivo do usuario). Nao faz parte da lista do pacote: nunca e apagado por uma troca.
+        if (req.portableSaves) {
+            native::install::InstallConfig ic;
+            ic.saves = *req.portableSaves ? native::install::SavesLocation::Portable : native::install::SavesLocation::Documents;
+            std::string     ierr;
+            std::error_code icode;
+            if (!native::install::write_config(stage, ic, &ierr, &icode)) throw StepError(kindOf(icode, ErrorKind::Other), ierr);
+            log(std::string("saves: ") + (*req.portableSaves ? "portatil (saves\\ na instalacao)" : "Documentos"));
+        }
         // dados do jogo: hard links dos preparados (sem copiar 700 MB; copia se o volume nao
         // aceitar links). Os arquivos nunca sao reescritos no lugar: o Builder prepara de novo
         // numa pasta nova, entao os links nao misturam versoes.
@@ -823,7 +895,7 @@ Result build(const Request& req, const Callbacks& cb) {
         {
             const std::wstring cmd = quote_arg((stage / L"BlueStinger.exe").native()) + L" --verify-data";
             const int          rc  = run(cmd, stage, {}, nullptr, 600000);
-            if (rc != 0) throw StepError("os dados do pacote nao conferem:\n" + tail.summary());
+            if (rc != 0) throw StepError(ErrorKind::Verify, "os dados do pacote nao conferem:\n" + tail.summary());
         }
         progress(0.4, "boot de teste (sem o CDI)");
         {
@@ -834,7 +906,7 @@ Result build(const Request& req, const Callbacks& cb) {
                 if (l.rfind("VBlanks: " + std::to_string(req.verifyVblanks) + ";", 0) == 0) reached = true;
             }, 600000);
             if (rc != 0 || !reached)
-                throw StepError("o executavel compilado falhou no boot de teste (codigo " + std::to_string(rc) + "):\n" +
+                throw StepError(ErrorKind::Verify, "o executavel compilado falhou no boot de teste (codigo " + std::to_string(rc) + "):\n" +
                                 tail.summary());
         }
         {
@@ -863,12 +935,16 @@ Result build(const Request& req, const Callbacks& cb) {
         fs::remove(stage / kStageMarker, ec);  // nao vai para o jogo instalado
         try {
             install_swap(stage, res.installDir, isPackage, cb.cancel);
+        } catch (const ArchiveError& e) {  // a nova ja esta instalada: sucesso com aviso
+            res.warning = e.what();
+            log(std::string("AVISO: ") + e.what());
         } catch (const SwapCancelled&) {
             std::ofstream(stage / kStageMarker, std::ios::binary) << "x";  // o guard volta a poder apagar
             throw Cancelled{};
         } catch (const std::exception& e) {
             std::ofstream(stage / kStageMarker, std::ios::binary) << "x";
-            throw StepError(e.what());
+            const auto* se = dynamic_cast<const SwapError*>(&e);
+            throw StepError(se ? kindOf(se->code, ErrorKind::Install) : ErrorKind::Install, e.what());
         }
         guard.p.clear();
         step = Step::Done;
@@ -878,18 +954,22 @@ Result build(const Request& req, const Callbacks& cb) {
         res.ok = true;
     } catch (const Cancelled&) {
         res.cancelled  = true;
+        res.kind       = ErrorKind::Cancelled;
         res.failedStep = step;
         res.error      = "cancelado pelo usuario; a versao instalada anterior foi mantida";
         log("cancelado");
     } catch (const StepError& e) {
+        res.kind       = e.kind;
         res.failedStep = step;
         res.error      = e.what();
         log(std::string("ERRO (") + step_name(step) + "): " + e.what());
     } catch (const fs::filesystem_error& e) {
+        res.kind       = kindOf(e.code(), step == Step::Install ? ErrorKind::Install : ErrorKind::Other);
         res.failedStep = step;
         res.error      = std::string(step_name(step)) + ": " + error_text(e.code()) + " (" + path_text(e.path1()) + ")";
         log("ERRO: " + res.error);
     } catch (const std::exception& e) {
+        res.kind       = ErrorKind::Other;
         res.failedStep = step;
         res.error      = std::string(step_name(step)) + ": " + e.what();
         log("ERRO: " + res.error);

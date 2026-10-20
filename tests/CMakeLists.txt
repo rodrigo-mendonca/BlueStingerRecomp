@@ -42,6 +42,12 @@ target_link_libraries(bs_video_tests PRIVATE bs_native_video bs_native_audio bs_
 add_test(NAME video COMMAND bs_video_tests)
 add_test(NAME unit COMMAND bs_unit_tests)
 
+# Interface do recompilador (catalogo de textos, configuracao da instalacao, troca da instalacao)
+add_executable(bs_ui_tests unit/main.cpp unit/test_ui.cpp unit/test_builder.cpp)
+target_include_directories(bs_ui_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
+target_link_libraries(bs_ui_tests PRIVATE bs_builder_core bs_builder_ui bs_native)
+add_test(NAME ui COMMAND bs_ui_tests)
+
 # Usa a imagem do usuario se BS_DISC_IMAGE estiver definido; senao, SKIP.
 add_executable(bs_real_disc_test data/test_real_disc.cpp)
 target_link_libraries(bs_real_disc_test PRIVATE bs_disc)

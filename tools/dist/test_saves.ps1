@@ -16,6 +16,12 @@
 #      jogo original importado carrega com a posicao registrada no Flycast (senao SKIP)
 #   S13 o produto nao usa diagnosticos: nenhuma linha BS_SAVES_H1/H2 nos casos sem eles
 #   S14 --headless sem --saves-pasta: cartao temporario vazio do processo, fora dos saves do usuario, apagado no fim
+#   S15 modo portatil pela instalacao (instalacao.toml do BlueStinger-Recompiler, sem opcao de linha de
+#       comando): o executavel aberto direto carrega a partida de <instalacao>\saves
+#   S16 a instalacao portatil movida para outra pasta continua lendo os proprios saves
+#   S17 SAVE de gameplay numa instalacao portatil grava em <instalacao>\saves
+#   S18 precedencia: --saves-pasta vence o instalacao.toml; sem ele (e no --headless) cartao temporario;
+#       instalacao.toml invalido: aviso e o padrao
 #   powershell -File tools/dist/test_saves.ps1 [-Exe <release>] [-ExeMods <mods>] [-Data <data>] [-Casos S1,...]
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
@@ -56,7 +62,7 @@ function Start-Case($nome, $exe, $roteiro, $vblanks, $argsExtra, $envExtra = @{}
     $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$line`"" -PassThru -WindowStyle Hidden
     return @{ Nome = $nome; Dir = $d; Proc = $p }
 }
-function Wait-Case($c) { $c.Proc.WaitForExit(); $c.Code = $c.Proc.ExitCode; $c.Out = Get-Content -Raw -LiteralPath (Join-Path $c.Dir "saida.txt"); return $c }
+function Wait-Case($c) { $c.Proc.WaitForExit(); $c.Code = $c.Proc.ExitCode; $c.Out = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $c.Dir "saida.txt"); return $c }  # o jogo escreve caminhos em UTF-8
 function State($c, [int]$passo) {
     foreach ($l in Get-Content -LiteralPath (Join-Path $c.Dir "estado.tsv")) {
         $f = $l.Split("`t"); if ($f[0] -eq "$passo") { return @{ Vida = [int]$f[3]; X = [double]$f[4]; Y = [double]$f[5]; Z = [double]$f[6]; Hash = $f[2] } }
@@ -156,6 +162,45 @@ $c14 = Wait-Case (Start-Case "s14" $Exe "passo_load_slot1.txt" 1700 "")
 $m14 = [regex]::Match($c14.Out, "\[saves\] nativo: (.+)")
 $tmp14 = if ($m14.Success) { $m14.Groups[1].Value.Trim() } else { "" }
 Check "S14 headless sem --saves-pasta: cartao temporario, apagado no fim" ($c14.Code -eq 0 -and $tmp14 -match "bs-saves-headless-\d+$" -and -not (Test-Path -LiteralPath $tmp14)) $tmp14
+
+# ---- S15-S18: modo portatil pela instalacao (instalacao.toml), executavel aberto direto ----
+function New-Install($nome, $exe, [string]$cfg) {
+    $d = Join-Path $Saida $nome
+    New-Item -ItemType Directory -Force -Path $d | Out-Null
+    Copy-Item -LiteralPath $exe -Destination (Join-Path $d "BlueStinger.exe")
+    if ($cfg) { [IO.File]::WriteAllText((Join-Path $d "instalacao.toml"), $cfg) }
+    return $d
+}
+$portatil = "[saves]`nlocal = `"portatil`"`n"
+$i15 = New-Install "inst_p" $Exe $portatil
+New-Item -ItemType Directory -Force -Path (Join-Path $i15 "saves\card0") | Out-Null
+Copy-Item $bsv (Join-Path $i15 "saves\card0\BLUESTIN.000.bsv")
+$i17 = New-Install "inst_s" $ExeMods $portatil
+$x18 = SavesDir "s18"
+$i18 = New-Install "inst_x" $Exe $portatil
+$i18b = New-Install "inst_sem" $Exe ""
+$i18c = New-Install "inst_inv" $Exe "isto [nao e toml"
+$cs = @(
+    (Start-Case "s15" (Join-Path $i15 "BlueStinger.exe") "passo_load_slot1.txt" 4700 ""),
+    (Start-Case "s17" (Join-Path $i17 "BlueStinger.exe") "passo_save_rcg02.txt" 17100 "" @{ BS_SAVES_H2 = "7500" }),
+    (Start-Case "s18a" (Join-Path $i18 "BlueStinger.exe") "passo_load_slot1.txt" 1700 "--saves-pasta `"$x18`""),
+    (Start-Case "s18b" (Join-Path $i18b "BlueStinger.exe") "passo_load_slot1.txt" 1700 ""),
+    (Start-Case "s18c" (Join-Path $i18c "BlueStinger.exe") "passo_load_slot1.txt" 1700 "")
+)
+$rp = @{}; foreach ($c in $cs) { $rp[$c.Nome] = Wait-Case $c }
+function Root($c) { $m = [regex]::Match($c.Out, "\[saves\] nativo: (.+)"); if ($m.Success) { $m.Groups[1].Value.Trim() } else { "" } }
+$a15 = State $rp.s15 2130
+Check "S15 instalacao portatil: o executavel aberto direto carrega de <instalacao>\saves" ($rp.s15.Code -eq 0 -and (Root $rp.s15) -eq (Join-Path $i15 "saves") -and $rp.s15.Out -match "modo portatil \(instalacao.toml\)" -and (Near $a15 $atSave)) "pasta $(Root $rp.s15)"
+$i16 = Join-Path $Saida "inst_movida ç"
+Move-Item -LiteralPath $i15 -Destination $i16
+$c16 = Wait-Case (Start-Case "s16" (Join-Path $i16 "BlueStinger.exe") "passo_load_slot1.txt" 4700 "")
+Check "S16 instalacao portatil movida: continua com os proprios saves" ($c16.Code -eq 0 -and (Root $c16) -eq (Join-Path $i16 "saves") -and (Near (State $c16 2130) $atSave)) "pasta $(Root $c16)"
+$m17 = [regex]::Match($rp.s17.Out, "SAVE (\d+) \(ok (\d+), falha (\d+)\)")
+Check "S17 SAVE de gameplay na instalacao portatil grava em <instalacao>\saves" ($rp.s17.Code -eq 0 -and (Test-Path (Join-Path $i17 "saves\card0\BLUESTIN.000.bsv")) -and $m17.Success -and $m17.Groups[2].Value -eq "1") "$($m17.Value)"
+$okA = (Root $rp.s18a) -eq $x18
+$okB = (Root $rp.s18b) -match "bs-saves-headless-\d+$" -and -not (Test-Path (Join-Path $i18b "saves"))
+$okC = (Root $rp.s18c) -match "bs-saves-headless-\d+$" -and $rp.s18c.Out -match "instalacao.toml ilegivel"
+Check "S18 precedencia: --saves-pasta > instalacao.toml; sem ele, cartao temporario; invalido avisa" ($okA -and $okB -and $okC -and $rp.s18a.Code -eq 0 -and $rp.s18b.Code -eq 0 -and $rp.s18c.Code -eq 0) "pasta=$okA sem=$okB invalido=$okC"
 
 if ($fly) {
     $f = State $fly 2130; $fw = State $fly 2250; $pos = $PosFlycast.Split(",") | ForEach-Object { [double]$_ }

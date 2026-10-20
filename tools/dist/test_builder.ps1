@@ -54,7 +54,8 @@ function NoStage($out) { @(Get-ChildItem -LiteralPath $out -Directory -Force -Er
 $app = Join-Path $Work "Builder ç 日本 (teste)"
 Copy-Item -Recurse -LiteralPath $Builder -Destination $app
 $cli = Join-Path $app "bs-builder.exe"
-$gui = Join-Path $app "BlueStingerBuilder.exe"
+$gui = Join-Path $app "BlueStinger-Developer.exe"
+$rec = Join-Path $app "BlueStinger-Recompiler.exe"
 $discDir = Join-Path $Work "Jogos ç ã 日本"
 New-Item -ItemType Directory -Path $discDir | Out-Null
 $cdi = Join-Path $discDir "Blue Stinger (cópia) ç.cdi"
@@ -170,12 +171,22 @@ $p.CloseMainWindow() | Out-Null
 $closed = $p.WaitForExit(120000)
 Check "janela: cancelar mantem a instalada" ($closed -and $p.ExitCode -eq 3 -and (Hash $exe1) -eq $installed -and (NoStage $out1)) "codigo $($p.ExitCode)"
 
-# 11. janela em modo --auto ate o fim; arquivos do usuario preservados
-$p = Start-Process -FilePath $gui -ArgumentList "--disc `"$cdi`" --out `"$out1`" --auto --sem-filmes" -PassThru
+# 11. Recompiler (janela simples) em modo --auto ate o fim, com o modo portatil; arquivos do usuario
+# preservados e instalacao.toml gravado na instalacao (o jogo o le ao abrir direto)
+$p = Start-Process -FilePath $rec -ArgumentList "--disc `"$cdi`" --out `"$out1`" --portatil --idioma en-US --auto --sem-filmes" -PassThru
 $closed = $p.WaitForExit(1800000)
 $ini = [IO.File]::ReadAllText((Join-Path $out1 "BlueStinger\bluestinger.ini"))
-Check "janela: compilacao ate o fim, ini do usuario preservado" ($closed -and $p.ExitCode -eq 0 -and $ini -eq "cdi=preservado") "codigo $($p.ExitCode)"
+$cfgFile = Join-Path $out1 "BlueStinger\instalacao.toml"
+$cfg = if (Test-Path -LiteralPath $cfgFile) { [IO.File]::ReadAllText($cfgFile) } else { "" }
+Check "Recompiler: compilacao ate o fim, ini do usuario preservado, modo portatil gravado" ($closed -and $p.ExitCode -eq 0 -and $ini -eq "cdi=preservado" -and $cfg -match 'local = "portatil"') "codigo $($p.ExitCode)"
 $installed = Hash $exe1  # a janela instalou uma versao nova
+
+# 11b. Developer (sem escolha de modo) recompila: o instalacao.toml da instalacao fica como estava
+$p = Start-Process -FilePath $gui -ArgumentList "--disc `"$cdi`" --out `"$out1`" --auto --sem-filmes" -PassThru
+$closed = $p.WaitForExit(1800000)
+$cfg = if (Test-Path -LiteralPath $cfgFile) { [IO.File]::ReadAllText($cfgFile) } else { "" }
+Check "Developer: recompilar preserva o modo portatil da instalacao" ($closed -and $p.ExitCode -eq 0 -and $cfg -match 'local = "portatil"') "codigo $($p.ExitCode)"
+$installed = Hash $exe1
 
 # 12. sem o kit ao lado: recusa clara
 $nokit = Join-Path $Work "sem kit"

@@ -33,7 +33,10 @@ Ferramentas:
 - `bs-recomp config/bluestinger_us.toml [--analyze-only]`: análise + C++ em `generated/`.
 - `tools/dev/compare_capstone.py`: decodificador vs. Capstone (venv opcional).
 - `bs-builder --disc <img.cdi> --out <pasta> --kit . --sdl3 build/msvc-release/_deps/sdl3-src`:
-  fluxo completo do Builder (CDI → BlueStinger.exe) a partir do repositório.
+  fluxo completo do Builder (CDI → BlueStinger.exe) a partir do repositório. Janelas sobre o mesmo núcleo:
+  `BlueStinger-Recompiler.exe` (simples: idioma pt-BR/en-US, Modo portátil = `instalacao.toml`; `--auto
+  --portatil --idioma <cod> --sem-filmes` para testes) e `BlueStinger-Developer.exe` (projeto C++, log técnico).
+  Textos por chave em `builder/ui`; unitários `bs_ui_tests` (ctest `ui`).
 - `tools/dist/make_preview.ps1 -Disc <img.cdi>` (pelo próprio Builder), `make_builder.ps1`: distribuições
   em `dist/`; testes `test_preview.ps1`, `test_gameplay.ps1` (NEW GAME até a 1ª área),
   `test_builder.ps1 -Disc <img.cdi>`, `test_projeto.ps1 -Disc <img.cdi>` (projeto editável e mods).

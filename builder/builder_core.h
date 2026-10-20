@@ -15,8 +15,10 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace bs::builder {
 
@@ -41,6 +43,9 @@ struct Request {
     // N5: converte os filmes do disco (SFD) em data\video\*.mp4 + manifest.toml. Sem eles o jogo
     // segue (os filmes ficam ausentes); --sem-filmes poupa a conversao nos testes que nao os usam.
     bool                  movies        = true;
+    // Local dos saves gravado em <instalacao>\instalacao.toml (native/platform/install_config.h).
+    // Vazio: o arquivo da instalacao anterior fica como esta (arquivo do usuario, preservado).
+    std::optional<bool>   portableSaves;
 };
 
 struct Callbacks {
@@ -50,11 +55,21 @@ struct Callbacks {
     const std::atomic<bool>*                                               cancel = nullptr;
 };
 
+// Tipo do erro, para a interface simples mostrar uma mensagem traduzida (a mensagem tecnica fica em
+// Result::error e no builder.log).
+enum class ErrorKind { None, Cancelled, MissingInput, DiscNotFound, InvalidDisc, NoSpace, NoPermission, PathTooLong,
+                       Busy, Toolchain, Data, Build, Verify, Install, Other };
+const char* error_key(ErrorKind k);  // chave do catalogo da interface ("err.no_space"...)
+// Falta de espaco e de permissao pelo codigo do sistema; senao `otherwise`.
+ErrorKind error_kind_of(const std::error_code& ec, ErrorKind otherwise);
+
 struct Result {
     bool                  ok = false;
+    ErrorKind             kind = ErrorKind::None;
     bool                  cancelled = false;
     Step                  failedStep = Step::Validate;
     std::string           error;       // mensagem para o usuario
+    std::string           warning;     // sucesso com ressalva (versao anterior nao arquivada: ArchiveError)
     std::filesystem::path installDir;  // <out>\BlueStinger
     std::filesystem::path exe;         // <out>\BlueStinger\BlueStinger.exe
     std::filesystem::path logFile;     // <out>\.bs-build\builder.log
@@ -62,12 +77,31 @@ struct Result {
 
 Result build(const Request& req, const Callbacks& cb);
 
+// Instalacao que um build em <outDir>\<installName> substituiria (para os avisos da interface).
+struct InstallInfo {
+    bool                  exists = false;    // a pasta existe e nao esta vazia
+    bool                  ours = false;      // instalada por nos (marca .bs-install)
+    bool                  portable = false;  // instalacao.toml pede saves portateis
+    std::filesystem::path dir, previous;     // a pasta e onde a versao atual ficara guardada
+};
+InstallInfo inspect_install(const std::filesystem::path& outDir, const std::wstring& installName = L"BlueStinger");
+
 // Marcas gravadas no pacote instalado: lista dos arquivos do pacote (o resto da pasta e do
 // usuario) e o instante da instalacao (identifica backups nossos e o mais recente).
 inline constexpr wchar_t kPackageManifest[] = L".bs-package";
 inline constexpr wchar_t kInstallMarker[]   = L".bs-install";
 
 struct SwapCancelled : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+// A troca falhou ANTES de a nova versao entrar: a anterior continua (codigo do sistema em `code`).
+struct SwapError : std::runtime_error {
+    std::error_code code;
+    SwapError(const std::string& m, std::error_code c) : std::runtime_error(m), code(c) {}
+};
+// A nova versao JA esta instalada, mas a anterior nao pode ser guardada como <dest>.anterior: a
+// mensagem diz onde ela ficou (o build termina com sucesso e um aviso).
+struct ArchiveError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 

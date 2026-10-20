@@ -22,6 +22,7 @@
 #include "input_bridge.h"
 #include "debug/file_log.h"
 #include "pad_contract.h"
+#include "platform/install_config.h"
 #include "platform/input.h"
 
 #include <SDL3/SDL.h>
@@ -682,6 +683,8 @@ void gamepadEvent(ni::InputSystem& sys, const SDL_Event& e) {
 // Pasta dos saves nativos (N4, decisao do mantenedor 2026-10-19): Documentos\DC-Recomp\Blue Stinger\saves
 // (FOLDERID_Documents, que segue o redirecionamento do Windows); --saves-pasta <dir> ou --saves-portatil
 // (saves\ ao lado do executavel) escolhem outra. Sem a pasta Documentos, a pasta do usuario do log.
+// instalacao.toml ao lado do executavel (gravado pelo BlueStinger-Recompiler, "Modo portatil") pede
+// saves\ ali tambem, inclusive ao abrir o jogo direto e depois de mover a pasta.
 // --headless (testes e diagnostico) sem --saves-pasta/--saves-portatil: cartao vazio e temporario do
 // processo (apagado no fim), para que nenhum teste leia ou grave os saves do usuario.
 struct TempSaves {
@@ -694,8 +697,16 @@ struct TempSaves {
 TempSaves g_tempSaves;
 
 fs::path savesRoot(const Args& a) {
-    if (!a.savesDir.empty()) return a.savesDir;
-    if (a.savesPortable) return exeDir() / L"saves";
+    // Precedencia: --saves-pasta > --saves-portatil > instalacao.toml (modo portatil gravado pelo
+    // BlueStinger-Recompiler; vale ao abrir o executavel direto) > no --headless, cartao temporario >
+    // Documentos. O portatil fica dentro da propria instalacao, entao vale tambem no --headless.
+    std::string                     warn;
+    const bs::native::install::InstallConfig cfg = bs::native::install::read_config(exeDir(), &warn);
+    if (!warn.empty()) std::fprintf(stderr, "[saves] %s\n", warn.c_str());
+    if (!a.savesDir.empty() || a.savesPortable || cfg.saves == bs::native::install::SavesLocation::Portable) {
+        if (a.savesDir.empty() && !a.savesPortable) std::fprintf(stderr, "[saves] modo portatil (instalacao.toml)\n");
+        return bs::native::install::saves_root(a.savesDir, a.savesPortable, exeDir(), cfg, {}, {});
+    }
     if (a.headless && a.savesImport.empty() && a.savesExport.empty()) {
         if (g_tempSaves.dir.empty())
             g_tempSaves.dir = fs::temp_directory_path() / (L"bs-saves-headless-" + std::to_wstring(GetCurrentProcessId()));

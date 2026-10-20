@@ -1,4 +1,5 @@
-# Monta a distribuicao do Builder em dist/BlueStinger-Builder: BlueStingerBuilder.exe (janela),
+# Monta a distribuicao do Builder em dist/BlueStinger-Builder: BlueStinger-Recompiler.exe (janela simples),
+# BlueStinger-Developer.exe (janela com projeto C++ e log tecnico),
 # bs-builder.exe (linha de comando), runtime do MSVC, licencas, instrucoes e o kit de fontes
 # (runtime, app, leitor de disco, config, SDL3) que o Builder compila na maquina do usuario.
 #
@@ -37,12 +38,12 @@ if (-not $NoBuild) {
     try {
         cmake --preset msvc-release | Out-Null
         if ($LASTEXITCODE -ne 0) { Fail "configuracao do CMake falhou" }
-        cmake --build --preset msvc-release --target BlueStingerBuilder bs-builder
+        cmake --build --preset msvc-release --target BlueStinger-Recompiler BlueStinger-Developer bs-builder
         if ($LASTEXITCODE -ne 0) { Fail "compilacao falhou" }
     } finally { Pop-Location }
 }
 $sdl = Join-Path $build "_deps\sdl3-src"
-foreach ($f in "builder\BlueStingerBuilder.exe", "builder\bs-builder.exe", "_deps\sdl3-src\CMakeLists.txt", "_deps\tomlplusplus-src\LICENSE") {
+foreach ($f in "builder\BlueStinger-Recompiler.exe", "builder\BlueStinger-Developer.exe", "builder\bs-builder.exe", "_deps\sdl3-src\CMakeLists.txt", "_deps\tomlplusplus-src\LICENSE") {
     if (-not (Test-Path (Join-Path $build $f))) { Fail "falta $build\$f" }
 }
 
@@ -50,7 +51,8 @@ $stage = "$Out.tmp"
 if (Test-Path -LiteralPath $stage) { Remove-Item -Recurse -Force -LiteralPath $stage }
 New-Item -ItemType Directory -Force -Path $stage, "$stage\licencas", "$stage\kit" | Out-Null
 Step "montando $stage"
-Copy-Item (Join-Path $build "builder\BlueStingerBuilder.exe") $stage
+Copy-Item (Join-Path $build "builder\BlueStinger-Recompiler.exe") $stage
+Copy-Item (Join-Path $build "builder\BlueStinger-Developer.exe") $stage
 Copy-Item (Join-Path $build "builder\bs-builder.exe") $stage
 $crt = Get-ChildItem -Directory (Join-Path $env:VCToolsRedistDir "x64") -Filter "Microsoft.VC*.CRT" | Select-Object -First 1
 if (-not $crt) { Fail "runtime do MSVC (Microsoft.VC*.CRT) nao encontrado" }
@@ -100,7 +102,7 @@ Copy-Item -LiteralPath (Join-Path $repo "third_party\pl_mpeg\LICENSE") -Destinat
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LEIA-ME-BUILDER.txt") -Destination "$stage\LEIA-ME.txt"
 
 # dependencias dos executaveis
-foreach ($exe in "BlueStingerBuilder.exe", "bs-builder.exe") {
+foreach ($exe in "BlueStinger-Recompiler.exe", "BlueStinger-Developer.exe", "bs-builder.exe") {
     $deps = (dumpbin /nologo /dependents (Join-Path $stage $exe)) | Where-Object { $_ -match '^\s+(\S+\.dll)\s*$' } | ForEach-Object { $Matches[1] }
     foreach ($d in $deps) {
         if ($d -match '^api-ms-win-' -or (Test-Path (Join-Path $stage $d))) { continue }
