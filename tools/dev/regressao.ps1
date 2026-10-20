@@ -18,6 +18,10 @@
 # Uma regressao por vez: <Estado>\trava.txt guarda o PID; outra execucao com o mesmo estado e recusada
 # enquanto esse processo viver. <Estado>\ativo.txt mostra a etapa em andamento (nome, inicio, PID).
 # No fim, a tabela de duracoes das etapas que rodaram.
+# Limite de tempo por etapa (Max, segundos; padrao: build 1 h, cmd 30 min, suite 2 h, as 3 suites mais longas
+# 3 h, cerca de 3x a maior duracao medida): estourou, a arvore de processos e encerrada e a etapa falha com
+# rc=124 (refeita na retomada). Durante a etapa, <etapa>.txt cresce e ativo.txt traz o tempo e o tamanho da
+# saida a cada 30 s (batimento). BS_REGRESSAO_LIMITE_S troca todos os limites (teste sintetico).
 # Os builds rodam sempre (sao incrementais e baratos) e sao pre-requisito: se falharem, para.
 # make_builder e make_preview tambem param a regressao se falharem (as suites dependem deles).
 # Log legivel: <Estado>\regressao.log; saida completa de cada etapa: <Estado>\<etapa>.txt.
@@ -67,13 +71,13 @@ $steps = @(
     @{ N = "test_arquivos"; T = "suite"; A = @("$dist\test_arquivos.ps1") },
     @{ N = "test_ordem";    T = "suite"; A = @("$dist\test_ordem.ps1") },
     @{ N = "test_tempo";    T = "suite"; A = @("$dist\test_tempo.ps1") },
-    @{ N = "test_n2b";      T = "suite"; A = @("$dist\test_n2b.ps1") },
+    @{ N = "test_n2b";      T = "suite"; A = @("$dist\test_n2b.ps1"); Max = 10800 },
     @{ N = "test_cri";      T = "suite"; A = @("$dist\test_cri.ps1") },
     @{ N = "test_efeito";   T = "suite"; A = @("$dist\test_efeito.ps1") },
     @{ N = "test_n2b2";     T = "suite"; A = @("$dist\test_n2b2.ps1") },
     @{ N = "test_assistido"; T = "suite"; A = @("$dist\test_assistido.ps1") },
-    @{ N = "test_controles"; T = "suite"; A = @("$dist\test_controles.ps1") },
-    @{ N = "test_pd_nativo"; T = "suite"; A = @("$dist\test_pd_nativo.ps1") },
+    @{ N = "test_controles"; T = "suite"; A = @("$dist\test_controles.ps1"); Max = 10800 },
+    @{ N = "test_pd_nativo"; T = "suite"; A = @("$dist\test_pd_nativo.ps1"); Max = 10800 },
     @{ N = "test_saves";    T = "suite"; A = @("$dist\test_saves.ps1") },
     # N5: o filme nativo no jogo (E001: conversao so dele, rotas legado x nativo, START medido)
     @{ N = "n5_e001";       T = "suite"; A = @("$repo\tools\dev\n5_e001.ps1") }
@@ -193,18 +197,38 @@ foreach ($st in $steps) {
     }
     $outFile = Join-Path $Estado "$($st.N).txt"
     $t0 = Get-Date
-    "$($st.N)`t$(Get-Date -Format s)`tPID $PID" | Out-File $ativo -Encoding utf8
+    # a saida vai direto para <etapa>.txt (acompanhavel durante a etapa); limite de tempo por etapa: um
+    # processo travado (p. ex. janela modal de assert) vira falha rc=124 em vez de prender a regressao
     if ($st.T -eq "suite") {
-        $o  = & powershell -NoProfile -ExecutionPolicy Bypass -File @($st.A) 2>&1 | Out-String
-        $rc = $LASTEXITCODE
+        $line = "powershell -NoProfile -ExecutionPolicy Bypass -File " + (($st.A | ForEach-Object { "`"$_`"" }) -join " ")
     } else {
         $prefix = if ($st.Disc) { "set `"BS_DISC_IMAGE=$((Resolve-Path $Disc).Path)`"&& " } else { "" }
-        $o  = cmd /c "chcp 65001 >nul & call `"$vcvars`" >nul && cd /d `"$repo`" && $prefix$($st.C) 2>&1" | Out-String
-        $rc = $LASTEXITCODE
+        $line = "call `"$vcvars`" >nul && cd /d `"$repo`" && $prefix$($st.C)"
     }
+    $max = if ($env:BS_REGRESSAO_LIMITE_S) { [int]$env:BS_REGRESSAO_LIMITE_S } elseif ($st.Max) { $st.Max } elseif ($st.T -eq "suite") { 7200 } elseif ($st.T -eq "build") { 3600 } else { 1800 }
+    Remove-Item -LiteralPath $outFile -ErrorAction SilentlyContinue
+    $p = Start-Process cmd.exe -ArgumentList "/d /s /c `"chcp 65001 >nul & $line > `"$outFile`" 2>&1`"" -NoNewWindow -PassThru
+    [void]$p.Handle  # guarda o handle: sem isso o ExitCode pode vir vazio
+    "$($st.N)`t$($t0.ToString('s'))`tPID $PID`tfilho $($p.Id)`t0s de ${max}s" | Out-File $ativo -Encoding utf8
+    $rc = $null
+    while (-not $p.WaitForExit(30000)) {
+        $el = [int]((Get-Date) - $t0).TotalSeconds
+        $sz = if (Test-Path -LiteralPath $outFile) { (Get-Item -LiteralPath $outFile).Length } else { 0 }
+        $lw = if ($sz) { (Get-Item -LiteralPath $outFile).LastWriteTime.ToString("s") } else { "-" }
+        "$($st.N)`t$($t0.ToString('s'))`tPID $PID`tfilho $($p.Id)`t${el}s de ${max}s`tsaida $sz bytes (ultima escrita $lw)" | Out-File $ativo -Encoding utf8
+        if ($el -ge $max) {
+            & taskkill.exe /T /F /PID $p.Id 2>&1 | Out-Null
+            [void]$p.WaitForExit(10000)
+            "`nTEMPO ESGOTADO: ${max}s (regressao.ps1 encerrou a arvore de processos)" | Out-File $outFile -Append -Encoding utf8
+            $rc = 124
+            break
+        }
+    }
+    if ($null -eq $rc) { $rc = $p.ExitCode }
     $sec = [int]((Get-Date) - $t0).TotalSeconds
-    [IO.File]::WriteAllText($outFile, $o)
-    $summary = ($o -split "`r?`n" | Where-Object { $_ -match "FALHA|FAIL|casos|falhas|SKIP|ERRO|tests passed|error |FAILED" } | Select-Object -Last 8) -join "`n"
+    $o = if (Test-Path -LiteralPath $outFile) { Get-Content -LiteralPath $outFile -Raw -Encoding UTF8 } else { "" }
+    if ($null -eq $o) { $o = "" }
+    $summary = ($o -split "`r?`n" | Where-Object { $_ -match "FALHA|FAIL|casos|falhas|SKIP|ERRO|tests passed|error |FAILED|TEMPO ESGOTADO" } | Select-Object -Last 8) -join "`n"
     if ($st.N -eq "unitarios") { $summary = "ok=$(([regex]::Matches($o, '(?m)^\[ ok \]')).Count)" }
     Log ("== {0} rc={1} ({2}s)`n{3}" -f $st.N, $rc, $sec, $summary)
     $durations += ,@($st.N, $sec, $rc)

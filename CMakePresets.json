@@ -20,7 +20,7 @@
     { "name": "clang-release", "configurePreset": "clang-release" }
   ],
   "testPresets": [
-    { "name": "msvc-debug",  "configurePreset": "msvc-debug",  "output": { "outputOnFailure": true } },
-    { "name": "clang-debug", "configurePreset": "clang-debug", "output": { "outputOnFailure": true } }
+    { "name": "msvc-debug",  "configurePreset": "msvc-debug",  "output": { "outputOnFailure": true }, "execution": { "timeout": 900 } },
+    { "name": "clang-debug", "configurePreset": "clang-debug", "output": { "outputOnFailure": true }, "execution": { "timeout": 900 } }
   ]
 }

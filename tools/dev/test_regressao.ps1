@@ -9,9 +9,11 @@ New-Item -ItemType Directory -Force "$root\repo\tools\dev", "$root\repo\tools\di
 $repo = "$root\repo"
 Copy-Item $src "$repo\tools\dev\regressao.ps1"
 $marks = "$root\execucoes.txt"
-# cada script falso anota que rodou; test_b falha se existir o arquivo "falhar"
+# cada script falso anota que rodou; test_b falha se existir o arquivo "falhar"; test_a trava (dorme) se
+# existir "travar", anotando o proprio PID (o executor tem que encerrar a arvore no limite de tempo)
 foreach ($n in "make_x", "test_a", "test_b") {
-    $fail = if ($n -eq "test_b") { "if (Test-Path '$root\falhar') { exit 1 }" } else { "" }
+    $fail = if ($n -eq "test_b") { "if (Test-Path '$root\falhar') { exit 1 }" }
+            elseif ($n -eq "test_a") { "if (Test-Path '$root\travar') { Set-Content '$root\pid.txt' `$PID; Write-Host 'dormindo'; Start-Sleep 600 }" } else { "" }
     "Add-Content '$marks' '$n'`n$fail`nexit 0" | Out-File "$repo\tools\dist\$n.ps1" -Encoding utf8
 }
 "codigo 1" | Out-File "$repo\src\code.txt" -Encoding utf8
@@ -71,6 +73,22 @@ $dur = Select-String -Path "$est\regressao.log" -Pattern "duracoes" -Quiet
 $ok = -not $lockLeft -and -not $ativoLeft -and $dur
 Write-Host ("{0} R14 trava e ativo removidos no fim; duracoes no log" -f $(if ($ok) { "[ ok ]" } else { "[FALHA]" }))
 if (-not $ok) { $fails++ }
+# limite de tempo: a etapa travada vira rc=124, o processo some, a trava sai e a saida parcial fica no log
+New-Item "$root\travar" -ItemType File | Out-Null
+Add-Content "$repo\tools\dist\test_a.ps1" "# r15"
+$env:BS_REGRESSAO_LIMITE_S = "5"
+$t15 = Get-Date
+Run "R15 etapa travada estoura o limite" "test_a" 1
+$env:BS_REGRESSAO_LIMITE_S = ""
+$hung = Get-Content "$root\pid.txt" -ErrorAction SilentlyContinue
+$alive = $hung -and (Get-Process -Id $hung -ErrorAction SilentlyContinue)
+$st15 = (Get-Content "$est\estado.tsv" | Select-String "^test_a\t124\t" -Quiet)
+$out15 = Get-Content "$est\test_a.txt" -Raw
+$ok = $hung -and -not $alive -and $st15 -and $out15 -match "dormindo" -and $out15 -match "TEMPO ESGOTADO" -and -not (Test-Path "$est\trava.txt") -and ((Get-Date) - $t15).TotalSeconds -lt 120
+Write-Host ("{0} R16 processo travado encerrado (PID {1}), rc=124 no estado, saida parcial no log" -f $(if ($ok) { "[ ok ]" } else { "[FALHA]" }), $hung)
+if (-not $ok) { $fails++ }
+Remove-Item "$root\travar"
+Run "R17 retomada refaz a etapa que estourou" "test_a"
 Remove-Item Env:\BS_REGRESSAO_ETAPAS
 if ($fails -eq 0) { Remove-Item -Recurse -Force $root } else { Write-Host "artefatos em $root" }
 Write-Host "falhas: $fails"

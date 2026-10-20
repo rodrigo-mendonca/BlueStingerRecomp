@@ -44,7 +44,8 @@ Ferramentas:
   com e sem disco, Builder, Preview e todas as suítes em sequência). Pode ser interrompida; rodar de
   novo continua da primeira etapa não aprovada (estado em `%LOCALAPPDATA%\BlueStingerRecomp\regressao`;
   cada etapa tem a sua chave: código, Python, roteiros e produtores refazem tudo; editar só o script de uma
-  suíte refaz só ela; uma regressão por vez, `ativo.txt` com a etapa em andamento, durações no fim). `-Listar`
+  suíte refaz só ela; uma regressão por vez, `ativo.txt` com a etapa em andamento e batimento a cada 30 s, limite de tempo
+  por etapa com rc=124, durações no fim; `python tools/dev/tempos.py` mostra as etapas mais caras). `-Listar`
   mostra o estado, `-Novo` descarta, `-Desde <etapa>` refaz. Teste sintético do executor: `tools/dev/test_regressao.ps1`.
   Política (mantenedor, 2026-10-18): durante uma subetapa, unitários e testes dos componentes
   alterados; ao fechar uma subetapa, a integração relacionada (inclusive gameplay assistido); a

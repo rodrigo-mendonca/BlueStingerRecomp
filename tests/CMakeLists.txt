@@ -112,3 +112,29 @@ if(TARGET bluestinger AND MSVC)
            COMMAND ${CMAKE_COMMAND} -DMAP=$<TARGET_FILE_DIR:bluestinger>/bluestinger.map
                    -P ${CMAKE_CURRENT_SOURCE_DIR}/n0/check_product_map.cmake)
 endif()
+
+# Sem janelas modais (assert do CRT de Debug, abort, falha de acesso): o teste falha no stderr em vez de
+# esperar um clique e prender o ctest/regressao (tests/sem_dialogos.cpp).
+foreach(t bs_unit_tests bs_video_tests bs_ui_tests bs_real_disc_test bs_runtime_data_test bs_analysis_real_test
+          bs_fixture_gen bs_codegen_exec_0 bs_codegen_exec_1)
+  target_sources(${t} PRIVATE sem_dialogos.cpp)
+endforeach()
+# A prova: falha de proposito (assert do vetor no Debug, abort no Release); passa so se a mensagem chegar a saida
+# dentro do limite (com a janela modal, estouraria o tempo)
+add_executable(bs_sem_dialogos_prova sem_dialogos_prova.cpp sem_dialogos.cpp)
+add_test(NAME sem_dialogos COMMAND bs_sem_dialogos_prova)
+set_tests_properties(sem_dialogos PROPERTIES TIMEOUT 60
+                     PASS_REGULAR_EXPRESSION "vector subscript out of range|sem_dialogos: abort \\(Release\\)")
+
+# Limite de tempo por teste (s), pela duracao medida em 2026-10-20 (com disco; entre parenteses) com folga larga:
+# so pega travamento. O preset do ctest da 900 s aos testes sem limite proprio.
+set_tests_properties(unit video ui PROPERTIES TIMEOUT 300)                   # (6,7 s / 2,7 s / 5,2 s)
+set_tests_properties(real_disc codegen_exec_0 codegen_exec_1 n0_native_api n0_native_limpo PROPERTIES TIMEOUT 120)  # (< 0,2 s)
+set_tests_properties(analysis_real PROPERTIES TIMEOUT 300)                   # (2,9 s)
+set_tests_properties(runtime_data n0_fechamento PROPERTIES TIMEOUT 600)      # (23,8 s / 20,0 s)
+if(TEST n2_build_incremental)
+  set_tests_properties(n2_build_incremental PROPERTIES TIMEOUT 900)          # (6,2 s; compila: folga para cache frio)
+endif()
+if(TEST n0_produto_sem_cdi)
+  set_tests_properties(n0_produto_sem_cdi PROPERTIES TIMEOUT 120)            # (0,2 s)
+endif()

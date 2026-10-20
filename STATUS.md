@@ -2139,6 +2139,14 @@ nativos (`docs/PLANO-PORT-NATIVO.md`).
 **O N4 está concluído, com a pendência formal do save point real declarada.** Não é aprovação
 integral.
 
+### 2026-10-20: lote de build e testes parado 6,5 h (infraestrutura de testes)
+
+| Data | Item | Como foi verificado |
+|---|---|---|
+| 2026-10-20 | Causa: `bs_unit_tests.exe` (Debug) parado numa janela modal "Debug Assertion Failed: vector subscript out of range" (0 s de CPU; ctest sem limite de tempo). Com `--video nativo` como padrão, o jogo falso de `test_app.cpp` instalava o provedor de vídeo nativo (sem o SDK MW), o host falhava e o teste indexava um quadro vazio. Correção (vai no commit de fechamento do N5): `fakeOptions` fixa `video = Legacy`, como já fazia com controles e saves | Texto da janela lido por UI Automation; reproduzido numa cópia (`game_host_publishes_frames_and_stops_at_limit` falha e depois vem o assert); build Debug isolado em `build\iso-debug` (configurar 5 s, compilar do zero 18 s) e ctest 13/13 (4 SKIP sem disco) em 41 s |
+| 2026-10-20 | Testes sem janelas modais: `tests/sem_dialogos.cpp` (asserts do CRT de Debug e `abort` vão para o stderr; `SetErrorMode`) em todos os executáveis de teste, com o teste ctest `sem_dialogos` como prova permanente; limite de tempo por teste pela duração medida (10–40x; `boot_trace`, oráculo Flycast não medido aqui, 3600 s) e 900 s no preset para os demais; `regressao.ps1` com limite de tempo por etapa (rc=124, encerra a árvore de processos), saída gravada durante a etapa e batimento em `ativo.txt` a cada 30 s | Programa de prova: assert de vetor, `abort()` e falha de acesso terminam na hora (rc 127/3/139) com a mensagem no stderr; ctest Debug 14/14, `sem_dialogos` 0,06 s com a mensagem do assert no log (controle negativo: o mesmo assert sem a proteção é a janela que travou o lote); `test_regressao.ps1` 17/17 (R15–R17: etapa travada encerrada no limite, estado com rc=124, saída parcial no log, a retomada refaz a etapa) |
+| 2026-10-20 | Onde vai o tempo: build incremental 2–5 s, Debug do zero 18 s. A regressão completa leva cerca de 4 h, quase toda em suítes de jogo sequenciais: `test_pd_nativo` 59 min, `test_controles` 43, `test_n2b` 40, `test_tempo` 23, `test_n2b2` 17, `test_assistido` 16 | `tools/dev/tempos.py` sobre o `regressao.log` (6 execuções) e o `.ninja_log` |
+
 ## Revisões independentes (Codex)
 
 ### 2026-10-19: N4 (saves nativos), duas rodadas. Relatórios em `reviews/codex-20261019-140151.md` e `-143748.md`

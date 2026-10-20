@@ -106,6 +106,7 @@ if(BS_BUILD_TESTS AND BS_BUILD_TOOLS)
                      $<TARGET_FILE:bs-diff> "${CMAKE_SOURCE_DIR}/tools/dev/flycast_oracle.py"
                      "${CMAKE_SOURCE_DIR}/tests/diff/boot_accepted.tsv")
     # raiz do repositorio: BS_DISC_IMAGE/BS_SNAPSHOT_DIR relativos funcionam
-    set_tests_properties(boot_trace PROPERTIES SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    set_tests_properties(boot_trace PROPERTIES SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+                          TIMEOUT 3600)  # oraculo Flycast: duracao nao medida aqui, limite so contra travamento
   endif()
 endif()
