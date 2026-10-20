@@ -209,3 +209,71 @@ BS_TEST(bu_errors) {
     BS_CHECK(!m2.busy(1) && m2.mount(1) == bu::kNoCard && m2.exists(1, "BLUESTIN.000") == bu::kNoCard);
     BS_CHECK(m2.status(9) == bu::kBusy);  // unidade invalida
 }
+
+// Ocupada e timeout: com operacao pendente, outra operacao na mesma unidade e recusada (-1) sem perder a
+// primeira; SAVE e LOAD concluem bem antes do limite do jogo (8C01CE00 desiste depois de 450 consultas
+// ocupadas) e a conclusao vem antes do primeiro status 0, com o callback antes da liberacao.
+BS_TEST(bu_busy_and_timeout_bound) {
+    TempDir     d("ocupada");
+    auto        store = sv::make_file_store(d.p, opts());
+    bu::Machine m(*store);
+    m.init(1), runUntilFree(m, 0);
+    BS_CHECK(m.save(0, "BLUESTIN.000", makeVms(5)) == bu::kOk && m.busy(0));
+    BS_CHECK(m.save(0, "BLUESTIN.001", makeVms(6)) == bu::kBusy);
+    BS_CHECK(m.load(0, "BLUESTIN.000", 1, 0) == bu::kBusy && m.mount(0) == bu::kBusy);
+    int polls = 0;
+    auto ev = runUntilFree(m, 0, &polls);
+    const Event* c = completion(ev);
+    BS_CHECK(c && c->op == bu::kOpSave && c->a == 0 && polls >= 1 && polls < 450);
+    BS_CHECK(m.status(0) == 0);
+    Bytes img;
+    BS_CHECK(store->load(0, "BLUESTIN.001", img) == sv::SaveError::NotFound);  // a recusada nao gravou
+    BS_CHECK(m.load(0, "BLUESTIN.000", 1, 0) == bu::kOk);
+    ev = runUntilFree(m, 0, &polls);
+    c  = completion(ev);
+    BS_CHECK(c && c->op == bu::kOpLoad && c->a == 0 && polls < 450 && c->data.size() == 1536);
+}
+
+// Ocupada durante os progressos (oraculo c2: status -1 intercalado com o progresso, 0 so depois da
+// conclusao): com hold, a unidade continua -1 ate release(); o adaptador libera logo antes do callback
+// de conclusao.
+BS_TEST(bu_busy_until_release_with_hold) {
+    TempDir     d("hold");
+    auto        store = sv::make_file_store(d.p, opts());
+    bu::Machine m(*store);
+    m.init(1);
+    for (int i = 0; i < 10 && m.busy(0); ++i) m.tick(true), m.release(0);
+    BS_CHECK(m.save(0, "BLUESTIN.000", makeVms(7)) == bu::kOk);
+    std::vector<Event> ev;
+    for (int i = 0; i < 10 && ev.empty(); ++i) ev = m.tick(true);
+    BS_CHECK(!ev.empty() && ev.front().kind == Event::Kind::Progress && completion(ev));
+    BS_CHECK(m.status(0) == bu::kBusy && m.save(0, "BLUESTIN.001", makeVms(8)) == bu::kBusy);  // durante os progressos
+    m.release(0);
+    BS_CHECK(m.status(0) == bu::kOk);
+    // sem release, a proxima passada libera (nao prende a unidade)
+    BS_CHECK(m.load(0, "BLUESTIN.000", 1, 0) == bu::kOk);
+    ev.clear();
+    for (int i = 0; i < 10 && ev.empty(); ++i) ev = m.tick(true);
+    m.tick(true);
+    BS_CHECK(m.status(0) == bu::kOk);
+}
+
+// Cartao presente sem formatacao: as operacoes devolvem FF03 (nao FF01).
+BS_TEST(bu_unformatted_card) {
+    struct Unformatted final : sv::ISaveStore {
+        sv::SaveError card(int, sv::CardState& c) override { c = {}, c.present = true; return sv::SaveError::None; }
+        sv::SaveError list(int, std::vector<sv::SaveEntry>&) override { return sv::SaveError::Unformatted; }
+        sv::SaveError load(int, std::string_view, std::vector<std::byte>&) override { return sv::SaveError::Unformatted; }
+        sv::SaveError save_atomic(int, std::string_view, std::span<const std::byte>) override { return sv::SaveError::Unformatted; }
+        sv::SaveError remove(int, std::string_view) override { return sv::SaveError::Unformatted; }
+    } store;
+    bu::Machine m(store);
+    m.init(1);
+    const auto ins = runUntilFree(m, 0);  // presente: a insercao acontece (o jogo aloca o trabalho nela)
+    const Event* c = completion(ins);
+    BS_CHECK(c && c->op == bu::kOpInsert);
+    std::array<std::byte, bu::kDiskInfoSize> info{};
+    BS_CHECK(!m.busy(0) && m.mount(0) == bu::kUnformatted && m.exists(0, "BLUESTIN.000") == bu::kUnformatted);
+    BS_CHECK(m.disk_info(0, info) == bu::kUnformatted && m.save(0, "BLUESTIN.000", makeVms(1)) == bu::kUnformatted);
+    BS_CHECK(m.load(0, "BLUESTIN.000", 1, 0) == bu::kUnformatted);
+}

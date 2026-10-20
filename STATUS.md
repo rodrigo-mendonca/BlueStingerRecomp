@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". |
 
 ## Versão suportada
 
@@ -1888,7 +1888,119 @@ Ghidra".
   - regressão de fechamento;
   - promoção a padrão.
 
+### Roadmap: retorno ao N2 depois do N7 (2026-10-19, só documentação, sem commit)
+
+Decisão do mantenedor registrada em `docs/PLANO-PORT-NATIVO.md`, seção 4.2. Ordem: N4 → N5 → N6 →
+N7 → retorno ao N2 (pendências do N2b, inclusive U5–U8 e a avaliação da promoção do
+`--tempo experimental`; depois o N2c) → N8 → N9. Sem N10. Antes do N8, o N2 precisa estar concluído
+ou com os bloqueios documentados. Pontos de atrito registrados na seção 4.2: N5 e N6 validados nos
+dois modos de tempo (a Opção C previa o N2b-2 antes deles), a referência de equivalência pós-N7 e a
+posição do N7a. Percentuais inalterados: N2a 100%, N2b ~85%, N2c 0%, N2 ≈ 65%. Nenhum código nem
+comportamento do relógio mudou; sem regressão (só documentação).
+
+### N4: SAVE e LOAD de gameplay, Windows e Flycast (2026-10-19, depois de `b1c76ec`, sem commit)
+
+Detalhes em `docs/N4-PREPARACAO.md`, seção "SAVE e LOAD de gameplay".
+- **Causa do "corrupt":** o save do título (H1) não tem estado de gameplay. A máquina de LOAD do
+  jogo só falha por timeout; a recusa vem da verificação do conteúdo.
+- **SAVE de gameplay no RCG02** via `BS_SAVES_H2=<passo>`: só a presença do save point é simulada
+  (kind 98, tipo 4 em `8C04FB80`). Resultado: "Save completed." e VMS válido (CRC `2835`).
+- **LOAD num processo novo:** sem erro, a partida retoma na mesma sala e posição e continua jogável.
+  - Windows: (126.9, 0.0, −560.4).
+  - Flycast (`n4_vmu.py insere` + `bu-trace --ler-fim`): (126.85, 0.0, −560.42), destino do LOAD =
+    VMS byte a byte, VMU intacta.
+- **Modo espectador:** `BS_INPUT_SCRIPT` sem `--headless` abre a Preview com o roteiro como única
+  entrada; o título mostra passo, sala e botões. Sem efeito no headless.
+- **Verificado:** 250 unitários; headless com roteiro, 3 000 VBlanks.
+- **Pendentes:**
+  - save point real sem H2;
+  - SAVE de gameplay no Flycast;
+  - matriz de erros;
+  - Codex;
+  - regressão de fechamento;
+  - promoção.
+
+### N4: regressão de fechamento e encerramento (2026-10-19)
+
+**Regressão completa** (`tools/dev/regressao.ps1 -Novo`, fonte `C29EFADBDD4305BD`, das 14:49 às 18:53):
+24 etapas, 18 aprovadas.
+- Builds, unitários (256/256), `ctest` com e sem disco (12/12 cada).
+- Builder, Preview, `test_preview` 9/9, `test_gameplay` 4/4, `test_builder` 18/18, `test_projeto`
+  13/13, `test_arquivos` 6/6, `test_ordem` 8/8.
+- `test_assistido` 28/28, `test_pd_nativo` 85/85, `test_saves` 21/21 (S12, Flycast → Windows, pulado
+  sem `-VmuFlycast`; ele foi provado à parte, em "Compatibilidade nos dois sentidos" do
+  `docs/N4-PREPARACAO.md`).
+- Depois do início, só mudaram scripts de teste e documentos: as etapas aprovadas valem para o
+  executável final (`build/msvc-release`, 14:53).
+
+**Seis reprovadas, todas em suítes de investigação estabelecidas noutro escopo:**
+
+| Suíte | Falhas na regressão | Causa (A/B) | Reexecução |
+|---|---|---|---|
+| `test_tempo` | A3 (2) | estabelecida **sem cartão** ("VMU not found"); com o cartão nativo, o boot segue o código de cartão do jogo | `--saves legado`: **35/35** |
+| `test_n2b` | B11 (2), S4 | idem (com cartão: 20 496 eventos contra 44 304 em 3 000 VBlanks; CRI em 1 923 VBlanks) | `--saves legado`: **44/44** |
+| `test_n2b2` | N3, N3b, N8b | idem: quadros entre modos de tempo; o detector do N8b acerta a espera do CRI (`8C158860`), mas a thread passa a ser a 1, não a 3 | `--saves legado`: N3, N3b e N8b passam. O N11 falhou por erro do ajuste (`--saves` passado ao executável anterior ao N2b-2, que não conhece a opção); corrigido: reexecução completa: **17/17** |
+| `test_controles` | K12 (2 passos de 3 470 e de 7 820) | roteiros por passo convertidos de execuções sem cartão: o START do passo 95 fecha o "VMU not found"; com o cartão não tem efeito. **Quadros idênticos** nas duas rotas | K12 com `--saves legado`: **aprovado** |
+| `test_cri` | C2, B11b (com `--saves legado`: C2, C3, C4, B11b, sempre IRQF) | estabelecida **também com o controle pelo Maple**: o controle nativo virou padrão só no `b1c76ec`, e a regressão do N3 (fonte `803FB171…`) rodou com o legado. Com o nativo, o DMA do Maple termina antes e a ordem das interrupções muda sob as perturbações de tempo | A/B: executável anterior ao N4 (`e16e42f`) 33/33; atual com `--saves legado` 28/33; atual com `--controles legado --saves legado` **33/33** |
+| `test_efeito` | E4, E6 (com `--saves legado`: E3, E4, E6, IRQF) | idem `test_cri` | `--controles legado --saves legado`: **17/17** |
+
+**Nenhuma é defeito do produto.** O que deixa de valer com cartão e controle nativos são hipóteses de
+investigação do N2b: D7 (perturbar só o tempo não muda a ordem lógica) e os controles só de tempo.
+O código de cartão do jogo depende do tempo (como num Dreamcast com VMU), e a ordem das interrupções
+do Maple muda com o controle nativo.
+- Os saves nativos são determinísticos (`test_saves` S2, equivalência entre modos de tempo).
+- Os controles nativos estão cobertos pelo `test_pd_nativo` (85/85) e pelo `test_assistido` (28/28).
+
+**Decisão:** essas suítes rodam no escopo em que foram estabelecidas: `--saves legado` em
+`test_tempo`, `test_n2b`, `test_n2b2` e K12, mais `--controles legado` em `test_cri` e
+`test_efeito`, como já era o caso de K1–K13 e N11. Os critérios e as referências não mudaram.
+**Pendência para o retorno ao N2:** reavaliar D7 e as perturbações só de tempo com cartão e controle
+nativos (`docs/PLANO-PORT-NATIVO.md`).
+
+**Encerramento do N4:**
+
+| Critério | Situação |
+|---|---|
+| API `bu` atendida nativamente (13 fronteiras), sem VMU nem Maple | feito |
+| Formato VMS e envelope `.bsv`, escrita atômica, recuperação, versões futuras, somente leitura | feito (unitários, `test_saves`) |
+| SAVE → reinício → LOAD → gameplay no Windows | feito (`test_saves`, rota de gameplay) |
+| Compatibilidade com o Flycast nos dois sentidos | feito (Windows → Flycast `g1`; Flycast → Windows `f2`/S12) |
+| Matriz de erros | feita |
+| Revisão do Codex | feita (rodadas do N4 nesta seção) |
+| Promoção a padrão (`--saves nativo`; legado como fallback) | feita |
+| Regressão de fechamento | feita, com as seis suítes reexecutadas acima |
+| **SAVE num save point real** (ator kind 98) | **pendente**: as salas que as rotas alcançam não têm o ator; o local foi simulado (`BS_SAVES_H2`, `--forcar-save-point`). Mudar esse critério exige aprovação do mantenedor |
+
+**O N4 está concluído, com a pendência formal do save point real declarada.** Não é aprovação
+integral.
+
 ## Revisões independentes (Codex)
+
+### 2026-10-19: N4 (saves nativos), duas rodadas. Relatórios em `reviews/codex-20261019-140151.md` e `-143748.md`
+
+- Primeira rodada:
+  - [MÉDIA] FF03 inalcançável: **aceito**. `card_code` separa ausente de não formatado; unitário
+    com store falso.
+  - [MÉDIA] unidade liberada antes dos progressos: **aceito**. `tick(hold)`/`release`: ocupada (−1)
+    durante os progressos, como no oráculo c2, e liberada logo antes do callback de conclusão;
+    unitário.
+  - [MÉDIA] CRC do VMS não conferido na gravação: **aceito**. `vms_check` antes do temporário e na
+    releitura; unitário.
+  - [MÉDIA] versão futura com cabeçalho curto virava `.corrompido`: **aceito**. A versão é lida antes
+    do tamanho do cabeçalho; unitário.
+  - [BAIXA] `init`/`exit` incompletos: **rejeitado**. O `exit` não tem chamador. O `init` nativo não
+    falha (o caminho de sucesso é o do original), e `r4`/`r6` (capacidade e trabalho) não têm uso
+    num store de arquivos.
+  - [BAIXA] S6 contra o padrão: **resolvido** pela promoção.
+- Segunda rodada:
+  - [MÉDIA] exportar podia sobrescrever o próprio `.bsv`: **aceito**. Destino igual ao
+    `.bsv`/`.bak`/`.tmp` do slot é recusado; a exportação grava por temporário e troca.
+  - [BAIXA] cartão não formatado sem inserção: **aceito**. A ordem exata no hardware não foi
+    verificada.
+  - [BAIXA] headless sem pasta não testado: **aceito**, com o S14.
+  - [BAIXA] importar e exportar juntos: **aceito**, recusado.
+- Achado próprio, nos testes: o Windows (`ReplaceFileW`) troca um save somente leitura. O store
+  agora devolve `ReadOnly`; unitário.
 
 ### 2026-10-18: N3-3 e planejamento do N4
 

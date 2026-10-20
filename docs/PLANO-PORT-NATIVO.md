@@ -252,6 +252,67 @@ Só requisito de projeto. **Não muda a ordem do roadmap, não antecipa N5, N6 o
 
 ---
 
+### 4.2 Sequência planejada e retorno ao N2 (decisão do mantenedor, 2026-10-19)
+
+Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: o retorno ao N2
+**não** é um N10.
+
+1. **N4**: saves nativos (em andamento).
+2. **N5**: vídeos nativos.
+3. **N6**: áudio nativo.
+4. **N7**: renderização nativa Direct3D 11 (N7a, IR de comandos; N7b, provedores Ninja/Kamui).
+5. **Retorno ao N2**: encerrar as pendências do N2b e implementar o N2c.
+6. **N8**: remoção dos componentes de emulação.
+7. **N9**: gameplay C++ editável e suporte a mods.
+
+**Escopo do retorno ao N2.**
+- **N2b**: fechar os critérios pendentes, inclusive U5–U8 (`docs/N2b-PROPOSTA.md`). Avaliar a
+  promoção do `--tempo experimental` e provar a equivalência nas rotas necessárias. A promoção não
+  é automática: depende dessa prova e da avaliação das dependências restantes.
+- **N2c**: o escopo já definido acima (remover `BS_POLL`, a INTC, a contagem de ciclos e os
+  periféricos do SH-4), substituindo por mecanismos nativos as dependências temporais restantes
+  (interrupções, VBlank, DMA, escalonamento).
+- Reavaliar a hipótese D7 e as perturbações só de tempo **com o cartão e o controle nativos**:
+  - `test_tempo` A3, `test_n2b` B11/S4 e `test_n2b2` N3/N3b/N8b. Com o cartão, o ritmo do código de
+    cartão do jogo depende do tempo.
+  - `test_cri` C2/C3/C4/B11b e `test_efeito` E3/E4/E6. Com o controle nativo, a ordem das
+    interrupções do Maple (IRQF) muda sob as perturbações.
+  - K12, cujos roteiros foram convertidos sem cartão.
+
+  Desde o fechamento do N4 essas suítes rodam com `--saves legado`, e `test_cri`/`test_efeito`
+  também com `--controles legado` (STATUS.md).
+- Remover as adaptações temporárias de sincronização do N3-2 quando as dependências nativas
+  permitirem: hoje a coleta do `pad_adapter` segue o fim do DMA do legado ("depois do servidor"
+  no tempo por ciclos, "no disparo seguinte" no experimental).
+- Sem emulação permanente de hardware nem de ciclos do Dreamcast.
+
+**Condições para iniciar o N2c** (depois do N7):
+- N4–N7 suficientemente migrados e validados;
+- dependências do tempo legado inventariadas;
+- testes de equivalência disponíveis;
+- alternativas nativas para vídeo, áudio, controles e eventos.
+
+**Antes do N8**, o N2 precisa satisfazer seus critérios de conclusão ou ter os bloqueios
+documentados explicitamente.
+
+**Pontos de atrito com o que já estava documentado** (os critérios de aceitação não mudam):
+- **N2b-2 antes de N5/N6.** A Opção C da `docs/N2b-PROPOSTA.md` (D11) previa áudio e vídeo nativos
+  *depois* do N2b-2, sobre o tempo lógico. Com o N2b fechado só após o N7, N5 e N6 serão construídos
+  sobre o provedor de tempo padrão (`--tempo nativo`, N2a). Ajuste: N5 e N6 usam só a interface
+  `TimeProvider` (sem ciclos nem `c->cycles`) e são validados **nos dois modos de tempo**
+  (`test_assistido` já compara `nativo` e `experimental` por passo). Assim a promoção do
+  experimental continua possível depois, sem refazer N5/N6.
+- **Referência da equivalência.** O estado do driver de som é entrada da lógica do jogo (E8 da
+  proposta): o áudio nativo do N6 muda o comportamento observado. A equivalência do N2b no retorno
+  ao N2 é medida contra a referência vigente depois do N7, e não contra os traces atuais, que ficam
+  só como histórico.
+- **Posição do N7a.** A lista acima colocava o N7a (IR de render, ganho de desempenho) antes do N5.
+  Na sequência decidida ele fica junto do N7b, depois do N6. Não há dependência técnica do N5 ou do
+  N6 em relação ao N7a; o custo é manter o render em software (~17 quadros/s em jogo) até o N7.
+
+**Percentuais de referência** (inalterados; mudam só com trabalho concluído): N2a 100%, N2b ~85%,
+N2c 0%, N2 ≈ 65% pelos pesos (3, 8 e 4).
+
 ## 5. Threads, reentradas e eventos (protocolo antes de N2b)
 
 As fibras atuais identificam threads por PC de retomada, R15 e cadeia de retornos:

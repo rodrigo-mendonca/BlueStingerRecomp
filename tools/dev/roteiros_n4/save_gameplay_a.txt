@@ -1,0 +1,29 @@
+# Oraculo do N4: SAVE de gameplay no jogo original (flycast_oracle.py bu-trace --forcar-save-point).
+# NEW GAME pelos passos de tools/dist/roteiros/passo_newgame_area1.txt; a ancora 8C0407C0 (tratador de A,
+# so roda no gameplay) alinha o resto ao primeiro passo jogavel; no recompilado o A so age ~400 passos depois
+# (Eliot parado no inicio do cais), daí A a cada 50 de +450 a +700. A sem nada a frente: o oraculo devolve o
+# tipo 4 (save point) uma vez; a ancora 8C01D200 (painel) e os pulsos de A escolhem soquete, slot e confirmam.
+indice passo
+94 START
+108 -
+593 START
+608 -
+793 START
+808 -
+993 START
+1008 -
+@ancora 8C0407C0
+450 A
+453 -
+500 A
+503 -
+550 A
+553 -
+600 A
+603 -
+650 A
+653 -
+700 A
+703 -
+@ancora 8C01D200
+@pulsos A 90

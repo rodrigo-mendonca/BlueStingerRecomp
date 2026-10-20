@@ -21,5 +21,7 @@ void file_log_other(const char* source, const char* what, uint32_t where);
 void        file_log_init(const std::string& path);  // vazio desliga
 bool        file_log_flush();
 std::string file_log_dump();
+// Ultima sala lida (arquivo R*.BIN, sem a pasta), "" se nenhuma: o titulo do modo espectador.
+std::string file_log_last_room();
 
 } // namespace bs

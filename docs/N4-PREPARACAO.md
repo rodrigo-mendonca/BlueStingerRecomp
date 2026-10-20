@@ -559,6 +559,107 @@ O jogo copia os de usuário e os livres (`8C01C8CE`).
 
 Pendentes: a repetição de c1–c3 (critério 1) e a matriz de erros.
 
+## SAVE e LOAD de gameplay (2026-10-19)
+
+**Causa do "This save data is corrupt".** A máquina de LOAD do jogo (`8C01CE00`) só termina em 10
+(falha) por timeout, depois de 450 consultas ocupadas. Com o `status` pronto ela devolve 8 (sucesso), seja
+qual for o conteúdo. A recusa vem da verificação do conteúdo, feita depois. O save do título (H1) não
+tem estado de gameplay. Um save feito no gameplay carrega normalmente nos dois ambientes (abaixo).
+
+**Como o jogo abre o SAVE no gameplay** (bs-disasm):
+- `8C0407C0` (tratador de A) chama `8C04FB80(jogador, sp, 0)`, que procura um ator à frente na tabela
+  de atores (`[8C24F858]`, contagem `[8C24F86C]`, 36 B por ator, objeto em `+24`, kind em `objeto+2`);
+- devolve **4** quando o kind tem o bit `0x80` na tabela de kinds `8C14CFE0` (32 B por kind). Só o
+  **kind 98** tem esse bit (o 97 divide o tratador `8C0721C0`, sem o bit);
+- o tipo 4 grava **7** em `[8C24D2CC+0x25B2]` (`8C0409EE`). O laço `8C052240` passa a **8** e chama
+  `8C01D200(0, 8)`, o painel de SAVE.
+- Nenhuma sala das rotas atuais (RCG00, RCG00A, RCG02, RCG03) tem um ator kind 98. O save point real
+  depende de avançar a campanha (porta C01 com cartão de ID, monstro do heliporto).
+
+**Diagnóstico `BS_SAVES_H2=<passo>`** (build com mods, `--saves nativo`, só desenvolvimento): a partir
+desse passo de jogo, A sem nada à frente faz `8C04FB80` (modo 0) devolver 4. **Só a presença do save
+point é simulada.** O resto é o fluxo do jogo: pergunta, confirmação, painel e SAVE com o estado real
+da partida. Antes do passo indicado nada muda, porque os roteiros apertam A em portas.
+
+**Resultado (sessão assistida, `passo_cgate` até o passo 8003, corredor RCG02):**
+- **SAVE no Windows:** painel do gameplay, Socket 1, slot 1, "Do you want to Save here?" e
+  "Save completed.". Grava `card0\BLUESTIN.000.bsv` de 2 080 B. O VMS é **válido**: CRC `2835`
+  igual ao calculado, 1 200 B de payload, SHA-256 `1644836c04cc450f…`.
+- **LOAD no Windows (processo novo):** LOAD GAME lista "ELIOT 00:03:58, $0" (o local aparece como
+  "????????": o corredor não é sala de save point). A confirmação **carrega sem erro**: sala `RCG02`,
+  Eliot em (126.9, 0.0, −560.4), a mesma posição do SAVE, e a partida continua jogável.
+- **LOAD no Flycast** (`g1`; o VMS gravado numa VMU por `n4_vmu.py insere`):
+  - duas conferências do bloco 1 e o LOAD completo;
+  - destino = `VMS[512:2048]` byte a byte;
+  - 900 passos depois, Eliot em **(126.85, 0.0, −560.42)**, a mesma posição;
+  - estado `00` (gameplay livre);
+  - a VMU sai inalterada.
+- **Conclusão:** o save do provedor nativo é legível pelo jogo original no Flycast e retoma a partida
+  nos dois ambientes.
+
+Ferramentas novas:
+- `n4_vmu.py insere`;
+- `flycast_oracle.py bu-trace --ler-fim end:n,...`;
+- `assistido.py iniciar --extra "<args>"`.
+
+Pendentes do N4 nesse momento (situação no fechamento, em "Encerramento do N4" abaixo):
+- save point real (kind 98) alcançado sem H2: **continua pendente**;
+- SAVE de gameplay também no Flycast, comparado ao do nativo: feito (`f2`, seção seguinte);
+- matriz de erros: feita (robustez, seção seguinte);
+- revisão do Codex: feita (`STATUS.md`);
+- regressão de fechamento: feita (`STATUS.md`, fonte `C29EFADBDD4305BD`);
+- promoção a padrão: feita (`--saves nativo`).
+
+## Compatibilidade nos dois sentidos, robustez e promoção (2026-10-19)
+
+**Flycast → Windows** (`f2`, jogo original):
+- Roteiro `tools/dev/roteiros_n4/save_gameplay_a.txt`:
+  - NEW GAME;
+  - âncora no primeiro passo de gameplay (`8C0407C0`), porque o Flycast conta outro número de passos
+    até lá: 8 343 contra cerca de 2 255 no recompilado;
+  - A a cada 50 passos de +450 a +700 (o A só age uns 400 passos depois do início do gameplay);
+  - âncora no painel e pulsos de A.
+- O único desvio é `bu-trace --forcar-save-point`: uma vez, em `8C0408EA`, o `r0` passa de 0 a 4,
+  o mesmo que o `BS_SAVES_H2`. O resto é o jogo original.
+- Resultado:
+  - `save` com op 0x0C e conclusão 0, no cais RCG00, Eliot em (500, 92, −650), vida 40;
+  - VMS **válido**, igual à origem do SAVE byte a byte (SHA-256 `92474e6e…`).
+- `--saves-importar` e LOAD em processo novo (`test_saves` S12):
+  - sem erro, Eliot em **(500, 92, −650), vida 40**;
+  - a partida continua jogável (anda até (527, −378)).
+
+**Windows → Flycast:** feito antes (`g1`, seção anterior), com o save de gameplay do RCG02.
+
+**As duas condições não são a mesma partida.** Os saves vêm de pontos diferentes: RCG02 no Windows,
+RCG00 no Flycast. Cada sentido foi provado com o seu próprio save. Nos dois o local é simulado: só a
+presença do save point.
+
+**Robustez** (unitários e `test_saves`):
+- inexistente;
+- envelope corrompido (preservado como `.corrompido`);
+- CRC do VMS inválido (recusado na gravação e na importação; o save anterior fica);
+- versão futura, inclusive com cabeçalho curto (preservada, nunca sobrescrita);
+- ocupada (segunda operação recusada com −1);
+- concluído dentro do limite de 450 consultas;
+- unidade ocupada durante os progressos e liberada antes da conclusão;
+- falha em cada ponto da escrita atômica;
+- sem espaço;
+- somente leitura respeitado;
+- `.tmp` descartado e recuperação pelo `.bak`;
+- persistência entre processos;
+- FF03 em cartão não formatado.
+
+**Promoção:**
+- `--saves nativo` passa a ser o padrão; `--saves legado` fica como fallback temporário.
+- No `--headless` sem pasta, o cartão é temporário e vazio por processo: os testes nunca tocam
+  Documentos.
+- `--saves-importar` e `--saves-exportar` levam e trazem VMS entre o produto e VMU ou emulador.
+
+**Pendente: o save point real.** As salas que as rotas alcançam (RCG00, RCG00A, RCG02, RCG03) não
+têm ator kind 98. Chegar a um exige avançar a campanha (cartão de ID da porta C01, monstro do
+heliporto). O critério "SAVE num save point real" segue **pendente**; mudá-lo exige aprovação do
+mantenedor.
+
 ## Piloto Ghidra (2026-10-19)
 
 Ghidra 12.1.4 portátil com o JDK 21 (Temurin 21.0.12.1), os dois em `C:\Source\_tools`, sem PATH,

@@ -113,6 +113,7 @@ def main():
     a.add_argument("--vblanks", type=int, default=10_000_000)
     a.add_argument("--exe", default=os.path.join(REPO, "build", "msvc-release", "app", "bluestinger.exe"))
     a.add_argument("--data", default=os.path.join(REPO, "dist", "BlueStinger-Preview", "data"))
+    a.add_argument("--extra", default="", help="argumentos a mais para o executavel (ex.: \"--saves nativo\")")
     c = sub.add_parser("cmd")
     c.add_argument("pasta")
     c.add_argument("comandos", nargs="+")
@@ -149,7 +150,7 @@ def main():
                 pass
         out = open(os.path.join(d, "saida.txt"), "w")
         flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        p = subprocess.Popen([args.exe, "--data", args.data, "--tempo", args.tempo, "--headless", str(args.vblanks)],
+        p = subprocess.Popen([args.exe, "--data", args.data, "--tempo", args.tempo, "--headless", str(args.vblanks)] + args.extra.split(),
                              env=env, stdout=out, stderr=subprocess.STDOUT, creationflags=flags, close_fds=True)
         st = wait(d, 0, 120)
         print(f"pid {p.pid}; pausado: {st}")

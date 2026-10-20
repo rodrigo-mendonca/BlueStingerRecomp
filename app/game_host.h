@@ -54,9 +54,9 @@ class InputSystem;
 // = o Maple responde como controle e le o InputSystem pela ponte.
 enum class ControlsProvider { Legacy, Native };
 
-// Provedor dos saves (N4, docs/N4-PREPARACAO.md): legado (padrao durante o desenvolvimento) = a
-// biblioteca bu original, sem VMU no Maple (o jogo mostra "VMU not found"); nativo = a API bu
-// atendida por transitional/bu_adapter sobre arquivos em `savesRoot` (um envelope por slot).
+// Provedor dos saves (N4, docs/N4-PREPARACAO.md): nativo (padrao desde o fim do N4) = a API bu
+// atendida por transitional/bu_adapter sobre arquivos em `savesRoot` (um envelope por slot);
+// legado (fallback temporario) = a biblioteca bu original, sem VMU no Maple ("VMU not found").
 enum class SavesProvider { Legacy, Native };
 
 struct GameOptions {
@@ -67,7 +67,7 @@ struct GameOptions {
     FilesProvider         files = FilesProvider::Native;
     TimeProviderKind      time  = TimeProviderKind::Native;
     ControlsProvider      controls = ControlsProvider::Native;
-    SavesProvider         saves = SavesProvider::Legacy;
+    SavesProvider         saves = SavesProvider::Native;
     std::filesystem::path savesRoot;  // saves nativos: <raiz>\card0\BLUESTIN.00n.bsv
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).
     native::input::InputSystem* input = nullptr;

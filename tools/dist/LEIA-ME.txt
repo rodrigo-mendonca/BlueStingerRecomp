@@ -32,6 +32,17 @@ vira o jogador 1. Formato antigo: BlueStinger.exe --map meu_mapa.txt (linhas "BO
 Se algum controle se comportar diferente do esperado: BlueStinger.exe --controles legado (modo
 antigo, temporario) e informe o caso.
 
+Saves
+-----
+Sem cartao de memoria: o jogo ve um cartao (Socket 1) e grava cada slot como arquivo em
+Documentos\DC-Recomp\Blue Stinger\saves\card0 (BLUESTIN.000 a .005, com copia anterior .bak).
+  --saves-portatil ............. saves\ ao lado do BlueStinger.exe
+  --saves-pasta <pasta> ........ outra pasta
+  --saves-importar <arq.vms> ... traz um save de VMU/emulador (VMS) para o slot 1 (--saves-nome
+                                 BLUESTIN.00n para outro slot); --saves-exportar <arq.vms> leva para fora
+Arquivo danificado nunca e apagado: fica como .corrompido. Se algo der errado: --saves legado (sem
+cartao, modo antigo, temporario) e informe o caso.
+
 Dados e problemas
 -----------------
 - BlueStinger.exe --verify-data confere o SHA-256 de todos os arquivos de data\.
@@ -45,7 +56,7 @@ Dados e problemas
 Limitacoes conhecidas
 ---------------------
 - Sem audio.
-- Sem VMU: o jogo avisa "VMU not found" e nao salva.
+- Pontos de save do jogo so aparecem mais adiante na campanha (nenhum nas primeiras salas).
 - Renderizacao em software: quedas de ritmo em cenas com muitas camadas transparentes.
 - Controles fisicos (Xbox, PlayStation) ainda sem teste manual; teclado testado.
 - Diferencas visuais pequenas em relacao ao hardware (sem dither; bordas de texto).

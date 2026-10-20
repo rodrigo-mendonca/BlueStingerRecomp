@@ -163,10 +163,11 @@ BS_TEST(saves_store_errors) {
     BS_CHECK(s->save_atomic(0, "BLUESTIN.000", Bytes()) == SaveError::BadImage);
     BS_CHECK(s->remove(0, "BLUESTIN.000") == SaveError::NotFound);
     // cheio: 197 blocos ocupados, um save de 4 nao cabe; sobrescrever o grande com o mesmo tamanho cabe
-    BS_CHECK(s->save_atomic(0, "GRANDE", Bytes(197 * 512)) == SaveError::None);
+    BS_CHECK(s->save_atomic(0, "GRANDE", makeVms(20, 197 * 512 - 0x280)) == SaveError::None);
     BS_CHECK(s->save_atomic(0, "BLUESTIN.000", makeVms(1)) == SaveError::NoSpace);
     BS_CHECK(s->load(0, "BLUESTIN.000", img) == SaveError::NotFound);
-    BS_CHECK(s->save_atomic(0, "GRANDE", Bytes(197 * 512, std::byte{1})) == SaveError::None);
+    BS_CHECK(s->save_atomic(0, "GRANDE", makeVms(21, 197 * 512 - 0x280)) == SaveError::None);
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", Bytes(2048)) == SaveError::BadImage);  // nao e VMS
     BS_CHECK(s->remove(0, "GRANDE") == SaveError::None && s->card(0, c) == SaveError::None && c.free_blocks == 200);
     // pasta do cartao apagada por fora: sem cartao (nada recriado no meio da sessao)
     fs::remove_all(d.p / "card0");
@@ -247,4 +248,55 @@ BS_TEST(saves_vms_import_export) {
     BS_CHECK(sv::import_vms(*s, 0, "BLUESTIN.004", d.p / "ruim.vms") == SaveError::BadImage);
     BS_CHECK(sv::import_vms(*s, 0, "BLUESTIN.004", d.p / "nao_existe.vms") == SaveError::NotFound);
     BS_CHECK(s->load(0, "BLUESTIN.004", img) == SaveError::NotFound);
+}
+
+// Permissao: destino somente leitura (atributo do Windows) recusa a gravacao sem perder o save, sem
+// temporario sobrando; com a permissao de volta, grava normalmente.
+BS_TEST(saves_store_read_only_destination) {
+    TempDir d("somente_leitura");
+    auto    s = sv::make_file_store(d.p, fixedClock());
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", makeVms(1)) == SaveError::None);
+    const fs::path dst = d.p / "card0" / "BLUESTIN.000.bsv";
+    fs::permissions(dst, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write, fs::perm_options::remove);
+    const SaveError e = s->save_atomic(0, "BLUESTIN.000", makeVms(2));
+    BS_CHECK(e == SaveError::ReadOnly);
+    Bytes img;
+    BS_CHECK(s->load(0, "BLUESTIN.000", img) == SaveError::None && img == makeVms(1));
+    for (const auto& f : fs::directory_iterator(d.p / "card0")) BS_CHECK(f.path().extension() != ".tmp");
+    fs::permissions(dst, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write, fs::perm_options::add);
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", makeVms(2)) == SaveError::None);
+    BS_CHECK(s->load(0, "BLUESTIN.000", img) == SaveError::None && img == makeVms(2));
+}
+
+// Gravacao so de VMS integro: CRC-16 do jogo adulterado (campo 0x46 ou o payload) e recusado sem tocar
+// no save anterior.
+BS_TEST(saves_store_rejects_bad_vms_crc) {
+    TempDir d("crc");
+    auto    s = sv::make_file_store(d.p, fixedClock());
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", makeVms(1)) == SaveError::None);
+    Bytes bad = makeVms(2);
+    bad[0x300] ^= std::byte{0x40};
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", bad) == SaveError::BadImage);
+    bad = makeVms(2);
+    bad[0x46] ^= std::byte{1};
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", bad) == SaveError::BadImage);
+    Bytes img;
+    BS_CHECK(s->load(0, "BLUESTIN.000", img) == SaveError::None && img == makeVms(1));
+}
+
+// Versao futura reconhecida antes do tamanho de cabecalho desta versao: um arquivo de formato mais novo
+// com cabecalho curto continua intocado (nao vira .corrompido) e nao e sobrescrito.
+BS_TEST(saves_future_version_short_header) {
+    Bytes f = text("BSSV");
+    f.push_back(std::byte{9}), f.push_back(std::byte{0}), f.push_back(std::byte{7});
+    Bytes img;
+    BS_CHECK(sv::envelope_decode(f, img) == SaveError::FutureVersion);
+    BS_CHECK(sv::envelope_decode(text("BSSV"), img) == SaveError::Corrupt);
+    TempDir d("futura_curta");
+    fs::create_directories(d.p / "card0");
+    writeFile(d.p / "card0" / "BLUESTIN.000.bsv", f);
+    auto s = sv::make_file_store(d.p, fixedClock());
+    BS_CHECK(s->load(0, "BLUESTIN.000", img) == SaveError::FutureVersion);
+    BS_CHECK(s->save_atomic(0, "BLUESTIN.000", makeVms(3)) == SaveError::FutureVersion);
+    BS_CHECK(readFile(d.p / "card0" / "BLUESTIN.000.bsv") == f && !fs::exists(d.p / "card0" / "BLUESTIN.000.bsv.corrompido"));
 }

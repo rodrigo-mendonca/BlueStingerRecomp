@@ -1,0 +1,28 @@
+# N4 (gameplay assistido): titulo, LOAD GAME, Socket 1, slot 1 e confirma (passo 1669); o jogo volta ao
+# ponto do save (RCG02) no passo ~2131; depois UP e DOWN mostram que a partida continua jogavel.
+indice passo
+1 START
+4 -
+602 START
+605 -
+802 START
+805 -
+1001 DOWN
+1003 -
+1013 START
+1016 -
+1196 START
+1199 -
+1239 DOWN
+1337 START
+1343 -
+1523 A
+1526 -
+1606 A
+1609 -
+1669 A
+1672 -
+2132 UP
+2172 -
+2177 DOWN
+2237 -

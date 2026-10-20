@@ -15,6 +15,10 @@
 #   CRI, consumidor artificial) e a ociosidade da thread 3 estao no test_cri.ps1
 #   (docs/N2b-BLOQUEIOS.md).
 #   powershell -File tools/dist/test_n2b.ps1 [-Exe <exe>] [-ExeMods <exe com BS_MODS>] [-Data <data>]
+# saves legado: estas suites investigam o tempo (N2b) no caminho SEM cartao, onde as hipoteses foram
+# estabelecidas; com o cartao nativo (padrao desde o N4) o boot segue o codigo de cartao do jogo, cujo
+# ritmo depende do tempo, e D7/controles so de tempo deixam de valer (achado registrado para o retorno
+# ao N2: STATUS.md, fechamento do N4).
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\BlueStinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
@@ -53,7 +57,7 @@ function Run($tag, $tempo, $n, [hashtable]$envs = @{}, $arquivos = "nativo", $ro
     $log = "${p}_saida.txt"
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --headless $n --dump `"${p}_q.bmp`" > `"$log`" 2>&1`""
+            "/c `"`"$exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --headless $n --dump `"${p}_q.bmp`" > `"$log`" 2>&1`""
         $null = $proc.Handle
         if (-not $proc.WaitForExit($LimiteSegundos * 1000)) { & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null; $code = "tempo-limite" }
         else { $code = $proc.ExitCode }

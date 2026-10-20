@@ -95,8 +95,10 @@ std::vector<std::byte> envelope_encode(std::span<const std::byte> image, int64_t
 }
 
 SaveError envelope_decode(std::span<const std::byte> f, std::vector<std::byte>& image, int64_t* modified_unix) {
-    if (f.size() < kEnvHeader || std::memcmp(f.data(), kMagic, 4) != 0) return SaveError::Corrupt;
+    // a versao vem antes de exigir o cabecalho desta versao: um formato futuro pode ter outro tamanho
+    if (f.size() < 6 || std::memcmp(f.data(), kMagic, 4) != 0) return SaveError::Corrupt;
     if (rd16(f, 4) > kEnvelopeVersion) return SaveError::FutureVersion;
+    if (f.size() < kEnvHeader) return SaveError::Corrupt;
     const uint32_t hdr = rd16(f, 6), size = rd32(f, 8);
     if (rd16(f, 4) == 0 || hdr < kEnvHeader || size == 0 || size % kBlock || size > kCardBlocks * kBlock ||
         uint64_t(hdr) + size != f.size())

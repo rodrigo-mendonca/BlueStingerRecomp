@@ -32,6 +32,8 @@ New-Item -ItemType Directory -Path $Saida | Out-Null
 New-Item -ItemType File -Path $marker | Out-Null
 
 # quadros de referencia: N0 (arquivos legado, 6 000) e N1 (test_arquivos, 8 000)
+# saves legado: as referencias sao anteriores ao N4 (sem cartao: "VMU not found"); com o cartao nativo o
+# boot monta e consulta o cartao e o quadro de 8 000 VBlanks sai com outra fase de animacao (mesma cena)
 $refQuadro = @{ "legado_6000" = "B49D68E2165B8505"; "nativo_8000" = "F7818C7E18FA130C"; "legado_8000" = "F472ECC27954D27B" }
 # prioridade dos tipos no mesmo instante (native::time::EventKind)
 $prio = @{ VBlankIn = 0; VBlankOut = 1; RenderDone = 2; InputDone = 3; FileDone = 4; Timer = 5; AudioTick = 6 }
@@ -54,7 +56,7 @@ function Run($tempo, $arquivos, $n, $mutacao = "") {
         # tempo-limite: um travamento (por exemplo uma mutacao que para o tempo) falha o caso em
         # vez de prender a suite
         $p = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$Exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --headless $n --dump `"$($r.Bmp)`" > `"$log`" 2>&1`""
+            "/c `"`"$Exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --headless $n --dump `"$($r.Bmp)`" > `"$log`" 2>&1`""
         $null = $p.Handle  # sem o handle guardado, ExitCode volta vazio depois de WaitForExit(ms)
         if (-not $p.WaitForExit($LimiteSegundos * 1000)) {
             & taskkill /PID $p.Id /T /F 2>&1 | Out-Null

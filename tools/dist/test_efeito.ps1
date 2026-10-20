@@ -16,6 +16,14 @@
 #   E6  com o TMU parado (D7) e o bloqueio: TN = TN da referencia sem as cessoes da exclusao mutua
 #       (marcadas causalmente), IRQF, CL, SL, AUD e quadro iguais
 #   powershell -File tools/dist/test_efeito.ps1 [-ExeMods <exe do build de investigacao>] [-Data <data>]
+# saves legado: estas suites investigam o tempo (N2b) no caminho SEM cartao, onde as hipoteses foram
+# estabelecidas; com o cartao nativo (padrao desde o N4) o boot segue o codigo de cartao do jogo, cujo
+# ritmo depende do tempo, e D7/controles so de tempo deixam de valer (achado registrado para o retorno
+# ao N2: STATUS.md, fechamento do N4).
+# controles legado: as hipoteses tambem foram estabelecidas com o controle pelo Maple (padrao ate o
+# N3-2). Com o controle nativo (padrao desde b1c76ec) o DMA do Maple termina antes e a ordem das
+# interrupcoes (IRQF) muda sob as perturbacoes de tempo; A/B de 2026-10-19: atual com --controles
+# legado --saves legado = 33/33. Reavaliar no retorno ao N2.
 param(
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-watch\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
@@ -65,7 +73,7 @@ foreach ($tag in $casos.Keys) {
     foreach ($e in $all.Keys) { Set-Item "env:$e" $all[$e] }
     try {
         $procs[$tag] = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
+            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --saves legado --controles legado --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
         $null = $procs[$tag].Handle
     } finally { foreach ($e in $all.Keys) { Set-Item "env:$e" "" } }
 }

@@ -20,10 +20,13 @@
 #include "gdfs_adapter.h"
 #include "input/input.h"
 #include "input_bridge.h"
+#include "debug/file_log.h"
+#include "pad_contract.h"
 #include "platform/input.h"
 
 #include <SDL3/SDL.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -62,9 +65,11 @@ struct Args {
     bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
     bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado (N2a)
     bs::ControlsProvider controls = bs::ControlsProvider::Native;  // --controles nativo|legado (N3; legado = fallback)
-    bs::SavesProvider saves = bs::SavesProvider::Legacy;  // --saves nativo|legado (N4; nativo em validacao)
+    bs::SavesProvider saves = bs::SavesProvider::Native;  // --saves nativo|legado (N4; legado = fallback)
     fs::path savesDir;          // --saves-pasta <dir>
     bool     savesPortable = false;  // --saves-portatil: saves\ ao lado do executavel
+    fs::path savesImport, savesExport;       // --saves-importar/--saves-exportar <arquivo.vms>
+    std::string savesName = "BLUESTIN.000";  // --saves-nome (slot 1 do jogo; 2-6 = .001-.005)
 };
 
 std::string utf8(const fs::path& p) { return bs::disc::pathText(p); }
@@ -114,11 +119,14 @@ bool parseArgs(Args& a) {
         }
         else if (s == L"--saves" && (v = next())) {
             if (*v == L"legado") a.saves = bs::SavesProvider::Legacy;
-            else if (*v == L"nativo") a.saves = bs::SavesProvider::Native;  // N4, em validacao
+            else if (*v == L"nativo") a.saves = bs::SavesProvider::Native;
             else return false;
         }
         else if (s == L"--saves-pasta" && (v = next())) a.savesDir = *v;
         else if (s == L"--saves-portatil") a.savesPortable = true;
+        else if (s == L"--saves-importar" && (v = next())) a.savesImport = *v;
+        else if (s == L"--saves-exportar" && (v = next())) a.savesExport = *v;
+        else if (s == L"--saves-nome" && (v = next())) a.savesName = utf8(*v);
         else if (s == L"--version") a.version = true;
         else if (s == L"--verify-data") a.verifyData = true;
         else if (!s.empty() && s[0] != L'-' && a.positional.empty()) a.positional = s;
@@ -399,6 +407,31 @@ private:
     SDL_Joystick*   pad_  = nullptr;
 };
 
+// Modo espectador (desenvolvimento): BS_INPUT_SCRIPT com janela. O roteiro e a unica entrada (teclado e
+// controles nao chegam ao jogo) e o titulo mostra passo de jogo, sala e botoes. O estado e lido no gancho
+// de VBlank (passo, PDS da porta A na RAM) e no registro de arquivos (ultimo R*.BIN), sem mudar o jogo.
+struct Spectator {
+    std::atomic<bool>     on{false};
+    std::atomic<uint64_t> step{0};
+    std::atomic<uint32_t> buttons{0};  // `on` do PDS da porta A (bits do SDK pd)
+};
+Spectator g_spectator;
+
+std::string spectatorText() {
+    static const std::pair<uint32_t, const char*> kBits[] = {
+        {0x8, "START"}, {0x10, "UP"}, {0x20, "DOWN"}, {0x40, "LEFT"}, {0x80, "RIGHT"}, {0x4, "A"},
+        {0x2, "B"},     {0x400, "X"}, {0x200, "Y"},   {0x20000, "LT"}, {0x10000, "RT"}};
+    std::string    pad;
+    const uint32_t on = g_spectator.buttons.load();
+    for (const auto& [bit, name] : kBits)
+        if (on & bit) pad += (pad.empty() ? "" : "+") + std::string(name);
+    const std::string room = bs::file_log_last_room();
+    char              t[160];
+    std::snprintf(t, sizeof t, " | ESPECTADOR passo %llu, sala %s, pad %s", static_cast<unsigned long long>(g_spectator.step.load()),
+                  room.empty() ? "-" : room.c_str(), pad.empty() ? "-" : pad.c_str());
+    return t;
+}
+
 int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Window* window,
               SDL_Renderer* renderer) {
     SDL_Texture*  texture = nullptr;
@@ -480,7 +513,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             char                t[200];
             std::snprintf(t, sizeof t, "%s %s - %.1f campos/s, trabalho %.1f ms (max %.1f)", kTitle, BS_VERSION,
                           s.fieldsPerSecond, s.workAvgMs, s.workMaxMs);
-            SDL_SetWindowTitle(window, t);
+            SDL_SetWindowTitle(window, g_spectator.on ? (t + spectatorText()).c_str() : t);
         }
     }
     host.requestStop();
@@ -641,9 +674,27 @@ void gamepadEvent(ni::InputSystem& sys, const SDL_Event& e) {
 // Pasta dos saves nativos (N4, decisao do mantenedor 2026-10-19): Documentos\DC-Recomp\Blue Stinger\saves
 // (FOLDERID_Documents, que segue o redirecionamento do Windows); --saves-pasta <dir> ou --saves-portatil
 // (saves\ ao lado do executavel) escolhem outra. Sem a pasta Documentos, a pasta do usuario do log.
+// --headless (testes e diagnostico) sem --saves-pasta/--saves-portatil: cartao vazio e temporario do
+// processo (apagado no fim), para que nenhum teste leia ou grave os saves do usuario.
+struct TempSaves {
+    fs::path dir;
+    ~TempSaves() {
+        std::error_code ec;
+        if (!dir.empty()) fs::remove_all(dir, ec);
+    }
+};
+TempSaves g_tempSaves;
+
 fs::path savesRoot(const Args& a) {
     if (!a.savesDir.empty()) return a.savesDir;
     if (a.savesPortable) return exeDir() / L"saves";
+    if (a.headless && a.savesImport.empty() && a.savesExport.empty()) {
+        if (g_tempSaves.dir.empty())
+            g_tempSaves.dir = fs::temp_directory_path() / (L"bs-saves-headless-" + std::to_wstring(GetCurrentProcessId()));
+        std::error_code ec;
+        fs::remove_all(g_tempSaves.dir, ec);
+        return g_tempSaves.dir;
+    }
     PWSTR docs = nullptr;
     fs::path root;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_CREATE, nullptr, &docs)) && docs)
@@ -682,9 +733,11 @@ const char* kUsage =
     "       experimental = N2b-2, tempo logico sem ciclos estimados, em validacao)\n"
     "     --controles nativo|legado: provedor dos controles (padrao: nativo = o SDK de controles alimentado\n"
     "       direto, sem controle no Maple; legado = pelo Maple emulado, fallback temporario)\n"
-    "     --saves legado|nativo: saves (padrao: legado = sem VMU; nativo = em validacao, arquivos em\n"
-    "       Documentos\\DC-Recomp\\Blue Stinger\\saves; --saves-portatil = saves\\ ao lado do executavel;\n"
+    "     --saves nativo|legado: saves (padrao: nativo = arquivos em Documentos\\DC-Recomp\\Blue Stinger\\saves;\n"
+    "       legado = sem VMU, fallback temporario; --saves-portatil = saves\\ ao lado do executavel;\n"
     "       --saves-pasta <dir> = outra pasta)\n"
+    "     --saves-importar <arquivo.vms> | --saves-exportar <arquivo.vms> [--saves-nome BLUESTIN.00n]:\n"
+    "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";
@@ -720,6 +773,38 @@ int mainHeadless(Args& a) {
     host.join();
     ib::install(nullptr);  // a thread do jogo ja parou: a fonte pode sair antes do InputSystem
     return rc;
+}
+
+// --saves-importar / --saves-exportar: um arquivo VMS (o de uma VMU, p.ex. extraido do Flycast) entra
+// na pasta de saves nativa como o slot --saves-nome, ou sai dela. A importacao so aceita VMS integro
+// (cabecalho e CRC) e usa a mesma gravacao atomica do jogo; nao sobrescreve save de versao futura.
+int mainSavesTransfer(const Args& a) {
+    namespace ns          = bs::native::saves;
+    const fs::path   root = savesRoot(a);
+    ns::FileStoreOptions so;
+    so.log = [](const std::string& m) { std::fprintf(stderr, "%s\n", m.c_str()); };
+    auto                store = ns::make_file_store(root, so);
+    const bool          imp   = !a.savesImport.empty();
+    if (!imp) {  // o destino nao pode ser um arquivo do proprio slot (trocaria o envelope por um VMS puro)
+        std::error_code ec;
+        const fs::path  out = fs::weakly_canonical(a.savesExport, ec);
+        for (const wchar_t* ext : {L".bsv", L".bsv.bak", L".bsv.tmp"}) {
+            const fs::path own = fs::weakly_canonical(root / L"card0" / (fs::path(a.savesName).wstring() + ext), ec);
+            if (fs::equivalent(out, own, ec) || out == own) {
+                std::fprintf(stderr, "erro: o destino da exportacao e o proprio arquivo do slot %s\n", a.savesName.c_str());
+                return 1;
+            }
+        }
+    }
+    const ns::SaveError e     = imp ? ns::import_vms(*store, 0, a.savesName, a.savesImport)
+                                    : ns::export_vms(*store, 0, a.savesName, a.savesExport);
+    if (e != ns::SaveError::None) {
+        std::fprintf(stderr, "erro: %s %s: %s\n", imp ? "importar" : "exportar", a.savesName.c_str(), ns::save_error_name(e));
+        return 1;
+    }
+    std::printf("%s %s %s %s (pasta %s)\n", imp ? "importado" : "exportado", utf8(imp ? a.savesImport : a.savesExport).c_str(),
+                imp ? "->" : "<-", a.savesName.c_str(), utf8(root).c_str());
+    return 0;
 }
 
 int mainVerifyData(const Args& a) {
@@ -771,17 +856,14 @@ int mainWindow(Args& a) {
     SDL_RenderPresent(renderer);
 
     int rc = 0;
-    if (std::getenv("BS_INPUT_SCRIPT")) {
-        errorBox(window, "BS_INPUT_SCRIPT exige --headless");
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 2;
-    }
+    // modo espectador: o roteiro (setupInput o escolhe antes do teclado) e a sala pelo registro de arquivos
+    g_spectator.on = std::getenv("BS_INPUT_SCRIPT") != nullptr;
+    if (g_spectator.on && !bs::g_file_log)
+        bs::file_log_init(utf8(fs::temp_directory_path() / L"bs-espectador-arquivos.tsv"));
     std::string                      warning;
     std::unique_ptr<ni::InputSystem> input = setupInput(a, true, warning);
     // controles pelo SDL3; sem o subsistema de controles, o XInput de reserva
-    if (input->map().options.backend == "sdl" && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+    if (!g_spectator.on && input->map().options.backend == "sdl" && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "[controles] SDL3 Gamepad indisponivel (%s): usando XInput\n", SDL_GetError());
         input->enable_xinput();
     }
@@ -793,6 +875,14 @@ int mainWindow(Args& a) {
         bs::GameHost host;
         bs::GameOptions opt = gameOptions(a);
         opt.input           = input.get();
+        if (g_spectator.on)
+            opt.vblankHook = [](const bs::GameOptions::VblankView& v) {
+                g_spectator.step = v.step;
+                uint32_t on      = 0;  // PDS_PERIPHERAL da porta A, campo `on` (+8)
+                std::memcpy(&on, v.ram + ((bs::transitional::pad::kTable + 8) & 0xFFFFFF), 4);
+                g_spectator.buttons = on;
+                return true;
+            };
         host.start(std::move(opt));
         rc = runWindow(host, *input, a, window, renderer);
         // a thread do jogo le a fonte de entrada: para e espera ANTES de destrui-la, em todos
@@ -831,6 +921,11 @@ int main(int, char**) {
     std::fprintf(stderr, "%s %s (%s); dados: %s\n", kTitle, BS_VERSION, BS_BUILD_DATE, utf8(a.gameData).c_str());
     try {
         if (a.verifyData) return mainVerifyData(a);
+        if (!a.savesImport.empty() && !a.savesExport.empty()) {
+            std::fprintf(stderr, "erro: --saves-importar e --saves-exportar sao exclusivos\n");
+            return 2;
+        }
+        if (!a.savesImport.empty() || !a.savesExport.empty()) return mainSavesTransfer(a);
         return a.headless ? mainHeadless(a) : mainWindow(a);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "erro: %s\n", e.what());

@@ -53,6 +53,14 @@ Ferramentas:
   `dist\BlueStinger-Preview\data` junto com o `make_preview` (a troca da instalação é recusada).
 - Diagnóstico do jogo: `bluestinger --headless N --dump-every K --capture <dir>` com
   `BS_INPUT_SCRIPT=tools/dist/roteiros/newgame_area1.txt`.
+- Saves (N4): `--saves nativo|legado` (padrão nativo; pasta Documentos\DC-Recomp\Blue Stinger\saves,
+  `--saves-pasta`, `--saves-portatil`; no `--headless` sem pasta, cartão temporário vazio por processo),
+  `--saves-importar/--saves-exportar <vms>` [`--saves-nome`]. Suíte `test_saves.ps1 [-VmuFlycast <vmu> -PosFlycast x,y,z]`.
+  Diagnósticos (build com mods): `BS_SAVES_H1=1` (SAVE pelo título) e `BS_SAVES_H2=<passo>` (simula só o
+  save point no gameplay). Oráculo: `flycast_oracle.py bu-trace` (`--forcar-save-point`, `--ler-fim`), `n4_vmu.py`.
+- Modo espectador (janela): `BS_INPUT_SCRIPT=<roteiro>` sem `--headless` reproduz o roteiro na Preview
+  SDL3 (só o roteiro controla; título com passo, sala e botões). Ex.: `$env:BS_RELOGIO_FIXO="1700000000";
+  $env:BS_INPUT_SCRIPT="tools\dist\roteiros\passo_cgate.txt"; build\msvc-release\app\bluestinger.exe --data dist\BlueStinger-Preview\data`.
 - Gameplay assistido (só desenvolvimento, `app/assist.h`): `python tools/dev/assistido.py iniciar <pasta>`
   e `... cmd <pasta> "pad UP" "passos 30" "quadro x"` (jogo pausado entre VBlanks, capturas PNG,
   RAM, sessão gravada como roteiro `indice passo`); `tools/dev/assistido_ir.py` navega até (x, z).

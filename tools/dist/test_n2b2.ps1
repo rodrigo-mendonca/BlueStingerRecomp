@@ -68,6 +68,7 @@ function Launch($c) {
     $args2 = "--data `"$Data`" --tempo $($c.tempo) --arquivos $($c.arquivos) --headless $($c.n)"
     if ($c.ev) { $args2 += " --dump `"${p}_q.bmp`"" }
     if ($c.controles) { $args2 += " --controles $($c.controles)" }
+    if ($c.saves) { $args2 += " --saves $($c.saves)" }
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -WindowStyle Hidden -ArgumentList "/c `"`"$($c.exe)`" $args2 > `"${p}_saida.txt`" 2>&1`""
         $null = $proc.Handle
@@ -85,8 +86,11 @@ function RunBatch($casos) {
     }
     return $runs
 }
-function Caso($tag, $exe, $tempo, $n, $roteiro, [hashtable]$env = @{}, [switch]$ev, [switch]$audioAll, $arquivos = "nativo", $controles = "") {
-    return @{ tag = $tag; exe = $exe; tempo = $tempo; n = $n; roteiro = $roteiro; env = $env; ev = [bool]$ev; audioAll = [bool]$audioAll; arquivos = $arquivos; controles = $controles }
+# saves legado em todos os casos: a suite (N3/N3b quadros entre modos, N8b numero da thread do CRI) foi
+# estabelecida no caminho sem cartao; com o cartao nativo o codigo de cartao do jogo depende do tempo
+# (STATUS.md, fechamento do N4). Reavaliar no retorno ao N2.
+function Caso($tag, $exe, $tempo, $n, $roteiro, [hashtable]$env = @{}, [switch]$ev, [switch]$audioAll, $arquivos = "nativo", $controles = "", $saves = "legado") {
+    return @{ tag = $tag; exe = $exe; tempo = $tempo; n = $n; roteiro = $roteiro; env = $env; ev = [bool]$ev; audioAll = [bool]$audioAll; arquivos = $arquivos; controles = $controles; saves = $saves }
 }
 
 function ReadLines($f) { if (Test-Path -LiteralPath $f) { [IO.File]::ReadAllLines($f) } else { @() } }
@@ -144,9 +148,10 @@ $lote1 = @(
     (Caso "exp_a1" $Exe "experimental" $VBlanks "newgame_area1" -audioAll),
     (Caso "est_novo" $Exe "nativo" $VBlanks "newgame_area1" -ev -audioAll)
 )
+# (o executavel antigo nao tem --saves: e sem cartao por construcao, como o lado novo com --saves legado)
 # N11 compara com ciclos contra o executavel anterior ao N2b-2 (Maple com controle): o lado novo usa o
 # provedor legado de controles, porque no nativo o DMA do Maple termina ~9 600 ciclos antes (N3-2).
-if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" -ev -controles "legado") }
+if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev -saves ""), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" -ev -controles "legado" -saves "legado") }
 if ($hasMods) { $lote1 += (Caso "exp_mods" $ExeMods "experimental" $VBlanks "newgame_area1") }
 $r = RunBatch $lote1
 
@@ -294,7 +299,7 @@ if ($hasOld) {
     $miss = $arts | Where-Object { -not (Test-Path -LiteralPath "$($r.est_n11.P)_$_") -or (Get-Item -LiteralPath "$($r.est_n11.P)_$_").Length -lt 64 -or
                                    -not (Test-Path -LiteralPath "$($r.est_antigo.P)_$_") -or (Get-Item -LiteralPath "$($r.est_antigo.P)_$_").Length -lt 64 }
     $d = $arts | Where-Object { (Hash "$($r.est_n11.P)_$_") -ne (Hash "$($r.est_antigo.P)_$_") }
-    Check "N11 estavel inalterado: --tempo nativo (--controles legado) = executavel anterior ao N2b-2 (artefatos byte a byte)" `
+    Check "N11 estavel inalterado: --tempo nativo (--controles legado --saves legado) = executavel anterior ao N2b-2 (artefatos byte a byte)" `
         ((Ended $r.est_n11 $VBlanks) -and (Ended $r.est_antigo $VBlanks) -and $miss.Count -eq 0 -and $d.Count -eq 0) "diferem: $($d -join ','); ausentes ou vazios: $($miss -join ',')"
 } else { $skips += "N11 sem o executavel anterior ($ExeAntigo)" }
 

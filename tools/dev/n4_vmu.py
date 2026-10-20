@@ -9,6 +9,7 @@ sobre os bytes sem o preenchimento, com o campo 0x46 zerado). As amostras de tes
     python -I tools/dev/n4_vmu.py extrai <vmu.bin> <pasta>
     python -I tools/dev/n4_vmu.py valida <arquivo.vms> [--payload <bin>] [--tamanho 1200] [--bluestinger] [--json <saida>]
     python -I tools/dev/n4_vmu.py nova <vmu.bin>                       VMU formatada e vazia
+    python -I tools/dev/n4_vmu.py insere <vmu.bin> <arquivo.vms|.bsv> <saida> [--envelope] [--nome N]
     python -I tools/dev/n4_vmu.py prepara <entrada> <saida> (--livres N | --zerada | --adultera-crc NOME)
     python -I tools/dev/n4_vmu.py sintetico <saida.vms> [--semente N]  VMS sintetico valido
     python -I tools/dev/n4_vmu.py teste                                autoteste (so amostras sinteticas)
@@ -278,6 +279,19 @@ def cmd_prepara(a):
     print(f"-> {a.saida}")
 
 
+def cmd_insere(a):
+    """VMS (p.ex. o de um .bsv do runtime, sem os 32 bytes do envelope) gravado numa VMU, para o Flycast."""
+    m = Vmu(open(a.vmu, "rb").read())
+    v = open(a.vms, "rb").read()
+    if a.envelope:
+        v = v[32:]
+    if any(e["nome"] == a.nome for _, _, e in m.entradas()):
+        raise SystemExit(f"{a.nome} ja esta na VMU")
+    m.grava(a.nome, v)
+    open(a.saida, "wb").write(bytes(m.d))
+    print(f"{a.nome} ({len(v)} bytes) -> {a.saida}")
+
+
 def cmd_sintetico(a):
     open(a.saida, "wb").write(vms_sintetico(a.semente))
     print(f"VMS sintetico -> {a.saida}")
@@ -339,11 +353,13 @@ def main():
     x = sp.add_parser("prepara"); x.add_argument("entrada"); x.add_argument("saida")
     g = x.add_mutually_exclusive_group(required=True)
     g.add_argument("--livres", type=int); g.add_argument("--zerada", action="store_true"); g.add_argument("--adultera-crc")
+    x = sp.add_parser("insere"); x.add_argument("vmu"); x.add_argument("vms"); x.add_argument("saida")
+    x.add_argument("--nome", default="BLUESTIN.000"); x.add_argument("--envelope", action="store_true", help="entrada .bsv")
     x = sp.add_parser("sintetico"); x.add_argument("saida"); x.add_argument("--semente", type=int, default=1)
     sp.add_parser("teste")
     a = p.parse_args()
     return {"info": cmd_info, "extrai": cmd_extrai, "valida": cmd_valida, "nova": cmd_nova, "prepara": cmd_prepara,
-            "sintetico": cmd_sintetico, "teste": cmd_teste}[a.cmd](a) or 0
+            "sintetico": cmd_sintetico, "insere": cmd_insere, "teste": cmd_teste}[a.cmd](a) or 0
 
 
 if __name__ == "__main__":

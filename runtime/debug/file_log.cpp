@@ -18,6 +18,7 @@ struct State {
     std::mutex         mu;
     std::ostringstream out;
     std::string        path;
+    std::string        room;  // ultimo R*.BIN (sala)
     uint64_t           seq = 0;
     bool               atexitDone = false;
 };
@@ -56,12 +57,24 @@ void file_log_chunk(const char* source, const std::string& logical, uint64_t off
     State&            s = st();
     std::lock_guard   lk(s.mu);
     s.out << s.seq++ << '\t' << holly_vblank_count() << '\t' << source << "\tdado\t" << logical << '\t' << offset << '\t' << n << '\t' << h << '\n';
+    if (offset == 0) {
+        const size_t      slash = logical.find_last_of("/\\");
+        const std::string base  = slash == std::string::npos ? logical : logical.substr(slash + 1);
+        if (base.size() > 4 && base[0] == 'R' && base.compare(base.size() - 4, 4, ".BIN") == 0)
+            s.room = base.substr(0, base.size() - 4);
+    }
 }
 
 void file_log_other(const char* source, const char* what, uint32_t where) {
     State&          s = st();
     std::lock_guard lk(s.mu);
     s.out << s.seq++ << '\t' << holly_vblank_count() << '\t' << source << "\toutro\t" << what << '\t' << where << "\t0\t-\n";
+}
+
+std::string file_log_last_room() {
+    State&          s = st();
+    std::lock_guard lk(s.mu);
+    return s.room;
 }
 
 std::string file_log_dump() {

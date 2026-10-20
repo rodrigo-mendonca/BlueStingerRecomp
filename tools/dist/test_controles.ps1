@@ -73,13 +73,13 @@ function VBlanksFor($file) {
 $jobs = [System.Collections.ArrayList]::new()
 # K1-K12 leem o contrato do Maple (BS_PAD_CONTRATO) e trocam a funcao do controle: so existem no
 # provedor legado, que deixou de ser o padrao no fim do N3. K13 roda sem a opcao (o padrao).
-function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado") {
+function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado", $saves = "") {
     $p = Join-Path $Saida $tag
     $e = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $script; BS_FRAME_LOG = "$p.fr.tsv"; BS_FILE_LOG = "$p.fl.tsv" }
     if (-not $NoTrace) { $e.BS_PAD_TRACE = "$p.trace.tsv" }
     if ($Probe) { $e.BS_PAD_CONTRATO = "$p.ct.tsv" }
     foreach ($k in $envs.Keys) { $e[$k] = $envs[$k] }
-    [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; P = $p; Ctl = $ctl })
+    [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; P = $p; Ctl = $ctl; Saves = $saves })
 }
 function RunAll() {
     $running = @()
@@ -87,7 +87,7 @@ function RunAll() {
         while (@($running | Where-Object { -not $_.HasExited }).Count -ge $Paralelo) { Start-Sleep -Milliseconds 500 }
         $cmd = ""
         foreach ($k in $j.Env.Keys) { $cmd += "set `"$k=$($j.Env[$k])`"&& " }
-        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" }) --headless $($j.N) > `"$($j.P).out`" 2>&1"
+        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" })$(if ($j.Saves) { " --saves $($j.Saves)" }) --headless $($j.N) > `"$($j.P).out`" 2>&1"
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -PassThru
         $null = $proc.Handle
         $running += $proc
@@ -134,19 +134,22 @@ if ($want.K11) {
     }
 }
 if ($want.K12) {
-    Job "k12_o_area1" $Exe "$rot\newgame_area1.txt" 7300; Job "k12_c_area1" $Exe "$rot\passo_newgame_area1.txt" 7300
-    Job "k12_o_expl" $Exe "$rot\newgame_exploracao.txt" 16000; Job "k12_c_expl" $Exe "$rot\passo_newgame_exploracao.txt" 16000
+    # saves legado: os roteiros por passo foram convertidos de execucoes sem cartao (o START do passo 95
+    # fecha o "VMU not found"; com o cartao ele nao tem efeito e os quadros ficam iguais)
+    Job "k12_o_area1" $Exe "$rot\newgame_area1.txt" 7300 -saves "legado"; Job "k12_c_area1" $Exe "$rot\passo_newgame_area1.txt" 7300 -saves "legado"
+    Job "k12_o_expl" $Exe "$rot\newgame_exploracao.txt" 16000 -saves "legado"; Job "k12_c_expl" $Exe "$rot\passo_newgame_exploracao.txt" 16000 -saves "legado"
 }
 if ($want.K13) {
     if (-not (Test-Path -LiteralPath $ExeRef)) { Write-Host "ERRO: K13 exige o executavel de referencia (-ExeRef $ExeRef)"; exit 2 }
     $ExeRef = (Resolve-Path $ExeRef).Path
     foreach ($r in $RotasK13) {
         $n = if ($r -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r.txt" }
-        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace -ctl ""
+        # saves legado: a referencia e anterior ao N4 (sem cartao: "VMU not found"); o K13 confere os controles
+        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace -ctl "" -saves "legado"
         Job "k13_ref_$r" $ExeRef "$rot\$r.txt" $n -NoTrace -ctl ""
     }
     $r0 = $RotasK13[0]  # traco ligado: na primeira rota
-    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) -ctl ""
+    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) -ctl "" -saves "legado"
 }
 RunAll
 

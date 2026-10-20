@@ -85,7 +85,8 @@ public:
     SaveError save_atomic(int unit, std::string_view name, std::span<const std::byte> image) override {
         if (const SaveError e = open(unit); e != SaveError::None) return e;
         if (!valid_save_name(name)) return SaveError::BadName;
-        if (image.empty() || image.size() % kBlock || image.size() > size_t(kCardBlocks) * kBlock) return SaveError::BadImage;
+        // so VMS integro (o CRC-16 do jogo confere): uma imagem estragada na RAM nao substitui um save bom
+        if (!vms_check(image)) return SaveError::BadImage;
         // espaco: o arquivo antigo de mesmo nome sai na troca
         CardState c;
         card(unit, c);
@@ -99,6 +100,9 @@ public:
         const fs::path dst = file(unit, name, L".bsv"), tmp = file(unit, name, L".bsv.tmp"), bak = file(unit, name, L".bsv.bak");
         std::error_code ec;
         if (fs::exists(dst, ec) && status(dst) == SaveError::FutureVersion) return SaveError::FutureVersion;  // nunca por cima
+        // save marcado como somente leitura pelo usuario: protegido (o ReplaceFileW o trocaria assim mesmo)
+        if (const DWORD at = GetFileAttributesW(dst.c_str()); at != INVALID_FILE_ATTRIBUTES && (at & FILE_ATTRIBUTE_READONLY))
+            return SaveError::ReadOnly;
         const auto env = envelope_encode(image, o_.now());
         const SaveError w = writeDurable(tmp, env);
         if (w != SaveError::None) {
@@ -106,7 +110,8 @@ public:
             return w;
         }
         std::vector<std::byte> back, img;
-        if (fault(FaultPoint::Reread) || !readAll(tmp, back) || back != env || envelope_decode(back, img) != SaveError::None) {
+        if (fault(FaultPoint::Reread) || !readAll(tmp, back) || back != env || envelope_decode(back, img) != SaveError::None ||
+            !vms_check(img)) {
             fs::remove(tmp, ec);
             return SaveError::Io;
         }
@@ -259,9 +264,20 @@ std::unique_ptr<ISaveStore> make_file_store(fs::path root, FileStoreOptions opt)
 SaveError export_vms(ISaveStore& s, int unit, std::string_view name, const fs::path& out) {
     std::vector<std::byte> img;
     if (const SaveError e = s.load(unit, name, img); e != SaveError::None) return e;
-    std::ofstream f(out, std::ios::binary | std::ios::trunc);
-    f.write(reinterpret_cast<const char*>(img.data()), std::streamsize(img.size()));
-    return f ? SaveError::None : SaveError::Io;
+    fs::path tmp = out;
+    tmp += L".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        f.write(reinterpret_cast<const char*>(img.data()), std::streamsize(img.size()));
+        if (!f.flush()) return SaveError::Io;
+    }
+    // troca so com o arquivo inteiro: um destino existente nunca fica pela metade
+    if (!MoveFileExW(tmp.c_str(), out.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        std::error_code ec;
+        fs::remove(tmp, ec);
+        return SaveError::Io;
+    }
+    return SaveError::None;
 }
 
 SaveError import_vms(ISaveStore& s, int unit, std::string_view name, const fs::path& in) {

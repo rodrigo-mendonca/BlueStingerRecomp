@@ -3,6 +3,7 @@
 #include "bu_machine.h"
 #include "guest_abi.h"
 #include "mods/mod_api.h"
+#include "time_adapter.h"
 
 #include <array>
 #include <cstdio>
@@ -77,7 +78,7 @@ void fServer(Sh4Context* c) {
     State& s = st();
     if (!s.m) return GuestCall(c).ret(0);
     ++s.stats.ticks;
-    for (Event& e : s.m->tick()) {
+    for (Event& e : s.m->tick(true)) {  // ocupada durante os progressos
         if (e.kind == Event::Kind::Progress) {
             callGuest(c, s.cbProgress, uint32_t(e.drive), e.op, e.a, e.b);
             continue;
@@ -88,6 +89,7 @@ void fServer(Sh4Context* c) {
             ++(e.a == uint32_t(kOk) ? s.stats.loadOk : s.stats.loadFail);
         }
         if (e.op == kOpSave) ++(e.a == uint32_t(kOk) ? s.stats.saveOk : s.stats.saveFail);
+        s.m->release(e.drive);  // livre antes da conclusao: dentro dela o jogo consulta disk_info
         callGuest(c, s.cbDone, uint32_t(e.drive), e.op, e.a);
     }
     GuestCall(c).ret(0);
@@ -176,9 +178,33 @@ void fPanelH1(Sh4Context* c) {
     mods::call_original(kPanel, c);
 }
 
+// Diagnostico BS_SAVES_H2 (so desenvolvimento, build com mods): SAVE no gameplay sem chegar a um ponto
+// de save. A consulta de interacao 8C04FB80 (chamada por 8C0407C0 quando o jogador aperta A) devolve o
+// tipo 4, o de um objeto kind 98 (bit 0x80 na tabela 8C14CFE0) a frente, quando no modo 0 nao achou
+// nada. Dali em diante e o fluxo do proprio jogo: estado 7 em [8C24D2CC+0x25B2], confirmacao, estado 8 e
+// 8C01D200(0, 8) chamado por 8C052240, com o estado real da partida. BS_SAVES_H2=<passo>: so a partir
+// desse passo de jogo (antes dele os roteiros apertam A em portas e nao podem mudar).
+constexpr uint32_t kInteract = 0x8C04FB80;
+uint64_t           g_h2Step  = 0;
+void fInteractH2(Sh4Context* c) {
+    const uint32_t mode = c->r[6];
+    mods::call_original(kInteract, c);
+    if (mode == 0 && c->r[0] == 0 && time::game_steps() >= g_h2Step) {
+        c->r[0] = 4;
+        std::fprintf(stderr, "[saves] BS_SAVES_H2: ponto de save simulado (A no gameplay)\n");
+    }
+}
+
 } // namespace
 
 void h1_install() {
+    if (const char* h2 = std::getenv("BS_SAVES_H2"); h2 && *h2) {
+        g_h2Step = std::stoull(h2);
+        if (!mods::has_slot(kInteract) || !mods::replace(kInteract, &fInteractH2))
+            throw std::runtime_error("BS_SAVES_H2 exige o build com mods (slot em 8C04FB80)");
+        std::fprintf(stderr, "[saves] BS_SAVES_H2: a partir do passo %llu, A sem objeto a frente abre o SAVE do gameplay (diagnostico)\n",
+                     static_cast<unsigned long long>(g_h2Step));
+    }
     const char* v = std::getenv("BS_SAVES_H1");
     if (!v || std::string(v) != "1") return;
     if (!mods::has_slot(kPanel) || !mods::replace(kPanel, &fPanelH1))

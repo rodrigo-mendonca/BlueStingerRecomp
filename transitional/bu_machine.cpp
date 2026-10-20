@@ -19,17 +19,21 @@ int32_t result_code(ns::SaveError e) {
     }
 }
 
-bool Machine::present(int drive) {
-    if (!valid(drive) || !u_[drive].enabled) return false;
-    ns::CardState s;
-    return store_.card(drive, s) == ns::SaveError::None && s.present && s.formatted;
+int32_t Machine::card_code(int drive) {
+    if (!valid(drive) || !u_[drive].enabled) return kNoCard;
+    ns::CardState       s;
+    const ns::SaveError e = store_.card(drive, s);
+    if (e == ns::SaveError::Unformatted || (e == ns::SaveError::None && s.present && !s.formatted)) return kUnformatted;
+    return e == ns::SaveError::None && s.present ? kOk : kNoCard;
 }
 
 void Machine::init(uint32_t mask) {
     for (int d = 0; d < kDrives; ++d) {
         u_[d]         = Unit{};
         u_[d].enabled = (mask >> d) & 1u;
-        if (present(d)) u_[d].op = kOpInsert, u_[d].left = ticks_.insert;
+        // cartao fisicamente presente (formatado ou nao) recebe a insercao; a montagem de um nao
+        // formatado devolve FF03
+        if (const int32_t c = card_code(d); c == kOk || c == kUnformatted) u_[d].op = kOpInsert, u_[d].left = ticks_.insert;
     }
 }
 
@@ -42,7 +46,7 @@ int32_t Machine::begin(int drive, uint32_t op, int ticks) {
 
 int32_t Machine::mount(int drive) {
     if (!valid(drive) || busy(drive)) return kBusy;
-    if (!present(drive)) return kNoCard;
+    if (const int32_t c = card_code(drive); c != kOk) return c;
     return begin(drive, kOpMount, ticks_.mount);
 }
 
@@ -51,8 +55,9 @@ int32_t Machine::mount(int drive) {
 // copia o total (+14) e os livres (+18) em 8C01C8CE.
 int32_t Machine::disk_info(int drive, std::span<std::byte, kDiskInfoSize> out) {
     if (!valid(drive) || busy(drive)) return kBusy;
+    if (const int32_t c = card_code(drive); c != kOk) return c;
     ns::CardState s;
-    if (!present(drive) || store_.card(drive, s) != ns::SaveError::None) return kNoCard;
+    if (store_.card(drive, s) != ns::SaveError::None) return kNoCard;
     std::memset(out.data(), 0, out.size());
     auto put8  = [&](size_t o, uint8_t v) { out[o] = std::byte(v); };
     auto put16 = [&](size_t o, uint16_t v) { put8(o, uint8_t(v)), put8(o + 1, uint8_t(v >> 8)); };
@@ -68,7 +73,7 @@ int32_t Machine::disk_info(int drive, std::span<std::byte, kDiskInfoSize> out) {
 
 int32_t Machine::exists(int drive, const std::string& name) {
     if (!valid(drive) || busy(drive)) return kBusy;
-    if (!present(drive)) return kNoCard;
+    if (const int32_t c = card_code(drive); c != kOk) return c;
     std::vector<ns::SaveEntry> list;
     if (store_.list(drive, list) != ns::SaveError::None) return kCannotOpen;
     for (const auto& e : list)
@@ -78,7 +83,7 @@ int32_t Machine::exists(int drive, const std::string& name) {
 
 int32_t Machine::save(int drive, const std::string& name, std::vector<std::byte> image) {
     if (!valid(drive) || busy(drive)) return kBusy;
-    if (!present(drive)) return kNoCard;
+    if (const int32_t c = card_code(drive); c != kOk) return c;
     u_[drive].name  = name;
     u_[drive].image = std::move(image);
     return begin(drive, kOpSave, ticks_.save);
@@ -86,7 +91,7 @@ int32_t Machine::save(int drive, const std::string& name, std::vector<std::byte>
 
 int32_t Machine::load(int drive, const std::string& name, uint32_t startBlock, uint32_t nblocks) {
     if (!valid(drive) || busy(drive)) return kBusy;
-    if (!present(drive)) return kNoCard;
+    if (const int32_t c = card_code(drive); c != kOk) return c;
     u_[drive].name    = name;
     u_[drive].start   = startBlock;
     u_[drive].nblocks = nblocks;
@@ -103,7 +108,7 @@ int32_t Machine::exit() {
     return kOk;
 }
 
-void Machine::finish(int drive, Unit& u, std::vector<Event>& out) {
+void Machine::finish(int drive, Unit& u, std::vector<Event>& out, bool hold) {
     auto progress = [&](uint32_t k, uint32_t total) { out.push_back({Event::Kind::Progress, drive, u.op, k, total, {}}); };
     Event done{Event::Kind::Complete, drive, u.op, 0, 0, {}};
     switch (u.op) {
@@ -143,15 +148,23 @@ void Machine::finish(int drive, Unit& u, std::vector<Event>& out) {
     }
     u.lastError = int32_t(done.a);
     if (u.op == kOpInsert) u.lastError = kOk;
-    u.op = 0;  // livre antes do callback: dentro dele o jogo ja consulta disk_info
+    if (hold) u.releasing = true;  // ocupada durante os progressos; release() antes da conclusao
+    else u.op = 0;
     out.push_back(std::move(done));
 }
 
-std::vector<Event> Machine::tick() {
+void Machine::release(int drive) {
+    if (!valid(drive) || !u_[drive].releasing) return;
+    u_[drive].releasing = false;
+    u_[drive].op        = 0;
+}
+
+std::vector<Event> Machine::tick(bool hold) {
     std::vector<Event> out;
     for (int d = 0; d < kDrives; ++d) {
         Unit& u = u_[d];
-        if (u.op && --u.left <= 0) finish(d, u, out);
+        if (u.releasing) release(d);  // conclusao ja entregue sem release(): nao prende a unidade
+        if (u.op && --u.left <= 0) finish(d, u, out, hold);
     }
     return out;
 }

@@ -516,6 +516,7 @@ BU_PAINEL_MODO = (0x8C01D240, 0x8C01D244)  # literais com os enderecos das palav
 BU_ESTADO = (0x8C1F3710, 2 * 92)  # bloco de 92 bytes por unidade (0 e 1)
 BU_PAYLOAD = (0x8C24F93C, 1200)
 BU_OPS_DE_CARTAO = (1, 2, 0x12)   # ops do callback que nao sao fim de LOAD/SAVE
+SAVE_POINT_RET = 0x8C0408EA     # volta de 8C04FB80(jogador, sp, 0) em 8C0407C0 (A no gameplay): r0 = tipo
 PD_RETORNO = 0x8C1730BE           # volta do servidor pd 8C15C4E6 (uma passada por passo de jogo)
 PDS_PORTA_A = 0x8C2D8970          # PDS_PERIPHERAL da porta A, unidade 0 (transitional/pad_contract.h)
 # bits de `on` (ordem de tools/dev/pad_roteiros.py); LT/RT como o decodificador do SDK (>= 128)
@@ -673,6 +674,9 @@ def cmd_bu_trace(a):
         fixos = set(BU_ENTRADAS) | set(BU_RETORNOS) | set(BU_CALLBACKS) | {BU_PAINEL}
         if entrada or a.passos:
             fixos.add(PD_RETORNO)
+        if a.forcar_save_point:
+            fixos.add(SAVE_POINT_RET)
+        ponto_forcado = False
         eventos = set(fixos)  # enderecos que sao eventos por si (ficam ate o fim)
         if entrada:
             fixos |= {0x80000000 | x for x in entrada.ancoras}
@@ -767,6 +771,13 @@ def cmd_bu_trace(a):
                 elif atual != modo_ant:
                     linha("painel", "painel", r, "", f"modo={modo[0]:04X},{modo[1]:04X}")
                 modo_ant = atual
+            elif key == SAVE_POINT_RET and a.forcar_save_point and not ponto_forcado:
+                # mesmo desvio do BS_SAVES_H2 do runtime: nada a frente (0) vira o tipo 4 (ator kind 98, save
+                # point); o resto e o fluxo do jogo original. Uma vez so.
+                if r[0] & 0xFFFF == 0:
+                    g.set_reg(0, 4)
+                    ponto_forcado = True
+                    linha("forcado", "save_point_tipo4", r)
             elif key == PD_RETORNO:
                 passo += 1
                 if entrada:
@@ -789,6 +800,8 @@ def cmd_bu_trace(a):
             r2 = g.regs()
             if (r2[R_PC] & 0x1FFFFFFF) not in g.bps:
                 g.cont(limit=max(1.0, a.limite - (time.time() - t0)))
+        for addr, n in a.ler_fim:  # estado do jogo no fim (p.ex. posicao do Eliot depois do LOAD)
+            linha("fim", f"{addr:08X}", g.regs(), "", "ram=" + g.read(addr, n).hex())
         out.close()
         print(f"{seq} eventos, {passo} passos -> {a.out}")
     finally:
@@ -855,6 +868,10 @@ def main():
     b.add_argument("--dump", help="pasta para os bytes de SAVE (origem, payload) e de LOAD (destino)")
     b.add_argument("--forcar-modo-save", type=lambda s: int(s, 0),
                    help="ponto de chamada do painel (jsr) cujo r4 vira 0 (H1: 0x8C0792C8, LOAD GAME do titulo)")
+    b.add_argument("--forcar-save-point", action="store_true",
+                   help="o primeiro A no gameplay sem nada a frente ve um save point (tipo 4 em 8C0408EA; H2 do runtime)")
+    b.add_argument("--ler-fim", type=lambda s: [(int(x.split(":")[0], 16), int(x.split(":")[1])) for x in s.split(",")],
+                   default=[], help="end:n,... da RAM lidos no fim da sessao (evento fim)")
     b.add_argument("--passos", type=int, default=0, help="para depois de N passos de jogo (0 = sem limite)")
     b.add_argument("--fim-apos", type=int, default=0, help="para depois de N conclusoes de LOAD/SAVE...")
     b.add_argument("--passos-extra", type=int, default=120, help="...mais estes passos")

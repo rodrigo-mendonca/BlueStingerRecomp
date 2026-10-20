@@ -59,8 +59,11 @@ public:
     int32_t status(int drive) const;
     int32_t last_error(int drive) const;
     int32_t exit();  // -1 com alguma unidade ocupada (como 8C08BEBC)
-    // Uma passada do servidor: eventos a entregar, em ordem.
-    std::vector<Event> tick();
+    // Uma passada do servidor: eventos a entregar, em ordem. Com `hold`, a unidade que concluiu continua
+    // ocupada (status -1) ate release(drive): o adaptador entrega os progressos assim e libera logo
+    // antes do callback de conclusao, como o oraculo (dentro dele o jogo ja consulta disk_info).
+    std::vector<Event> tick(bool hold = false);
+    void               release(int drive);
 
     bool busy(int drive) const { return valid(drive) && u_[drive].op != 0; }
 
@@ -68,6 +71,7 @@ private:
     struct Unit {
         bool                   enabled = false, mounted = false;
         uint32_t               op = 0;  // operacao pendente (0 = livre)
+        bool                   releasing = false;  // concluida, aguardando release()
         int                    left = 0;
         std::string            name;
         std::vector<std::byte> image;
@@ -75,9 +79,10 @@ private:
         int32_t                lastError = 0;
     };
     static bool valid(int d) { return d >= 0 && d < kDrives; }
-    bool        present(int drive);
+    bool        present(int drive) { return card_code(drive) == kOk; }
+    int32_t     card_code(int drive);  // kOk, kNoCard ou kUnformatted
     int32_t     begin(int drive, uint32_t op, int ticks);
-    void        finish(int drive, Unit& u, std::vector<Event>& out);
+    void        finish(int drive, Unit& u, std::vector<Event>& out, bool hold);
 
     native::saves::ISaveStore& store_;
     Ticks                      ticks_;
