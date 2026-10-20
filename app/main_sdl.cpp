@@ -69,6 +69,9 @@ struct Args {
     bs::SavesProvider saves = bs::SavesProvider::Native;  // --saves nativo|legado (N4; legado = fallback)
     fs::path savesDir;          // --saves-pasta <dir>
     bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
+    bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
+    bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
+    std::string              dubbing;                                         // --dublagem <idioma> (mods\audio)
     std::string       subtitles;  // --legendas <idioma>
     bool     savesPortable = false;  // --saves-portatil: saves\ ao lado do executavel
     fs::path savesImport, savesExport;       // --saves-importar/--saves-exportar <arquivo.vms>
@@ -132,6 +135,17 @@ bool parseArgs(Args& a) {
             else return false;
         }
         else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v));
+        else if (s == L"--audio-falas" && (v = next())) {
+            if (*v == L"legado") a.audioVoices = bs::AudioVoicesProvider::Legacy;
+            else if (*v == L"nativo") a.audioVoices = bs::AudioVoicesProvider::Native;
+            else return false;
+        }
+        else if (s == L"--dublagem" && (v = next())) a.dubbing = utf8(fs::path(*v));
+        else if (s == L"--audio-efeitos" && (v = next())) {
+            if (*v == L"legado") a.audioEffects = bs::AudioEffectsProvider::Legacy;
+            else if (*v == L"nativo") a.audioEffects = bs::AudioEffectsProvider::Native;
+            else return false;
+        }
         else if (s == L"--saves-portatil") a.savesPortable = true;
         else if (s == L"--saves-importar" && (v = next())) a.savesImport = *v;
         else if (s == L"--saves-exportar" && (v = next())) a.savesExport = *v;
@@ -737,6 +751,10 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.saves             = a.saves;
     if (a.saves == bs::SavesProvider::Native) opt.savesRoot = savesRoot(a);
     opt.video             = a.video;
+    opt.audioEffects      = a.audioEffects;
+    opt.audioVoices       = a.audioVoices;
+    opt.dubbing           = a.dubbing;
+    opt.modAudio          = exeDir() / L"mods" / L"audio";  // dublagens e audio de mods (opcional)
     opt.modVideo          = exeDir() / L"mods" / L"video";  // filmes e legendas de mods (opcional)
     opt.subtitles         = a.subtitles;
     opt.registerFunctions = [] { bsg::register_functions(); };
@@ -762,6 +780,8 @@ const char* kUsage =
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
     "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
     "       legado = Sofdec original, fallback temporario); --legendas <idioma> (pt, en, pt-br...)\n"
+    "     --audio-efeitos nativo|legado: efeitos sonoros (padrao: legado = SDK de som original; nativo = em validacao,\n"
+    "       BS_SND.MLT do disco pelo mixer nativo; musica e falas continuam no legado)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";

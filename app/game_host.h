@@ -64,6 +64,14 @@ enum class SavesProvider { Legacy, Native };
 // Media Foundation e XAudio2; mods em mods\video); legado (fallback temporario) = Sofdec original.
 enum class VideoProvider { Legacy, Native };
 
+// Provedor dos efeitos sonoros (N6 fase D, docs/N6-PLANO.md secao 14): legado (padrao ate a prova de equivalencia)
+// = o SDK de som original na AICA emulada; nativo = as 5 entradas do SDK atendidas por transitional/sound_adapter
+// (BS_SND.MLT do disco do usuario, mixer nativo). Musica e falas continuam no legado nesta fase.
+enum class AudioEffectsProvider { Legacy, Native };
+// Provedor das falas (N6 fase E, docs/N6-PLANO.md secao 16): legado (padrao ate a prova) = o MW WAV da CRI original;
+// nativo = transitional/sound_adapter (WAV do disco do usuario; dublagem de mods em modsudio\<idioma>oz).
+enum class AudioVoicesProvider { Legacy, Native };
+
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
     std::filesystem::path data;
@@ -77,6 +85,10 @@ struct GameOptions {
     VideoProvider         video = VideoProvider::Native;
     std::filesystem::path modVideo;  // mods de filmes e legendas (mods\video), opcional
     std::string           subtitles;  // idioma das legendas dos filmes ("" = sem)
+    AudioEffectsProvider  audioEffects = AudioEffectsProvider::Legacy;
+    AudioVoicesProvider   audioVoices  = AudioVoicesProvider::Legacy;
+    std::filesystem::path modAudio;  // mods de audio (modsudio): dublagens por idioma, opcional
+    std::string           dubbing;   // idioma da dublagem ("" = vozes originais)
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).
     native::input::InputSystem* input = nullptr;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
@@ -140,6 +152,13 @@ private:
     std::unique_ptr<native::saves::ISaveStore>     saves_;  // provedor nativo de saves (N4)
     GameFrame                                      movie_;  // ultimo quadro do filme nativo (N5)
     uint8_t*                                       ram_ = nullptr;  // RAM do guest (diagnostico)
+    // N6 fase E: legendas das falas (mods), sem desenho (o apresentador e do N7): o servico decide o texto ativo
+    struct Dialogue;
+    struct DialogueDelete {
+        void operator()(Dialogue* d) const;  // definido no .cpp (tipo completo so la)
+    };
+    std::unique_ptr<Dialogue, DialogueDelete>      dialogue_;
+    void                                           dialogueVblank(uint64_t n);
 };
 
 } // namespace bs

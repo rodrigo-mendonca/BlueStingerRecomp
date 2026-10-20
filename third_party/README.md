@@ -12,3 +12,5 @@ projeto (ver LEGAL.md).
 | SDL3 | zlib | janela, input, áudio | M4 |
 | Vulkan-Headers / volk / VMA | Apache-2.0 / MIT / MIT | renderer | M4 |
 | xxHash | BSD-2 | cache de texturas/pipelines | M5 |
+| pl_mpeg | MIT | conversão dos filmes no Builder (`third_party/pl_mpeg`) | N5 |
+| dr_flac | domínio público ou MIT-0 | FLAC de mods de áudio (`third_party/dr_libs`) | N6 |

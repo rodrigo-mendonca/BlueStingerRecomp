@@ -41,6 +41,14 @@ target_include_directories(bs_video_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/un
 target_link_libraries(bs_video_tests PRIVATE bs_native_video bs_native_audio bs_video_convert bs_video_mw bs_video_adapter)
 add_test(NAME video COMMAND bs_video_tests)
 
+# N6: audio de gameplay portavel, sem o jogo nem dispositivo de audio
+add_executable(bs_audio_tests unit/main.cpp unit/test_audio_native.cpp unit/test_audio_sd.cpp unit/test_audio_sosb.cpp
+                              unit/test_audio_voice.cpp unit/test_audio_flac.cpp unit/test_audio_voice_glue.cpp
+                              ${PROJECT_SOURCE_DIR}/transitional/voice_mw_glue.cpp)  # a cola das falas e portavel (sem runtime)
+target_include_directories(bs_audio_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit ${PROJECT_SOURCE_DIR}/transitional)
+target_link_libraries(bs_audio_tests PRIVATE bs_native_audio_core)
+add_test(NAME audio COMMAND bs_audio_tests)
+
 # Localizacao: contratos (idiomas, pacotes de mods, textos, legendas novas, layout), so com dados sinteticos
 add_executable(bs_localization_tests unit/main.cpp unit/test_localization.cpp)
 target_include_directories(bs_localization_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
@@ -121,7 +129,7 @@ endif()
 
 # Sem janelas modais (assert do CRT de Debug, abort, falha de acesso): o teste falha no stderr em vez de
 # esperar um clique e prender o ctest/regressao (tests/sem_dialogos.cpp).
-foreach(t bs_unit_tests bs_video_tests bs_ui_tests bs_localization_tests bs_real_disc_test bs_runtime_data_test bs_analysis_real_test
+foreach(t bs_unit_tests bs_video_tests bs_ui_tests bs_audio_tests bs_localization_tests bs_real_disc_test bs_runtime_data_test bs_analysis_real_test
           bs_fixture_gen bs_codegen_exec_0 bs_codegen_exec_1)
   target_sources(${t} PRIVATE sem_dialogos.cpp)
 endforeach()
@@ -135,7 +143,7 @@ set_tests_properties(sem_dialogos PROPERTIES TIMEOUT 60
 # Limite de tempo por teste (s), pela duracao medida em 2026-10-20 (com disco; entre parenteses) com folga larga:
 # so pega travamento. O preset do ctest da 900 s aos testes sem limite proprio.
 set_tests_properties(unit video ui PROPERTIES TIMEOUT 300)                   # (6,7 s / 2,7 s / 5,2 s)
-set_tests_properties(localization PROPERTIES TIMEOUT 300)                    # (< 1 s)
+set_tests_properties(audio localization PROPERTIES TIMEOUT 300)                         # (< 1 s)
 set_tests_properties(real_disc codegen_exec_0 codegen_exec_1 n0_native_api n0_native_limpo PROPERTIES TIMEOUT 120)  # (< 0,2 s)
 set_tests_properties(analysis_real PROPERTIES TIMEOUT 300)                   # (2,9 s)
 set_tests_properties(runtime_data n0_fechamento PROPERTIES TIMEOUT 600)      # (23,8 s / 20,0 s)

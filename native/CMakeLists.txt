@@ -15,13 +15,24 @@ target_link_libraries(bs_native PUBLIC bs_native_api PRIVATE tomlplusplus::tomlp
 # N5: filmes nativos (catalogo por ID com mods, leitura e gravacao MP4 por Media Foundation)
 add_library(bs_native_video STATIC video/movie_catalog.cpp video/mf_movie.cpp video/movie_playback.cpp video/subtitles.cpp video/movie_color.cpp)
 target_link_libraries(bs_native_video PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus mfplat mfreadwrite mfuuid ole32 d2d1 dwrite windowscodecs)
+# N5 (D2): saida de audio (XAudio2 e nula) atras de IAudioOutput; o N6 reaproveita
+# N6: audio de gameplay portavel (ADPCM da AICA, mixer, catalogo com mods, leitura de arquivos); sem
+# Win32 - o backend de saida (XAudio2 hoje, SDL3 no futuro) fica no bs_native_audio
+add_library(bs_native_audio_core STATIC audio/aica_adpcm.cpp audio/mixer.cpp audio/sound_catalog.cpp audio/sound_file.cpp
+            audio/sd_adapter.cpp audio/sosb.cpp  # adaptador das 5 entradas do SDK; efeitos do BS_SND.MLT (fase C)
+            audio/voice_player.cpp               # fase E: falas (MW WAV) no tempo logico, com dublagem
+            audio/sound_flac.cpp)                # FLAC de mods (dr_flac, third_party/dr_libs)
+# so o sound_flac.cpp inclui o dr_flac; os avisos do cabecalho de terceiros nao entram como erro
+target_include_directories(bs_native_audio_core PRIVATE ${PROJECT_SOURCE_DIR}/third_party/dr_libs)
+target_link_libraries(bs_native_audio_core PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus)
+
 # Localizacao (docs/LOCALIZACAO-PLANO.md): contratos portaveis de textos traduzidos, legendas novas (filmes e
 # falas) e pacotes de mods; o parser SRT/WebVTT e o do N5 (bs_native_video). Sem desenho (N7) e sem ferramentas (N9).
 add_library(bs_native_localization STATIC localization/locale.cpp localization/mod_packages.cpp
-            localization/text_localization.cpp localization/subtitle_service.cpp localization/subtitle_presenter.cpp)
-target_link_libraries(bs_native_localization PUBLIC bs_native_api PRIVATE bs_native_video tomlplusplus::tomlplusplus)
+            localization/text_localization.cpp localization/subtitle_service.cpp localization/subtitle_presenter.cpp
+            localization/dialogue_bridge.cpp)  # N6 fase E: eventos das falas -> legendas
+target_link_libraries(bs_native_localization PUBLIC bs_native_api bs_native_audio_core PRIVATE bs_native_video tomlplusplus::tomlplusplus)
 
-# N5 (D2): saida de audio (XAudio2 e nula) atras de IAudioOutput; o N6 reaproveita
 add_library(bs_native_audio STATIC audio/audio_output.cpp)
 target_link_libraries(bs_native_audio PUBLIC bs_native_api PRIVATE xaudio2 ole32)
 

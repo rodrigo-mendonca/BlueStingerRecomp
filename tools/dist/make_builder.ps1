@@ -64,7 +64,7 @@ $kit = Join-Path $stage "kit"
 # allowlist: so arquivos que o git versiona ou versionaria (rastreados + novos nao ignorados).
 # O que o .gitignore exclui (game-data, generated, ISO, ...) nunca entra (revisao Codex).
 $kitEntries = @("CMakeLists.txt", "LICENSE", "app", "runtime", "tools/extractor", "tools/dist/LEIA-ME.txt", "config",
-                "tools/dcmap", "native", "legacy", "transitional", "tools/build")
+                "tools/dcmap", "native", "legacy", "transitional", "tools/build", "third_party/dr_libs")
 $kitList = @(git -C $repo -c core.quotepath=off ls-files --cached --others --exclude-standard -- @kitEntries)
 if ($LASTEXITCODE -ne 0 -or $kitList.Count -lt 20) { Fail "git ls-files falhou ou listou poucos arquivos ($($kitList.Count))" }
 foreach ($rel in $kitList) {
@@ -99,6 +99,7 @@ Copy-Item -LiteralPath (Join-Path $repo "LICENSE") -Destination "$stage\licencas
 Copy-Item -LiteralPath (Join-Path $sdl "LICENSE.txt") -Destination "$stage\licencas\SDL3-zlib.txt"
 Copy-Item -LiteralPath (Join-Path $build "_deps\tomlplusplus-src\LICENSE") -Destination "$stage\licencas\tomlplusplus-MIT.txt"
 Copy-Item -LiteralPath (Join-Path $repo "third_party\pl_mpeg\LICENSE") -Destination "$stage\licencas\pl_mpeg-MIT.txt"  # N5: decodificador MPEG-1 do conversor de filmes
+Copy-Item -LiteralPath (Join-Path $repo "third_party\dr_libs\LICENSE") -Destination "$stage\licencas\dr_flac-MIT0.txt"  # N6: FLAC de mods
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LEIA-ME-BUILDER.txt") -Destination "$stage\LEIA-ME.txt"
 
 # dependencias dos executaveis

@@ -14,3 +14,7 @@ target_link_libraries(bs_video_mw PUBLIC bs_native_video bs_native_audio)
 # N5: slots das entradas MW sobre o nucleo acima (Sh4Context, registro de fronteiras, mods)
 add_library(bs_video_adapter STATIC video_adapter.cpp)
 target_link_libraries(bs_video_adapter PUBLIC bs_transitional bs_video_mw)
+
+# N6 fase D: slots das 5 entradas do SDK de som sobre o SdAdapter e o mixer nativo (efeitos do BS_SND.MLT)
+add_library(bs_sound_adapter STATIC sound_adapter.cpp voice_mw_glue.cpp)
+target_link_libraries(bs_sound_adapter PUBLIC bs_transitional bs_native_audio_core bs_native_audio)

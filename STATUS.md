@@ -2179,6 +2179,33 @@ Detalhes em `docs/RECOMPILER-UI.md`.
 | 2026-10-20 | Revisão do Codex (`reviews/codex-20261020-135635.md`): 4 achados aceitos. **ALTA:** projeto de origem dentro de `.bs-build`/`BlueStinger` seria apagado ou trocado. Também: cancelamento durante a exportação, "recursos prontos" sem o contrato do Builder, versão ausente nos presets | testes novos `dev_project_inside_builder_folders_refused`, `dev_export_version_and_cancel`, `dev_inspect_exported_project` |
 | 2026-10-20 | Resultado final, no código corrigido, contra o Builder montado numa pasta isolada (o `dist\` não foi tocado) | `bs_ui_tests` **24/24**; `test_projeto` **17/17** (418 s); `test_builder` **22/22** (574 s; Recompiler e Developer `--auto` e cancelamento). Pendente: abrir o projeto numa IDE (só o CMake foi provado) |
 
+### N6 fases D e E: efeitos e falas pelo provedor nativo, contra o jogo original (2026-10-20; worktree n6-audio, sem commit)
+
+**Método:** oráculo no Flycast (`tools/dev/n6_oraculo.py`, com âncora por RAM, analógico, `--trocar`, `--falas` e o
+tempo do TMU0) na rota de combate convertida (`tools/dev/roteiros_n6/combate_flycast.txt`); comparação
+`tools/dev/n6_compara_o6.py`; testes dirigidos `tools/dev/n6_efeitos.ps1` e `n6_falas.ps1` contra o legado.
+Detalhes em `docs/N6-PLANO.md` seções 14–17.
+
+- **O legado não é referência de som nem do fim das falas** (o driver de som e a posição da AICA nunca rodam): a
+  afirmação anterior "o fim nativo cai na mesma passada do original" estava errada e foi corrigida.
+- **Efeitos × original:** 107 `tocar` iguais (passo, porta, banco, pedido) e o +24 por porta igual. Corrigidos por
+  evidência: o **nível base** por efeito (byte 0x19 do descritor; erro de −11 a +13 dB) e o **laço** (bit 1 → LPCTL; os
+  7 efeitos tocavam uma vez). Mistura nativa do combate: pico −2,0 dBFS, 0 amostras saturadas. Pendente: o envelope da
+  AICA (key-off antecipado do passo do Eliot, 6–15 VBlanks contra 15,2 da amostra).
+- **Falas:** o mapa (239 IDs, 233 nomes = os 233 WAV do disco), o contrato do MW WAV e do player do jogo, e o
+  provedor nativo (`--audio-falas nativo`, padrão legado). Medido no Flycast: preparo de 3 passos; estado 3 dois
+  passos depois do fim do áudio. `n6_falas.ps1` **11/11**: `E012AENV`, `E012BENV` e a fala **`E002A`** (que o legado
+  nunca toca), quadros iguais, estado igual ao legado até a divergência legítima (passo 2514). Dublagem de 30 s:
+  estado do jogo igual ao sem dublagem.
+- **FLAC:** `dr_flac` (domínio público/MIT-0, commit fixo, `third_party/dr_libs`). **OGG não integrado:** o
+  `stb_vorbis` tem os CVE-2023-45675…45682 sem correção publicada (decisão do mantenedor).
+- **Legendas:** `DialogueBridge` → `SubtitleService`; `--legendas` mostra o texto ativo no log; desenho no N7.
+- **Unitários:** `bs_audio_tests` 40/40, `bs_localization_tests` 7/7 (normal e ASan); N0 `native/` limpo.
+- **Codex** (`reviews/codex-20261020-170850.md`): 3 achados aceitos (estado só leitura com preparo por passo;
+  orçamento de PCM do FLAC; pausa/cena expostas ao host), 1 rejeitado com evidência (os executáveis rodam todos os
+  testes).
+- Sem regressão integral (política de 2026-10-20).
+
 ## Revisões independentes (Codex)
 
 ### 2026-10-19: N4 (saves nativos), duas rodadas. Relatórios em `reviews/codex-20261019-140151.md` e `-143748.md`

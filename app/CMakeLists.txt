@@ -1,7 +1,7 @@
 # Nucleo do executavel (sem janela): execucao do jogo numa thread, ritmo e quadros.
 add_library(bs_app_core STATIC game_host.cpp assist.cpp)
 target_include_directories(bs_app_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(bs_app_core PUBLIC bs_runtime bs_transitional bs_video_adapter)
+target_link_libraries(bs_app_core PUBLIC bs_runtime bs_transitional bs_video_adapter bs_sound_adapter bs_native_localization)
 
 # Executavel nativo: so com o codigo gerado (do executavel do proprio usuario) e a pedido.
 # O SDL3 (zlib) fica restrito a este alvo: o runtime e as ferramentas nao dependem dele.

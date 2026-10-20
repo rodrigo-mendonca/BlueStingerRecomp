@@ -16,8 +16,13 @@
 #include "pad_probe.h"
 #include "input/input.h"
 #include "time_adapter.h"
+#include "sound_adapter.h"
 #include "video_adapter.h"
 #include "audio/audio.h"
+#include "audio/voice_player.h"
+#include "localization/dialogue_bridge.h"
+#include "localization/mod_packages.h"
+#include "localization/subtitle_service.h"
 #include "cri_idle.h"
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
@@ -183,6 +188,32 @@ constexpr auto kField = std::chrono::nanoseconds(16683333);
 
 } // namespace
 
+// N6 fase E: as falas nativas avisam inicio, fim, interrupcao e pausa (native/audio/voice_player.h); a ponte as
+// leva ao SubtitleService no tempo logico do mixer. Nada e desenhado (N7); o texto ativo so vai para o log quando
+// muda ("[legenda] ..."), o que torna o caminho observavel no headless.
+struct GameHost::Dialogue {
+    native::localization::ModPackages     mods;
+    native::localization::SubtitleService subs;
+    native::localization::DialogueBridge  bridge;
+    std::string                           last;
+    Dialogue(native::localization::ModPackages m, const std::string& lang)
+        : mods(std::move(m)), subs(mods, lang), bridge(subs, 44100) {}
+};
+
+void GameHost::DialogueDelete::operator()(Dialogue* d) const { delete d; }
+
+void GameHost::dialogueVblank(uint64_t n) {
+    dialogue_->bridge.logical_frame(n * 44100ull * 1001 / 60000);  // o mesmo relogio do mixer (sound_adapter.cpp)
+    std::string now;
+    for (const auto& a : dialogue_->subs.active())
+        if (a.source == native::localization::ActiveSubtitle::Source::Dialogue)
+            now += (now.empty() ? "" : ", ") + a.id + " (" + std::to_string(a.text.size()) + " caracteres)";
+    if (now != dialogue_->last) {
+        std::fprintf(stderr, "[legenda] VBlank %llu: %s\n", static_cast<unsigned long long>(n), now.empty() ? "nenhuma" : now.c_str());
+        dialogue_->last = std::move(now);
+    }
+}
+
 GameHost::~GameHost() {
     requestStop();
     join();
@@ -222,6 +253,8 @@ void GameHost::onVblank(void* self) { static_cast<GameHost*>(self)->vblank(); }
 void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
     maple_vblank_in();  // N3-0: indice "vblank" dos roteiros e negativo do ponto de amostragem
+    transitional::sound::vblank(n);  // N6: tempo logico do mixer nativo (nada se os provedores sao o legado)
+    if (dialogue_) dialogueVblank(n);
     // Diagnostico: BS_RAM_DUMP=<vblank>[,<vblank>...]:<arquivo> grava os 16 MB da RAM do guest
     // nesses VBlanks (com mais de um, em <arquivo>_<vblank>)
     static const std::pair<std::vector<uint64_t>, std::string> kRamDump = [] {
@@ -418,6 +451,30 @@ void GameHost::threadMain() {
                                          });
             std::fprintf(stderr, "[video] nativo: %s\n", disc::pathText(opt_.data / L"video").c_str());
         }
+        // N6 fase D: efeitos sonoros pelo provedor nativo (as 5 entradas do SDK de som; o gerenciador do jogo
+        // continua o recompilado). Sem o BS_SND.MLT nos dados, a sessao falha com a mensagem do adaptador.
+        // N6 fase E: falas pelo provedor nativo (o MW WAV da CRI; o player do jogo continua o recompilado), no mesmo
+        // mixer dos efeitos.
+        if (opt_.audioEffects == AudioEffectsProvider::Native || opt_.audioVoices == AudioVoicesProvider::Native) {
+            transitional::sound::Options so;
+            so.effects   = opt_.audioEffects == AudioEffectsProvider::Native;
+            so.mlt       = opt_.data / L"disc" / L"BSDATA" / L"BS_SND.MLT";
+            so.voices    = opt_.audioVoices == AudioVoicesProvider::Native;
+            so.voiceDir  = opt_.data / L"disc" / L"BSDATA";
+            so.modsAudio = opt_.modAudio;
+            so.language  = opt_.dubbing;
+            if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(); };
+            if (so.voices && !opt_.subtitles.empty()) {  // legendas das falas (mods\<pacote>\legendas\falas.<idioma>.toml)
+                dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path()),
+                                             opt_.subtitles));
+                so.onDialogue = [this](const native::audio::DialogueEvent& e) { dialogue_->bridge.on_event(e); };
+            }
+            const std::string dirText = disc::pathText(so.voiceDir);  // antes do move
+            const bool        fx = so.effects, vz = so.voices;
+            transitional::sound::install(transitional::boundary_registry(), std::move(so));
+            std::fprintf(stderr, "[audio] nativo: %s%s%s (%s)\n", fx ? "efeitos" : "", fx && vz ? " e " : "",
+                         vz ? "falas" : "", dirText.c_str());
+        }
         // N2a: tempo e eventos pelo provedor nativo (antes do boot: o reset do hardware o inicia)
         if (opt_.time == TimeProviderKind::Native || opt_.time == TimeProviderKind::Experimental) {
             transitional::time::Options to;
@@ -513,6 +570,11 @@ void GameHost::threadMain() {
                      static_cast<unsigned long long>(s.delivered[4]), static_cast<unsigned long long>(s.posted),
                      static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions),
                      static_cast<unsigned long long>(s.vblankCollapsed));
+    }
+    if (transitional::sound::installed()) {
+        std::fputs(transitional::sound::summary().c_str(), stderr);
+        transitional::sound::uninstall(transitional::boundary_registry());
+        dialogue_.reset();
     }
     if (transitional::video::installed()) {
         std::fputs(transitional::video::summary().c_str(), stderr);

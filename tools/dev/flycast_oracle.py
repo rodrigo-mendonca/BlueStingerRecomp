@@ -521,7 +521,11 @@ PD_RETORNO = 0x8C1730BE           # volta do servidor pd 8C15C4E6 (uma passada p
 PDS_PORTA_A = 0x8C2D8970          # PDS_PERIPHERAL da porta A, unidade 0 (transitional/pad_contract.h)
 # bits de `on` (ordem de tools/dev/pad_roteiros.py); LT/RT como o decodificador do SDK (>= 128)
 PD_BITS = {"C": 0, "B": 1, "A": 2, "START": 3, "UP": 4, "DOWN": 5, "LEFT": 6, "RIGHT": 7,
-           "Z": 8, "Y": 9, "X": 10, "D": 11, "RT": 16, "LT": 17}
+           "Z": 8, "Y": 9, "X": 10, "D": 11, "RT": 16, "LT": 17,
+           # direcional analogico (os roteiros do recompilado): bits so do oraculo, viram x1/y1 do PDS (+0x1C/+0x1E)
+           # no extremo, como o decodificador do SDK (eixo - 128): esquerda/cima -128, direita/baixo 127
+           "ANALOG_UP": 24, "ANALOG_DOWN": 25, "ANALOG_LEFT": 26, "ANALOG_RIGHT": 27}
+PD_ANALOG = 0x0F000000
 FLYCAST_VMU = "T13001N_vmu_save_A1.bin"  # VMU por jogo do Flycast (build/data)
 
 
@@ -531,15 +535,20 @@ def roteiro_bu(path):
        @ancora <endereco>            os indices seguintes contam do primeiro passo depois da
                                      primeira execucao de <endereco> (o tempo de boot do Flycast nao e
                                      o do recompilado; a ancora alinha o roteiro a um ponto do jogo)
+       @ancora-ram <endereco> <valor> idem, no primeiro passo em que a palavra de 32 bits em <endereco> vale <valor>
+                                     (hex): um ponto que o recompilado tambem ve (BS_STATE_PASSO), p.ex. a posicao
+                                     do Eliot; so os oraculos que conferem a RAM por passada a usam (n6_oraculo)
     Devolve uma lista de segmentos {ancora, pulsos, eventos[(passo, mascara)]}."""
-    segs = [{"ancora": None, "pulsos": None, "eventos": []}]
+    segs = [{"ancora": None, "ram": None, "pulsos": None, "eventos": []}]
     for n, line in enumerate(open(path, encoding="utf-8"), 1):
         line = line.split("#", 1)[0].strip()
         if not line or line == "indice passo":
             continue
         f = line.split()
         if f[0] == "@ancora":
-            segs.append({"ancora": int(f[1], 16) & 0x1FFFFFFF, "pulsos": None, "eventos": []})
+            segs.append({"ancora": int(f[1], 16) & 0x1FFFFFFF, "ram": None, "pulsos": None, "eventos": []})
+        elif f[0] == "@ancora-ram" and len(f) == 3:
+            segs.append({"ancora": None, "ram": (int(f[1], 16), int(f[2], 16)), "pulsos": None, "eventos": []})
         elif f[0] == "@pulsos":
             segs[-1]["pulsos"] = (mascara_pd(f[1], path, n), int(f[2]))
         elif f[0].isdigit() and len(f) == 2:
@@ -578,6 +587,14 @@ class EntradaBu:
             return True
         return False
 
+    def ancora_ram(self, ler32):
+        """Ancora por RAM (@ancora-ram): conferida a cada passada, antes de aplicar a entrada; o passo atual vira o 1."""
+        nxt = self.i + 1
+        if nxt < len(self.segs) and self.segs[nxt].get("ram") and ler32(self.segs[nxt]["ram"][0]) == self.segs[nxt]["ram"][1]:
+            self.i, self.base = nxt, self.passo - 1
+            return True
+        return False
+
     def mascara(self):
         s, rel = self.segs[self.i], self.passo - self.base
         m = 0
@@ -591,6 +608,10 @@ class EntradaBu:
 
     def aplica(self, g):
         on = self.mascara()
+        an, on = on & PD_ANALOG, on & ~PD_ANALOG
+        x1 = -128 if an & (1 << 26) else 127 if an & (1 << 27) else 0
+        y1 = -128 if an & (1 << 24) else 127 if an & (1 << 25) else 0
+        g.write(PDS_PORTA_A + 0x1C, struct.pack("<hh", x1, y1))
         # todo passo, inclusive o neutro: senao o controle do Flycast (teclado, foco) vazaria para o PDS
         press, release = (on ^ self.old) & on, (on ^ self.old) & ~on & 0xFFFFFFFF
         g.write(PDS_PORTA_A + 0x08, struct.pack("<IIII", on, ~on & 0xFFFFFFFF, press, release))

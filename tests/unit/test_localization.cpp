@@ -2,6 +2,9 @@
 // So dados sinteticos; nada de conteudo do jogo, nada desenhado (o apresentador e do N7).
 #include "test.h"
 
+#include "audio/mixer.h"
+#include "audio/voice_player.h"
+#include "localization/dialogue_bridge.h"
 #include "localization/locale.h"
 #include "localization/mod_packages.h"
 #include "localization/subtitle_presenter.h"
@@ -210,4 +213,76 @@ BS_TEST(loc_subtitle_layout) {
     BS_CHECK(!L.box.intersects(hud[0]) && L.box.y >= content.h * st.safeMargin);
     st.scale = 2;
     BS_CHECK(nl::layout_subtitle(U"x", content, st, {}, fm).px > 2 * 48);
+}
+
+// N6 fase E: as falas do player nativo (VoicePlayer, mixer real) chegam as legendas pela ponte, no tempo logico do
+// mixer. A legenda acompanha o audio: numa dublagem mais longa continua depois do fim que o jogo ve e acaba no fim
+// fisico; o stop antes do fim a encerra; a fala ausente nao mostra nada.
+BS_TEST(loc_dialogue_bridge_voice_player) {
+    namespace na = bs::native::audio;
+    Dir d;
+    pkg(d.p, "leg", 1);
+    put(d.p / "leg" / "legendas" / "falas.pt-BR.toml",
+        "[[fala]]\nvoz = \"voz/e001a\"\ninicio = 0.0\ntexto = \"Ola\"\n"
+        "[[fala]]\nvoz = \"voz/e002a\"\ninicio = 0.0\ntexto = \"Dublagem\"\n");
+    const auto         m = nl::ModPackages::discover(d.p);
+    nl::SubtitleService subs(m, "pt-BR");
+    na::AudioMixer      mixer(44100, 8);
+    nl::DialogueBridge  bridge(subs, 44100);
+    int64_t             logicalEnd = -1;
+    uint32_t            frames     = 4410;  // 0,1 s
+    na::VoicePlayerOptions o;
+    o.prepSteps = 1;
+    o.endSteps  = 0;
+    o.onEvent = [&](const na::DialogueEvent& e) { bridge.on_event(e); };
+    na::VoicePlayer vp(
+        mixer,
+        [&](std::string_view n) {
+            na::VoiceSource s;
+            if (n == "E999.WAV") return s;
+            auto d   = std::make_shared<na::SoundData>();
+            d->rate  = 44100;
+            d->pcm.assign(frames, 100);
+            s.data = d;
+            s.logicalEnd = logicalEnd;
+            s.id         = n == "E001A.WAV" ? "voz/e001a" : "voz/e002a";
+            return s;
+        },
+        o);
+    auto advance = [&](size_t n) {
+        std::vector<int16_t> out(2 * n);
+        mixer.render(out);
+        for (const auto& e : mixer.take_events(mixer.now())) vp.on_mixer_event(e);
+        bridge.logical_frame(mixer.now());
+    };
+    vp.start("E001A.WAV");
+    BS_CHECK(subs.active().empty());  // preparando: ainda nada
+    vp.game_step();  // fim do preparo: Started
+    advance(100);
+    auto a = subs.active();
+    BS_CHECK(a.size() == 1 && a[0].id == "voz/e001a" && a[0].text == L"Ola");
+    advance(4310);  // fim da fala
+    BS_CHECK(subs.active().empty() && vp.status() == na::kVoiceEnd);
+    vp.stop();
+    // dublagem 3x mais longa: o jogo ve o fim em 0,1 s, a legenda segue o audio ate 0,3 s
+    frames = 13230, logicalEnd = 4410;
+    vp.start("E002A.WAV");
+    vp.game_step();
+    advance(4410);
+    BS_CHECK(vp.status() == na::kVoiceEnd && subs.active().size() == 1);
+    vp.stop();  // o jogo segue; a cauda continua (PlayOut)
+    advance(4410);
+    BS_CHECK(subs.active().size() == 1);
+    advance(4410);
+    BS_CHECK(subs.active().empty());
+    // interrupcao e ausente
+    frames = 44100, logicalEnd = -1;
+    vp.start("E001A.WAV");
+    vp.game_step();
+    advance(100);
+    BS_CHECK(subs.active().size() == 1);
+    vp.stop();
+    BS_CHECK(subs.active().empty());
+    vp.start("E999.WAV");
+    BS_CHECK(vp.status() == na::kVoiceError && subs.active().empty());
 }

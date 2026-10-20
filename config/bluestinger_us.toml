@@ -149,6 +149,29 @@ slots = [
   0x8C15814A,  # +0x18 start(h, nome)
   0x8C158250,  # +0x1C stop(h)
   0x8C1582C0,  # +0x20 estado(h)
+  # N6 fase D (docs/N6-PLANO.md secoes 10-13, --audio-efeitos nativo; no legado os slots apontam para o gerado):
+  # as 5 entradas do SDK de som que os consumidores do gerenciador de efeitos do jogo chamam (8C02A8C0,
+  # 8C02ACB2, 8C02AA8C, 8C02AB40); o gerenciador (fila, prioridade, 7 ativos, rodizio) continua o recompilado
+  0x8C15E208,  # parar(h): comando 0x12
+  0x8C15E088,  # tocar(h, banco, pedido, x): comando 0x11
+  0x8C15E19C,  # volume(h, v, t): comando 0x15 (medido no O6: TL = base do efeito - 2v); nao confere a inicializacao
+  0x8C15E11C,  # pan(h, v, t): comando 0x16 (medido no O6: DIPAN)
+  0x8C15DF44,  # consulta(h, out): +24 bit 0 = canal tocando
+  # N6 fase E (docs/N6-PLANO.md secao 16, --audio-falas nativo; no legado os slots apontam para o gerado): o MW WAV
+  # da CRI que o player de falas do jogo (8C08B860, atualizacao 8C08B900) usa. create por literal; os metodos pela
+  # tabela 8C1DD248 (disassembly de 2026-10-20: cada metodo valida o handle em 8C159D92 antes de agir)
+  0x8C158FC4,  # PlyCreateWav(parametros): pool de 32 x 56 B em 0x8C2D7D38, +0 = tabela, +4 = em uso
+  0x8C1597C0,  # +0x0C servidor por handle
+  0x8C159738,  # +0x10 servidor por handle
+  0x8C159134,  # +0x14 destroy(h)
+  0x8C1591C8,  # +0x18 start(h, nome)
+  0x8C1592A0,  # +0x1C stop(h)
+  0x8C159340,  # +0x20 estado(h): 1 preparando, 2 tocando, 3 fim, 4 erro
+  0x8C159394,  # +0x24 (sem uso pelo jogo)
+  0x8C1593CA,  # +0x28 (h, modo 0/1): a funcao do jogo que o chamaria (8C08B8B8) nao tem chamador
+  0x8C15941C,  # +0x2C (sem uso pelo jogo)
+  0x8C1594C4,  # +0x30 (sem uso pelo jogo)
+  0x8C15950E,  # +0x34 (sem uso pelo jogo)
 ]
 # N2b (docs/N2b-PLANO.md, secao 1.2): back-edges dos lacos que esperam uma condicao acesa por
 # evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por
