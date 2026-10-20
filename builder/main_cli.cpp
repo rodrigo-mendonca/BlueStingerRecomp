@@ -4,6 +4,8 @@
 //              [--name <subpasta>]   (padrao BlueStinger; o jogo instalado nao precisa do CDI)
 //              [--projeto <pasta>]   exporta tambem o projeto C++ editavel (project_export.h)
 //   bs-builder --de-projeto <pasta> --out <pasta> [--disc <cdi>]   compila um projeto editado
+//   bs-builder --disc <cdi> --out <recursos> --projeto <pasta> --somente-exportar
+//              so exporta (sem compilador, compilacao nem instalacao); [--tipo Release|Debug] no build
 // Codigo de saida: 0 = BlueStinger.exe instalado e verificado; 1 = falha; 2 = uso;
 // 3 = cancelado (Ctrl+C).
 #include "builder_core.h"
@@ -69,13 +71,17 @@ int main() {
         else if (a == L"--de-projeto" && more) req.fromProject = args[++i];
         else if (a == L"--clean") req.clean = true;
         else if (a == L"--sem-filmes") req.movies = false;
+        else if (a == L"--somente-exportar") req.exportOnly = true;
+        else if (a == L"--tipo" && more) req.buildType = narrow(args[++i]);
         else {
             std::fprintf(stderr,
                          "uso: bs-builder --disc <imagem.cdi> --out <pasta> [--kit <pasta>] [--sdl3 <pasta>]\n"
                          "                [--vcvars <vcvars64.bat> | --vswhere <vswhere.exe>] [--clean] [--name <subpasta>]\n"
                          "                [--projeto <pasta>]      exporta o projeto C++ editavel\n"
                          "  bs-builder --de-projeto <pasta> --out <pasta> [--disc <cdi>]   compila o projeto (mods)\n"
-                         "                [--verify-vblanks N] [--sem-filmes]\n");
+                         "                [--verify-vblanks N] [--sem-filmes] [--tipo Release|Debug]\n"
+                         "  bs-builder --disc <cdi> --out <recursos> --projeto <pasta> --somente-exportar   so exporta\n"
+                         "                (valida, prepara os dados em <recursos>, gera o C++ e exporta; sem compilador)\n");
             return 2;
         }
     }
@@ -101,6 +107,10 @@ int main() {
         if (verbose || l.rfind("== ", 0) == 0 || l.rfind("ERRO", 0) == 0 || l.rfind("OK:", 0) == 0) out(l + "\n");
     };
     const Result r = build(req, cb);
+    if (r.ok && req.exportOnly) {
+        out("exportado: " + path_text(r.projectDir) + "\n");
+        return 0;
+    }
     if (r.ok) {
         out("instalado: " + path_text(r.exe) + "\n");
         if (!r.warning.empty()) out("aviso: " + r.warning + "\n");

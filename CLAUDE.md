@@ -35,7 +35,7 @@ Ferramentas:
 - `bs-builder --disc <img.cdi> --out <pasta> --kit . --sdl3 build/msvc-release/_deps/sdl3-src`:
   fluxo completo do Builder (CDI → BlueStinger.exe) a partir do repositório. Janelas sobre o mesmo núcleo:
   `BlueStinger-Recompiler.exe` (simples: idioma pt-BR/en-US, Modo portátil = `instalacao.toml`; `--auto
-  --portatil --idioma <cod> --sem-filmes` para testes) e `BlueStinger-Developer.exe` (projeto C++, log técnico).
+  --portatil --idioma <cod> --sem-filmes` para testes) e `BlueStinger-Developer.exe` (três áreas: exportar o projeto C++20 sem compilar, `--somente-exportar` no CLI; compilar projeto Release/Debug sem o CDI pela pasta dos recursos; inspecionar instalação ou projeto sem o CDI).
   Textos por chave em `builder/ui`; unitários `bs_ui_tests` (ctest `ui`).
 - `tools/dist/make_preview.ps1 -Disc <img.cdi>` (pelo próprio Builder), `make_builder.ps1`: distribuições
   em `dist/`; testes `test_preview.ps1`, `test_gameplay.ps1` (NEW GAME até a 1ª área),

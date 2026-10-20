@@ -54,7 +54,16 @@ namespace {
 struct Range {
     double a, b;
 };
-Range rangeOf(Step s) {
+Range rangeOf(Step s, bool exportOnly = false) {
+    if (exportOnly) {
+        switch (s) {
+        case Step::Validate: return {0.00, 0.02};
+        case Step::Extract: return {0.02, 0.70};
+        case Step::Recompile: return {0.70, 0.90};
+        case Step::Export: return {0.90, 1.00};
+        default: return {1.00, 1.00};
+        }
+    }
     switch (s) {
     case Step::Validate: return {0.00, 0.02};
     case Step::Toolchain: return {0.02, 0.05};
@@ -488,7 +497,7 @@ Result build(const Request& req, const Callbacks& cb) {
     };
     Step step = Step::Validate;
     auto progress = [&](double within, const std::string& msg) {
-        const Range r = rangeOf(step);
+        const Range r = rangeOf(step, req.exportOnly);
         if (cb.progress) cb.progress(step, r.a + (r.b - r.a) * within, msg);
     };
     auto enter = [&](Step s) {
@@ -517,18 +526,30 @@ Result build(const Request& req, const Callbacks& cb) {
         if (req.disc.empty() && !fromProject) throw StepError(ErrorKind::MissingInput, "escolha a imagem CDI do jogo");
         if (!req.disc.empty() && !fs::is_regular_file(req.disc, ec))
             throw StepError(ErrorKind::DiscNotFound, "imagem nao encontrada: " + path_text(req.disc));
+        // nenhum projeto (o exportado nem o de origem) pode cair dentro do que o Builder troca ou apaga: a
+        // instalacao (install_swap) e o trabalho (.bs-build: os dados preparados sao apagados e refeitos). fs::relative
+        // passa por weakly_canonical (resolve juncoes e links da parte que existe); igual a pasta da "."
+        // (revisao Codex 2026-10-20, ALTA: o de origem nao era conferido)
+        if (!req.outDir.empty()) {
+            for (const fs::path& pr : {fromProject ? kit : fs::path(), req.exportProject.empty() ? fs::path() : fs::absolute(req.exportProject, ec)}) {
+                if (pr.empty()) continue;
+                for (const fs::path& own : {out / req.installName, out / L".bs-build"}) {
+                    std::error_code rec;
+                    const auto      rel = fs::relative(pr, own, rec);
+                    if (!rec && !rel.empty() && rel.native().rfind(L"..", 0) != 0)
+                        throw StepError("a pasta do projeto nao pode ficar dentro de " + path_text(own) +
+                                        " (o Builder troca ou apaga essa pasta)");
+                }
+            }
+        }
         if (fromProject)
             if (const std::string p = check_project(kit); !p.empty()) throw StepError(p);
         if (fromProject && !req.exportProject.empty())
             throw StepError("escolha entre exportar um projeto e compilar a partir de um projeto");
-        if (!req.exportProject.empty()) {  // o projeto nao pode cair dentro do que o Builder troca ou apaga
-            const fs::path pr = fs::absolute(req.exportProject, ec);
-            for (const fs::path& own : {out / req.installName, out / L".bs-build"}) {
-                const auto rel = fs::relative(pr, own, ec);
-                if (!ec && !rel.empty() && rel.native().rfind(L"..", 0) != 0)
-                    throw StepError("a pasta do projeto nao pode ficar dentro de " + path_text(own));
-            }
-        }
+        if (req.exportOnly && (req.exportProject.empty() || fromProject))
+            throw StepError(ErrorKind::MissingInput, "so exportar: escolha a pasta do projeto (e o CDI de origem)");
+        if (req.buildType != "Release" && req.buildType != "Debug")
+            throw StepError("tipo de build desconhecido: " + req.buildType + " (Release ou Debug)");
         if (req.outDir.empty()) throw StepError(ErrorKind::MissingInput, "escolha a pasta de saida");
         if (req.installName.empty() || req.installName.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos)
             throw StepError("nome de instalacao invalido");
@@ -572,8 +593,8 @@ Result build(const Request& req, const Callbacks& cb) {
         std::ofstream(cache / L".bs-out", std::ios::binary | std::ios::trunc) << path_text(out) << "\n";  // de quem e
 
         // 2. compilador
-        enter(Step::Toolchain);
-        const Toolchain tc = [&] {
+        if (!req.exportOnly) enter(Step::Toolchain);
+        const Toolchain tc = req.exportOnly ? Toolchain{} : [&] {
             try {
                 return find_toolchain({req.vswhere, req.vcvars}, log);
             } catch (const std::runtime_error& e) {
@@ -720,10 +741,36 @@ Result build(const Request& req, const Callbacks& cb) {
             for (std::string l; std::getline(in, l);) log(l);
         }
 
+        const fs::path toml = toml_dir(kit, sdl3);
+        std::string    version = req.versionLabel.empty() ? readText(kit / L"VERSION") : req.versionLabel;
+        if (version.empty()) version = "dev";
+        auto exportNow = [&] {
+            enter(Step::Export);
+            try {
+                export_project({kit, sdl3, toml, cache / L"generated", work / L"analysis" / L"functions.tsv", version, out},
+                               fs::absolute(req.exportProject), log, cb.cancel);
+            } catch (const ExportCancelled&) {
+                throw Cancelled{};
+            } catch (const std::exception& e) {
+                throw StepError(std::string("falha ao exportar o projeto: ") + e.what());
+            }
+            // cancelado durante a ultima copia: nunca vira "exportado" (revisao Codex 2026-10-20)
+            if (cb.cancel && cb.cancel->load()) throw Cancelled{};
+            res.projectDir = fs::absolute(req.exportProject);
+        };
+        if (req.exportOnly) {  // so exportar: sem configurar, compilar, verificar nem instalar
+            exportNow();
+            res.installDir.clear(), res.exe.clear();
+            step = Step::Done;
+            log("OK (so exportar): projeto em " + path_text(res.projectDir) + "; recursos em " + path_text(dataDir));
+            progress(1, step_name(Step::Done));
+            res.ok = true;
+            return res;
+        }
+
         // 5. CMake, no cache. Kit com caminho fora da pagina ANSI ou longo: copia (so o que
         // mudou) para o cache. Build incremental recriado se o kit ou o compilador mudaram.
         enter(Step::Configure);
-        const fs::path toml   = toml_dir(kit, sdl3);
         fs::path       srcKit = kit, srcSdl3 = sdl3, srcToml = toml;
         if (!ansi_safe(kit) || kit.native().size() > kMaxDirectKit) {
             srcKit = cache / L"kit";
@@ -752,7 +799,7 @@ Result build(const Request& req, const Callbacks& cb) {
             for (const auto& e : fs::directory_iterator(modsSrc)) n += e.path().extension() == L".cpp";
             log("mods em C++: " + std::to_string(n));
         }
-        const fs::path    buildDir = cache / L"cmake";
+        const fs::path    buildDir = cache / (req.buildType == "Debug" ? L"cmake-debug" : L"cmake");
         const std::string stamp    = path_text(kit) + "\n" + path_text(sdl3) + "\n" + path_text(toml) + "\n" +
                                   path_text(tc.installRoot) + "\n" + tc.msvcVersion;
         if (req.clean || readText(buildDir / L".bs-kit") != stamp) {
@@ -761,13 +808,11 @@ Result build(const Request& req, const Callbacks& cb) {
             if (ec) throw StepError("nao foi possivel limpar " + path_text(buildDir) + " (" + error_text(ec) + ")");
         }
         fs::create_directories(buildDir);
-        std::string version = req.versionLabel.empty() ? readText(kit / L"VERSION") : req.versionLabel;
-        if (version.empty()) version = "dev";
         {
             std::wstring cmd = quote_arg(tc.cmake.native()) + L" -S " + quote_arg(srcKit.native()) + L" -B " +
                                quote_arg(buildDir.native()) + L" -G Ninja" +
                                L" " + quote_arg(L"-DCMAKE_MAKE_PROGRAM=" + cmakePath(tc.ninja)) +
-                               L" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl" +
+                               L" -DCMAKE_BUILD_TYPE=" + widen(req.buildType) + L" -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl" +
                                L" -DBS_BUILD_TOOLS=OFF -DBS_BUILD_TESTS=OFF -DBS_BUILD_GAME=ON" +
                                L" " + quote_arg(L"-DBS_GENERATED_DIR=" + cmakePath(cache / L"generated")) +
                                L" " + quote_arg(L"-DFETCHCONTENT_SOURCE_DIR_SDL3=" + cmakePath(srcSdl3)) +
@@ -920,15 +965,7 @@ Result build(const Request& req, const Callbacks& cb) {
         }
 
         // 9. projeto C++ editavel (opcional), antes da troca: uma falha aqui nao instala nada
-        if (!req.exportProject.empty()) {
-            enter(Step::Export);
-            try {
-                export_project({kit, sdl3, toml, cache / L"generated", work / L"analysis" / L"functions.tsv", version},
-                               fs::absolute(req.exportProject), log);
-            } catch (const std::exception& e) {
-                throw StepError(std::string("falha ao exportar o projeto: ") + e.what());
-            }
-        }
+        if (!req.exportProject.empty()) exportNow();
 
         // 10. troca (a anterior so sai depois que a nova esta no lugar)
         enter(Step::Install);

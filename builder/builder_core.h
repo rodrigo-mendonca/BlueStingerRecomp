@@ -35,6 +35,13 @@ struct Request {
     // nao foram preparados nesta saida).
     std::filesystem::path exportProject;
     std::filesystem::path fromProject;
+    // So exportar (BlueStinger-Developer, bs-builder --somente-exportar): valida o CDI, prepara e confere os
+    // dados em <outDir>\.bs-build\data (a pasta dos recursos), gera o C++ e exporta o projeto. Sem compilador,
+    // sem compilacao e sem instalacao. Compilar o projeto depois com a mesma outDir dispensa o CDI.
+    bool                  exportOnly = false;
+    // Tipo de build do CMake: "Release" (padrao, o do pacote) ou "Debug" (depuracao nesta maquina: usa o CRT de
+    // depuracao do Visual Studio, que nao e redistribuivel). Cada tipo tem a sua pasta de build no cache.
+    std::string           buildType = "Release";
     std::filesystem::path kitDir;  // fontes do runtime + jogo (MIT/zlib), config e textos
     std::filesystem::path sdl3Dir; // fontes do SDL3; vazio = <kit>\third_party\SDL3
     std::filesystem::path vswhere, vcvars;  // localizacao do compilador (vazio = automatica)
@@ -73,6 +80,7 @@ struct Result {
     std::filesystem::path installDir;  // <out>\BlueStinger
     std::filesystem::path exe;         // <out>\BlueStinger\BlueStinger.exe
     std::filesystem::path logFile;     // <out>\.bs-build\builder.log
+    std::filesystem::path projectDir;  // projeto exportado (vazio se nao exportou)
 };
 
 Result build(const Request& req, const Callbacks& cb);

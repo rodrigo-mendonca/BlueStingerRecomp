@@ -1,4 +1,7 @@
 ﻿# Projeto C++ editavel e mods, pela distribuicao do Builder:
+#   0. so exportar (--somente-exportar, a area "Exportar projeto" do Developer): sem compilador, compilacao nem
+#      instalacao; CMakePresets.json aceito e configurado offline; o projeto editado compila SEM o CDI a partir da
+#      pasta dos recursos e a edicao aparece no jogo;
 #   1. compila do CDI exportando o projeto (mapa de funcoes, fontes, C++ gerado, mods/);
 #   2. adiciona um mod em C++, uma alteracao controlada no C++ gerado e um mod de arquivo;
 #   3. recompila A PARTIR do projeto com o CDI inacessivel;
@@ -41,6 +44,44 @@ $env:BS_BUILDER_CACHE = Join-Path $work "cache"
 $out = Join-Path $work "saída ç"
 $proj = Join-Path $out "projeto"
 $exe = Join-Path $out "BlueStinger\BlueStinger.exe"
+
+# 0. SO EXPORTAR (BlueStinger-Developer, area "Exportar projeto"): valida, prepara os recursos, gera e exporta, sem
+#    compilador, compilacao nem instalacao; o projeto abre pelos presets do CMake; editado, compila SEM o CDI a partir da
+#    pasta dos recursos, e a edicao aparece no jogo
+$res0  = Join-Path $work "recursos ç"
+$proj0 = Join-Path $work "projeto só exportado"
+$t0 = Get-Date
+$r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$res0`" --projeto `"$proj0`" --somente-exportar --sem-filmes"
+$rc0 = $LASTEXITCODE
+$secs0 = [int]((Get-Date) - $t0).TotalSeconds
+$log0 = Get-Content -LiteralPath (Join-Path $res0 ".bs-build\builder.log") -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+$semCompilar = $log0 -and $log0 -match "== exportando o projeto C\+\+" -and $log0 -notmatch "== (localizando o compilador|configurando a compilacao|compilando|montando o pacote|verificando o executavel|instalando)"
+Check "so exportar: sem compilador, compilacao nem instalacao" ($rc0 -eq 0 -and $r -match "exportado: " -and $semCompilar -and
+      -not (Test-Path -LiteralPath (Join-Path $res0 "BlueStinger"))) "${secs0}s"
+$meta0 = Get-Content -LiteralPath (Join-Path $proj0 "bs-projeto.toml") -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+$okArq0 = (Test-Path -LiteralPath (Join-Path $proj0 "CMakePresets.json")) -and (Test-Path -LiteralPath (Join-Path $proj0 "generated\funcs.h")) -and
+          (Test-Path -LiteralPath (Join-Path $res0 ".bs-build\data.ok")) -and $meta0 -and $meta0.Contains("recursos = `"" + $res0.Replace('\', '\\') + "`"")
+Check "so exportar: projeto, presets, bs-projeto.toml e recursos conferidos" $okArq0 ""
+# presets: o CMake os aceita e configura o projeto sem internet (o mesmo ambiente do compilar.cmd)
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+$vsroot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$vcvars = Join-Path $vsroot "VC\Auxiliary\Build\vcvars64.bat"
+$lp = RunCmd "call `"$vcvars`" >nul && cd /d `"$proj0`" && cmake --list-presets"
+$cp = RunCmd "call `"$vcvars`" >nul && cd /d `"$proj0`" && cmake --preset release"
+$rcp = $LASTEXITCODE
+Check "CMakePresets.json valido: release e debug, configura offline" ($lp -match '"release"' -and $lp -match '"debug"' -and $rcp -eq 0 -and
+      $cp -match "Build files have been written to") ""
+# edicao no C++ gerado do projeto so exportado e compilacao SEM o CDI (recursos da exportacao)
+$gen0 = (Get-ChildItem -LiteralPath (Join-Path $proj0 "generated") -Filter "funcs_*.cpp" | Select-String -Pattern "^void f_8C010000\(" -List | Select-Object -First 1).Path
+$t = [IO.File]::ReadAllText($gen0)
+$t = $t.Replace("void f_8C010000(bs::Sh4Context* c) {`n    BS_FN_ENTER(0x8C010000u);", "void f_8C010000(bs::Sh4Context* c) {`n    BS_FN_ENTER(0x8C010000u);`n    std::fputs(`"[edicao so exportar] entrada do jogo\n`", stderr);")
+$t = $t.Replace("#include `"funcs.h`"`n", "#include `"funcs.h`"`n#include <cstdio>`n")
+[IO.File]::WriteAllText($gen0, $t)
+$r = RunCmd "`"$cli`" --de-projeto `"$proj0`" --out `"$res0`" --sem-filmes"
+$exe0 = Join-Path $res0 "BlueStinger\BlueStinger.exe"
+$okInst0 = $LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $exe0)
+$g0 = if ($okInst0) { RunCmd "`"$exe0`" --video legado --headless 10" } else { "" }
+Check "projeto so exportado: compila sem o CDI e a edicao aparece no jogo" ($okInst0 -and $g0 -match "\[edicao so exportar\] entrada do jogo") ""
 
 # 1. compilacao do CDI exportando o projeto
 $r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$out`" --sem-filmes --projeto `"$proj`""

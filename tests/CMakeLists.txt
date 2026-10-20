@@ -43,9 +43,9 @@ add_test(NAME video COMMAND bs_video_tests)
 add_test(NAME unit COMMAND bs_unit_tests)
 
 # Interface do recompilador (catalogo de textos, configuracao da instalacao, troca da instalacao)
-add_executable(bs_ui_tests unit/main.cpp unit/test_ui.cpp unit/test_builder.cpp)
+add_executable(bs_ui_tests unit/main.cpp unit/test_ui.cpp unit/test_builder.cpp unit/test_dev_inspect.cpp)
 target_include_directories(bs_ui_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
-target_link_libraries(bs_ui_tests PRIVATE bs_builder_core bs_builder_ui bs_native)
+target_link_libraries(bs_ui_tests PRIVATE bs_builder_core bs_builder_ui bs_native tomlplusplus::tomlplusplus)
 add_test(NAME ui COMMAND bs_ui_tests)
 
 # Usa a imagem do usuario se BS_DISC_IMAGE estiver definido; senao, SKIP.

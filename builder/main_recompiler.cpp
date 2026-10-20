@@ -9,6 +9,7 @@
 #include "builder_core.h"
 #include "child_process.h"
 #include "ui/i18n.h"
+#include "ui/win_shared.h"
 
 #ifndef UNICODE
 #define UNICODE
@@ -68,22 +69,7 @@ struct App {
     Status            st;
 } g;
 
-const char* stepKey(Step s) {
-    switch (s) {
-    case Step::Validate: return "step.validate";
-    case Step::Toolchain: return "step.toolchain";
-    case Step::Extract: return "step.extract";
-    case Step::Recompile: return "step.recompile";
-    case Step::Configure: return "step.configure";
-    case Step::Compile: return "step.compile";
-    case Step::Package: return "step.package";
-    case Step::Verify: return "step.verify";
-    case Step::Export: return "step.export";
-    case Step::Install: return "step.install";
-    case Step::Done: return "step.done";
-    }
-    return "step.validate";
-}
+const char* stepKey(Step s) { return ui::step_key(s); }
 
 fs::path exeDir() {
     std::wstring b(32768, L'\0');
@@ -139,16 +125,7 @@ std::wstring text(HWND h) {
 
 Prefs currentPrefs() { return {text(g.disc), text(g.out), ui::current_language().code}; }
 
-// idiomas preferenciais do usuario no Windows (o primeiro decide)
-std::vector<std::wstring> windowsLanguages() {
-    ULONG n = 0, size = 0;
-    std::vector<std::wstring> r;
-    if (!GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &n, nullptr, &size) || !size) return r;
-    std::wstring buf(size, L'\0');
-    if (!GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &n, buf.data(), &size)) return r;
-    for (const wchar_t* p = buf.c_str(); *p; p += wcslen(p) + 1) r.emplace_back(p);
-    return r;
-}
+std::vector<std::wstring> windowsLanguages() { return ui::windows_languages(); }
 
 bool checked(HWND h) { return SendMessageW(h, BM_GETCHECK, 0, 0) == BST_CHECKED; }
 

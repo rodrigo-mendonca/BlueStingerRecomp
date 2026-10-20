@@ -44,6 +44,8 @@ public:
     const MovieEntry*               find(std::string_view original) const;  // sem diferenciar caixa
     const std::vector<std::string>& problems() const { return problems_; }
     size_t                          size() const { return byId_.size(); }
+    // todas as entradas por ID (inspecao de recursos do Developer; so leitura)
+    const std::map<uint32_t, MovieEntry>& all() const { return byId_; }
 
 private:
     std::map<uint32_t, MovieEntry> byId_;
