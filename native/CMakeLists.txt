@@ -15,6 +15,12 @@ target_link_libraries(bs_native PUBLIC bs_native_api PRIVATE tomlplusplus::tomlp
 # N5: filmes nativos (catalogo por ID com mods, leitura e gravacao MP4 por Media Foundation)
 add_library(bs_native_video STATIC video/movie_catalog.cpp video/mf_movie.cpp video/movie_playback.cpp video/subtitles.cpp video/movie_color.cpp)
 target_link_libraries(bs_native_video PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus mfplat mfreadwrite mfuuid ole32 d2d1 dwrite windowscodecs)
+# Localizacao (docs/LOCALIZACAO-PLANO.md): contratos portaveis de textos traduzidos, legendas novas (filmes e
+# falas) e pacotes de mods; o parser SRT/WebVTT e o do N5 (bs_native_video). Sem desenho (N7) e sem ferramentas (N9).
+add_library(bs_native_localization STATIC localization/locale.cpp localization/mod_packages.cpp
+            localization/text_localization.cpp localization/subtitle_service.cpp localization/subtitle_presenter.cpp)
+target_link_libraries(bs_native_localization PUBLIC bs_native_api PRIVATE bs_native_video tomlplusplus::tomlplusplus)
+
 # N5 (D2): saida de audio (XAudio2 e nula) atras de IAudioOutput; o N6 reaproveita
 add_library(bs_native_audio STATIC audio/audio_output.cpp)
 target_link_libraries(bs_native_audio PUBLIC bs_native_api PRIVATE xaudio2 ole32)
