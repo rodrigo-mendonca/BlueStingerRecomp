@@ -621,3 +621,231 @@ descritor, ainda não modelados), os dB absolutos por passo de TL e DIPAN e o DS
 - Testes (`test_audio_ogg.cpp`, arquivo próprio de 4 KB embutido): decodificação (duração, nível, ~440 Hz), entradas
   ruins e **300 mutações** (bytes trocados, cortes, repetições) sem queda; com o ASan, sem acesso fora dos limites.
   `bs_audio_tests` **45/45** (normal e ASan). WAV e FLAC inalterados.
+
+### 18.2 Fase F: o que o jogo e o driver fazem com a música (análise estática, 2026-10-20)
+
+**Arquivos:** 11 pares `M*.MSB` (sequências `SMSB`/`SMSD`) e `M*.MPB` (programas e amostras `SMPB`) e o driver
+`BSDATA\MANATEE.DRV` (ARM7, 33 KB, **carregado sem o cabeçalho de 0x20 bytes no endereço 0 da RAM de som**: as tabelas
+de salto só fazem sentido nessa base). Nenhum ADX: a música é toda sequenciada.
+
+**Gerenciador do jogo** (fica o recompilado): `8C02AE70(v, t)` é o **fade de volume** da música (limita v a no máximo
+−16; o "0" que as falas pedem vira −16, o volume normal; −47 é o abaixado) e manda o comando 0x05 com o tempo. A família
+do gerenciador (`8C02AE70`–`8C02B0xx`) usa 6 entradas do SDK:
+
+| Entrada | Comando ao driver | Argumentos | Tratador no driver |
+|---|---|---|---|
+| `8C15DBAC` | **0x01** tocar sequência | (handle, banco, sequência, x·8) | `0x4B3C`: banco pela tabela em 0x14000 (8 B por banco), confere `SMSB`, versão 1 e o rodapé `ENDB`; prepara as trilhas (`0x7404`) |
+| `8C15DD40` | **0x02** parar | (handle) | `0x4C20` |
+| `8C15DCC0` | **0x05** volume com tempo (fade) | (handle, v, t) | `0x4D90` |
+| `8C15DC40` | **0x06** pan com tempo | (handle, v, t) | `0x4E18` |
+| `8C15D768` | **0x35** global | 2 argumentos | `0x585C` (a medir) |
+| `8C15D6A0` | **0x36** global | 2 argumentos | `0x5884` (a medir) |
+
+A tabela de comandos do driver começa em `0x49E4` (índice = código; 0x11/0x12/0x15/0x16 são os efeitos da fase D).
+
+**Sequências (`SMSD`)**, pelo próprio driver (laço das 8 trilhas em `0x4310`, estado de 0x40 bytes por trilha em
+0x10000; despacho em `0x4390`): nota (`s < 0x80`: canal = `s & 0xF`, tecla, velocidade, duração em `(s>>5)+1` bytes,
+delta de 1 ou 2 bytes conforme `s & 0x10`); controle `0xA0–0xBF`; programa/pressão `0xC0–0xDF`; pitch `0xE0–0xEF`;
+`0x81` referência (toca N eventos de outro ponto e volta); `0x82` laço; `0x83` fim; `0x84` tempo; o resto é ignorado
+pelo driver. `tools/dev/n6_smsd.py`: **as 11 sequências são lidas até o fim exato** (0x83), sem evento desconhecido,
+sobrando só o alinhamento (< 40 bytes); cada uma tem um par de laço, referências, tempo, programas e de 580 a 7 073 notas.
+
+**Bancos (`SMPB`)** (`tools/dev/n6_smpb.py`): 4 tabelas (programas; 2 curvas de velocidade de 128 bytes; 2 pequenas);
+programa = até 2 grupos que **tocam juntos** (o grupo 1 repete as amostras do 0 com outro ajuste fino ou TL: camadas);
+camada de 0x30 bytes = os campos do descritor SOSP dos efeitos (amostra relativa ao banco, laço, DISDL, TL base,
+envelope) + faixa de teclas, tecla base e ajuste fino. **Os 11 bancos: 0 problemas de estrutura** (amostras e laços
+dentro do arquivo; todas ADPCM, indicadores 1 e 3).
+
+**Ligação com a fase G:** o que falta para soar como o original é o mesmo nos efeitos e na música: o **envelope da
+AICA** (as 5 palavras `F81F…` de cada camada/descritor, o key-off pelo "gate" das notas e a soltura). O modelo nativo
+do envelope serve às duas fases.
+
+**Próximo (fase F):**
+1. o oráculo `--musica` (rodando): os comandos de música no jogo (quais sequências e bancos, fades, pan, 0x35/0x36) e
+   os key-on da AICA de cada nota (amostra, tom, TL, pan): a referência nota a nota;
+2. o sequenciador e o sampler nativos (C++) sobre o mixer, com o envelope da AICA; comparação nota a nota com o oráculo;
+3. os 6 slots, `--audio-musica nativo|legado` (padrão legado) e a substituição por mods (`musica/<nome>` em WAV/FLAC/OGG,
+   com metadados de laço; a música de mod não muda o estado do jogo).
+
+### 18.3 Fase F: o driver lido no código e o primeiro som nativo (2026-10-20)
+
+Tudo abaixo vem do código ARM7 do `MANATEE.DRV` (desmontagem com Capstone 5.0.7, fora do repositório) e foi conferido nos
+dados do disco; nenhum valor foi ajustado de ouvido.
+
+**Relógio da música.** O Timer A da AICA (0x802890) recebe 0xD4 com prescaler 0: uma interrupção a cada 44 amostras. O
+tratador (`0x2A8`) pula 1 em 441 (44 100 / 44 × 440/441 = exatamente **1 000 Hz**, sem deriva) e a cada 4 ticks liga a
+bandeira 0x22C; o laço principal (`0x194`/`0x1B8`) então chama `0x858`, `0x70A4`, **o sequenciador `0x4210` (250 Hz)** e as
+rotinas de voz `0x6780`–`0x6A5C`. Não depende do VBlank do SH-4: a música anda pelo relógio de amostras da AICA, então
+pausa/lentidão do jogo não a desafinam; o nativo usa o mesmo relógio (176,4 amostras por chamada, sem acumular erro).
+
+**Tempo.** Por trilha (0x10000 + 0x40·n): `unidade = (cabeçalho1 × tempo) >> 4` (`0x7404`; cabeçalho1 = 136 nas 11);
+a conta da trilha perde o passo (0x4000 normal; a porta muda pelo comando de velocidade, `0x6800`) a cada chamada; um
+evento soma `delta × unidade` (`0x4874`); a duração da nota é `gate × unidade + conta atual` (`0x4430`). A primeira
+chamada já desconta (`0x4354`): os testes `audio_manatee_seq_integer_timing` fixam as chamadas exatas (1, 25, gap 49).
+
+**0x81 (referência), resolvido.** Base = início do `SMSD` (1 010/1 010 alvos caem em eventos); a contagem é **N eventos**:
+o primeiro é lido direto (`0x4650→0x4380`) sem passar pela conferência do contador, que devolve ao chegar a 1. O teste
+sintético separa N de N−1 (notas 60–63, referência a 12 com 3 → 60 61 62 63 60 61 62 70). Nos dados: contagens ≥ 3, sem 0.
+**0x82 (laço):** o primeiro guarda o ponteiro do byte de contagem (0 = infinito, 0x80); contagem c toca o corpo c+1 vezes.
+
+**Tom (`0x14B0`).** `acc` = ajuste fino da camada (byte 0x27 com sinal, 1/256 de semitom) [+ bend]; índice =
+`(acc>>8) + tecla + 0x60 − tecla base` (8 bits); a tabela 0x3504 dá oitava (−8..+7) e semitom; FNS pela tabela 0x35E8
+(1 536 entradas) = **`floor(1024·(2^(j/1536) − 1))`, igual nas 1 536** (round acertaria 764); taxa = 44 100·2^OCT·(1+FNS/1024).
+
+**Nível (`0x0FF4`–`0x107C`, `0x1B54`–`0x1C3C`).** Canal: `c = ((T[cc7] + 1)·(T[cc11] + 1) >> 7) − 1`, com T a curva de
+volume do driver (`0x3EC8`, 128 bytes, crescente; **lida do `MANATEE.DRV` do usuário**, não copiada no código, com a
+versão conferida pela tabela de FNS). Nota: `nível = ((curva[c'][vel] + 1)·(c + 1)·(256 − TL da camada) − 1) >> 14`,
+curva c' pelo byte 0x2A da camada; o volume da porta (comando 0x05, guardado como v + 128) soma:
+`TL = 255 − limite(nível + v)`. O "0" do gerenciador é −16. Um controle 7/11 recalcula o nível das vozes do canal.
+
+**Camadas (`0x0B18`–`0x11FC`).** Até 4 ponteiros de grupo por programa (nos bancos do disco só 2); grupo com o bit 7 é
+pulado; em cada grupo, a 1ª camada com a tecla em [0x24, 0x25] e a velocidade em [0x2B, 0x2C] que conseguir voz.
+Key-off (`0x0A38`): KYONB = 0 com KYONEX, a soltura é o envelope da AICA (fase G).
+
+**Qual música e onde.** A tabela de nomes em `0x8C09EC28` (pares mpb/msb, 12 entradas: M2A, M2B, M2C, M3, M4, M4, M5, M6,
+M7, M9, M10, M99), usada por `8C02A5E0`/`8C02A660(índice)` (carregar [e tocar]); índice carregado em `0x8C1F4C52`
+(0xFF = nenhum), tocando em `0x8C1F4C79`. Nas rotas por passo (nativo, `BS_RAM_WATCH`): **a primeira música é a M2A
+(índice 0) no passo 7 337 de `passo_combate`, na troca de sala** (posição vai a (125, 0, −400)); a área inicial não tem
+música (o oráculo `--musica` do Flycast até o passo 10 600 confirma: só fades e abaixamentos −48/−16 nas falas).
+
+**Nativo (`native/audio/manatee_seq` e `manatee_synth`).** Sequenciador (o algoritmo acima) e sintetizador (camadas,
+ADPCM da AICA decodificado e em cache por amostra, tom e nível do driver, pedal 64, pan 10) sobre o mixer, no barramento
+Música. Ferramenta de desenvolvimento `bs-musica <BSDATA> <nome> <s> <wav> [eventos.tsv]` (fora do kit; WAV e eventos
+ficam em `%LOCALAPPDATA%`). **Primeira música nativa: M2A**, 150 s, 3 621 notas, 6 130 vozes, sem saturação.
+
+### 18.4 Fase F contra o Dreamcast: a M2A nota a nota (Flycast, 2026-10-20)
+
+**Oráculo** (`n6_oraculo.py --musica --ca`, LOAD do cartão `g1_entrada` pela rota `passo_load_slot1`, 4 200 passos, sem a
+rota de ~50 min): no passo 1 757 (entrada da RCG02) o jogo carrega `M2A.mpb`/`M2A.msb` e manda volume −113, pan 0, parar,
+volume −16, **tocar porta 0 banco 0 sequência 0** e o fade para −16 em t = 2 000. A M2A é a música da RCG02 depois do LOAD
+(o `--injetar-musica` do oráculo, feito para provocar a música, não teve efeito: o índice já era 0). Os key-on da AICA
+(amostra, OCT, FNS, TL, `ca`) foram lidos a cada passo; o banco fica em 0x18000 da RAM de som.
+
+**Comparação** (`tools/dev/n6_musica_compara.py <oráculo> <vozes nativas>`). Desde a revisão Codex de 2026-10-20 o
+pareamento é **um a um**: cada key-on do Dreamcast consome no máximo uma voz nativa da mesma assinatura (amostra, OCT, FNS,
+TL, DIPAN, DISDL), em ordem de tempo, numa janela de 50 ms depois do deslocamento local por janela de 10 s; o relatório
+dá os sem par dos dois lados e as inversões de ordem. (A primeira versão contava pertinência a um conjunto, o que não
+prova multiplicidade nem ordem; os números "5 766/5 766" dela foram substituídos.)
+
+| Medida (M2A, 150 s, `bs-musica`) | Resultado |
+|---|---|
+| key-on do Dreamcast pareados um a um com voz nativa de **mesma amostra, OCT, FNS, TL, DIPAN e DISDL** | **5 590/5 766 (97 %)** em 50 ms; **5 757/5 766 (99,8 %)** em 100 ms |
+| inversões de ordem entre os pares | 1 (50 ms); 7 (100 ms) |
+| onde ficam os sem par em 50 ms | passos 3 700–4 100 do oráculo: o trecho denso, onde o atraso do Dreamcast muda dentro da janela de 10 s |
+| TL do key-on nas 10 combinações mais frequentes (teste `audio_manatee_synth_level_vs_oracle`) | 10/10 |
+| tempo dos key-on, 30–90 s da música (erro mediano por janela de 10 s) | −24,7 → −21,6 ms: **sem deriva mensurável** (< 0,01 %) |
+| tempo nos trechos densos (10–30 s, 90–150 s) | o Dreamcast atrasa até ~0,1 s em relação ao nativo |
+
+O erro absoluto (~34 ms) é o da leitura uma vez por passo; os 2 key-on sem par (passo 3 173, um par estéreo) têm TL de um
+recálculo por controle 7 entre o key-on e a leitura.
+
+**Pan e envio, do driver:** no início de cada `tocar` (`0x2758`) o canal volta a cc7 = 100, **nível do canal = 100
+direto** (a curva só entra no 1º controle 7/11), cc11 = 127 e pan = 0xC0 (bit 7 = sem controle 10). No key-on
+(`0x1080`–`0x111C`): sem controle 10, a posição vem do DIPAN da camada (byte 0x12; as camadas `sdl14` das 11 músicas são
+pares estéreo 31/15); `x = (limite(posição + pan da porta) >> 2) − 16`, DIPAN = x ou `0x10 | ~x`; DISDL = nibble do byte
+0x13 + o da porta (0). No mixer, a mesma curva de DIPAN dos efeitos (`dipan_pan`, agora compartilhada).
+
+**Hipótese para o atraso nos trechos densos: ticks perdidos pelo ARM7** (o mecanismo existe no código; a perda não foi
+medida diretamente): o tratador de 1 kHz (`0x2A8`) só liga
+**bandeiras de um byte** (0xFF) e a cada 4 ticks a do sequenciador (`0x22C`), além de contar os ticks reais em 0x13418; o
+laço principal (`0x194`) esvazia a fila de saída 4 eventos por volta (`0x9A4` → `0x1558`, anel de 1 024 palavras em
+0xB000) e roda o sequenciador quando vê a bandeira. Se uma volta demora mais de 4 ms (key-on em rajada, com leituras e
+escritas nos registradores da AICA), o tick seguinte **se perderia** e a música atrasaria 4 ms. Isso casa com o perfil
+medido (atraso só onde há muitas notas, nenhum entre 30 e 90 s), mas falta a prova direta: ler no oráculo o contador de
+ticks reais (0x13418) junto com a posição das trilhas. Dependeria da velocidade do ARM7 (o modelo de ciclos do Flycast
+não é referência de hardware); o nativo toca no tempo nominal, o de um ARM7 sem carga, **sem compensação**. O sequenciador do driver só devolve antes do fim (0x20, retomando na
+mesma trilha por `[0x10202]`/`[0x10204]`) com o anel cheio, o que não ocorre nas músicas.
+
+**Notas sem camada (reais):** M2B tem 6 notas (teclas 98 e 100) no programa 3, que cobre só 0–34 e 59–82; M3 tem 1 (tecla
+96, programa 2, 0–82). O driver também não as toca (`0x0B78`); o teste das 11 músicas espera exatamente esses números.
+
+**Testes:** ver 18.5 (61/61 depois da integração).
+
+**Provisório (fase G):** o envelope (ataque/decaimento/soltura das 5 palavras da camada e os ajustes por canal nos
+bytes 0x32–0x35; hoje soltura de ~60 ms no key-off), as curvas em dB da AICA (TL 0,375 dB, DIPAN/DISDL 3 dB por passo:
+documentadas, não medidas em áudio) e o pitch bend: só a M2C tem (3 eventos no canal 0); o caminho do driver está lido
+(`0xE0` → `0x13E4`: bend = (valor − 64)·128, por voz `(bend · faixa) >> 5` em 1/256 de semitom), mas a origem da faixa
+(bytes +0x0A/+0x0B da voz) não está provada; fica para a validação da M2C (achado MÉDIA do Codex, aceito e adiado).
+
+**Substituição por mods (plano, sem ferramentas do N9).** A música de mod entra no lugar da sequência inteira, não das
+amostras: `mods\<pacote>\musica\<NOME>.{wav,flac,ogg}` (NOME = M2A … M99, o nome da tabela 0x8C09EC28), lida pela
+mesma `load_sound_file` dos efeitos e das falas (WAV, FLAC e OGG já validados). Laço por metadados: `smpl` no WAV,
+`LOOPSTART`/`LOOPLENGTH` (ou `LOOPEND`) nos comentários Vorbis/FLAC, em amostras; sem laço, toca uma vez e a porta fica
+livre como no fim da sequência original (0x83). Os comandos do gerenciador continuam valendo para a faixa: volume com
+fade (0x05, na mesma lei de TL), pan (0x06), parar (0x02); o estado do jogo (bytes 0x8C1F4C52/0x8C1F4C79, consulta do
+driver) não muda com a substituição. Amostras individuais do banco (por programa/camada) ficam para o N9.
+
+### 18.5 Fase F no jogo: `--audio-musica nativo` e a M2A no gameplay (2026-10-20)
+
+**Contrato do SDK (lido no binário e no driver).** O gerenciador de música do jogo (`8C02AD80` tocar, `8C02AE20` parar
+com fade, `8C02AE70` fade) e o carregador (`8C02A4FC`: abre `M*.mpb`/`M*.msb`, lê para um buffer, cria um bloco de memória
+do SDK com `8C15D844`/`8C15D980` — **+8 dados, +12 tamanho** — e chama o download `8C15D534(bloco, tipo, slot)`) continuam
+os recompilados. As entradas do SDK só montam um pacote de 20 bytes e o copiam para uma **fila do lado SH-4**
+(`8C17D334`, entradas de 28 bytes); o ARM7 recebe o lote e o executa **inteiro no tick de 250 Hz, antes dos faders**
+(`0x48E8`, 32 comandos de 16 bytes em 0x13200, chamado no ramo do tick em `0x1E0`). Pacotes:
+
+| Entrada | Comando | Pacote / efeito no driver |
+|---|---|---|
+| `8C15D534(bloco, tipo, slot)` | download | SMPB e SMSB vão para os slots (0x14080/0x14000, 16 de 8 bytes); o `BS_SND.MLT` (unidades baixadas por `8C15DDA4`) também traz um SMPB e um SMSB para o slot 0 no boot. Outros tipos (SOSB, SFPB, SFOB) ficam com o original |
+| `8C15DBAC(h, slot, seq, x)` | 0x01 tocar | `[2]` porta = byte 1 do handle, `[3]` slot SMSB, `[4]` sequência, `[5]` x·8; `0x4B3C` confere SMSB/versão 1/`ENDB` (erros 2/8/4 só na porta); prepara trilhas e os 16 canais (`0x2758`); **não mexe** em volume/pan nem desliga vozes |
+| `8C15DD40(h)` | 0x02 parar | `0x4C20`: KYONB = 0 em todas as vozes da porta (a soltura é do envelope) e limpa as trilhas |
+| `8C15DCC0(h, v, t)` / `8C15DC40` | 0x05 volume / 0x06 pan | byte = v + 0x80, t em 16 bits; fade abaixo |
+| `8C15D768` / `8C15D6A0` | 0x35 / 0x36 | sem chamada nas rotas medidas; o nativo repassa ao original e conta |
+
+Conferências do SDK iguais às dos efeitos: flag `8C1DDB90` = 0 → `0x0D000001`; handle nulo → `0x07000103`; x do tocar
+fora de 0..15 → `0x03000001`; bloco sem dados/tamanho ≤ 0 → `0x7FFFFFFF`.
+
+**Fade (o algoritmo do driver, sem fórmula inventada).** `0x4D90`/`0x4E18`: alvo = byte; t = 0 → período 0 (o valor vai
+ao alvo no tick seguinte); senão período = t >> 3 e passo = |atual − alvo|, divididos juntos por 2 até passo ≤ 1 ou
+período ≤ 1 (período guardado em 8 bits). `0x6640`/`0x66E0` a cada tick: espera o período, depois anda `passo` em direção
+ao alvo sem passar. Um comando novo recomeça do valor **atual** (substitui o fade em curso). Unidade: tick de 4 ms; ex.:
+−113 → −16 com t = 2 000 → período 3, passo 1 → 97 × 4 ticks = 1,552 s; −16 → −48 com t = 800 → 128 ticks; −16 → −47 com
+t = 2 000 → período 15, passo 1 → 1,98 s. O tocar/parar não mexem nos faders. Teste `audio_manatee_fader_driver_algorithm`.
+
+**Controles que faltavam (lidos na tabela `0x1834`, índice = número):** o banco do canal é o **controle 32** (`0x1ED0`;
+o 0 é ignorado, `0x1A34`); o **121** (`0x2758`) reseta os 16 canais da porta e solta o pedal; o 64 confirma (valor & 0x40).
+
+**Nativo.** `native/audio/manatee_player` (slots, 8 portas com sequenciador e sintetizador, faders) e
+`transitional/sound_adapter` (os 7 slots, `--audio-musica nativo|legado`, padrão **legado**): o tick de 250 Hz anda no
+relógio lógico do mixer (o k-ésimo em k · 176,4 quadros) e a mistura é renderizada em trechos que param em cada tick. O
+envelope saiu do sintetizador para `native/audio/envelope.h` (compartilhado; fase G completa). Diagnósticos:
+`BS_EFEITOS_LOG` (comandos `mus-*` no vocabulário do oráculo), `BS_EFEITOS_WAV` (a mistura), `BS_MUSICA_VOZES` (as vozes
+no formato do `bs-musica`, para `n6_musica_compara.py`). Os 7 slots entram no `[native] slots` e o C++ foi regerado: só
+mudaram os slots e as 5 chamadas (`8C02A57E`, `8C15DE6E`, `8C02ADD2`, `8C02A0A0`, ...) de `BSG_FN` para `BSG_SLOT`.
+
+**A M2A no gameplay** (rotas por passo, headless, `--video legado`; nada do `dist\` alterado):
+
+| Medida | Resultado |
+|---|---|
+| comandos vindos do jogo recompilado (`passo_combate`, passo 7 337, troca de sala) | `mus-carga` SMPB/SMSB slot 0 → vol −113 t0 → pan 0 → parar → vol −16 t0 → **tocar porta 0 banco 0 seq 0** → vol −16 t2000 (a mesma ordem do original no LOAD); antes, vol −113 t=133 e −16 t=800 da troca de sala |
+| estado do jogo com `--audio-musica nativo` × legado (`passo_combate`, hash da região de variáveis, vida, posição) | **igual nos 8 816 passos** (1 479 depois do início da música) |
+| vozes da M2A no jogo × Dreamcast (um a um, amostra/OCT/FNS/TL/DIPAN/DISDL, 50 ms) | **2 082/2 094 (99,4 %)**, 0 inversões; os 12 sem par estão no fade de entrada (~1,5 s) |
+| mistura (`BS_EFEITOS_WAV`) | música a partir de 250,5 s; −22 a −34 dBFS RMS; 0 amostras saturadas |
+| fades do gerenciador no gameplay (`passo_heliporto`, ~190 s de M2A) | −47 em t = 2 000: −10 dB em ~2 s; −16: volta +11 dB em ~2 s; −113 em t = 4 (saída da área): queda imediata; 7 491 vozes, 0 recusadas, 0 sem camada |
+
+**Revisão Codex da integração** (`reviews/codex-20261020-220545.md`, 4 achados, todos aceitos):
+- [MÉDIA] comandos aplicados a ticks anteriores à chamada no mesmo quadro: **corrigido**. As operações de música entram
+  numa fila por ordem e são entregues no VBlank seguinte, depois de renderizados os ticks até ele (no original o pacote
+  vai para a fila do SH-4 e o ARM7 só o executa no tick depois da entrega). Estado do jogo e contagens conferidos de novo
+  na rota de combate depois da correção: estado igual ao legado e à execução anterior nos 8 816 passos, VBlanks iguais aos
+da execução anterior, e as vozes da M2A no jogo continuam 2 082/2 094 um a um.
+- [MÉDIA] ids de nota reaproveitados entre um tocar e outro: **corrigido** (numeração contínua por porta; teste
+  `audio_manatee_player_note_ids_across_plays`).
+- [MÉDIA] envelope diferente da AICA e duração errada na documentação: **aceito**; a soltura provisória dura 43 ticks =
+  172 ms (não ~60 ms; teste `audio_envelope_provisional_release`); a curva da AICA é a fase G.
+- [BAIXA] alegação ampla demais no teste OGG: **corrigida** (vale para os 300 casos; segurança geral pede fuzzing).
+
+**Tempo do download (medido no Flycast, `n6_oraculo.py --musica`, hook de entrada e volta do `8C15D534`):** o SH-4
+fica **dentro** do download o tempo do DMA para a RAM de som, linear no tamanho (~177 ns/byte, ~5,66 MB/s): SMPB do
+`BS_SND.MLT` (483 680 bytes) 85,5 ms, SMSB do MLT (39 168) 7,2 ms, SOSB 151,5/67,4 ms (efeitos, com o original), M2A.mpb
+(483 680) 85,5 ms, M2A.msb (13 984) 2,5 ms. O nativo devolve na hora; o legado (DMA emulado) leva menos que o original.
+Efeito medido no jogo: **o estado por passo é o mesmo**, mas com a música nativa os passos caem 1 VBlank antes desde o boot
+e 2 depois da carga da M2A (o legado gasta ~1 VBlank por par de downloads; o original, ~5,5 campos). **Decisão do
+mantenedor (2026-10-20): opção C**, adiado para o N2 (retomado depois do N7, antes do N8): nenhuma espera artificial,
+avanço manual de ciclos ou mudança nas interrupções agora. Pendência explícita em `docs/N2-PLANO.md` 11.1; não é
+fidelidade temporal completa.
+
+**Divergências conhecidas.** (0) Tempo do download (acima). (1) O fade de entrada da M2A depois de uma troca de sala (−113 → −16 em ~1,55 s) vem do
+algoritmo do driver e dos comandos do jogo, mas o oráculo só tem a M2A depois do LOAD (porta já em −16): falta medir a
+entrada pela porta no Flycast (rota longa; fica para quando houver uma âncora mais perto). (2) Atraso do Dreamcast nos
+trechos densos (18.4, hipótese de ticks perdidos). (3) Envelope mínimo (fase G). (4) Bend da M2C.

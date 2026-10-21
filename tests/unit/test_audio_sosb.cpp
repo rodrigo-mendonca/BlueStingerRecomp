@@ -138,7 +138,7 @@ BS_TEST(audio_sosb_real_disc_matches_o6) {
 // os mesmos valores estao em tools/dev/legendas/test_legendas.py. Com BS_GAME_DATA=<disco> (pasta com BSDATA).
 BS_TEST(audio_voice_wav_decode_matches_pipeline) {
     const char* gd = std::getenv("BS_GAME_DATA");
-    if (!gd) return;
+    if (!gd) BS_SKIP("BS_GAME_DATA ausente");
     struct Caso {
         const char* nome;
         size_t      amostras;

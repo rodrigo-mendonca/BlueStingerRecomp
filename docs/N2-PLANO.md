@@ -325,3 +325,16 @@ Todos os achados foram conferidos no código e no binário antes de entrar:
 | MÉDIA | Investigação concluía antes de provar e usava atraso | **Aceito.** Seção 3: método sem intervenção primeiro; perturbação rotulada; convergência é hipótese (B4) |
 | MÉDIA | Exceções abertas e poucos casos negativos | **Aceito.** Lista fechada versionada; coluna de mutação negativa; B9 com tolerância; C4 virou condição de liberação |
 | MÉDIA | Mods podem contornar os slots de espera | **Aceito.** Primitiva abaixo do slot; B10 com mod negativo |
+
+## 11. Pendências trazidas de outras etapas
+
+### 11.1 Tempo do download de música para a RAM de som (do N6-F, 2026-10-20; decisão do mantenedor: opção C)
+
+O `8C15D534` (download de SMPB/SMSB e das unidades do `BS_SND.MLT`) no original deixa o SH-4 esperando o DMA para a RAM de
+som, linear no tamanho: ~177 ns/byte (~5,66 MB/s), medido no Flycast (`tools/dev/n6_oraculo.py --musica`, entrada e volta
+da função com o TMU0): 85,5 ms para o banco da M2A (483 680 bytes), 2,5 ms para a sequência (13 984). Com
+`--audio-musica nativo` o download devolve na hora; o legado (DMA emulado) também não segue o original. No jogo: o estado
+lógico por passo é o mesmo, mas as cargas acabam 1–2 VBlanks antes (boot e troca de sala da M2A). **Não resolvido:** a
+espera (andar os ciclos do contexto e atender os eventos como o laço gerado faz) é do modelo de tempo deste N2, retomado
+depois do N7 e antes do N8; até lá a música nativa não tem fidelidade temporal completa nas cargas. Detalhes em
+`docs/N6-PLANO.md` seção 18.5.

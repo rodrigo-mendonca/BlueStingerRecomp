@@ -42,7 +42,11 @@ add_library(bs_native_audio_core STATIC audio/aica_adpcm.cpp audio/mixer.cpp aud
             audio/sd_adapter.cpp audio/sosb.cpp  # adaptador das 5 entradas do SDK; efeitos do BS_SND.MLT (fase C)
             audio/voice_player.cpp               # fase E: falas (MW WAV) no tempo logico, com dublagem
             audio/sound_flac.cpp                 # FLAC de mods (dr_flac, third_party/dr_libs)
-            audio/sound_vorbis.cpp)              # OGG/Vorbis de mods (libogg + libvorbis, third_party/xiph)
+            audio/sound_vorbis.cpp               # OGG/Vorbis de mods (libogg + libvorbis, third_party/xiph)
+            audio/manatee.cpp                    # fase F: sequencias e bancos do Manatee (M*.MSB/MPB)
+            audio/manatee_seq.cpp                # fase F: o sequenciador (a agenda do driver, 250 Hz)
+            audio/manatee_synth.cpp              # fase F: o sintetizador (camadas, tom do driver, mixer)
+            audio/manatee_player.cpp)            # fase F: slots, portas e faders do driver (o lado que o SDK comanda)
 # so o sound_flac.cpp inclui o dr_flac; os avisos do cabecalho de terceiros nao entram como erro
 target_include_directories(bs_native_audio_core PRIVATE ${PROJECT_SOURCE_DIR}/third_party/dr_libs)
 target_link_libraries(bs_native_audio_core PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus bs_xiph_vorbis)

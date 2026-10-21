@@ -2206,6 +2206,48 @@ Detalhes em `docs/N6-PLANO.md` seções 14–17.
   testes).
 - Sem regressão integral (política de 2026-10-20).
 
+### N6 fase F: música nativa (Manatee em C++) e a M2A no gameplay (2026-10-20; marco de integração, fase F ainda em validação)
+
+**Método:** desmontagem ARM7 do `MANATEE.DRV` (Capstone 5.0.7, fora do repositório), oráculo no Flycast
+(`tools/dev/n6_oraculo.py --musica --ca`, LOAD do cartão `g1_entrada`, 4 200 passos, sem a rota de ~50 min), comparação
+um a um `tools/dev/n6_musica_compara.py`, rotas por passo no jogo (`passo_combate`, `passo_heliporto`, headless) e
+unitários. Detalhes em `docs/N6-PLANO.md` seções 18.2–18.5.
+
+- **Driver lido no código:** relógio de 250 Hz (Timer A 0xD4, 1 de 441 descartada = 1 000 Hz, ÷4); agenda das trilhas,
+  `0x81` com N eventos (base no início do SMSD, 1 010/1 010), `0x82`, `0x84`; tom (FNS = floor(1024·(2^(j/1536) − 1)), as
+  1 536 entradas); nível com a curva de volume 0x3EC8 (lida do `MANATEE.DRV` do usuário, versão conferida); pan e DISDL
+  da camada; controles 7/10/11/32/64/121; fades da porta (`0x4D90`/`0x6640`); comandos em lote no tick, antes dos faders.
+- **Nativo:** `native/audio/manatee` (SMSB/SMPB/tabelas), `manatee_seq` (sequenciador), `manatee_synth` (camadas, ADPCM,
+  tom, nível, pan), `manatee_player` (slots, portas, faders), `envelope.h` (compartilhado, mínimo); `bs-musica`
+  (ferramenta de desenvolvimento, WAV e eventos em `%LOCALAPPDATA%`).
+- **Contra o Dreamcast (M2A):** key-on pareados **um a um** com mesma amostra, OCT, FNS, TL, DIPAN e DISDL: **5 590/5 766**
+  em 50 ms e **5 757/5 766** em 100 ms (`bs-musica`, 150 s); **2 082/2 094 (99,4 %)** com a música tocada **dentro do jogo**
+  (0 inversões; os 12 sem par no fade de entrada). Tempo: sem deriva entre 30 e 90 s; o Dreamcast atrasa até ~0,1 s nos
+  trechos densos (**hipótese** de ticks perdidos pelo ARM7, mecanismo lido no código, sem medida direta; sem compensação).
+- **Integração:** `--audio-musica nativo|legado` (padrão **legado**), 7 slots (`8C15D534` download — só SMPB/SMSB, o resto
+  ao original —, `8C15DBAC`, `8C15DD40`, `8C15DCC0`, `8C15DC40`, `8C15D768`/`8C15D6A0` repassados), C++ regerado (só os
+  slots mudaram). Na rota de combate: os comandos vêm do jogo recompilado na ordem do original; **estado do jogo igual ao
+  legado nos 8 816 passos**; música audível (−22 a −34 dBFS RMS, 0 saturadas); no heliporto, os fades −47/−16/−113 do
+  gerenciador seguem o algoritmo do driver (≈2 s com t = 2 000).
+- **Codex** (`reviews/codex-20261020-203342.md`, 6 achados): aceitos e corrigidos com teste — limites do cabeçalho de
+  tempo (overflow com dados ruins), chave do cache de amostras (SA + descritor + geração do slot), comparação um a um
+  (antes por conjunto: os números antigos foram substituídos), auto-inserção no teste OGG, testes sem dados agora
+  `[skip]` visível (`BS_EXIGIR_DADOS=1` os torna falha); aceito e **adiado**: pitch bend (só a M2C usa; a faixa do bend
+  no driver não está provada). Também da revisão: a lista de 48 notas do driver.
+- **Codex da integração** (`reviews/codex-20261020-220545.md`, 4 achados aceitos): comandos de música agora em fila por
+  quadro, entregues no VBlank depois dos ticks (não valem mais para ticks anteriores à chamada; rota de combate conferida
+  de novo); ids de nota contínuos por porta; duração real da soltura provisória (172 ms) documentada e testada; alegação
+  do teste OGG restrita aos casos exercitados.
+- **Música + falas nativas** (`passo_heliporto`, 13 312 passos): estado igual ao de só falas nativas e mesmos contadores
+  das falas (6 create, 6 start, 3 861 consultas, 5 fins, 1 interrompida); fades −47/−16/−113 do gerenciador seguidos.
+- **Tempo do download** (Flycast): o original fica ~177 ns/byte no `8C15D534` (85,5 ms para o SMPB de 483 680 bytes); o
+  nativo devolve na hora: mesmo estado por passo, mas 1–2 VBlanks de diferença nas cargas. **Decisão do mantenedor: opção
+  C**, transferido para o N2 (`docs/N2-PLANO.md` 11.1); não resolvido e não conta como fidelidade temporal.
+- **Unitários:** `bs_audio_tests` **64/64**, normal e ASan, com `BS_GAME_DATA` (0 skips); sem os dados, 6 `[skip]`.
+- **Pendências da fase F:** fade de entrada pela porta contra o Flycast na mesma rota; M2C (bend); as outras 10 músicas no
+  jogo; ducking durante falas com música tocando; o envelope (fase G).
+- Sem regressão integral (política de 2026-10-20).
+
 ### OGG/Vorbis de mods: libogg 1.3.6 + libvorbis 1.3.7 (2026-10-20; decisão do mantenedor)
 
 **Método:** tarballs oficiais da Xiph conferidos com os `SHA256SUMS` (libogg `83e67047…4638`, libvorbis `0e982409…5ab`);

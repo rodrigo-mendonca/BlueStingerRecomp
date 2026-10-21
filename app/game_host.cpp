@@ -455,12 +455,17 @@ void GameHost::threadMain() {
         // continua o recompilado). Sem o BS_SND.MLT nos dados, a sessao falha com a mensagem do adaptador.
         // N6 fase E: falas pelo provedor nativo (o MW WAV da CRI; o player do jogo continua o recompilado), no mesmo
         // mixer dos efeitos.
-        if (opt_.audioEffects == AudioEffectsProvider::Native || opt_.audioVoices == AudioVoicesProvider::Native) {
+        // N6 fase F: musica pelo provedor nativo (as entradas do SDK do gerenciador de musica e o download de SMPB/SMSB;
+        // o gerenciador continua o recompilado), no mesmo mixer. Sem o MANATEE.DRV conferido, a sessao falha.
+        if (opt_.audioEffects == AudioEffectsProvider::Native || opt_.audioVoices == AudioVoicesProvider::Native ||
+            opt_.audioMusic == AudioMusicProvider::Native) {
             transitional::sound::Options so;
             so.effects   = opt_.audioEffects == AudioEffectsProvider::Native;
             so.mlt       = opt_.data / L"disc" / L"BSDATA" / L"BS_SND.MLT";
             so.voices    = opt_.audioVoices == AudioVoicesProvider::Native;
             so.voiceDir  = opt_.data / L"disc" / L"BSDATA";
+            so.music     = opt_.audioMusic == AudioMusicProvider::Native;
+            so.driver    = opt_.data / L"disc" / L"BSDATA" / L"MANATEE.DRV";
             so.modsAudio = opt_.modAudio;
             so.language  = opt_.dubbing;
             if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(); };
@@ -470,10 +475,10 @@ void GameHost::threadMain() {
                 so.onDialogue = [this](const native::audio::DialogueEvent& e) { dialogue_->bridge.on_event(e); };
             }
             const std::string dirText = disc::pathText(so.voiceDir);  // antes do move
-            const bool        fx = so.effects, vz = so.voices;
+            const bool        fx = so.effects, vz = so.voices, mu = so.music;
             transitional::sound::install(transitional::boundary_registry(), std::move(so));
-            std::fprintf(stderr, "[audio] nativo: %s%s%s (%s)\n", fx ? "efeitos" : "", fx && vz ? " e " : "",
-                         vz ? "falas" : "", dirText.c_str());
+            std::fprintf(stderr, "[audio] nativo: %s%s%s%s%s (%s)\n", fx ? "efeitos" : "", fx && vz ? " e " : "",
+                         vz ? "falas" : "", (fx || vz) && mu ? " e " : "", mu ? "musica" : "", dirText.c_str());
         }
         // N2a: tempo e eventos pelo provedor nativo (antes do boot: o reset do hardware o inicia)
         if (opt_.time == TimeProviderKind::Native || opt_.time == TimeProviderKind::Experimental) {

@@ -1,6 +1,7 @@
 #include "sound_adapter.h"
 
 #include "audio/audio.h"
+#include "audio/manatee_player.h"
 #include "audio/mixer.h"
 #include "audio/sd_adapter.h"
 #include "audio/sosb.h"
@@ -31,6 +32,11 @@ namespace {
 
 constexpr uint32_t kStop = 0x8C15E208, kPlay = 0x8C15E088, kVolume = 0x8C15E19C, kPan = 0x8C15E11C, kStatus = 0x8C15DF44;
 constexpr uint32_t kInitFlag = 0x8C1DDB90;  // o flag que as entradas originais conferem (0 = nao inicializado)
+// Musica (fase F): download por tipo, tocar, parar, volume, pan (o pacote: [2] porta, [3] slot/valor + 0x80, ...) e os
+// globais 0x35/0x36 (sem chamada nas rotas medidas: seguem para o original, contados)
+constexpr uint32_t kMusDown = 0x8C15D534, kMusPlay = 0x8C15DBAC, kMusStop = 0x8C15DD40, kMusVol = 0x8C15DCC0,
+                   kMusPan = 0x8C15DC40, kMus35 = 0x8C15D768, kMus36 = 0x8C15D6A0;
+constexpr uint32_t kMusDownErr = 0x7FFFFFFF;  // 8C15D564: bloco sem dados ou de tamanho <= 0
 
 struct State {
     na::AudioMixer                          mixer;
@@ -39,6 +45,23 @@ struct State {
     std::map<uint32_t, std::shared_ptr<const na::SoundData>> cache;
     std::unique_ptr<na::VoicePlayer>        voice;
     std::unique_ptr<VoiceGlue>              glue;
+    std::unique_ptr<na::manatee::MusicPlayer> music;
+    uint64_t                                musicTicks = 0;      // ticks de 250 Hz ja dados (o k-esimo em k * 176,4 quadros)
+    uint64_t                                musCalls[7] = {}, musForwarded = 0;
+    std::FILE*                              musVoices = nullptr;  // BS_MUSICA_VOZES: as vozes no formato do bs-musica
+    // As operacoes de musica do quadro, em ordem, entregues no VBlank seguinte (revisao Codex 2026-10-20, MEDIA): no
+    // original as entradas do SDK so poem o pacote na fila do SH-4 (8C17D334) e o ARM7 executa o lote no tick depois da
+    // entrega (0x48E8), entao um comando nunca vale para ticks anteriores a chamada. Aqui: os ticks ate o VBlank sao
+    // renderizados com o estado anterior e a fila e entregue depois deles.
+    struct MusOp {
+        enum class K : uint8_t { Down, Play, Stop, Vol, Pan } k;
+        uint8_t              port = 0, a = 0, b = 0, x = 0;
+        int8_t               v    = 0;
+        uint16_t             t    = 0;
+        uint32_t             magic = 0;
+        std::vector<uint8_t> bytes;
+    };
+    std::vector<MusOp>                      musQueue;
     std::unique_ptr<na::SoundCatalog>       catalog;  // dublagens (mods\audio)
     std::map<std::string, std::shared_ptr<const na::SoundData>> voiceCache;  // originais por nome
     std::filesystem::path                   voiceDir;
@@ -72,7 +95,7 @@ void wavHeader(std::FILE* f, uint32_t rate, uint64_t frames) {
         u32(rate * 4), u16(4), u16(16), std::fwrite("data", 1, 4, f), u32(data);
 }
 std::unique_ptr<State> g;
-bool                   g_installed = false, g_effects = false, g_voices = false;
+bool                   g_installed = false, g_effects = false, g_voices = false, g_music = false;
 
 // porta do driver = byte 1 do handle (o mesmo que o original manda no pacote); handle nulo = nullptr
 std::optional<na::SdHandle> handle(GuestCall& call, uint32_t h) {
@@ -126,6 +149,95 @@ void slot(Sh4Context* c) {
     }
     call.ret(r0);
 }
+
+// Musica: as conferencias do SDK original (8C15DBAC e irmas: flag 8C1DDB90 == 0 -> 0x0D000001; handle nulo ->
+// 0x07000103; x do tocar fora de 0..15 -> 0x03000001) e o pacote para o MusicPlayer. A porta e o byte 1 do handle.
+template <uint32_t Entry>
+void musSlot(Sh4Context* c) {
+    GuestCall call(c);
+    if constexpr (Entry == kMus35 || Entry == kMus36) {  // globais: sem uso medido; o original trata (e conta)
+        ++g->musCalls[Entry == kMus35 ? 5 : 6], ++g->musForwarded;
+        logf(Entry == kMus35 ? "mus-35" : "mus-36", "r4=%08X r5=%08X r6=%08X (original)", c->r[4], c->r[5], c->r[6]);
+        sh4_lookup_generated(Entry)(c);
+    } else if constexpr (Entry == kMusDown) {
+        // 8C15D534(bloco, tipo, slot): o bloco e o da memoria do SDK (8C15D980: +8 dados, +12 tamanho)
+        const uint32_t tipo = c->r[5];
+        if (tipo != na::manatee::kMagicSmsb && tipo != na::manatee::kMagicSmpb) {  // SOSB, SFPB, SFOB...: o original
+            ++g->musForwarded;
+            sh4_lookup_generated(Entry)(c);
+            return;
+        }
+        ++g->musCalls[0];
+        const char    nome[5] = {char(tipo), char(tipo >> 8), char(tipo >> 16), char(tipo >> 24), 0};
+        const uint8_t slotN   = uint8_t(c->r[6]);
+        const auto    dados   = c->r[4] ? call.memory().load<uint32_t>(c->r[4] + 8) : std::nullopt;
+        const auto    tam     = c->r[4] ? call.memory().load<uint32_t>(c->r[4] + 12) : std::nullopt;
+        // 8C15D55A-8C15D564: sem dados ou tamanho <= 0; e nunca mais que a RAM de som inteira (2 MB)
+        if (!dados || !tam || *dados == 0 || int32_t(*tam) <= 0 || *tam > (2u << 20)) {
+            logf("mus-carga", "tipo=%s slot=%u erro", nome, slotN);
+            call.ret(kMusDownErr);
+            return;
+        }
+        std::vector<uint8_t> bytes(*tam);
+        if (!call.memory().read(*dados, std::as_writable_bytes(std::span(bytes)))) {
+            logf("mus-carga", "tipo=%s slot=%u fora da RAM", nome, slotN);
+            call.ret(kMusDownErr);
+            return;
+        }
+        logf("mus-carga", "tipo=%s slot=%u bytes=%u", nome, slotN, *tam);
+        State::MusOp op{State::MusOp::K::Down};
+        op.a = slotN, op.magic = tipo, op.bytes = std::move(bytes);  // copiado agora: o jogo libera o buffer em seguida
+        g->musQueue.push_back(std::move(op));
+        call.ret(0);
+    } else {
+        const auto init = call.memory().load<uint32_t>(kInitFlag);
+        uint32_t   r0   = 0;
+        if (!init || *init == 0) r0 = na::sd_err::kNotInitialized;
+        else if (c->r[4] == 0) r0 = na::sd_err::kNullHandle;
+        const auto    pb   = c->r[4] ? call.memory().load<uint8_t>(c->r[4] + 1) : std::nullopt;
+        const uint8_t port = pb ? *pb : 0;
+        if constexpr (Entry == kMusPlay) {
+            ++g->musCalls[1];
+            const int8_t x = s8(c->r[7]);
+            if (!r0 && (x < 0 || x > 15)) r0 = na::sd_err::kRange;
+            if (!r0) {
+                State::MusOp op{State::MusOp::K::Play};
+                op.port = port, op.a = uint8_t(c->r[5]), op.b = uint8_t(c->r[6]), op.x = uint8_t(x);
+                g->musQueue.push_back(std::move(op));
+            }
+            logf("mus-tocar", "porta=%u banco=%d seq=%d x=%d r0=%08X", port, s8(c->r[5]), s8(c->r[6]), x, r0);
+        }
+        if constexpr (Entry == kMusStop) {
+            ++g->musCalls[2];
+            if (!r0) g->musQueue.push_back({State::MusOp::K::Stop, port});
+            logf("mus-parar", "porta=%u r0=%08X", port, r0);
+        }
+        if constexpr (Entry == kMusVol) {
+            ++g->musCalls[3];
+            if (!r0) {
+                State::MusOp op{State::MusOp::K::Vol, port};
+                op.v = s8(c->r[5]), op.t = uint16_t(c->r[6]);
+                g->musQueue.push_back(std::move(op));
+            }
+            logf("mus-vol", "porta=%u v=%d t=%u r0=%08X", port, s8(c->r[5]), c->r[6] & 0xFFFF, r0);
+        }
+        if constexpr (Entry == kMusPan) {
+            ++g->musCalls[4];
+            if (!r0) {
+                State::MusOp op{State::MusOp::K::Pan, port};
+                op.v = s8(c->r[5]), op.t = uint16_t(c->r[6]);
+                g->musQueue.push_back(std::move(op));
+            }
+            logf("mus-pan", "porta=%u v=%d t=%u r0=%08X", port, s8(c->r[5]), c->r[6] & 0xFFFF, r0);
+        }
+        call.ret(r0);
+    }
+}
+
+const std::pair<uint32_t, Sh4Func> kMusFns[] = {{kMusDown, &musSlot<kMusDown>}, {kMusPlay, &musSlot<kMusPlay>},
+                                                {kMusStop, &musSlot<kMusStop>}, {kMusVol, &musSlot<kMusVol>},
+                                                {kMusPan, &musSlot<kMusPan>},   {kMus35, &musSlot<kMus35>},
+                                                {kMus36, &musSlot<kMus36>}};
 
 const std::pair<uint32_t, Sh4Func> kFns[] = {
     {kStop, &slot<kStop>}, {kPlay, &slot<kPlay>}, {kVolume, &slot<kVolume>}, {kPan, &slot<kPan>}, {kStatus, &slot<kStatus>}};
@@ -250,10 +362,35 @@ void checkSlots(const std::pair<uint32_t, Sh4Func>* fns, size_t n, const char* w
 } // namespace
 
 void install(BoundaryRegistry& registry, Options o) {
-    if (!o.effects && !o.voices) return;
+    if (!o.effects && !o.voices && !o.music) return;
     if (o.effects) checkSlots(kFns, std::size(kFns), "efeitos nativos");
     if (o.voices) checkSlots(kWavFns, std::size(kWavFns), "falas nativas");
+    if (o.music) checkSlots(kMusFns, std::size(kMusFns), "musica nativa");
+    // as tabelas do driver antes de tudo: sem o MANATEE.DRV conferido nao ha musica nativa
+    std::optional<na::manatee::DriverTables> drv;
+    if (o.music) {
+        std::ifstream        f(o.driver, std::ios::binary);
+        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
+        std::string          err;
+        drv = na::manatee::parse_driver_tables(bytes, &err);
+        if (!drv) throw std::runtime_error("musica nativa: " + o.driver.string() + ": " + err);
+    }
     g = std::make_unique<State>(o.rate);
+    if (o.music) {
+        g->music = std::make_unique<na::manatee::MusicPlayer>(g->mixer, *drv);
+        // Diagnostico BS_MUSICA_VOZES=<arquivo>: cada voz ligada no formato das linhas "voz" do bs-musica (chamada =
+        // tick de 250 Hz), para tools/dev/n6_musica_compara.py contra o oraculo do Flycast. Desligado por padrao.
+        if (const char* v = std::getenv("BS_MUSICA_VOZES"); v && *v) g->musVoices = std::fopen(v, "w");
+        if (g->musVoices) {
+            State* st = g.get();
+            g->music->onVoice = [st](uint8_t porta, const na::manatee::VoiceLog& v) {
+                std::fprintf(st->musVoices, "%llu\t%.4f\tvoz\t%u\t%u\t%u\t%u\tsa=%06X oct=%d fns=%u tl=%u loop=%d curva=%u/%u cc7=%u tlc=%u pan=%u sdl=%u porta=%u\n",
+                             static_cast<unsigned long long>(st->musicTicks), st->musicTicks / 250.0, v.canal, v.key, v.vel,
+                             v.noteId, v.sa, v.pitch.oct, v.pitch.fns, v.tl, int(v.loop), v.curvaIdx, v.curva, v.vol7,
+                             v.layerTl, v.dipan, v.sdl, porta);
+            };
+        }
+    }
     if (const char* w = std::getenv("BS_EFEITOS_WAV"); w && *w) {
         g->wav = std::fopen(w, "wb");
         if (g->wav) wavHeader(g->wav, g->rate, 0), std::fseek(g->wav, 44, SEEK_SET);
@@ -317,7 +454,13 @@ void install(BoundaryRegistry& registry, Options o) {
             registry.set_native(a, fn);
             if (registry.select(a, Provider::Native) != SelectResult::Ok) throw std::runtime_error("falas nativas: troca de provedor falhou");
         }
-    g_effects = o.effects, g_voices = o.voices;
+    if (o.music)
+        for (const auto& [a, fn] : kMusFns) {
+            registry.add(a, dcmap::Subsystem::Audio, "manatee");
+            registry.set_native(a, fn);
+            if (registry.select(a, Provider::Native) != SelectResult::Ok) throw std::runtime_error("musica nativa: troca de provedor falhou");
+        }
+    g_effects = o.effects, g_voices = o.voices, g_music = o.music;
     g_installed = true;
 }
 
@@ -327,11 +470,14 @@ void uninstall(BoundaryRegistry& registry) {
         for (const auto& [a, fn] : kFns) registry.select(a, Provider::Legacy);
     if (g_voices)
         for (const auto& [a, fn] : kWavFns) registry.select(a, Provider::Legacy);
+    if (g_music)
+        for (const auto& [a, fn] : kMusFns) registry.select(a, Provider::Legacy);
+    if (g->musVoices) std::fclose(g->musVoices);
     if (g->out) g->out->close();
     if (g->wav) wavHeader(g->wav, g->rate, g->wavFrames), std::fclose(g->wav);
     if (g->log) std::fclose(g->log);
     g.reset();
-    g_installed = g_effects = g_voices = false;
+    g_installed = g_effects = g_voices = g_music = false;
 }
 
 bool installed() { return g_installed; }
@@ -349,13 +495,45 @@ void vblank(uint64_t n) {
     g->vb = n;
     // tempo logico: n VBlanks de 1/59,94 s (NTSC 60000/1001)
     const uint64_t upTo = n * uint64_t(g->rate) * 1001 / 60000;
-    if (upTo > g->rendered) {
-        g->buf.assign(size_t(upTo - g->rendered) * 2, 0);
+    // A musica: o tick de 250 Hz do driver no relogio de amostras (o k-esimo em k * 176,4 quadros, sem acumular erro), e
+    // a mistura renderizada em trechos que param em cada tick: o que um tick muda vale a partir do quadro dele.
+    auto renderTo = [](uint64_t ate) {
+        if (ate <= g->rendered) return;
+        g->buf.assign(size_t(ate - g->rendered) * 2, 0);
         g->mixer.render(g->buf);
-        g->rendered = upTo;
+        g->rendered = ate;
         (void)g->out->write(g->buf);
         if (g->wav) std::fwrite(g->buf.data(), 2, g->buf.size(), g->wav), g->wavFrames += g->buf.size() / 2;
+    };
+    if (g->music) {
+        for (;;) {
+            const uint64_t proximo = g->musicTicks * uint64_t(g->rate) * 2 / 500;  // 44 100 / 250 = 176,4
+            if (proximo > upTo) break;
+            renderTo(proximo);
+            g->music->tick();
+            ++g->musicTicks;
+        }
+        // a fila do quadro: vale a partir do proximo tick (depois deste VBlank)
+        for (auto& op : g->musQueue) {
+            using K = State::MusOp::K;
+            std::string err;
+            switch (op.k) {
+            case K::Down:
+                g->music->download(op.magic, op.a, std::move(op.bytes), &err);
+                if (!err.empty()) logf("mus-carga", "slot=%u recusado: %s", op.a, err.c_str());
+                break;
+            case K::Play:
+                if (const auto e = g->music->play(op.port, op.a, op.b, op.x); e != na::manatee::PlayError::None)
+                    logf("mus-tocar", "porta=%u erro do driver=%d", op.port, int(e));
+                break;
+            case K::Stop: g->music->stop(op.port); break;
+            case K::Vol: g->music->volume(op.port, op.v, op.t); break;
+            case K::Pan: g->music->pan(op.port, op.v, op.t); break;
+            }
+        }
+        g->musQueue.clear();
     }
+    renderTo(upTo);
     // Os passos de jogo concluidos ANTES dos eventos deste trecho: o preparo e o atraso do fim (endSteps) contam so os
     // passos depois do fato (um fim que cai no mesmo VBlank de um passo nao gasta esse passo)
     if (g->voice) {  // o preparo e o fim da fala andam por passo de jogo (o servidor do MW original roda por passo)
@@ -380,6 +558,19 @@ std::string summary() {
                       static_cast<unsigned long long>(g->calls[2]), static_cast<unsigned long long>(g->calls[3]),
                       static_cast<unsigned long long>(g->calls[4]), g->sd->missing(), g->sd->refused(),
                       static_cast<unsigned long long>(g->decodeFailures));
+        r += b;
+    }
+    if (g_music) {
+        const auto& p = g->music->stats();
+        const auto  s = g->music->synth_stats();
+        auto        u = [](uint64_t x) { return static_cast<unsigned long long>(x); };
+        std::snprintf(b, sizeof b,
+                      "[audio] musica nativa: cargas %llu (recusadas %llu, outros tipos ao original %llu), tocar %llu (erros %llu), "
+                      "parar %llu, volume %llu, pan %llu, 0x35/0x36 %llu/%llu; ticks %llu, notas %llu, vozes %llu, sem camada %llu, "
+                      "recusadas %llu\n",
+                      u(p.downloads), u(p.refusedDownloads), u(g->musForwarded), u(p.plays), u(p.playErrors), u(p.stops),
+                      u(p.volumes), u(p.pans), u(g->musCalls[5]), u(g->musCalls[6]), u(p.ticks), u(s.notes), u(s.voices),
+                      u(s.noLayer), u(s.refused));
         r += b;
     }
     if (g_voices) {

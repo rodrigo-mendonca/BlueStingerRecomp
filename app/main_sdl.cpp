@@ -71,6 +71,7 @@ struct Args {
     bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
+    bs::AudioMusicProvider   audioMusic   = bs::AudioMusicProvider::Legacy;    // --audio-musica nativo|legado (N6 fase F)
     std::string              dubbing;                                         // --dublagem <idioma> (mods\audio)
     std::string       subtitles;  // --legendas <idioma>
     bool     savesPortable = false;  // --saves-portatil: saves\ ao lado do executavel
@@ -141,6 +142,11 @@ bool parseArgs(Args& a) {
             else return false;
         }
         else if (s == L"--dublagem" && (v = next())) a.dubbing = utf8(fs::path(*v));
+        else if (s == L"--audio-musica" && (v = next())) {
+            if (*v == L"legado") a.audioMusic = bs::AudioMusicProvider::Legacy;
+            else if (*v == L"nativo") a.audioMusic = bs::AudioMusicProvider::Native;
+            else return false;
+        }
         else if (s == L"--audio-efeitos" && (v = next())) {
             if (*v == L"legado") a.audioEffects = bs::AudioEffectsProvider::Legacy;
             else if (*v == L"nativo") a.audioEffects = bs::AudioEffectsProvider::Native;
@@ -753,6 +759,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.video             = a.video;
     opt.audioEffects      = a.audioEffects;
     opt.audioVoices       = a.audioVoices;
+    opt.audioMusic        = a.audioMusic;
     opt.dubbing           = a.dubbing;
     opt.modAudio          = exeDir() / L"mods" / L"audio";  // dublagens e audio de mods (opcional)
     opt.modVideo          = exeDir() / L"mods" / L"video";  // filmes e legendas de mods (opcional)
@@ -781,7 +788,10 @@ const char* kUsage =
     "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
     "       legado = Sofdec original, fallback temporario); --legendas <idioma> (pt, en, pt-br...)\n"
     "     --audio-efeitos nativo|legado: efeitos sonoros (padrao: legado = SDK de som original; nativo = em validacao,\n"
-    "       BS_SND.MLT do disco pelo mixer nativo; musica e falas continuam no legado)\n"
+    "       BS_SND.MLT do disco pelo mixer nativo)\n"
+    "     --audio-falas nativo|legado: falas (padrao: legado; nativo = em validacao, WAV do disco e dublagens de mods)\n"
+    "     --audio-musica nativo|legado: musica (padrao: legado = SDK de som e driver Manatee originais; nativo = em\n"
+    "       validacao, sequenciador e sintetizador Manatee em C++ com os M*.MPB/MSB e o MANATEE.DRV do disco)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";

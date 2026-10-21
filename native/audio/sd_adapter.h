@@ -64,6 +64,7 @@ inline uint8_t sd_tl(int8_t v, uint8_t base = kSdDefaultBaseTl) {
 inline uint8_t sd_dipan(int8_t v) { return uint8_t((v < 0 ? 0x10 : 0) | (((v < 0 ? ~v : v) >> 2) & 0xF)); }
 float sd_volume_gain(int8_t v, uint8_t base = kSdDefaultBaseTl);  // 10^(-0,375 dB * TL / 20)
 float sd_pan(int8_t v);          // pan do mixer (o outro lado com 10^(-3 dB * nivel / 20); nivel 15 = mudo)
+float dipan_pan(uint8_t dipan);  // o mesmo a partir do DIPAN da AICA (bit 4 = esquerda, nivel 0..15); efeitos e musica
 
 struct SdAdapterOptions {
     // Papeis medidos no O6 (o indicio estatico anterior, "pan em a", estava ERRADO: a e o volume)

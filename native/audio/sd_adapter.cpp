@@ -9,8 +9,9 @@ namespace bs::native::audio {
 
 float sd_volume_gain(int8_t v, uint8_t base) { return float(std::pow(10.0, -0.375 * sd_tl(v, base) / 20.0)); }
 
-float sd_pan(int8_t v) {
-    const uint8_t d     = sd_dipan(v);
+float sd_pan(int8_t v) { return dipan_pan(sd_dipan(v)); }
+
+float dipan_pan(uint8_t d) {
     const int     level = d & 0xF;
     const double  other = level == 15 ? 0.0 : std::pow(10.0, -3.0 * level / 20.0);
     // mixer: o lado oposto ao pan recebe 1 - |pan| (mixer.cpp); 0x10 = som a esquerda (o direito atenuado)
