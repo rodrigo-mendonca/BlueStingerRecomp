@@ -181,6 +181,8 @@ void stepLogWrite(uint64_t step, void*) {
     std::fprintf(g_stepLog.f, "%llu\t%llu\t%016llX\t%d\t%.3f\t%.3f\t%.3f\n", static_cast<unsigned long long>(step),
                  static_cast<unsigned long long>(g_stepLog.host->vblanks()), static_cast<unsigned long long>(h), life, p[0],
                  p[1], p[2]);
+    // a cada ~2 s de jogo no disco: uma queda perde no maximo a cauda (as gravacoes de sessao conferem a continuidade)
+    if (step % 64 == 0) std::fflush(g_stepLog.f);
 }
 
 // Periodo de um campo NTSC: 1001 / 60000 s (59,94 Hz).
@@ -468,10 +470,15 @@ void GameHost::threadMain() {
             so.driver    = opt_.data / L"disc" / L"BSDATA" / L"MANATEE.DRV";
             so.modsAudio = opt_.modAudio;
             so.language  = opt_.dubbing;
-            if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(); };
+            // o audio do jogo segue a saida padrao do Windows e sobrevive a fila cheia (N6-H; os filmes ficam como no N5)
+            if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(200, true); };
             if (so.voices && !opt_.subtitles.empty()) {  // legendas das falas (mods\<pacote>\legendas\falas.<idioma>.toml)
-                dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path()),
+                // a versao do jogo que o Builder valida (o jogo = ... dos pacotes; revisao Codex 2026-10-21)
+                dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path(), "T13001N V1.000"),
                                              opt_.subtitles));
+                for (const auto& p : dialogue_->mods.packages())
+                    if (p.provisional)
+                        std::fprintf(stderr, "[legenda] pacote %s %s: provisorio (nao revisado)\n", p.id.c_str(), p.version.c_str());
                 so.onDialogue = [this](const native::audio::DialogueEvent& e) { dialogue_->bridge.on_event(e); };
             }
             const std::string dirText = disc::pathText(so.voiceDir);  // antes do move

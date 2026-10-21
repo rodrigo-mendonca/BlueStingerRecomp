@@ -156,7 +156,7 @@ std::optional<Bank> parse_smpb(std::span<const uint8_t> b, std::string* err) {
                 c.sa = (uint32_t(d[0] & 0x7F) << 16) | uint16_t(d[2] | d[3] << 8);
                 c.flags = d[1], c.lsa = uint16_t(d[4] | d[5] << 8), c.lea = uint16_t(d[6] | d[7] << 8);
                 c.disdl = d[0x13], c.tl = d[0x15];
-                std::memcpy(c.env, d + 0x16, 10);
+                c.eg10 = uint16_t(d[8] | d[9] << 8), c.eg14 = uint16_t(d[10] | d[11] << 8);
                 c.keyMin = d[0x24], c.keyMax = d[0x25], c.keyBase = d[0x26], c.fine = d[0x27], c.velMin = d[0x2B],
                 c.velMax = d[0x2C];
                 const uint64_t bytes = (c.flags & 1) ? (uint64_t(c.lea) + 1) / 2 : 2ull * c.lea;

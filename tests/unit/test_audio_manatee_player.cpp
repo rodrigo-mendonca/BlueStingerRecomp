@@ -6,6 +6,8 @@
 
 #include "audio/manatee_player.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -173,7 +175,7 @@ BS_TEST(audio_manatee_player_slot_swap_while_playing) {
     anda(500);
     BS_CHECK(pl.synth_stats().refused == 0);
     pl.stop(0);
-    anda(300);
+    anda(1500);  // 6 s: a soltura mais longa dos bancos (RR 10, taxa efetiva 20: 5,5 s para a faixa)
     BS_CHECK(pl.view(0).sounding == 0);
 }
 
@@ -195,4 +197,113 @@ BS_TEST(audio_manatee_player_note_ids_across_plays) {
     BS_CHECK(pl.play(0, 0, 0, 0) == nm::PlayError::None);  // depois do parar tambem continua
     for (int k = 0; k < 100; ++k) pl.tick();
     BS_CHECK((ids == std::vector<uint32_t>{1, 2, 3, 4, 5, 6}));
+}
+
+// Com BS_GAME_DATA: o abaixamento da musica numa fala, com os comandos que o jogo recompilado manda (log do jogo, rota
+// passo_heliporto: no inicio da e002b vol -48 t=800, no fim vol -16 t=800). A M2A toca em -16; o fader do driver leva
+// 32 passos de 4 ticks (0,512 s) para descer e o mesmo para voltar. A mesma linha do tempo com e sem o abaixamento: na
+// mesma janela, a diferenca e a do TL (32 passos x 0,375 dB = 12 dB) e, depois da volta, nenhuma.
+BS_TEST(audio_manatee_player_ducking) {
+    const char* gd = std::getenv("BS_GAME_DATA");
+    if (!gd) BS_SKIP("BS_GAME_DATA ausente");
+    auto ler = [&](const char* n) {
+        std::ifstream f(std::filesystem::path(gd) / "BSDATA" / n, std::ios::binary);
+        return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+    };
+    auto drv = nm::parse_driver_tables(ler("MANATEE.DRV"));
+    BS_CHECK(drv.has_value());
+    if (!drv) return;
+    const auto mpb = ler("M2A.MPB"), msb = ler("M2A.MSB");
+    struct Medida {
+        double antes, durante, depois;
+        int    desce, sobe;
+    };
+    auto roda = [&](bool abaixa) {
+        na::AudioMixer       mx(44100, 64);
+        nm::MusicPlayer      pl(mx, *drv);
+        std::vector<int16_t> buf;
+        uint64_t             c = 0;
+        auto                 anda = [&](int ticks) {  // energia media de `ticks` ticks (dB, relativo)
+            double soma = 0;
+            size_t n    = 0;
+            for (int k = 0; k < ticks; ++k, ++c) {
+                pl.tick();
+                buf.assign(size_t((c + 1) * 882 / 5 - c * 882 / 5) * 2, 0);
+                mx.render(buf);
+                for (int16_t v : buf) soma += double(v) * v, ++n;
+            }
+            return 10.0 * std::log10(std::max(soma / double(std::max<size_t>(n, 1)), 1.0));
+        };
+        Medida m{};
+        pl.download(nm::kMagicSmpb, 0, mpb), pl.download(nm::kMagicSmsb, 0, msb);
+        pl.volume(0, -16, 0);
+        pl.play(0, 0, 0, 0);
+        anda(2500);
+        m.antes = anda(500);
+        if (abaixa) pl.volume(0, -48, 800);  // inicio da fala
+        for (; abaixa && pl.view(0).volume != uint8_t(-48 + 0x80) && m.desce < 1000; ++m.desce) anda(1);
+        anda(abaixa ? 0 : 128);
+        m.durante = anda(1250);
+        if (abaixa) pl.volume(0, -16, 800);  // fim da fala
+        for (; abaixa && pl.view(0).volume != uint8_t(-16 + 0x80) && m.sobe < 1000; ++m.sobe) anda(1);
+        anda(abaixa ? 0 : 128);
+        m.depois = anda(1250);
+        return m;
+    };
+    const Medida com = roda(true), sem = roda(false);
+    BS_CHECK(com.desce == 32 * 4 && com.sobe == 32 * 4);
+    BS_CHECK(std::abs(com.antes - sem.antes) < 0.01);                 // antes da fala: igual
+    BS_CHECK(std::abs((sem.durante - com.durante) - 12.0) < 1.0);      // durante: -12 dB (o TL; soltura e mistura arredondam)
+    BS_CHECK(std::abs(com.depois - sem.depois) < 0.01);               // depois da volta: igual de novo
+    std::printf("  ducking: durante -%.2f dB em relacao a sem fala; antes/depois iguais (%.3f/%.3f dB); 128 ticks para descer e subir\n",
+                sem.durante - com.durante, com.antes - sem.antes, com.depois - sem.depois);
+}
+
+// Com BS_GAME_DATA: as 11 musicas em sequencia pela mesma ordem de comandos do carregador do jogo (8C02A660, medida no
+// Flycast na troca M2A -> M2C: vol -113 t0, pan 0, parar, download do MPB e do MSB, vol -16 t0, tocar, vol -16 t2000),
+// 20 s cada: cada uma toca (vozes novas e energia na mistura), o parar leva as vozes da anterior a soltura pela RR de
+// cada camada (envelope da AICA; a mais longa dos bancos: RR 10, 5,5 s) e em 6 s nada soa; nada e recusado.
+// O laco nao e provado aqui (20 s): fica para a execucao de 600 s do bs-musica.
+BS_TEST(audio_manatee_player_transitions_all_songs) {
+    const char* gd = std::getenv("BS_GAME_DATA");
+    if (!gd) BS_SKIP("BS_GAME_DATA ausente");
+    auto ler = [&](const std::string& n) {
+        std::ifstream f(std::filesystem::path(gd) / "BSDATA" / n, std::ios::binary);
+        return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {});
+    };
+    auto drv = nm::parse_driver_tables(ler("MANATEE.DRV"));
+    BS_CHECK(drv.has_value());
+    if (!drv) return;
+    na::AudioMixer       mx(44100, 64);
+    nm::MusicPlayer      pl(mx, *drv);
+    std::vector<int16_t> buf;
+    uint64_t             c = 0;
+    double               energia = 0;
+    auto                 anda = [&](int ticks) {
+        for (int k = 0; k < ticks; ++k, ++c) {
+            pl.tick();
+            buf.assign(size_t((c + 1) * 882 / 5 - c * 882 / 5) * 2, 0);
+            mx.render(buf);
+            for (int16_t v : buf) energia += double(v) * v;
+        }
+    };
+    uint64_t notasAntes = 0, vozesAntes = 0;
+    for (const char* nome : {"M2A", "M2B", "M2C", "M3", "M4", "M5", "M6", "M7", "M9", "M10", "M99"}) {
+        pl.volume(0, -113, 0), pl.pan(0, 0, 0), pl.stop(0);
+        anda(1500);  // 6 s: a soltura das vozes da anterior pela RR das camadas (ate 5,5 s)
+        BS_CHECK(pl.view(0).sounding == 0 && !pl.view(0).playing);
+        BS_CHECK(pl.download(nm::kMagicSmpb, 0, ler(std::string(nome) + ".MPB")) &&
+                 pl.download(nm::kMagicSmsb, 0, ler(std::string(nome) + ".MSB")));
+        pl.volume(0, -16, 0);
+        BS_CHECK(pl.play(0, 0, 0, 0) == nm::PlayError::None);
+        pl.volume(0, -16, 2000);
+        energia = 0;
+        anda(250 * 20);
+        const auto s = pl.synth_stats();
+        BS_CHECK(pl.view(0).playing && pl.view(0).volume == 0x70 && s.notes > notasAntes && s.refused == 0);
+        BS_CHECK(s.voices > vozesAntes + 50 && energia > 0.0);  // soou de fato (vozes no mixer e amostras nao nulas)
+        if (s.voices <= vozesAntes + 50 || energia <= 0.0) std::printf("  %s: vozes %llu, energia %g\n", nome,
+                                                                        static_cast<unsigned long long>(s.voices - vozesAntes), energia);
+        notasAntes = s.notes, vozesAntes = s.voices;
+    }
 }

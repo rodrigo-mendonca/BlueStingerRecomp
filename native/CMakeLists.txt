@@ -38,7 +38,7 @@ endif()
 
 # N6: audio de gameplay portavel (ADPCM da AICA, mixer, catalogo com mods, leitura de arquivos); sem
 # Win32 - o backend de saida (XAudio2 hoje, SDL3 no futuro) fica no bs_native_audio
-add_library(bs_native_audio_core STATIC audio/aica_adpcm.cpp audio/mixer.cpp audio/sound_catalog.cpp audio/sound_file.cpp
+add_library(bs_native_audio_core STATIC audio/aica_adpcm.cpp audio/aica_dsp.cpp audio/mixer.cpp audio/sound_catalog.cpp audio/sound_file.cpp
             audio/sd_adapter.cpp audio/sosb.cpp  # adaptador das 5 entradas do SDK; efeitos do BS_SND.MLT (fase C)
             audio/voice_player.cpp               # fase E: falas (MW WAV) no tempo logico, com dublagem
             audio/sound_flac.cpp                 # FLAC de mods (dr_flac, third_party/dr_libs)

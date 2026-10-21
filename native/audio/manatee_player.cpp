@@ -39,6 +39,8 @@ bool PortFader::tick() {
 MusicPlayer::MusicPlayer(AudioMixer& mixer, DriverTables drv, Bus bus) : mixer_(mixer), drv_(drv), bus_(bus) {
     for (uint8_t p = 0; p < kPorts; ++p) {
         ports_[p].synth = std::make_unique<Synth>(mixer_, drv_, bus_);
+        ports_[p].synth->set_pool(pool_.get());
+        pool_->members.push_back(ports_[p].synth.get());
         ports_[p].synth->onVoice = [this, p](const VoiceLog& v) {
             if (onVoice) onVoice(p, v);
         };
@@ -140,7 +142,8 @@ SynthStats MusicPlayer::synth_stats() const {
     SynthStats s;
     for (const auto& p : ports_) {
         const auto& x = p.synth->stats();
-        s.notes += x.notes, s.voices += x.voices, s.refused += x.refused, s.noLayer += x.noLayer;
+        s.notes += x.notes, s.voices += x.voices, s.refused += x.refused, s.noLayer += x.noLayer, s.stolen += x.stolen;
+        s.stolenKeyed += x.stolenKeyed, s.stolenLoud += x.stolenLoud;
         s.saturatedPitch += x.saturatedPitch, s.decodeFailures += x.decodeFailures;
     }
     return s;

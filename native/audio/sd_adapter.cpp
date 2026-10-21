@@ -26,10 +26,14 @@ void SdAdapter::release(Port& p) {
     p.busy  = false;
 }
 
-void SdAdapter::drop(Port& p) {
+void SdAdapter::drop(Port& p, bool keyOff) {
+    // o mesmo canal da AICA: um key-on novo corta o que ainda soltava (o registrador do canal e reescrito)
+    if (p.releasing) mixer_.stop(p.releasing), p.releasing = 0;
     for (VoiceId* v : {&p.voice, &p.tail}) {
         if (*v) {
-            mixer_.stop(*v);
+            // parar = key-off: a soltura pela RR do descritor (os 211 efeitos: RR 31, ~3,6 ms); tocar = corte
+            if (keyOff && p.releaseDbPerSecond > 0 && v == &p.voice) mixer_.release(*v, p.releaseDbPerSecond), p.releasing = *v;
+            else mixer_.stop(*v);
             dropped_.push_back(*v);
         }
     }
@@ -40,7 +44,7 @@ void SdAdapter::drop(Port& p) {
 uint32_t SdAdapter::stop(const SdHandle* h) {
     if (!init_) return sd_err::kNotInitialized;
     if (!h) return sd_err::kNullHandle;
-    drop(ports_[h->port]);  // o evento Stopped dessas vozes e descartado no sync (porta ja liberada)
+    drop(ports_[h->port], true);  // o evento Stopped dessas vozes e descartado no sync (porta ja liberada)
     return sd_err::kOk;
 }
 
@@ -49,7 +53,7 @@ uint32_t SdAdapter::play(const SdHandle* h, int8_t bank, int8_t request, int8_t 
     if (!h) return sd_err::kNullHandle;
     if (x < 0 || x > 15) return sd_err::kRange;
     Port& p = ports_[h->port];
-    drop(p);  // tocar no mesmo canal recomeca (key-on), inclusive o resto de um mod mais longo
+    drop(p, false);  // tocar no mesmo canal recomeca (key-on), inclusive o resto de um mod mais longo
     p.tag = uint32_t(uint8_t(bank)) * 128 + uint8_t(request);
     SdSound s = resolver_ ? resolver_(uint8_t(bank), uint8_t(request)) : SdSound{};
     if (!s.data) {
@@ -60,10 +64,12 @@ uint32_t SdAdapter::play(const SdHandle* h, int8_t bank, int8_t request, int8_t 
     pp.bus        = o_.bus;
     pp.tag        = p.tag;
     pp.logicalEnd = s.logicalEnd;
+    pp.dspSend    = s.dspSend, pp.dspBus = s.dspBus;
     // laco da AICA (LPCTL): o som com pontos de laco toca LSA..LEA ate o parar; o canal continua ocupado (O6
     // 2026-10-20: +24 = 1 na consulta enquanto um efeito com laco soava)
     pp.loop       = s.data->loopStart >= 0 && s.data->loopEnd > s.data->loopStart;
     p.baseTl      = s.baseTl;
+    p.releaseDbPerSecond = s.releaseDbPerSecond;
     p.voice       = mixer_.play(std::move(s.data), pp);
     if (!p.voice) {
         ++refused_;

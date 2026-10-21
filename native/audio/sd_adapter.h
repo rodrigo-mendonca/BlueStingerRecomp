@@ -88,6 +88,9 @@ struct SdSound {
     std::shared_ptr<const SoundData> data;
     int64_t                          logicalEnd = -1;
     uint8_t                          baseTl = kSdDefaultBaseTl;  // nivel do efeito (descritor SOSP, byte 0x19)
+    double releaseDbPerSecond = 0;  // soltura no parar (envelope da AICA pela RR do descritor); 0 = corta na hora
+    float   dspSend = 0;  // envio ao DSP (IMXL do descritor, razao sobre o volume) e o barramento (ISEL)
+    uint8_t dspBus  = 0;
 };
 using SdResolver = std::function<SdSound(uint8_t bank, uint8_t request)>;
 
@@ -124,11 +127,14 @@ private:
         uint32_t tag   = 0;
         int8_t   p15 = 0, p16 = 0;
         uint8_t  baseTl = kSdDefaultBaseTl;  // do som atual (o nivel do volume vale sobre ele)
+        double   releaseDbPerSecond = 0;     // a soltura do som atual (parar)
+        VoiceId  releasing = 0;              // em soltura depois do parar: um tocar no mesmo canal a corta
     };
     uint32_t param(const SdHandle* h, int8_t value, uint16_t time, bool cmd15, bool checkInit);
     void     apply(Port& p);
     void     release(Port& p);
-    void     drop(Port& p);  // para as vozes da porta (atual e cauda) e lembra delas para descartar o evento final
+    // para as vozes da porta (atual e cauda) e lembra delas para descartar o evento final; keyOff (parar) = soltura
+    void     drop(Port& p, bool keyOff);
     void     other(const MixerEvent& e);
 
     AudioMixer&              mixer_;

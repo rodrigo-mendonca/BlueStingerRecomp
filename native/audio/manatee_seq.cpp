@@ -95,7 +95,7 @@ void Sequencer::events(std::vector<MusicEvent>& out) {
                 loopLeft_ = e.count == 0 ? 0x80 : e.count;
                 count_ += int64_t(e.delta) * unit_;
             } else if (loopLeft_ != 0) {
-                ++loops_;
+                if (++loops_ == 1) firstLoop_ = calls_;
                 if (loopLeft_ != 0x80) --loopLeft_;
                 const SeqEvent& ini = seq_.events[size_t(loopAt_)];  // relê o delta do primeiro 0x82
                 idx_                = uint32_t(loopAt_ + 1);

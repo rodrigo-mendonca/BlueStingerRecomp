@@ -28,8 +28,14 @@
 //     mixer pela curva dos efeitos (dipan_pan, 3 dB por nivel: a da AICA documentada);
 //   - DISDL = limite(nibble baixo do byte 0x13 da camada + (byte 0x24 da porta >> 3) - 16, 0, 15) (a porta: 0x80 = 0);
 //     -3 dB por passo abaixo de 15 (AICA documentada), 0 = mudo.
-// PROVISORIO (fase G): o envelope (as 5 palavras da camada): audio/envelope.h, compartilhado com os efeitos; por ora so
-// a soltura minima no desliga (172 ms ate -60 dB), sem ataque/decaimento.
+//   - pitch bend (evento 0xE0 -> 0x13E4; key-on 0x113C-0x1184): bend = valor * 128 - 8192 (so o byte alto vem no evento),
+//     guardado no canal; faixa = byte 3 do canal se o bit 7 estiver ligado (so o RPN 0/0 pelo controle 6 o liga, 0x1ADC;
+//     nenhuma musica usa), senao os bytes 0x0C (para cima) e 0x0D (para baixo) do grupo da camada (0x0B3C; nos 11
+//     bancos, 2 e 2); acc = ajuste fino + ((bend * faixa) >> 5) em 1/256 de semitom; as vozes que ja soam no canal
+//     mudam de tom na hora (0x1414-0x1494); o reset 0x2758 zera o bend;
+//   - envelope (fase G): audio/envelope.h, o AEG da AICA pelos registradores 0x10/0x14 da camada (bytes 0x08..0x0B):
+//     ataque, decaimento 1 ate DL, decaimento 2 e a soltura pela RR no key-off; a voz acaba passando de 0x3BF. Avanca
+//     a cada chamada do sequenciador (4 ms).
 #include "audio/envelope.h"
 #include "audio/manatee.h"
 #include "audio/manatee_seq.h"
@@ -60,17 +66,30 @@ struct VoiceLog {
     uint32_t noteId = 0;
     uint8_t  canal = 0, key = 0, vel = 0, tl = 0, curva = 0, vol7 = 0, layerTl = 0, curvaIdx = 0, dipan = 0, sdl = 15;
     uint32_t sa = 0;  // relativo ao banco
+    VoiceId  voice = 0;  // a voz no mixer (testes: o tom efetivo com AudioMixer::pitch_of)
     PitchReg pitch;
     bool     loop = false;
 };
 
 struct SynthStats {
     uint64_t notes = 0, voices = 0, refused = 0, noLayer = 0, saturatedPitch = 0, decodeFailures = 0;
+    uint64_t stolen = 0;  // vozes reaproveitadas com os 48 canais ocupados (alocador 0x1244)
+    uint64_t stolenKeyed = 0;  // ... das quais ainda com a nota ligada (nenhuma em soltura)
+    uint64_t stolenLoud  = 0;  // ... das quais em soltura a menos de 30 dB do nivel (envelope < 320 unidades)
+};
+
+class Synth;
+// Os 48 canais da musica sao um unico conjunto no driver (0xE800, alocador 0x1244) para todas as portas: os
+// sintetizadores das 8 portas do MusicPlayer dividem este (revisao Codex 2026-10-21). Sem conjunto, cada Synth tem 48.
+struct ChannelPool {
+    std::vector<Synth*> members;
+    uint64_t            order = 0;  // ordem global dos key-on (o "mais antigo" entre as portas)
 };
 
 class Synth {
 public:
-    static constexpr size_t kBankSlots = 16;  // a tabela de bancos do driver (0x14080, 8 bytes por slot)
+    static constexpr size_t kBankSlots     = 16;  // a tabela de bancos do driver (0x14080, 8 bytes por slot)
+    static constexpr size_t kMusicChannels = 48;  // os canais da musica no driver (0x1244: 0x30 vozes); 48-63 sao efeitos
     Synth(AudioMixer& mixer, const DriverTables& drv, Bus bus = Bus::Music);
     Synth(AudioMixer& mixer, const Bank& bank, const DriverTables& drv, Bus bus = Bus::Music);  // so o slot 0
     // O banco do slot (nullptr = vazio); trocar descarta as amostras decodificadas dele. As vozes que ja tocam guardam
@@ -83,7 +102,9 @@ public:
     void set_port_volume(int v);  // comando 0x05 (byte com sinal; o jogo usa -16 como normal), no nivel do driver
     void set_port_pan(int8_t v);  // comando 0x06
     void stop_all();
+    void set_pool(ChannelPool* pool) { pool_ = pool; }
     std::function<void(const VoiceLog&)> onVoice;  // diagnostico (bs-musica)
+    std::function<void(uint32_t noteId, uint8_t canal, const PitchReg&)> onPitch;  // tom novo de uma voz (bend)
     const SynthStats& stats() const { return stats_; }
     size_t            sounding() const { return voices_.size(); }
     size_t            cached() const { return cache_.size(); }  // amostras decodificadas (uma por descritor)
@@ -98,18 +119,25 @@ private:
         Envelope env;           // o envelope compartilhado (audio/envelope.h)
         uint8_t  curva = 0, layerTl = 0;  // para recalcular o nivel num controle 7/11
         uint8_t  layerPan = 0;            // posicao do DIPAN da camada (sem controle 10)
+        uint8_t  key = 0, keyBase = 60, rangeUp = 2, rangeDown = 2;  // para o bend (0x0BD8-0x0BF4)
+        int8_t   fine = 0;
         float    sdlGain = 1.0f;
+        uint64_t order = 0;  // ordem do key-on (no conjunto)
+        bool     fresh = true;  // criada neste tick: o envelope comeca a andar no proximo (o bloco ainda nao tocou)
     };
     struct Canal {
         uint8_t program = 0, volume = 100, expression = 127, pan = 0xC0, level = 100;  // 0x2758
         uint8_t bank = 0;  // controle 32 (0x1ED0); o reset nao mexe
+        int32_t bend = 0;  // -8192..8191 (canal +4); o reset zera
+        uint8_t rangeOverride = 0;  // byte 3 do canal: bit 7 = faixa do RPN 0/0 (o reset zera; nenhuma musica liga)
         bool    sustain = false;
     };
     std::shared_ptr<const SoundData> sample(uint8_t slot, const Bank& bank, const Layer& l);
     void                             release_pedal(uint8_t canal, bool todos);
-    void                             apply(Voice& v);
+    void                             apply(Voice& v, uint32_t rampFrames = 0);  // rampa: o envelope no tick
     int                              channel_level(const Canal& c) const;
     uint8_t                          dipan_of(const Voice& v) const;
+    int32_t                          bend_of(const Voice& v) const;  // (bend * faixa) >> 5, em 1/256 de semitom
 
     AudioMixer&                                       mixer_;
     const Bank*                                       banks_[kBankSlots] = {};
@@ -118,6 +146,8 @@ private:
     Bus                                               bus_;
     Canal                                             canais_[16];
     std::vector<Voice>                                voices_;
+    ChannelPool*                                      pool_  = nullptr;
+    uint64_t                                          order_ = 0;  // sem conjunto
     // por amostra inteira (SA, formato/laco, LSA, LEA): duas camadas com o mesmo SA e outro descritor nao dividem a
     // decodificacao (nos 11 bancos do disco nao ha; um banco de mod pode ter; revisao Codex 2026-10-20, MEDIA)
     struct Chave {

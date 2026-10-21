@@ -153,6 +153,10 @@ public:
 
     // Fonte de teste exclusiva (roteiros): com ela, os dispositivos do host nao entram na amostra.
     void set_test_source(SampleFn fn);
+    // Filtro da amostra dos dispositivos do host (gravacao de sessoes, so desenvolvimento): recebe o
+    // estado ja combinado e devolve o que o jogo ve. Nao vale com a fonte de teste.
+    using FilterFn = std::function<ControllerState(const SampleContext&, const ControllerState&)>;
+    void set_filter(FilterFn fn);
 
     // Amostra do jogador 1 no ponto de amostragem; fica guardada como a ultima amostra.
     ControllerState latch(const SampleContext& ctx);

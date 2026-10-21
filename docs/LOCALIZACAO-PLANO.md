@@ -34,7 +34,7 @@ original e preservando os códigos especiais do motor de texto.
 
 **O Blue Stinger original não tem legendas.** Legendas são uma funcionalidade nova, só de mods, nos filmes e
 também durante o gameplay.
-- **[feito, N5]** legendas de filmes por mod: SRT/WebVTT por idioma (`--legendas <idioma>`, `mods\video`),
+- **[feito, N5]** legendas de filmes por mod: SRT/WebVTT por idioma (`--legendas <idioma>|nenhuma`, padrão en-US desde 2026-10-21, `mods\video`),
   desenhadas pelo DirectWrite no quadro do filme (`native/video/subtitles`, `MovieCatalog`).
 - **[preparado]** `SubtitleService` (`native/localization/subtitle_service`):
   - uma só linha do tempo para filmes (tempo de **mídia**) e falas (tempo **lógico**), por eventos;

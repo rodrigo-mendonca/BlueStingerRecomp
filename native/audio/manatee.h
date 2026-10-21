@@ -41,7 +41,10 @@ struct Layer {
     uint8_t  flags = 0;  // bit 0 ADPCM da AICA, bit 1 laco (LPCTL)
     uint16_t lsa = 0, lea = 0;
     uint8_t  disdl = 0, tl = 0;
-    uint8_t  env[10] = {};  // as 5 palavras do envelope da AICA (bytes 0x16..0x1F), a modelar na fase G
+    // Envelope da AICA (fase G): bytes 0x08..0x0B = as imagens dos registradores 0x10 (AR 4-0, D1R 10-6, D2R 15-11) e
+    // 0x14 (RR 4-0, DL 9-5, KRS 13-10, LPSLNK 14) que o key-on do driver copia (0x0C58-0x0D24, somando os ajustes do canal
+    // em 0x37/0x38/0x39/0x3B - 0x20, limitados a 0..31). A leitura anterior (bytes 0x16..0x1F) estava errada.
+    uint16_t eg10 = 0, eg14 = 0;
     uint8_t  keyMin = 0, keyMax = 127, keyBase = 60, fine = 0, velMin = 0, velMax = 127;
     uint8_t  raw[0x30] = {};  // a camada inteira (campos ainda sem nome)
 };

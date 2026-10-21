@@ -169,3 +169,34 @@ python tools/dev/legendas/gerar_mod.py
 python tools/dev/legendas/previa.py
 python -m unittest discover -s tools/dev/legendas -p test_legendas.py   (BS_GAME_DATA, BS_LEGENDAS)
 ```
+
+## 14. Inglês por padrão (2026-10-21, sem commit)
+
+Pedido do mantenedor: legendas em inglês (en-US) ligadas por padrão nos filmes e nas falas, desligáveis e com outros
+idiomas no futuro, sem duplicar o que o N5 e o N6 já têm.
+
+- **Escolha do idioma:** `--legendas <idioma>|nenhuma` > `[legendas] idioma` do `instalacao.toml` (ao lado do
+  executável; o Recompiler grava a seção junto com o modo dos saves e a regravação preserva a escolha) > **`en-US`**.
+  `nenhuma` (ou `off`) desliga. Valor inválido: aviso no log e o padrão. Código: `native/platform/install_config`
+  (`parse_subtitles`, `kDefaultSubtitles`), `app/main_sdl.cpp` (`subtitlesLanguage`).
+- **Filmes (N5, sem mudança no player):** o mesmo renderizador de SRT/WebVTT; `en-US` acha `<NOME>.en-US.srt` e recua
+  para `<NOME>.en.srt` (`modsideo`).
+- **Falas (N6):** o mesmo `SubtitleService` + `DialogueBridge` (legenda presa aos eventos da voz que toca, original ou
+  dublagem de mod com outra duração); só com `--audio-falas nativo` (o legado não gera eventos). O desenho no gameplay
+  continua no **N7** (hoje: o log `[legenda] VBlank ...`).
+- **Sem legendas no idioma:** nada aparece; o jogo segue como o original. O executável não traz legendas.
+- **Provisórias:** o manifesto ganhou `provisorio = true` (conteúdo não revisado); `gerar_mod.py` o grava enquanto
+  houver linha não revisada e o jogo avisa no log (`[legenda] pacote legendas-en 0.1.0: provisorio (nao revisado)`). O
+  pacote gerado por IA continua fora do Git, do `dist/`, do kit e do Builder (fica em `%LOCALAPPDATA%`); o Builder só
+  copia o `modsideo` do próprio projeto do usuário.
+
+**Testes (2026-10-21):** `ui_install_config_subtitles` (padrão, nenhuma, pt-BR, inválido, gravação e releitura com os
+saves) e `loc_mod_provisional_and_en_us_default` (manifesto provisório; `en-US` acha o pacote `en`); `bs_ui_tests`
+25/25, `bs_localization_tests` 9/9, `bs_audio_tests` 69/69. No jogo (rota `passo_combate`, pacote ligado numa pasta
+`mods` do build de teste, não no `dist/`): sem opção, o filme NEWGAME mostra "What's up, Belliot?" aos 143,2 s; com
+`--legendas nenhuma`, o mesmo quadro sem texto; estado do jogo por passo idêntico com e sem legendas; o aviso de
+provisório aparece.
+
+**Pendências:** revisão humana (ex.: "Belliot" no NEWGAME é erro de transcrição); desenho das falas no gameplay (N7);
+escolha do idioma na janela do Recompiler (hoje: o arquivo e a linha de comando); as duas formas de pastas de mods dos
+filmes (risco 5).

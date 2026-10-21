@@ -103,6 +103,7 @@ private:
     Bus                                            bus_;
     std::array<std::shared_ptr<const SmsbSlot>, 16> smsb_;
     std::array<std::shared_ptr<const SmpbSlot>, 16> smpb_;
+    std::unique_ptr<ChannelPool>                   pool_ = std::make_unique<ChannelPool>();  // os 48 canais, das 8 portas
     std::array<Port, kPorts>                       ports_;
     std::vector<MusicEvent>                        evbuf_;
     PlayerStats                                    stats_;

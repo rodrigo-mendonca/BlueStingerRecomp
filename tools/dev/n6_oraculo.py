@@ -76,17 +76,44 @@ def porta(g, h):
         return "?"
 
 
-MSLC, CA_REG = 0xA0702810, 0xA0702814  # registradores de monitor da AICA: canal escolhido e a posicao atual (CA)
+# Registradores de monitor da AICA. O MSLC (canal monitorado) e o byte alto de 0x280C (bits 13-8; o byte baixo e o
+# MOBUF): escreve-se 1 byte em 0x280D. CORRIGIDO 2026-10-21: antes se escrevia em 0x2810, o MSLC nao mudava e toda
+# leitura era do canal que o driver tinha escolhido por ultimo (o ca/estado das execucoes antigas nao vale).
+# 0x2810 = EG (12-0), SGC (14-13), LP (15): ler o byte alto (0x2811) ou a palavra LIMPA o LP do canal (no Flycast e
+# na documentacao), e o driver usa o LP para dar key-off nos efeitos (0x72D8): nos canais de efeito so o byte baixo.
+MSLC, MON_EG, CA_REG = 0xA070280D, 0xA0702810, 0xA0702814
 
 
 def posicao_ca(g, ch):
     """CA do canal (posicao atual na amostra, em amostras da fonte): escolhe o canal no MSLC e le o CA. No key-on visto
     numa passada, CA / razao do tom = amostras de saida desde o key-on de verdade (resolucao de uma amostra)."""
     try:
-        g.write(MSLC, struct.pack("<H", (ch & 0x3F) << 8))
+        g.write(MSLC, bytes([ch & 0x3F]))
         return struct.unpack("<H", g.read(CA_REG, 2))[0]
     except SystemExit:
         return -1
+
+
+def estado_canal(g, ch, sem_limpar_lp):
+    """Fase G: o estado do canal pela leitura da AICA (MSLC escolhe o canal): 0x2810 = LP (bit 15, o driver da key-off
+    quando liga numa amostra sem laco, 0x72D8), SGC (14-13: 0 ataque, 1 decaimento 1, 2 decaimento 2, 3 soltura) e EG
+    (12-0, atenuacao do envelope; 0x1FFF = canal parado); 0x2814 = CA (posicao na amostra). Com sem_limpar_lp (canais de
+    efeito), so o byte baixo do EG: LP e SGC voltam -1 (ler o byte alto limparia o LP que o driver espera)."""
+    try:
+        g.write(MSLC, bytes([ch & 0x3F]))
+        ca = struct.unpack("<H", g.read(CA_REG, 2))[0]
+        if sem_limpar_lp:
+            return -1, -1, g.read(MON_EG, 1)[0], ca
+        r = struct.unpack("<H", g.read(MON_EG, 2))[0]
+        return (r >> 15) & 1, (r >> 13) & 3, r & 0x1FFF, ca
+    except SystemExit:
+        return -1, -1, -1, -1
+
+
+def tom_de(extra):
+    """(amostra, oct, fns) de uma linha de canal de aica(): o que muda num pitch bend"""
+    c = dict(x.split("=") for x in extra.split())
+    return c["sa"], c["oct"], c["fns"]
 
 
 def aica(g):
@@ -94,12 +121,13 @@ def aica(g):
     out, extra = [], []
     for ch in range(CANAIS):
         b = ch * 0x80
-        r0, r4, r8, rc, r18, r24, r28 = (struct.unpack_from("<H", raw, b + o)[0] for o in (0x00, 0x04, 0x08, 0x0C, 0x18, 0x24, 0x28))
+        r0, r4, r8, rc, r18, r20, r24, r28 = (struct.unpack_from("<H", raw, b + o)[0]
+                                              for o in (0x00, 0x04, 0x08, 0x0C, 0x18, 0x20, 0x24, 0x28))
         out.append(((r0 >> 14) & 1, (r28 >> 8) & 0xFF, (r24 >> 8) & 0xF, r24 & 0x1F))
         sa = ((r0 & 0x7F) << 16) | r4
         oct_ = (r18 >> 11) & 0xF
         extra.append(f"sa={sa:06X} lsa={r8:04X} lea={rc:04X} pcms={(r0 >> 7) & 3} loop={(r0 >> 9) & 1} "
-                     f"oct={oct_ - 16 if oct_ >= 8 else oct_} fns={r18 & 0x3FF}")
+                     f"oct={oct_ - 16 if oct_ >= 8 else oct_} fns={r18 & 0x3FF} imxl={(r20 >> 4) & 0xF} isel={r20 & 0xF}")
     return out, extra
 
 
@@ -147,6 +175,14 @@ def main():
     p.add_argument("--game")
     p.add_argument("--limite", type=float, default=7200.0)
     p.add_argument("--dump-sram", type=int, default=-1, help="passo em que a RAM de som (2 MB) e gravada")
+    p.add_argument("--dump-dsp", type=int, default=-1, help="passo em que os registradores da AICA de 0x2000 a 0x45FF "
+                   "(mixer de saida do DSP EFSDL/EFPAN, RBL/RBP em 0x2804, COEF, MADRS, MPRO, TEMP, MEMS, MIXS, EFREG) sao "
+                   "gravados (fase G: o DSP)")
+    p.add_argument("--seguir-sa", default="", help="SA,... (hex, endereco na RAM de som): a cada passo, os canais com "
+                   "KYONB tocando essas amostras: LP, SGC, EG e CA (fase G: o key-off do driver pelo LP)")
+    p.add_argument("--ticks", action="store_true", help="a cada passo: o contador de ticks reais do driver (ARM 0x13418, "
+                   "250 Hz no tratador) e a trilha 0 (ponteiro de leitura - base do SMSD, contagem): a prova direta de ticks "
+                   "perdidos (docs/N6-PLANO.md 18.4)")
     p.add_argument("--injetar-musica", default="", help="PASSO:INDICE - MEDIDA so no oraculo: no topo da espera do "
                    "VBlank depois de PASSO, chama 8C02A660(INDICE) (como o script de eventos faria) e volta ao laco")
     p.add_argument("--vmu", help="imagem de VMU (128 KB) desta sessao (p.ex. com o save de gameplay do N4); a do Flycast volta no fim")
@@ -178,6 +214,8 @@ def main():
         falas = {VPEDIDO, WSTART, WSTAT, WSTOP, WDESTROY} if a.falas else set()
         musica = {MGER, MPLAY, MSTOP, MVOL, MPAN, M35, M36, MDOWN, GDOPEN, MDL} if a.musica else set()
         dlpend = {}  # volta do download: endereco -> (sp, tipo, tmu da entrada)
+        seguir = {int(x, 16) for x in a.seguir_sa.split(",") if x}
+        seguidos = {}  # canal -> ainda seguindo (tocando ou soltando)
         falas = falas | musica
         wpend = {}           # retorno do estado do MW WAV -> r15
         westado = None
@@ -186,6 +224,7 @@ def main():
         pend = {}            # retorno -> (r15, ponteiro de saida, porta)
         estado = {}          # porta -> ultima palavra +24
         aica_ant = None
+        extra_ant = None
         comando = False      # houve tocar/parametro nesta passada
         trocar = [(int(x.split(":")[0]), int(x.split(":")[1])) for x in a.trocar.split(",") if x]
         forcar = [(int(x.split(":")[0]), int(x.split(":")[1])) for x in a.forcar.split(",") if x]
@@ -219,10 +258,10 @@ def main():
                     westado = r[0]
                     linha("fala-estado", f"{s8(r[0])} {tmu(g)}")
             if pc in dlpend and dlpend[pc][0] == r[15]:
-                _, tipo, t0 = dlpend.pop(pc)
+                _, tipo, tdl = dlpend.pop(pc)
                 g.bp(0x80000000 | pc, False)
                 t1 = struct.unpack("<I", g.read(0xFFD8000C, 4))[0]
-                linha("mus-download-fim", f"tipo={tipo} r0={r[0]:08X} duracao={((t0 - t1) & 0xFFFFFFFF) / 781250 * 1000:.3f} ms {tmu(g)}")
+                linha("mus-download-fim", f"tipo={tipo} r0={r[0]:08X} duracao={((tdl - t1) & 0xFFFFFFFF) / 781250 * 1000:.3f} ms {tmu(g)}")
             if pc in pend and pend[pc][0] == r[15]:
                 _, saida, pt = pend.pop(pc)
                 g.bp(0x80000000 | pc, False)
@@ -275,9 +314,9 @@ def main():
                     tipo = struct.pack("<I", r[5]).decode("latin1")
                     tam = struct.unpack("<I", g.read(r[4] + 12, 4))[0] if r[4] else 0
                     ret = r[fo.R_PR] & 0x1FFFFFFF
-                    t0 = struct.unpack("<I", g.read(0xFFD8000C, 4))[0]
+                    tdl = struct.unpack("<I", g.read(0xFFD8000C, 4))[0]  # (nao e o t0 do relogio do script)
                     if ret not in dlpend:
-                        dlpend[ret] = (r[15], tipo, t0)
+                        dlpend[ret] = (r[15], tipo, tdl)
                         g.bp(0x80000000 | ret)
                     linha("mus-download", f"tipo={tipo} slot={r[6] & 0xFF} bytes={tam} {t}")
                 elif key in (M35, M36):
@@ -314,7 +353,27 @@ def main():
                            for ch, (k, tl, sdl, pan) in enumerate(cur) if cur[ch] != aica_ant[ch]]
                     if mud:
                         linha("aica", ("cmd " if comando else "") + " ".join(mud) + f" {tmu(g)}")
-                aica_ant = cur
+                    # tom novo num canal que segue com KYONB nas duas leituras, MESMA amostra e OCT/FNS diferentes (o
+                    # pitch bend reescreve so o tom). A leitura por passo nao ve o KYONEX: um re-disparo da mesma amostra
+                    # entre as leituras nao fica excluido (revisao Codex 2026-10-20); o bend se prova pelos valores.
+                    tons = [f"c{ch}:[{extra[ch]}]" for ch in range(CANAIS)
+                            if cur[ch][0] and aica_ant[ch][0] and extra_ant and tom_de(extra[ch])[0] == tom_de(extra_ant[ch])[0]
+                            and tom_de(extra[ch])[1:] != tom_de(extra_ant[ch])[1:]]
+                    if tons:
+                        linha("tom", " ".join(tons) + f" {tmu(g)}")
+                aica_ant, extra_ant = cur, extra
+                if seguir:
+                    # com KYONB e depois do key-off tambem (a soltura), ate o envelope chegar ao silencio (EG 0x1FFF)
+                    for ch in range(CANAIS):
+                        if int(tom_de(extra[ch])[0], 16) in seguir and (cur[ch][0] or seguidos.get(ch)):
+                            lp, sgc, eg, ca = estado_canal(g, ch, ch >= 48)  # efeitos nos canais 48+ (driver)
+                            # efeito: so enquanto tocar (sem o EG inteiro); musica: ate o envelope chegar ao silencio
+                            seguidos[ch] = bool(cur[ch][0]) or (ch < 48 and 0 <= eg < 0x1FFF)
+                            linha("seguir", f"c{ch} sa={tom_de(extra[ch])[0]} k={cur[ch][0]} lp={lp} sgc={sgc} eg={eg} ca={ca} {tmu(g)}")
+                if passo == a.dump_dsp:
+                    dest = os.path.splitext(a.out)[0] + f"_dsp_{passo}.bin"
+                    open(dest, "wb").write(g.read(0xA0702000, 0x2600))  # 0x2000-0x45FF
+                    linha("dsp", dest)
                 if passo == a.dump_sram:
                     dest = os.path.splitext(a.out)[0] + f"_sram_{passo}.bin"
                     open(dest, "wb").write(g.read(0xA0800000, 0x200000))
@@ -322,6 +381,12 @@ def main():
                 comando = False
                 if injetar and not injetado and passo == injetar[0]:
                     g.bp(ESPERA_TOPO)  # a partir daqui, a proxima volta da espera do VBlank recebe a chamada
+                if a.ticks:
+                    tk = struct.unpack("<I", g.read(0xA0800000 + 0x13418, 4))[0]
+                    tr = g.read(0xA0800000 + 0x10000, 0x40)
+                    ptr, base, cnt = (struct.unpack_from("<I", tr, o)[0] for o in (0x10, 0x14, 0x24))
+                    linha("ticks", f"t={tk} p={(ptr - base) & 0xFFFFFFFF} c={struct.unpack('<i', struct.pack('<I', cnt))[0]} "
+                                   f"est={tr[1]} {tmu(g)}")
                 if a.posicao and passo % a.posicao == 0:
                     x, y, z = struct.unpack("<fff", g.read(0x8C24D668, 12))
                     linha("posicao", f"x={x:.3f} y={y:.3f} z={z:.3f}")

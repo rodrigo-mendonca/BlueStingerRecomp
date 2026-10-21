@@ -74,10 +74,15 @@ function Rooms($c) { @(Get-Content -LiteralPath (Join-Path $c.Dir "arquivos.tsv"
 function ExeCli($argsCli) { $o = cmd /c "`"$Exe`" $argsCli 2>&1" | Out-String; return @{ Code = $LASTEXITCODE; Out = $o } }
 function SavesDir($nome) { $p = Join-Path $Saida "saves_$nome"; New-Item -ItemType Directory -Force -Path $p | Out-Null; return $p }
 
+# Orcamento da rota de SAVE (passo_save_rcg02, indexada por passo de jogo): com o video nativo (padrao desde o N5) o
+# passo de jogo fica parado durante os filmes, que duram o tempo real: NEWGAME 452,8 s (27 146 VBlanks, no passo 1038) e
+# E001 13,7 s (828 VBlanks, no passo 2146); fora deles a rota anda como antes (~2 VBlanks por passo). Os 17 100 VBlanks
+# do Sofdec mais os dos filmes nativos: 46 000 (medido em 2026-10-21; o roteiro nao muda, so o orcamento).
+$vbSave = 46000
 # ---- S1/S2: dois SAVEs de gameplay em paralelo ----
 $sv1 = SavesDir "s1"; $sv2 = SavesDir "s2"
-$c1 = Start-Case "s1" $ExeMods "passo_save_rcg02.txt" 17100 "--saves nativo --saves-pasta `"$sv1`"" @{ BS_SAVES_H2 = "7500" }
-$c2 = Start-Case "s2" $ExeMods "passo_save_rcg02.txt" 17100 "--saves nativo --saves-pasta `"$sv2`"" @{ BS_SAVES_H2 = "7500" }
+$c1 = Start-Case "s1" $ExeMods "passo_save_rcg02.txt" $vbSave "--saves nativo --saves-pasta `"$sv1`"" @{ BS_SAVES_H2 = "7500" }
+$c2 = Start-Case "s2" $ExeMods "passo_save_rcg02.txt" $vbSave "--saves nativo --saves-pasta `"$sv2`"" @{ BS_SAVES_H2 = "7500" }
 $c1 = Wait-Case $c1; $c2 = Wait-Case $c2
 $bsv = Join-Path $sv1 "card0\BLUESTIN.000.bsv"
 $m = [regex]::Match($c1.Out, "SAVE (\d+) \(ok (\d+), falha (\d+)\)")
@@ -90,7 +95,7 @@ $val = cmd /c "python -I `"$vmuTool`" valida `"$vms1`" --bluestinger 2>&1" | Out
 Check "S1 VMS valido (cabecalho, CRC, 1200 B)" ($e1.Code -eq 0 -and $val -match "(?m)^VALIDO") ((($val -split "`n") | Where-Object { $_ -match "crc" }) -join " ")
 $h1 = if (Test-Path $vms1) { (Get-FileHash $vms1).Hash } else { "-" }
 $h2 = if (Test-Path $vms2) { (Get-FileHash $vms2).Hash } else { "+" }
-Check "S2 determinismo do SAVE (VMS igual)" ($e2.Code -eq 0 -and $h1 -eq $h2) "$($h1.Substring(0,16))"
+Check "S2 determinismo do SAVE (VMS igual)" ($e2.Code -eq 0 -and $h1 -eq $h2) "$(if ($h1) { $h1.Substring(0, [Math]::Min(16, $h1.Length)) } else { 'sem VMS' })"
 $atSave = State $c1 8000
 $bsvHash = (Get-FileHash $bsv).Hash
 
@@ -182,7 +187,7 @@ $i18b = New-Install "inst_sem" $Exe ""
 $i18c = New-Install "inst_inv" $Exe "isto [nao e toml"
 $cs = @(
     (Start-Case "s15" (Join-Path $i15 "BlueStinger.exe") "passo_load_slot1.txt" 4700 ""),
-    (Start-Case "s17" (Join-Path $i17 "BlueStinger.exe") "passo_save_rcg02.txt" 17100 "" @{ BS_SAVES_H2 = "7500" }),
+    (Start-Case "s17" (Join-Path $i17 "BlueStinger.exe") "passo_save_rcg02.txt" $vbSave "" @{ BS_SAVES_H2 = "7500" }),
     (Start-Case "s18a" (Join-Path $i18 "BlueStinger.exe") "passo_load_slot1.txt" 1700 "--saves-pasta `"$x18`""),
     (Start-Case "s18b" (Join-Path $i18b "BlueStinger.exe") "passo_load_slot1.txt" 1700 ""),
     (Start-Case "s18c" (Join-Path $i18c "BlueStinger.exe") "passo_load_slot1.txt" 1700 "")

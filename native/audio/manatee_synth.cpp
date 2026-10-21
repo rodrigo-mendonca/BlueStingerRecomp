@@ -4,6 +4,7 @@
 #include "audio/sd_adapter.h"
 
 #include <algorithm>
+#include <span>
 #include <cmath>
 
 namespace bs::native::audio::manatee {
@@ -73,6 +74,11 @@ int Synth::channel_level(const Canal& c) const {  // 0x1B5C-0x1B7C: o byte 0x0A 
     return ((drv_.volume[c.volume & 0x7F] + 1) * (drv_.volume[c.expression & 0x7F] + 1) >> 7) - 1;
 }
 
+int32_t Synth::bend_of(const Voice& v) const {
+    const int32_t b = canais_[v.canal & 15].bend;
+    return (b * (b < 0 ? v.rangeDown : v.rangeUp)) >> 5;  // 0x1150-0x1164 (o driver guarda 16 bits; |valor| < 2^15 aqui)
+}
+
 uint8_t Synth::dipan_of(const Voice& v) const {
     const Canal& c = canais_[v.canal & 15];
     return music_dipan((c.pan & 0x80) ? v.layerPan : c.pan, portPan_);
@@ -97,10 +103,12 @@ std::shared_ptr<const SoundData> Synth::sample(uint8_t slot, const Bank& bank_, 
     return s;
 }
 
-void Synth::apply(Voice& v) {
+void Synth::apply(Voice& v, uint32_t rampFrames) {
     const Canal& c  = canais_[v.canal & 15];
     const int    tl = 255 - std::clamp(v.level + portVolume_, 0, 255);  // 0x1050-0x106C
-    mixer_.set_volume(v.id, std::clamp(std::pow(10.0f, -0.375f * tl / 20.0f) * v.sdlGain * v.env.gain(), 0.0f, 1.0f));
+    const float  g  = std::clamp(std::pow(10.0f, -0.375f * tl / 20.0f) * v.sdlGain * v.env.gain(), 0.0f, 1.0f);
+    if (rampFrames) mixer_.set_volume_ramp(v.id, g, rampFrames);
+    else mixer_.set_volume(v.id, g);
     mixer_.set_pan(v.id, dipan_pan(dipan_of(v)));
 }
 
@@ -109,6 +117,16 @@ void Synth::on_event(const MusicEvent& e) {
     Canal& c = canais_[e.canal & 15];
     switch (e.kind) {
     case K::Program: c.program = e.a; break;
+    case K::Pitch:  // 0x13E4: o canal guarda o bend; as vozes dele mudam de tom (0x1414-0x1494)
+        c.bend = int32_t(e.a & 0x7F) * 128 - 0x2000;
+        for (auto& v : voices_)
+            if (v.canal == e.canal) {
+                const PitchReg p = pitch_for(v.key, v.keyBase, v.fine, bend_of(v));
+                stats_.saturatedPitch += p.saturated;
+                mixer_.set_pitch(v.id, float(p.ratio()));
+                if (onPitch) onPitch(v.noteId, v.canal, p);
+            }
+        break;
     case K::Control:
         if (e.a == 7 || e.a == 11) {
             (e.a == 7 ? c.volume : c.expression) = e.b;
@@ -142,13 +160,56 @@ void Synth::on_event(const MusicEvent& e) {
                 if (e.a < l.keyMin || e.a > l.keyMax || e.b < l.velMin || e.b > l.velMax) continue;
                 auto s = sample(c.bank, bank_, l);
                 if (!s || s->pcm.empty()) break;
-                const PitchReg p = pitch_for(e.a, l.keyBase, int8_t(l.fine));
+                // faixa do bend (0x0BD8-0x0BF4): o canal (bit 7, RPN 0/0) ou os bytes 0x0C/0x0D do grupo
+                Voice proto{};
+                proto.canal = e.canal;
+                proto.rangeUp   = c.rangeOverride & 0x80 ? c.rangeOverride & 0x7F : uint8_t(g.flags & 0xFF);
+                proto.rangeDown = c.rangeOverride & 0x80 ? c.rangeOverride & 0x7F : uint8_t((g.flags >> 8) & 0xFF);
+                const PitchReg p = pitch_for(e.a, l.keyBase, int8_t(l.fine), bend_of(proto));
                 stats_.saturatedPitch += p.saturated;
                 PlayParams pp;
                 pp.bus   = bus_;
                 pp.loop  = s->loopStart >= 0;
                 pp.pitch = float(p.ratio());
                 pp.tag   = e.noteId;
+                // envio ao DSP (registrador 0x20 do canal = byte 0x10 da camada: IMXL 7-4, ISEL 3-0; conferido no oraculo,
+                // 97 % dos key-on com IMXL 13-15 no MIXS 0): razao sobre o volume, que ja inclui o DISDL (byte 0x13)
+                {
+                    const int imxl = (l.raw[0x10] >> 4) & 0xF, sdl = l.raw[0x13] & 0xF;
+                    pp.dspBus      = uint8_t(l.raw[0x10] & 0xF);
+                    pp.dspSend     = imxl && sdl ? std::pow(10.0f, -3.0f * float(sdl - imxl) / 20.0f) : 0.0f;
+                }
+                // os 48 canais da musica no driver (0x1244 percorre 0x30 vozes em 0xE800): canal livre primeiro; sem
+                // livre, reaproveita um ja em soltura (o +3 = 0xFF do key-off, 0x0AA4) e, entre eles, o mais apagado;
+                // sem nenhum em soltura, o mais antigo. INFERIDO do alocador: a prioridade (+0x3E) e a idade (+0x3F)
+                // exatas nao estao provadas; nas musicas do disco a prioridade e a mesma para todas as notas.
+                // o conjunto inteiro (as 8 portas no MusicPlayer)
+                Synth* const  self[] = {this};
+                std::span<Synth* const> grupo = pool_ ? std::span<Synth* const>(pool_->members) : std::span<Synth* const>(self);
+                size_t total = 0;
+                for (Synth* sy : grupo) {
+                    std::erase_if(sy->voices_, [sy](const Voice& v) { return !sy->mixer_.playing(v.id); });
+                    total += sy->voices_.size();
+                }
+                if (total >= kMusicChannels) {
+                    Synth* vs = nullptr;
+                    size_t vi = 0;
+                    bool   rel = false;
+                    for (Synth* sy : grupo)
+                        for (size_t k = 0; k < sy->voices_.size(); ++k) {
+                            const Voice& v = sy->voices_[k];
+                            const bool   r = v.env.releasing();
+                            const Voice* b = vs ? &vs->voices_[vi] : nullptr;
+                            // em soltura vence; entre as em soltura, a mais apagada; sem nenhuma, a mais antiga
+                            if (!b || (r && !rel) || (r && rel && v.env.level() > b->env.level()) || (!r && !rel && v.order < b->order))
+                                vs = sy, vi = k, rel = r;
+                        }
+                    if (!rel) ++stats_.stolenKeyed;
+                    else if (vs->voices_[vi].env.level() < 320) ++stats_.stolenLoud;
+                    vs->mixer_.stop(vs->voices_[vi].id);
+                    vs->voices_.erase(vs->voices_.begin() + std::ptrdiff_t(vi));
+                    ++stats_.stolen;
+                }
                 const VoiceId id = mixer_.play(s, pp);
                 if (!id) {  // sem voz: o driver tenta a proxima camada do grupo (0x0BB4)
                     ++stats_.refused;
@@ -160,8 +221,14 @@ void Synth::on_event(const MusicEvent& e) {
                 const int64_t prod  = int64_t(curva + 1) * (c.level + 1) * (256 - l.tl) - 1;
                 const int     level = int((prod >> 14) & 0xFF);
                 voices_.push_back({id, e.noteId, e.canal, level});
-                voices_.back().env.key_on();
+                voices_.back().order = pool_ ? ++pool_->order : ++order_;
+                // o envelope da AICA pela camada (bytes 0x08..0x0B, os registradores 0x10/0x14 do key-on 0x0C58-0x0D24)
+                // e o tom do key-on (a taxa efetiva usa OCT e FNS[9]); os ajustes do canal 0x37-0x3B ficam no 0x20 do
+                // reset (nenhum controle das musicas os muda)
+                voices_.back().env.key_on(EnvelopeParams::from_regs(l.eg10, l.eg14, p.oct, p.fns));
                 voices_.back().curva = uint8_t(curva), voices_.back().layerTl = l.tl;
+                voices_.back().key = e.a, voices_.back().keyBase = l.keyBase, voices_.back().fine = int8_t(l.fine);
+                voices_.back().rangeUp = proto.rangeUp, voices_.back().rangeDown = proto.rangeDown;
                 voices_.back().layerPan = layer_pan_position(l.raw[0x12]);
                 const int sdl = std::clamp(int(l.raw[0x13] & 0xF), 0, 15);  // + (porta 0x24 >> 3) - 16 = 0
                 voices_.back().sdlGain = sdl == 0 ? 0.0f : std::pow(10.0f, -3.0f * (15 - sdl) / 20.0f);
@@ -169,6 +236,7 @@ void Synth::on_event(const MusicEvent& e) {
                 if (onVoice) {
                     VoiceLog vl;
                     vl.noteId = e.noteId, vl.canal = e.canal, vl.key = e.a, vl.vel = e.b, vl.sa = l.sa, vl.pitch = p;
+                    vl.voice  = id;
                     vl.tl   = uint8_t(255 - std::clamp(level + portVolume_, 0, 255));
                     vl.dipan = dipan_of(voices_.back());
                     vl.sdl   = uint8_t(sdl);
@@ -185,7 +253,7 @@ void Synth::on_event(const MusicEvent& e) {
         for (auto& v : voices_)
             if (v.noteId == e.noteId && !v.env.releasing()) {
                 if (c.sustain) v.held = true;  // o pedal segura
-                else v.env.key_off();          // a soltura do envelope compartilhado (fase G: a da AICA)
+                else v.env.key_off();          // a soltura pela taxa RR da camada (envelope da AICA, fase G)
             }
         break;
     default: break;
@@ -198,13 +266,22 @@ void Synth::control_tick() {
             it = voices_.erase(it);
             continue;
         }
-        if (it->env.tick()) {
+        // a voz criada neste tick ainda nao tocou nenhuma amostra: o envelope so anda a partir do proximo (revisao Codex
+        // 2026-10-21: um ataque AR 25-28 acabava antes do primeiro bloco). O EG continua em degraus de 4 ms.
+        if (it->fresh) {
+            it->fresh = false;
+            ++it;
+            continue;
+        }
+        if (it->env.advance(1.0 / kSequencerHz)) {
             if (it->env.done()) {
                 mixer_.stop(it->id);
                 it = voices_.erase(it);
                 continue;
             }
-            apply(*it);
+            // o EG da AICA anda por amostra: o nivel novo chega em rampa linear ao longo do tick (4 ms), nao em degrau
+            // (revisao Codex 2026-10-21)
+            apply(*it, mixer_.rate() / uint32_t(kSequencerHz));
         }
         ++it;
     }

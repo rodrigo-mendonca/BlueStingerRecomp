@@ -1,6 +1,8 @@
 #include "sound_adapter.h"
 
 #include "audio/audio.h"
+#include "audio/aica_dsp.h"
+#include "audio/envelope.h"
 #include "audio/manatee_player.h"
 #include "audio/mixer.h"
 #include "audio/sd_adapter.h"
@@ -15,6 +17,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -75,6 +78,12 @@ struct State {
     // ouvir o que o headless produz. Desligado por padrao.
     std::FILE*                              wav = nullptr;
     uint64_t                                wavFrames = 0;
+    uint64_t                                clipped = 0;    // amostras da mistura no limite de 16 bits (N6-H)
+    int                                     peak = 0;
+    size_t                                  maxVoices = 0;  // maior numero de vozes no mixer num trecho
+    na::IAudioOutput::Stats                 lostOut;        // estatisticas da saida perdida (antes da troca pela nula)
+    std::vector<int16_t>                    outBuf;         // a mistura do VBlank, enviada de uma vez
+    uint64_t                                outSwaps = 0;
     // Diagnostico BS_EFEITOS_LOG=<arquivo>: as chamadas do jogo, os fins de canal e os eventos das falas por passo de
     // jogo, no vocabulario do oraculo O6 (tools/dev/n6_oraculo.py) para a comparacao com o Flycast.
     std::FILE*                              log = nullptr;
@@ -83,7 +92,8 @@ struct State {
     bool                                    busy[8] = {};
     uint64_t                                lastStep = 0;  // passos de jogo ja entregues ao VoicePlayer
     std::function<void(const na::DialogueEvent&)> onDialogue;
-    explicit State(uint32_t r) : mixer(r, 64), rate(r) {}
+    // 48 canais da musica + 16 dos efeitos (como no driver) + as falas: o mixer nunca rouba voz por falta de lugar
+    explicit State(uint32_t r) : mixer(r, 80), rate(r) {}
 };
 
 void wavHeader(std::FILE* f, uint32_t rate, uint64_t frames) {
@@ -405,6 +415,25 @@ void install(BoundaryRegistry& registry, Options o) {
     sdo.onOtherEvent = [st](const na::MixerEvent& e) {
         if (st->voice) st->voice->on_mixer_event(e);
     };
+    // N6 fase G: o DSP de efeitos da AICA com o programa do disco (SFPB/SFOB do BS_SND.MLT, o que o driver carrega no
+    // boot; conferido no oraculo). Vale para todas as vozes nativas que enviam (musica e efeitos). Sem o MLT: sem DSP.
+    if (!o.mlt.empty() && !std::getenv("BS_SEM_DSP")) {
+        std::ifstream        f(o.mlt, std::ios::binary);
+        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
+        std::string          err;
+        if (auto prog = na::parse_aica_dsp_mlt(bytes, &err)) {
+            std::array<std::array<float, 2>, 16> gains{};
+            for (size_t i = 0; i < 16; ++i) {
+                if (!prog->efsdl[i]) continue;
+                const float lvl = std::pow(10.0f, -3.0f * float(15 - prog->efsdl[i]) / 20.0f);
+                const float pan = na::dipan_pan(prog->efpan[i]);
+                gains[i] = {lvl * std::min(1.0f, 1.0f - pan), lvl * std::min(1.0f, 1.0f + pan)};
+            }
+            g->mixer.set_dsp(std::make_shared<na::AicaDsp>(*prog), gains);
+        } else {
+            std::fprintf(stderr, "[audio] DSP: %s (sem reverberacao)\n", err.c_str());
+        }
+    }
     if (o.effects) {
         std::ifstream        f(o.mlt, std::ios::binary);
         std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
@@ -425,7 +454,17 @@ void install(BoundaryRegistry& registry, Options o) {
                 it = st->cache.emplace(id, std::move(s)).first;
             }
             const na::SosbEffect* e = st->banks->find(bank, req);
-            return {it->second, -1, e ? e->baseTl : na::kSdDefaultBaseTl};
+            na::SdSound r{it->second, -1, e ? e->baseTl : na::kSdDefaultBaseTl};
+            if (e) {  // a soltura do parar pela RR do descritor (envelope da AICA; os 211 efeitos: RR 31 -> ~3,6 ms)
+                const auto   ep = na::EnvelopeParams::from_regs(e->eg10, e->eg14, e->oct, e->fns);
+                const double ms = na::Envelope::dsr_ms(ep.effective_rate(ep.rr));
+                if (ms > 0) r.releaseDbPerSecond = 1024.0 / (ms / 1000.0) * 0.09375;  // unidade do envelope = 0,09375 dB
+                // envio ao DSP (registrador 0x20 do descritor: IMXL 7-4, ISEL 3-0), razao sobre o volume (DISDL 0x24)
+                const int imxl = (e->dsp20 >> 4) & 0xF, sdl = (e->reg24 >> 8) & 0xF;
+                r.dspBus       = uint8_t(e->dsp20 & 0xF);
+                r.dspSend      = imxl && sdl ? std::pow(10.0f, -3.0f * float(sdl - imxl) / 20.0f) : 0.0f;
+            }
+            return r;
         },
         std::move(sdo));
     if (o.voices) {
@@ -500,9 +539,11 @@ void vblank(uint64_t n) {
     auto renderTo = [](uint64_t ate) {
         if (ate <= g->rendered) return;
         g->buf.assign(size_t(ate - g->rendered) * 2, 0);
+        g->maxVoices = std::max(g->maxVoices, g->mixer.active());
         g->mixer.render(g->buf);
         g->rendered = ate;
-        (void)g->out->write(g->buf);
+        for (const int16_t x : g->buf) g->peak = std::max(g->peak, std::abs(int(x))), g->clipped += x == 32767 || x == -32768;
+        g->outBuf.insert(g->outBuf.end(), g->buf.begin(), g->buf.end());  // um bloco por VBlank na saida (abaixo)
         if (g->wav) std::fwrite(g->buf.data(), 2, g->buf.size(), g->wav), g->wavFrames += g->buf.size() / 2;
     };
     if (g->music) {
@@ -534,6 +575,20 @@ void vblank(uint64_t n) {
         g->musQueue.clear();
     }
     renderTo(upTo);
+    // O VBlank inteiro num bloco so (antes: um por tick da musica, ~4 por VBlank, e a fila do XAudio2 aceita 64 blocos:
+    // com o jogo atrasado ela enchia e o envio falhava). A saida do jogo segue a saida padrao e se reabre sozinha; so
+    // quando nem o motor abre (healthy() false) ela vira a nula, com log (revisao Codex 2026-10-21).
+    if (!g->outBuf.empty()) {
+        const bool wrote = static_cast<bool>(g->out->write(g->outBuf));
+        g->outBuf.clear();
+        if (!wrote && !g->out->healthy()) {
+            g->lostOut = g->out->stats();
+            ++g->outSwaps;
+            std::fprintf(stderr, "[audio] saida perdida (dispositivo): trocando para a saida nula\n");
+            g->out = na::make_null_output();
+            (void)g->out->open(g->rate, 2);
+        }
+    }
     // Os passos de jogo concluidos ANTES dos eventos deste trecho: o preparo e o atraso do fim (endSteps) contam so os
     // passos depois do fato (um fim que cai no mesmo VBlank de um passo nao gasta esse passo)
     if (g->voice) {  // o preparo e o fim da fala andam por passo de jogo (o servidor do MW original roda por passo)
@@ -549,7 +604,24 @@ void vblank(uint64_t n) {
 std::string summary() {
     if (!g) return {};
     std::string r;
-    char        b[400];
+    char        b[512];
+    {  // estabilidade da mistura e da saida (criterios da fase H, docs/N6-PLANO.md secao 20)
+        auto o = g->out->stats();  // somadas as da saida perdida, se houve troca
+        o.blocks += g->lostOut.blocks, o.underruns += g->lostOut.underruns, o.writeErrors += g->lostOut.writeErrors;
+        o.maxQueuedFrames = std::max(o.maxQueuedFrames, g->lostOut.maxQueuedFrames);
+        o.dropped += g->lostOut.dropped, o.reopens += g->lostOut.reopens, o.cushions += g->lostOut.cushions;
+        std::snprintf(b, sizeof b,
+                      "[audio] mistura: pico %d, saturadas %llu, fonte acima de 16 bits %llu, vozes max %zu, vozes no fim %zu, MIXS acima de 20 bits %llu; saida: "
+                      "blocos %llu, faltas de dados %llu, fila max %.0f ms, erros de escrita %llu, perdas do dispositivo %llu, descartes %llu, reaberturas %llu, reservas %llu\n",
+                      g->peak, static_cast<unsigned long long>(g->clipped), static_cast<unsigned long long>(g->mixer.source_over()),
+                      g->maxVoices, g->mixer.active(),
+                      static_cast<unsigned long long>(g->mixer.dsp_wraps()), static_cast<unsigned long long>(o.blocks),
+                      static_cast<unsigned long long>(o.underruns), o.maxQueuedFrames * 1000.0 / g->rate,
+                      static_cast<unsigned long long>(o.writeErrors), static_cast<unsigned long long>(g->outSwaps + (o.lost ? 1 : 0)),
+                      static_cast<unsigned long long>(o.dropped), static_cast<unsigned long long>(o.reopens),
+                      static_cast<unsigned long long>(o.cushions));
+        r += b;
+    }
     if (g_effects) {
         std::snprintf(b, sizeof b,
                       "[audio] efeitos nativos: parar %llu, tocar %llu, volume %llu, pan %llu, consultas %llu; efeitos ausentes %u, "

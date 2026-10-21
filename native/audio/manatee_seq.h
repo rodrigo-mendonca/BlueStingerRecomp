@@ -35,6 +35,11 @@ public:
     // nunca alcance uma voz que sobrou do tocar anterior (revisao Codex 2026-10-20, MEDIA)
     explicit Sequencer(const Sequence& seq, uint32_t firstNoteId = 1);
     uint32_t next_note_id() const { return nextNote_; }
+    uint64_t loops() const { return loops_; }                 // voltas do laco 0x82
+    uint64_t first_loop_call() const { return firstLoop_; }   // chamada da 1a volta (0 = ainda nao voltou)
+    // Diagnostico: a posicao no arquivo do proximo evento a ler (o ponteiro de leitura da trilha, [fp+0x10] no driver)
+    uint32_t position() const { return idx_ < seq_.events.size() ? seq_.events[idx_].pos : 0; }  // 0 depois do fim
+    int64_t  count() const { return count_; }  // a contagem da trilha ([fp+0x24]): mesma aritmetica do driver
     // Uma chamada do driver: desliga as notas cujo gate acabou, depois avanca a trilha; os eventos vao para `out`
     void call(std::vector<MusicEvent>& out);
     bool     ended() const { return ended_; }
@@ -65,7 +70,7 @@ private:
     // laco (0x82): inicio (o evento do primeiro 0x82) e contador ([fp+0x20], [fp+3]); 0x80 = sem fim
     int64_t loopAt_ = -1;
     int     loopLeft_ = 0;
-    uint64_t calls_ = 0, loops_ = 0;
+    uint64_t calls_ = 0, loops_ = 0, firstLoop_ = 0;
     uint32_t nextNote_ = 1;
     bool     ended_ = false;
 };

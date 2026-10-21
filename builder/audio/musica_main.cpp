@@ -2,11 +2,14 @@
 // nativos do Manatee (native/audio/manatee_*) e grava um WAV de diagnostico e os eventos com o tempo. Nada sai do disco
 // do usuario para o repositorio.
 //   bs-musica <BSDATA> <nome (M2A)> <segundos> <saida.wav> [<eventos.tsv>]
+#include "audio/aica_dsp.h"
 #include "audio/manatee.h"
 #include "audio/manatee_seq.h"
 #include "audio/manatee_synth.h"
 #include "audio/mixer.h"
+#include "audio/sd_adapter.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -64,7 +67,22 @@ int main(int argc, char** argv) {
     if (!drv) return std::fprintf(stderr, "%s\n", err.c_str()), 1;
 
     constexpr uint32_t kTaxa = 44100;
-    na::AudioMixer     mixer(kTaxa, 64);
+    na::AudioMixer     mixer(kTaxa, 80);
+    // o DSP de efeitos com o programa do disco (BS_SND.MLT), como no jogo; BS_SEM_DSP=1 desliga (comparacao)
+    if (!std::getenv("BS_SEM_DSP")) {
+        const auto mlt = ler(dir / "BS_SND.MLT");
+        if (auto prog = na::parse_aica_dsp_mlt(mlt, &err)) {
+            std::array<std::array<float, 2>, 16> gains{};
+            for (size_t i = 0; i < 16; ++i)
+                if (prog->efsdl[i]) {
+                    const float lvl = std::pow(10.0f, -3.0f * float(15 - prog->efsdl[i]) / 20.0f), pan = na::dipan_pan(prog->efpan[i]);
+                    gains[i] = {lvl * std::min(1.0f, 1.0f - pan), lvl * std::min(1.0f, 1.0f + pan)};
+                }
+            mixer.set_dsp(std::make_shared<na::AicaDsp>(*prog), gains);
+        } else {
+            std::fprintf(stderr, "DSP: %s\n", err.c_str());
+        }
+    }
     nm::Sequencer      seq((*seqs)[0]);
     nm::Synth          synth(mixer, *bank, *drv);
     synth.set_port_volume(-16);  // o "0" do gerenciador de musica do jogo (8C02AE70 limita a -16)
@@ -73,6 +91,7 @@ int main(int argc, char** argv) {
     if (!wav) return std::fprintf(stderr, "nao abre %s\n", argv[4]), 1;
     wav_cabecalho(wav, kTaxa, 0);
     uint64_t chamadaAtual = 0;
+    size_t   picoVozes    = 0;
     if (ev) {
         std::fputs("chamada\tsegundos\ttipo\tcanal\ta\tb\tnota\n", ev);
         // as vozes no formato dos key-on do oraculo (n6_oraculo.py --ca): amostra relativa ao banco, tom e TL
@@ -81,6 +100,11 @@ int main(int argc, char** argv) {
                          static_cast<unsigned long long>(chamadaAtual), chamadaAtual / nm::kSequencerHz, v.canal, v.key, v.vel,
                          v.noteId, v.sa, v.pitch.oct, v.pitch.fns, v.tl, int(v.loop), v.curvaIdx, v.curva, v.vol7, v.layerTl,
                          v.dipan, v.sdl);
+        };
+        // pitch bend: o tom novo de uma voz que segue soando (as linhas "tom" do oraculo)
+        synth.onPitch = [&](uint32_t nota, uint8_t canal, const nm::PitchReg& p) {
+            std::fprintf(ev, "%llu\t%.4f\ttom\t%u\t0\t0\t%u\toct=%d fns=%u\n", static_cast<unsigned long long>(chamadaAtual),
+                         chamadaAtual / nm::kSequencerHz, canal, nota, p.oct, p.fns);
         };
     }
 
@@ -93,6 +117,12 @@ int main(int argc, char** argv) {
         out.clear();
         chamadaAtual = c;
         seq.call(out);
+        // depois de cada chamada: o ponteiro de leitura da trilha relativo ao inicio do SMSD e a contagem ([fp+0x10] e
+        // [fp+0x24] do driver, o "p" e o "c" das linhas "ticks" do oraculo); o par identifica a chamada. Depois do fim
+        // da sequencia nao ha ponteiro valido: nada e escrito (revisao Codex 2026-10-20).
+        if (ev && !seq.ended())
+            std::fprintf(ev, "%llu\t%.4f\tpos\t0\t0\t0\t0\tp=%u c=%lld\n", static_cast<unsigned long long>(c),
+                         c / nm::kSequencerHz, seq.position() - ((*seqs)[0].start - 12), static_cast<long long>(seq.count()));
         for (const auto& e : out) {
             synth.on_event(e);
             if (ev)
@@ -107,6 +137,7 @@ int main(int argc, char** argv) {
         for (int16_t s : buf) pico = std::max<int16_t>(pico, int16_t(std::abs(int(s)))), picos += (s == 32767 || s == -32768);
         std::fwrite(buf.data(), 2, buf.size(), wav);
         feitos = ate;
+        picoVozes = std::max(picoVozes, synth.sounding());
     }
     wav_cabecalho(wav, kTaxa, feitos);
     std::fclose(wav);
@@ -119,5 +150,10 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(s.noLayer), static_cast<unsigned long long>(s.refused),
                 static_cast<unsigned long long>(s.saturatedPitch), static_cast<unsigned long long>(s.decodeFailures), seq.tempo(),
                 seq.ended() ? "sim" : "nao (laco)", int(pico), static_cast<unsigned long long>(picos));
+    std::printf("%s: voltas do laco %llu, primeira volta em %.2f s; pico de vozes simultaneas %zu; reaproveitadas %llu "
+                "(com a nota ligada %llu, em soltura a menos de 30 dB %llu); MIXS acima de 20 bits %llu\n",
+                nome.c_str(), static_cast<unsigned long long>(seq.loops()), seq.first_loop_call() / nm::kSequencerHz, picoVozes,
+                static_cast<unsigned long long>(s.stolen), static_cast<unsigned long long>(s.stolenKeyed),
+                static_cast<unsigned long long>(s.stolenLoud), static_cast<unsigned long long>(mixer.dsp_wraps()));
     return 0;
 }

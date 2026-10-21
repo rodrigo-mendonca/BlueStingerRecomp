@@ -31,6 +31,10 @@ struct SosbEffect {
     uint32_t loopStart = 0;   // LSA
     uint8_t  flags = 0;       // indicadores: bit 0 ADPCM, bit 1 laco (LPCTL; O6: 3 com laco, 2 sem, igual ao bit)
     uint8_t  baseTl = 30;     // byte 0x19: TL do canal com volume 0 (O6: TL = base - 2v)
+    // O descritor e uma imagem dos registradores do canal da AICA em palavras de 16 bits (+0x08 LSA, +0x0A LEA, +0x0C
+    // envelope 0x10, +0x0E envelope 0x14, +0x10 tom 0x18, +0x14 envio ao DSP 0x20, +0x16 0x24, +0x18 0x28 com o TL no byte
+    // alto = o 0x19 acima): fase G
+    uint16_t eg10 = 0, eg14 = 0, dsp20 = 0, reg24 = 0;  // 0x24: DISDL 11-8, DIPAN 4-0
     int      oct = 0;
     uint32_t fns = 0;
     double   rate() const;

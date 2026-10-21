@@ -8,7 +8,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <string>
 #include <span>
 
 namespace bs::native::audio {
@@ -70,11 +72,35 @@ public:
     virtual uint64_t played_frames() const = 0;
     // false depois de perder o dispositivo: quem toca troca para a saida nula (com log).
     virtual bool healthy() const = 0;
+    // N6-H (tempo real sem estalos): blocos enviados, faltas de dados (um bloco chegou com a fila do dispositivo ja
+    // vazia: o dispositivo tocou silencio no meio) e o maior tamanho da fila. A saida nula nao tem faltas.
+    // Erros de escrita (a voz recusou o bloco) e perda do dispositivo tambem contam: depois dela nada mais toca.
+    struct Stats {
+        uint64_t blocks = 0, underruns = 0, maxQueuedFrames = 0, writeErrors = 0;
+        uint64_t dropped = 0, reopens = 0;  // modo "seguir a saida padrao": blocos descartados com a fila cheia, reaberturas
+        uint64_t cushions = 0;              // idem: reservas de silencio postas com a fila vazia (inicio e depois de faltas)
+        bool     lost = false;
+    };
+    virtual Stats stats() const { return {}; }
 };
 
 // Saida XAudio2 (decisao do mantenedor 2026-10-15; no N5 so o audio dos filmes). `latency_ms` e o
 // teto da fila: writable_frames() nunca deixa passar disso.
-std::unique_ptr<IAudioOutput> make_xaudio2_output(uint32_t latency_ms = 200);
+// `follow_default` (audio do jogo, N6): segue a saida padrao do Windows (conferida a cada segundo; trocou ou o dispositivo
+// caiu: reabre na saida padrao atual, sem perder a contagem de tocados) e, com a fila do XAudio2 cheia (o jogo atrasou e
+// recupera varios campos de uma vez), descarta o bloco em vez de dar o dispositivo por perdido; com a fila vazia (inicio,
+// depois de uma falta), poe antes do bloco uma reserva de silencio de ~66 ms (4 campos), que absorve campos atrasados do
+// jogo (o adaptador manda um VBlank de audio por campo, sem folga). Nesse modo healthy() fica sempre true (a saida tenta
+// de novo a cada segundo). Desligado (filmes, N5): o comportamento de sempre.
+std::unique_ptr<IAudioOutput> make_xaudio2_output(uint32_t latency_ms = 200, bool follow_default = false);
+// Testes do modo follow_default: a saida padrao, o relogio em ms e uma perda simulada (como o OnCriticalError) injetaveis;
+// vazios = os do Windows.
+struct XAudio2Hooks {
+    std::function<std::wstring()> device_id;
+    std::function<uint64_t()>     now_ms;
+    std::function<bool()>         force_lost;  // true = o dispositivo caiu agora
+};
+std::unique_ptr<IAudioOutput> make_xaudio2_output(uint32_t latency_ms, bool follow_default, XAudio2Hooks hooks);
 // Saida nula (headless e dispositivo ausente): aceita e descarta, conta os quadros como tocados.
 std::unique_ptr<IAudioOutput> make_null_output();
 
