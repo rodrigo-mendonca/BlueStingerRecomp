@@ -1,0 +1,24 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Blue Stinger",
+  "wikidata": "Q2742904",
+  "system": "Dreamcast",
+  "type": "recomp",
+  "original": {
+    "region": "USA",
+    "revision": "1.000",
+    "serial": "T13001N"
+  },
+  "project": "Blue Stinger Recompiled",
+  "status": "in-progress",
+  "targets": ["Windows"],
+  "toolchain": "bs-recomp (own SH-4 to C++20 static recompiler)",
+  "approach": "Static recompilation of the SH-4 executable to C++20, with the Dreamcast subsystems replaced one by one by native PC implementations, each validated against the original game running in Flycast.",
+  "help": [
+    "Vulkan renderer (stage N7)",
+    "Linux x86_64 port",
+    "Testing full playthroughs on different PCs and controllers"
+  ],
+  "tags": ["sh4", "dreamcast", "static-recompilation", "survival-horror"],
+  "notes": "Runs on Windows from the user's own disc (CDI image of NTSC-U T13001N V1.000; the executable inside is checked by SHA-256). Native file system, timing, controls (keyboard, Xbox controller), saves and movies are done; native audio (effects, voices, Manatee music, AICA DSP) is in final validation. Next: Vulkan renderer, removal of the emulated console layer, Linux. No game data is included."
+}
