@@ -2206,6 +2206,22 @@ Detalhes em `docs/N6-PLANO.md` seções 14–17.
   testes).
 - Sem regressão integral (política de 2026-10-20).
 
+### OGG/Vorbis de mods: libogg 1.3.6 + libvorbis 1.3.7 (2026-10-20; decisão do mantenedor)
+
+**Método:** tarballs oficiais da Xiph conferidos com os `SHA256SUMS` (libogg `83e67047…4638`, libvorbis `0e982409…5ab`);
+os 49 arquivos copiados comparados byte a byte com os dos tarballs (iguais; só `config_types.h` escrito aqui, tipos de
+`<stdint.h>`); testes `test_audio_ogg.cpp` (arquivo próprio de 4 KB embutido). Detalhes em `third_party/xiph/README.md`
+e `docs/N6-PLANO.md` seção 18.1.
+
+- Só a decodificação (sem `vorbisenc`), compilada pelo nosso CMake (`bs_xiph_vorbis`, avisos de terceiros desligados;
+  MSVC e GCC/Clang), no kit do Builder e no projeto exportado (`kKitEntries`): compila sem internet. Licenças BSD-3
+  (`COPYING`) copiadas para `licencas\` pela `make_builder.ps1`.
+- `parse_ogg` (`native/audio/sound_vorbis.cpp`): só da memória; um fluxo lógico; canais 1–2; taxa 8–192 kHz; duração e
+  orçamento de PCM conferidos antes de decodificar; buracos do fluxo limitados; falha de alocação tratada.
+- Testes: decodificação (duração, nível, ~440 Hz), entradas ruins, 300 mutações (troca, corte, repetição) sem queda;
+  com o ASan, nenhum acesso fora dos limites nesses casos (não é prova para entradas arbitrárias). WAV e FLAC iguais.
+- `bs_audio_tests`, na árvore deste commit: ver a mensagem do commit.
+
 ### Legendas em inglês por mod: inventário, transcrição local e pacote demonstrativo (2026-10-20; worktree n6-audio, sem commit)
 
 **Método:** `tools/dev/legendas/` (catálogo, transcrição com faster-whisper large-v3 na GPU num venv isolado, geração

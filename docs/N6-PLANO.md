@@ -607,3 +607,17 @@ descritor, ainda não modelados), os dB absolutos por passo de TL e DIPAN e o DS
 | Legendas | contratos e ponte prontos; eventos das falas ligados no `GameHost` | `loc_dialogue_bridge_voice_player`, `[legenda]` no log | **desenho só no N7** (não feito) |
 | Mods de áudio | dublagem WAV/FLAC por idioma, duração original preservada | dublagem de 30 s com estado igual; `audio_flac_*` | OGG/Vorbis: decisão do mantenedor |
 | Dependências legadas | música, filmes do legado, AICA emulada continuam; o legado é o padrão dos dois provedores do N6 | — | sai no N8 |
+
+## 18. OGG/Vorbis e fase F: o caminho da música (2026-10-20, em andamento)
+
+### 18.1 OGG/Vorbis (decisão do mantenedor: libvorbis + libogg)
+
+- **libogg 1.3.6** (2025-06-16) e **libvorbis 1.3.7** (2020-07-04, a última publicada), tarballs oficiais conferidos
+  com os `SHA256SUMS` da Xiph; só a decodificação (sem `vorbisenc`), em `third_party/xiph` com os `COPYING` (BSD-3)
+  e o único arquivo escrito aqui (`config_types.h`, tipos de `<stdint.h>`). Compilado pelo nosso CMake (`bs_xiph_vorbis`),
+  no kit do Builder e no projeto exportado (sem internet); licenças em `licencas\` da distribuição.
+- Atrás da mesma interface: `parse_ogg` (`native/audio/sound_vorbis.cpp`), só da memória, um fluxo lógico, canais
+  1–2, taxa 8–192 kHz, duração e orçamento de PCM conferidos antes de decodificar, buracos do fluxo limitados.
+- Testes (`test_audio_ogg.cpp`, arquivo próprio de 4 KB embutido): decodificação (duração, nível, ~440 Hz), entradas
+  ruins e **300 mutações** (bytes trocados, cortes, repetições) sem queda; com o ASan, sem acesso fora dos limites.
+  `bs_audio_tests` **45/45** (normal e ASan). WAV e FLAC inalterados.

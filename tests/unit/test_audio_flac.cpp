@@ -88,7 +88,7 @@ BS_TEST(audio_flac_rejects_bad_input) {
     BS_CHECK(!na::parse_flac(bad, &err));
 }
 
-// pela extensao, num arquivo: FLAC decodifica; OGG e erro explicito (decodificador pendente); WAV continua igual
+// pela extensao, num arquivo: FLAC decodifica; um OGG sem fluxo valido e recusado com motivo
 BS_TEST(audio_flac_load_by_extension) {
     const auto dir = std::filesystem::temp_directory_path() / "bs_audio_flac_test";
     std::filesystem::create_directories(dir);
@@ -101,7 +101,7 @@ BS_TEST(audio_flac_load_by_extension) {
     std::string err;
     auto        s = na::load_sound(dir / "voz.flac", &err);
     BS_CHECK(s && s->pcm == pcm);
-    BS_CHECK(!na::load_sound(dir / "voz.ogg", &err) && err.find("OGG") != std::string::npos);
+    BS_CHECK(!na::load_sound(dir / "voz.ogg", &err) && err.find("OGG") != std::string::npos);  // "OggS" sem fluxo: invalido
     std::filesystem::remove_all(dir);
 }
 

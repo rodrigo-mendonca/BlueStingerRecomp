@@ -77,7 +77,7 @@ std::shared_ptr<SoundData> load_sound(const fs::path& file, std::string* err) {
     std::string why;
     std::shared_ptr<SoundData> s;
     if (ext == ".flac") s = parse_flac(bytes, &why);
-    else if (ext == ".ogg") why = "decodificador OGG/Vorbis pendente (docs/N6-PLANO.md secao 16); use WAV ou FLAC";
+    else if (ext == ".ogg") s = parse_ogg(bytes, &why);
     else s = parse_wav(bytes, &why);
     if (!s) return fail(err, file.filename().string() + ": " + why);
     return s;
