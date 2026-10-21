@@ -178,7 +178,10 @@ class Gdb:
 
 
 FLYCAST = "C:/Source/flycast-oracle/build/flycast.exe"
-GAME = os.path.join(os.path.dirname(__file__), "..", "..", "ISO", "Blue Stinger.cdi")
+# a imagem do usuario em ISO\ do repositorio; num worktree (sem ISO\), a do repositorio principal ao lado
+GAME = next((g for g in (os.path.join(os.path.dirname(__file__), "..", "..", d, "ISO", "Blue Stinger.cdi")
+                         for d in (".", os.path.join("..", "recomp-BStinger"))) if os.path.exists(g)),
+            os.path.join(os.path.dirname(__file__), "..", "..", "ISO", "Blue Stinger.cdi"))
 
 
 def connect(a) -> Gdb:
@@ -196,13 +199,24 @@ def connect(a) -> Gdb:
     # Logo depois de uma sessao anterior, a primeira conexao as vezes cai (ConnectionResetError
     # no Windows): tenta de novo algumas vezes antes de desistir.
     last = None
+    # O primeiro "?" com prazo: as vezes o stub do Flycast fica em "Waiting for debugger" sem atender a conexao aceita
+    # (2026-10-20/21: duas sessoes presas assim, o Python esperando a resposta para sempre). Sem resposta em 20 s, fecha
+    # essa conexao e tenta de novo; depois do aperto de mao, volta ao modo bloqueante de sempre.
     for attempt in range(5):
+        g = None
         try:
             g = Gdb(port=a.port)
+            g.s.settimeout(20.0)
             g.cmd("?")
+            g.s.settimeout(None)
             return g
         except (ConnectionResetError, ConnectionRefusedError, socket.timeout) as e:
             last = e
+            if g is not None:
+                try:
+                    g.s.close()
+                except OSError:
+                    pass
             time.sleep(2.0)
         except BaseException:
             finish(a, None)
@@ -558,14 +572,41 @@ def roteiro_bu(path):
     return segs
 
 
+# Valores intermediarios do analogico e dos gatilhos (pad_state_text: AX=n, AY=n, LT=n, RT=n, A2X=n, A2Y=n; os roteiros
+# gravados com um controle de verdade, tools/dev/gravacoes.py) vao acima dos 32 bits da mascara: bit PD_VALORES e os
+# bytes x, y, R e L. A2X/A2Y sao aceitos e ignorados (o controle padrao nao tem o segundo analogico: x2/y2 ficam 0, como
+# no decodificador, transitional/pad_contract.cpp). O gatilho conta como botao com o byte >= 128, como no SDK.
+PD_VALORES = 1 << 40
+PD_CAMPOS = {"AX": 48, "AY": 56, "RT": 64, "LT": 72}
+
+
 def mascara_pd(estado, path, n):
     if estado == "-":
         return 0
     m = 0
+    vals = {"AX": 128, "AY": 128, "RT": 0, "LT": 0}
+    numerico = False
     for b in estado.split("+"):
+        if "=" in b:
+            k, _, v = b.partition("=")
+            if k not in ("AX", "AY", "RT", "LT", "A2X", "A2Y") or not v.isdigit() or int(v) > 255:
+                raise SystemExit(f"{path}:{n}: valor invalido '{b}' (AX, AY, LT, RT, A2X, A2Y = 0..255)")
+            if k in vals:
+                vals[k] = int(v)
+                numerico = True
+            continue
         if b not in PD_BITS:
             raise SystemExit(f"{path}:{n}: botao desconhecido '{b}' (validos: {', '.join(PD_BITS)})")
         m |= 1 << PD_BITS[b]
+    if numerico:
+        # os extremos digitais no mesmo estado viram bytes (ANALOG_LEFT = 0 ...), o gatilho inteiro vira 255
+        for bit, k, v in ((26, "AX", 0), (27, "AX", 255), (24, "AY", 0), (25, "AY", 255), (16, "RT", 255), (17, "LT", 255)):
+            if m & (1 << bit):
+                vals[k] = v
+        m &= ~(PD_ANALOG | (1 << 16) | (1 << 17))
+        m |= (1 << 16) * (vals["RT"] >= 128) | (1 << 17) * (vals["LT"] >= 128) | PD_VALORES
+        for k, sh in PD_CAMPOS.items():
+            m |= vals[k] << sh
     return m
 
 
@@ -608,9 +649,16 @@ class EntradaBu:
 
     def aplica(self, g):
         on = self.mascara()
-        an, on = on & PD_ANALOG, on & ~PD_ANALOG
-        x1 = -128 if an & (1 << 26) else 127 if an & (1 << 27) else 0
-        y1 = -128 if an & (1 << 24) else 127 if an & (1 << 25) else 0
+        if on & PD_VALORES:  # valores intermediarios: os bytes do controle, como o decodificador (eixo - 128)
+            b = {k: (on >> sh) & 0xFF for k, sh in PD_CAMPOS.items()}
+            x1, y1 = b["AX"] - 128, b["AY"] - 128
+            g.write(PDS_PORTA_A + 0x18, struct.pack("<HH", b["RT"], b["LT"]))
+            on &= 0xFFFFFFFF
+        else:
+            an = on & PD_ANALOG
+            x1 = -128 if an & (1 << 26) else 127 if an & (1 << 27) else 0
+            y1 = -128 if an & (1 << 24) else 127 if an & (1 << 25) else 0
+        on &= ~PD_ANALOG & 0xFFFFFFFF
         g.write(PDS_PORTA_A + 0x1C, struct.pack("<hh", x1, y1))
         # todo passo, inclusive o neutro: senao o controle do Flycast (teclado, foco) vazaria para o PDS
         press, release = (on ^ self.old) & on, (on ^ self.old) & ~on & 0xFFFFFFFF

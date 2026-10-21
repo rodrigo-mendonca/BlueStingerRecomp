@@ -9,6 +9,7 @@
 #include "pvr/holly_intc.h"
 #include "pvr/holly_sb.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -155,6 +156,96 @@ BS_TEST(input_native_keyboard) {
     sys.key("Z", true);
     sys.release_keyboard();
     BS_CHECK(sys.latch({}).buttons == ni::B);
+}
+
+// Filtro da amostra do host (gravacao de sessoes, BS_GRAVAR): ve o estado combinado e decide o que o jogo ve; nao
+// vale com a fonte de teste.
+BS_TEST(input_native_filter) {
+    ni::InputSystem       sys;
+    std::vector<uint32_t> seen;
+    sys.set_filter([&](const ni::SampleContext& ctx, const ni::ControllerState& s) {
+        seen.push_back(s.buttons);
+        ni::ControllerState out = s;
+        if (ctx.sample == 1) out.buttons = 0;  // p.ex. congelado dentro do passo
+        return out;
+    });
+    sys.key("Z", true);
+    BS_CHECK(sys.latch({0}).buttons == ni::A);
+    BS_CHECK(sys.latch({1}).buttons == 0 && sys.last().buttons == 0);
+    BS_CHECK(seen.size() == 2 && seen[0] == ni::A && seen[1] == ni::A);
+    sys.set_test_source([](const ni::SampleContext&) {
+        ni::ControllerState s;
+        s.buttons = ni::Start;
+        return s;
+    });
+    BS_CHECK(sys.latch({1}).buttons == ni::Start && seen.size() == 2);
+    // a quantizacao da gravacao (bytes do controle do Dreamcast) e estavel: gravar e reproduzir dao o mesmo estado
+    sys.set_test_source({});
+    ni::ControllerState a;
+    a.axis(ni::Axis::StickX) = 0.3f, a.axis(ni::Axis::TriggerR) = 0.77f;
+    const ni::ControllerState q = ib::to_controller(ib::to_pad(a));
+    BS_CHECK(ib::to_controller(ib::to_pad(q)) == q);
+    BS_CHECK(ib::to_pad(q).joyx == ib::to_pad(a).joyx && ib::to_pad(q).rtrig == ib::to_pad(a).rtrig);
+    BS_CHECK(pad_state_from_text(pad_state_text(ib::to_pad(q))).joyx == ib::to_pad(q).joyx);
+}
+
+namespace {
+uint64_t g_recStep = 0;
+}
+
+// Gravacao de sessao (SessionRecorder, revisao Codex 2026-10-21): congela no primeiro latch do passo, grava so mudancas,
+// passos sem leitura, roteiro base exclusivo ate o passo de troca, e o roteiro gravado reproduz o mesmo estado por passo.
+BS_TEST(input_native_session_recorder) {
+    input_set_step_counter([] { return g_recStep; });
+    std::vector<std::string> lines;
+    ib::SessionRecorder      rec([&](const std::string& l) { lines.push_back(l); }, "indice passo\n1 START\n3 -\n", 4);
+    BS_CHECK(rec.base_until() == 4);
+    ni::InputSystem sys;
+    sys.set_filter([&](const ni::SampleContext&, const ni::ControllerState& s) { return rec.filter(s); });
+    std::vector<std::pair<uint64_t, PadState>> seen;  // o que o jogo viu no primeiro latch de cada passo
+    auto latch = [&](uint64_t step) {
+        g_recStep               = step;
+        const PadState p        = ib::to_pad(sys.latch({0}));
+        if (seen.empty() || seen.back().first != step) seen.push_back({step, p});
+        return p;
+    };
+    sys.key("Z", true);  // o jogador aperta A durante o trecho base: ignorado
+    BS_CHECK(latch(1).buttons == kPadStart && latch(1).buttons == kPadStart);
+    BS_CHECK(latch(3).buttons == 0);
+    BS_CHECK(latch(4).buttons == kPadA);  // o passo da troca ja e do jogador
+    sys.key("Z", false);
+    BS_CHECK(latch(4).buttons == kPadA);  // congelado dentro do passo
+    BS_CHECK(latch(5).buttons == 0);
+    sys.key("L", true);  // analogico no extremo direito
+    sys.gamepad_added(1, "pad");
+    sys.gamepad_axis(1, "lefttrigger", 0.5f);  // valor intermediario do gatilho
+    latch(9);  // passos 6-8 sem leitura
+    sys.key("L", false);
+    sys.gamepad_axis(1, "lefttrigger", 0.0f);
+    latch(12);
+    rec.comment("checkpoint 1 passo 12");
+    const std::vector<std::string> want = {"1 START", "3 -", "4 A", "5 -"};
+    BS_CHECK(lines.size() == 7 && std::equal(want.begin(), want.end(), lines.begin()));
+    BS_CHECK(lines.size() == 7 && lines[4].rfind("9 ", 0) == 0 && lines[4].find("LT=") != std::string::npos && lines[5] == "12 -" &&
+             lines[6] == "# checkpoint 1 passo 12");
+    // o texto gravado como roteiro "indice passo": o mesmo estado em cada passo lido, inclusive os bytes do gatilho
+    std::string script = "indice passo\n";
+    for (const auto& l : lines) script += l + "\n";
+    auto replay = make_scripted_input(script);
+    for (const auto& [step, p] : seen) {
+        g_recStep        = step;
+        const PadState r = replay->read(0, 0);
+        BS_CHECK(r.buttons == p.buttons && r.joyx == p.joyx && r.joyy == p.joyy && r.ltrig == p.ltrig && r.rtrig == p.rtrig);
+    }
+    // DESCONECTADO no roteiro base e recusado (a presenca do controle na janela nao passa pelo filtro)
+    bool threw = false;
+    try {
+        ib::SessionRecorder bad([](const std::string&) {}, "indice passo\n1 DESCONECTADO\n", 5);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    BS_CHECK(threw);
+    input_set_step_counter(nullptr);
 }
 
 // Controles: botoes, eixos, gatilhos, zona morta, conexao/desconexao, troca automatica, preferido.

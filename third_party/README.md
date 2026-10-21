@@ -14,3 +14,4 @@ projeto (ver LEGAL.md).
 | xxHash | BSD-2 | cache de texturas/pipelines | M5 |
 | pl_mpeg | MIT | conversão dos filmes no Builder (`third_party/pl_mpeg`) | N5 |
 | dr_flac | domínio público ou MIT-0 | FLAC de mods de áudio (`third_party/dr_libs`) | N6 |
+| libogg + libvorbis | BSD-3 (Xiph.Org) | OGG/Vorbis de mods de áudio, só a decodificação (`third_party/xiph`) | N6 |

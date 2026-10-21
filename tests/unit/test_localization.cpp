@@ -336,3 +336,16 @@ BS_TEST(loc_mod_legendas_en_gerado) {
     subs.movie_ended();
     BS_CHECK(subs.active().empty());
 }
+
+// Legendas em ingles por padrao (2026-10-21): o idioma padrao en-US acha um pacote feito para "en" (recuo) e o
+// manifesto marca o conteudo nao revisado (provisorio = true: as legendas por IA); sem a chave, nao provisorio
+BS_TEST(loc_mod_provisional_and_en_us_default) {
+    Dir d;
+    pkg(d.p, "legendas-en", 10, "idiomas = [\"en\"]\nprovisorio = true\n");
+    pkg(d.p, "revisado", 5, "idiomas = [\"en\"]\n");
+    put(d.p / "legendas-en" / "legendas" / "falas.en.toml", "x");
+    const auto m = nl::ModPackages::discover(d.p, "T13001N V1.000");
+    BS_CHECK(m.packages().size() == 2 && m.packages()[0].provisional && !m.packages()[1].provisional);
+    const auto f = m.find("legendas/falas.{idioma}.toml", "en-US");
+    BS_CHECK(f && f->package->id == "legendas-en" && f->language == "en");
+}

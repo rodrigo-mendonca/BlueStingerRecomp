@@ -64,6 +64,7 @@ inline uint8_t sd_tl(int8_t v, uint8_t base = kSdDefaultBaseTl) {
 inline uint8_t sd_dipan(int8_t v) { return uint8_t((v < 0 ? 0x10 : 0) | (((v < 0 ? ~v : v) >> 2) & 0xF)); }
 float sd_volume_gain(int8_t v, uint8_t base = kSdDefaultBaseTl);  // 10^(-0,375 dB * TL / 20)
 float sd_pan(int8_t v);          // pan do mixer (o outro lado com 10^(-3 dB * nivel / 20); nivel 15 = mudo)
+float dipan_pan(uint8_t dipan);  // o mesmo a partir do DIPAN da AICA (bit 4 = esquerda, nivel 0..15); efeitos e musica
 
 struct SdAdapterOptions {
     // Papeis medidos no O6 (o indicio estatico anterior, "pan em a", estava ERRADO: a e o volume)
@@ -87,6 +88,9 @@ struct SdSound {
     std::shared_ptr<const SoundData> data;
     int64_t                          logicalEnd = -1;
     uint8_t                          baseTl = kSdDefaultBaseTl;  // nivel do efeito (descritor SOSP, byte 0x19)
+    double releaseDbPerSecond = 0;  // soltura no parar (envelope da AICA pela RR do descritor); 0 = corta na hora
+    float   dspSend = 0;  // envio ao DSP (IMXL do descritor, razao sobre o volume) e o barramento (ISEL)
+    uint8_t dspBus  = 0;
 };
 using SdResolver = std::function<SdSound(uint8_t bank, uint8_t request)>;
 
@@ -123,11 +127,14 @@ private:
         uint32_t tag   = 0;
         int8_t   p15 = 0, p16 = 0;
         uint8_t  baseTl = kSdDefaultBaseTl;  // do som atual (o nivel do volume vale sobre ele)
+        double   releaseDbPerSecond = 0;     // a soltura do som atual (parar)
+        VoiceId  releasing = 0;              // em soltura depois do parar: um tocar no mesmo canal a corta
     };
     uint32_t param(const SdHandle* h, int8_t value, uint16_t time, bool cmd15, bool checkInit);
     void     apply(Port& p);
     void     release(Port& p);
-    void     drop(Port& p);  // para as vozes da porta (atual e cauda) e lembra delas para descartar o evento final
+    // para as vozes da porta (atual e cauda) e lembra delas para descartar o evento final; keyOff (parar) = soltura
+    void     drop(Port& p, bool keyOff);
     void     other(const MixerEvent& e);
 
     AudioMixer&              mixer_;

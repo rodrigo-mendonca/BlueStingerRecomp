@@ -42,7 +42,8 @@ o jogo procura, nesta ordem:
 ## Legendas por idioma
 
 `mods\video\<NOME>.<idioma>.srt` ou `.vtt`, por exemplo `NEWGAME.pt.srt` ou `E001.en.vtt`. O jogo usa
-o idioma escolhido em `--legendas <idioma>`; sem a opção, não mostra legendas. O jogo original não tem
+o idioma escolhido em `--legendas <idioma>` ou no `instalacao.toml` (`[legendas] idioma`); o padrão é `en-US`
+(recua para `.en`), e `--legendas nenhuma` desliga. Sem arquivo no idioma, não mostra legendas. O jogo original não tem
 legendas: todas vêm de mods, inclusive traduções novas.
 
 ## Manifesto de mods (opcional)

@@ -233,7 +233,9 @@ def main():
     shutil.copy(os.path.join(AQUI, "glossario.tsv"), os.path.join(mod, "fontes", "glossario.tsv"))
     with open(os.path.join(mod, "mod.toml"), "w", encoding="utf-8", newline="\n") as o:
         o.write(f'formato    = 1\nid         = "legendas-en"\nnome       = "Legendas em inglês (falas e filmes)"\n'
-                f'versao     = "{a.versao}"\nprioridade = 10\nidiomas    = ["{IDIOMA}"]\njogo       = "T13001N V1.000"\n')
+                f'versao     = "{a.versao}"\nprioridade = 10\nidiomas    = ["{IDIOMA}"]\njogo       = "T13001N V1.000"\n'
+                # transcricao automatica sem revisao humana completa: o jogo avisa no log; nada a distribui
+                f'provisorio = {"false" if rel["linhas"] and rel["revisadas"] == rel["linhas"] else "true"}\n')
     with open(os.path.join(mod, "README.md"), "w", encoding="utf-8", newline="\n") as o:
         o.write(f"""# Legendas em inglês para o Blue Stinger Native PC ({a.versao})
 

@@ -71,6 +71,9 @@ enum class AudioEffectsProvider { Legacy, Native };
 // Provedor das falas (N6 fase E, docs/N6-PLANO.md secao 16): legado (padrao ate a prova) = o MW WAV da CRI original;
 // nativo = transitional/sound_adapter (WAV do disco do usuario; dublagem de mods em modsudio\<idioma>oz).
 enum class AudioVoicesProvider { Legacy, Native };
+// Provedor da musica (N6 fase F, docs/N6-PLANO.md secao 18): legado (padrao ate a prova) = o SDK de som e o driver
+// Manatee originais na AICA emulada; nativo = o sequenciador e o sintetizador Manatee em C++ (native/audio/manatee_*).
+enum class AudioMusicProvider { Legacy, Native };
 
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
@@ -87,6 +90,7 @@ struct GameOptions {
     std::string           subtitles;  // idioma das legendas dos filmes ("" = sem)
     AudioEffectsProvider  audioEffects = AudioEffectsProvider::Legacy;
     AudioVoicesProvider   audioVoices  = AudioVoicesProvider::Legacy;
+    AudioMusicProvider    audioMusic   = AudioMusicProvider::Legacy;
     std::filesystem::path modAudio;  // mods de audio (modsudio): dublagens por idioma, opcional
     std::string           dubbing;   // idioma da dublagem ("" = vozes originais)
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).

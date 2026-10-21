@@ -8,7 +8,11 @@
 //   VoicePlayer (native/audio/voice_player); o player do jogo (8C08B860, 8C08B900) continua o recompilado. As falas vem
 //   dos WAV do disco do usuario (data\disc\BSDATA); dublagens de mods em mods\audio\<idioma>\voz\<nome>.(wav|...)
 //   (sound_catalog.h), com o fim que o jogo ve sempre o da fala original.
-// Musica continua no legado (AICA emulada). O legado (padrao ate a prova) nao instala nada.
+// Musica (fase F, --audio-musica nativo): as entradas do SDK que o gerenciador de musica do jogo (8C02AD80, 8C02AE20,
+//   8C02AE70) e o carregador (8C02A4FC) chamam viram o MusicPlayer (native/audio/manatee_player): download de SMPB/SMSB
+//   (8C15D534; os outros tipos seguem para o original), tocar, parar, volume e pan com fade. O gerenciador continua o
+//   recompilado; o tick de 250 Hz do driver anda no relogio logico do mixer (176,4 quadros por tick).
+// O legado (padrao ate a prova) nao instala nada.
 #include "boundary_registry.h"
 
 #include <cstdint>
@@ -29,6 +33,8 @@ struct Options {
     bool                  effects = false;
     std::filesystem::path mlt;  // <data>\disc\BSDATA\BS_SND.MLT
     bool                  voices = false;
+    bool                  music  = false;
+    std::filesystem::path driver;     // <data>\disc\BSDATA\MANATEE.DRV (as tabelas do driver, conferidas)
     std::filesystem::path voiceDir;   // <data>\disc\BSDATA (os WAV originais)
     std::filesystem::path modsAudio;  // mods\audio (dublagens; opcional)
     std::string           language;   // idioma da dublagem ("" = so o original)

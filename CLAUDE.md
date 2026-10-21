@@ -68,10 +68,14 @@ Ferramentas:
   Diagnósticos (build com mods): `BS_SAVES_H1=1` (SAVE pelo título) e `BS_SAVES_H2=<passo>` (simula só o
   save point no gameplay). Oráculo: `flycast_oracle.py bu-trace` (`--forcar-save-point`, `--ler-fim`), `n4_vmu.py`.
 - Filmes (N5): `--video nativo|legado` (padrão nativo desde o fim do N5; legado = fallback temporário; nativo = MP4 do Builder em
-  `data\video` + `mods\video`, Media Foundation/XAudio2) e `--legendas <idioma>`. O Builder converte os SFD
+  `data\video` + `mods\video`, Media Foundation/XAudio2) e `--legendas <idioma>|nenhuma` (padrão en-US; `[legendas] idioma` no `instalacao.toml`). O Builder converte os SFD
   (`--sem-filmes` desliga e apaga). `bs-video-probe [--builder <BSDATA> <saida> | --converter <dir> <SFD>]`;
   primeiro filme no jogo: `tools/dev/n5_e001.ps1`; matriz dos 17 IDs: `tools/dev/n5_matriz.py`; oráculo
   `tools/dev/n5_oraculo.py`. Unitários `bs_video_tests` (ctest `video`). Mods: `docs/MODS-VIDEO.md`.
+- Áudio (N6): `--audio nativo|legado` (os três provedores; **padrão nativo** desde a promoção condicional da fase H,
+  `kAudioNativeDefault` em `app/main_sdl.cpp`; legado = fallback até o N8), `--audio-efeitos|-falas|-musica nativo|legado`
+  valem sobre ela; `BS_AUDIO=nativo|legado` muda o padrão nas baterias. `--dublagem <idioma>` (mods\audio). Bateria da fase H (nível 2): `tools/dev/n6_h.ps1 -Exe <exe>
+  [-Casos H1,...] [-BuildAsan <dir>] [-OraculoMusica <tsv>]`; dirigidos `n6_efeitos.ps1`, `n6_falas.ps1`; `bs-musica`.
 - Modo espectador (janela): `BS_INPUT_SCRIPT=<roteiro>` sem `--headless` reproduz o roteiro na Preview
   SDL3 (só o roteiro controla; título com passo, sala e botões). Ex.: `$env:BS_RELOGIO_FIXO="1700000000";
   $env:BS_INPUT_SCRIPT="tools\dist\roteiros\passo_cgate.txt"; build\msvc-release\app\bluestinger.exe --data dist\BlueStinger-Preview\data`.
@@ -80,6 +84,11 @@ Ferramentas:
   RAM, sessão gravada como roteiro `indice passo`); `tools/dev/assistido_ir.py` navega até (x, z).
   Roteiros por passo de jogo valem igual nos dois modos de tempo: `tools/dist/test_assistido.ps1`
   compara `--tempo nativo` e `experimental` (quadros, leituras, áudio, estado por passo).
+- Gravações de gameplay (só desenvolvimento): `python tools/dev/gravacoes.py` (interface Tk) ou `... gravar <nome>
+  [--save <BLUESTIN.000> --load] [--de <sessão|roteiro> --ate <passo|cpN>]`, `... reproduzir <nome> [--janela]`,
+  `... exportar <nome> <vms>`. O jogador joga na janela (teclado ou controle; F5 = checkpoint); `BS_GRAVAR=<arquivo>`
+  grava a entrada por passo de jogo (roteiro `indice passo`, o mesmo do `BS_INPUT_SCRIPT` e do oráculo do Flycast) e a
+  reprodução headless confere o estado por passo e os saves. Sessões em `%LOCALAPPDATA%\BlueStingerRecomp\gravacoes`.
 
 ## Revisão com Codex (revisor independente)
 

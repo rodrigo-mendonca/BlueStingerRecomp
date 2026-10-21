@@ -55,6 +55,11 @@ namespace {
 
 const char* kTitle = "Blue Stinger (recompilado)";
 
+// N6-H: o padrao dos tres provedores de audio (efeitos, falas, musica): NATIVO desde a promocao condicional da fase H
+// (docs/N6-PLANO.md secao 20.5; H1-H8 aprovados, H9 bloqueado pelo desempenho do N2). O legado continua como fallback ate
+// o N8: --audio legado ou BS_AUDIO=legado; --audio-efeitos/-falas/-musica valem sobre os dois.
+constexpr bool kAudioNativeDefault = true;
+
 struct Args {
     fs::path gameData, flash, map, dump, capture;
     fs::path positional;  // argumento solto (antes: a imagem CDI) -> mensagem explicando
@@ -71,8 +76,12 @@ struct Args {
     bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
+    bs::AudioMusicProvider   audioMusic   = bs::AudioMusicProvider::Legacy;    // --audio-musica nativo|legado (N6 fase F)
     std::string              dubbing;                                         // --dublagem <idioma> (mods\audio)
-    std::string       subtitles;  // --legendas <idioma>
+    int                      audioAll = -1;  // --audio nativo|legado (os tres provedores; -1 = nao dado)
+    bool                     effectsSet = false, voicesSet = false, musicSet = false;  // --audio-* explicitos (valem sobre --audio)
+    std::string       subtitles;  // --legendas <idioma>|nenhuma
+    bool              subtitlesSet = false;
     bool     savesPortable = false;  // --saves-portatil: saves\ ao lado do executavel
     fs::path savesImport, savesExport;       // --saves-importar/--saves-exportar <arquivo.vms>
     std::string savesName = "BLUESTIN.000";  // --saves-nome (slot 1 do jogo; 2-6 = .001-.005)
@@ -134,14 +143,27 @@ bool parseArgs(Args& a) {
             else if (*v == L"nativo") a.video = bs::VideoProvider::Native;
             else return false;
         }
-        else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v));
+        else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v)), a.subtitlesSet = true;
+        else if (s == L"--audio" && (v = next())) {
+            if (*v == L"legado") a.audioAll = 0;
+            else if (*v == L"nativo") a.audioAll = 1;
+            else return false;
+        }
         else if (s == L"--audio-falas" && (v = next())) {
+            a.voicesSet = true;
             if (*v == L"legado") a.audioVoices = bs::AudioVoicesProvider::Legacy;
             else if (*v == L"nativo") a.audioVoices = bs::AudioVoicesProvider::Native;
             else return false;
         }
         else if (s == L"--dublagem" && (v = next())) a.dubbing = utf8(fs::path(*v));
+        else if (s == L"--audio-musica" && (v = next())) {
+            a.musicSet = true;
+            if (*v == L"legado") a.audioMusic = bs::AudioMusicProvider::Legacy;
+            else if (*v == L"nativo") a.audioMusic = bs::AudioMusicProvider::Native;
+            else return false;
+        }
         else if (s == L"--audio-efeitos" && (v = next())) {
+            a.effectsSet = true;
             if (*v == L"legado") a.audioEffects = bs::AudioEffectsProvider::Legacy;
             else if (*v == L"nativo") a.audioEffects = bs::AudioEffectsProvider::Native;
             else return false;
@@ -155,6 +177,16 @@ bool parseArgs(Args& a) {
         else if (!s.empty() && s[0] != L'-' && a.positional.empty()) a.positional = s;
         else return false;
     }
+    bool native = kAudioNativeDefault;
+    if (const char* e = std::getenv("BS_AUDIO"); e && *e) {
+        if (std::strcmp(e, "nativo") == 0) native = true;
+        else if (std::strcmp(e, "legado") == 0) native = false;
+        else return false;
+    }
+    if (a.audioAll >= 0) native = a.audioAll == 1;
+    if (!a.effectsSet) a.audioEffects = native ? bs::AudioEffectsProvider::Native : bs::AudioEffectsProvider::Legacy;
+    if (!a.voicesSet) a.audioVoices = native ? bs::AudioVoicesProvider::Native : bs::AudioVoicesProvider::Legacy;
+    if (!a.musicSet) a.audioMusic = native ? bs::AudioMusicProvider::Native : bs::AudioMusicProvider::Legacy;
     return a.scale >= 1 && a.scale <= 8;
 }
 
@@ -455,6 +487,30 @@ std::string spectatorText() {
     return t;
 }
 
+// Gravacao de sessao (desenvolvimento, tools/dev/gravacoes.py): BS_GRAVAR=<arquivo> na janela grava o que o
+// jogador faz com teclado ou controle como um roteiro "indice passo" (o formato do BS_INPUT_SCRIPT), uma linha a
+// cada mudanca. A amostra fica congelada dentro do passo de jogo e passa pelos bytes do controle do Dreamcast, entao
+// o jogo ve na gravacao exatamente o que vera na reproducao. BS_GRAVAR_BASE=<roteiro> com BS_GRAVAR_ATE=<passo>:
+// antes desse passo vale o roteiro (copiado para a gravacao) e o jogador nao controla (continuar de um checkpoint).
+// F5 marca um checkpoint (comentario com o passo e o quadro em <pasta do arquivo>/checkpoint_<n>.bmp; o quadro e o mais
+// recente no fim da iteracao da janela, entao pode ser de um VBlank antes do passo anotado: so ilustra). A logica da
+// gravacao fica em transitional/input_bridge.h (SessionRecorder, com testes); aqui so o arquivo e os checkpoints.
+struct Recorder {
+    FILE*                                              f = nullptr;
+    fs::path                                           dir;
+    std::unique_ptr<ib::SessionRecorder>               rec;
+    int                                                checkpoints = 0;
+    bool                                               pendingCheckpoint = false;
+
+    void checkpoint(uint64_t gameStep, const bs::GameFrame& frame) {
+        ++checkpoints;
+        rec->comment("checkpoint " + std::to_string(checkpoints) + " passo " + std::to_string(gameStep));
+        if (frame.width) writeBmp(dir / ("checkpoint_" + std::to_string(checkpoints) + ".bmp"), frame);
+        std::printf("[gravacao] checkpoint %d no passo %llu\n", checkpoints, static_cast<unsigned long long>(gameStep));
+    }
+};
+std::unique_ptr<Recorder> g_recorder;
+
 int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Window* window,
               SDL_Renderer* renderer) {
     SDL_Texture*  texture = nullptr;
@@ -483,6 +539,10 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
                     frame.width) {  // captura do quadro exibido
                     const fs::path path = a.capture / ("quadro_" + std::to_string(++captures) + ".bmp");
                     std::printf("captura %s: %s\n", utf8(path).c_str(), writeBmp(path, frame) ? "ok" : "FALHOU");
+                    break;
+                }
+                if (e.key.key == SDLK_F5 && g_recorder) {
+                    if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) g_recorder->pendingCheckpoint = true;  // depois do quadro
                     break;
                 }
                 if (e.key.key == SDLK_F11 && e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
@@ -520,6 +580,8 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             }
             ok &= SDL_UpdateTexture(texture, nullptr, frame.argb.data(), int(frame.width * 4));
         }
+        if (g_recorder && g_recorder->pendingCheckpoint)  // F5: com o quadro desta iteracao
+            g_recorder->pendingCheckpoint = false, g_recorder->checkpoint(g_spectator.step.load(), frame);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         ok &= SDL_RenderClear(renderer);
         if (texture) ok &= SDL_RenderTexture(renderer, texture, nullptr, nullptr);
@@ -536,7 +598,14 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             char                t[200];
             std::snprintf(t, sizeof t, "%s %s - %.1f campos/s, trabalho %.1f ms (max %.1f)", kTitle, BS_VERSION,
                           s.fieldsPerSecond, s.workAvgMs, s.workMaxMs);
-            SDL_SetWindowTitle(window, g_spectator.on ? (t + spectatorText()).c_str() : t);
+            std::string full = g_spectator.on ? t + spectatorText() : std::string(t);
+            if (g_recorder) {
+                const uint64_t st = g_spectator.step.load();
+                full += (st < g_recorder->rec->base_until() ? " | REPRODUZINDO ate o passo " + std::to_string(g_recorder->rec->base_until())
+                                                    : std::string(" | GRAVANDO")) +
+                        ", passo " + std::to_string(st) + " (F5 = checkpoint)";
+            }
+            SDL_SetWindowTitle(window, full.c_str());
         }
     }
     host.requestStop();
@@ -710,6 +779,21 @@ struct TempSaves {
 };
 TempSaves g_tempSaves;
 
+// Idioma das legendas: --legendas > legendas.idioma do instalacao.toml > en-US (padrao). "" = desligadas.
+std::string subtitlesLanguage(const Args& a) {
+    std::string out;
+    if (a.subtitlesSet) {
+        if (bs::native::install::parse_subtitles(a.subtitles, &out)) return out;
+        std::fprintf(stderr, "[legenda] --legendas \"%s\" invalido; usando %s\n", a.subtitles.c_str(),
+                     bs::native::install::kDefaultSubtitles);
+        return bs::native::install::kDefaultSubtitles;
+    }
+    std::string warn;
+    const auto  cfg = bs::native::install::read_config(exeDir(), &warn);
+    if (!warn.empty()) std::fprintf(stderr, "[legenda] %s\n", warn.c_str());
+    return cfg.subtitles;
+}
+
 fs::path savesRoot(const Args& a) {
     // Precedencia: --saves-pasta > --saves-portatil > instalacao.toml (modo portatil gravado pelo
     // BlueStinger-Recompiler; vale ao abrir o executavel direto) > no --headless, cartao temporario >
@@ -753,10 +837,11 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.video             = a.video;
     opt.audioEffects      = a.audioEffects;
     opt.audioVoices       = a.audioVoices;
+    opt.audioMusic        = a.audioMusic;
     opt.dubbing           = a.dubbing;
     opt.modAudio          = exeDir() / L"mods" / L"audio";  // dublagens e audio de mods (opcional)
     opt.modVideo          = exeDir() / L"mods" / L"video";  // filmes e legendas de mods (opcional)
-    opt.subtitles         = a.subtitles;
+    opt.subtitles         = subtitlesLanguage(a);
     opt.registerFunctions = [] { bsg::register_functions(); };
     opt.realtime          = a.headless == 0;
     opt.vblankLimit       = a.headless;
@@ -779,9 +864,15 @@ const char* kUsage =
     "     --saves-importar <arquivo.vms> | --saves-exportar <arquivo.vms> [--saves-nome BLUESTIN.00n]:\n"
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
     "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
-    "       legado = Sofdec original, fallback temporario); --legendas <idioma> (pt, en, pt-br...)\n"
-    "     --audio-efeitos nativo|legado: efeitos sonoros (padrao: legado = SDK de som original; nativo = em validacao,\n"
-    "       BS_SND.MLT do disco pelo mixer nativo; musica e falas continuam no legado)\n"
+    "       legado = Sofdec original, fallback temporario)\n"
+    "     --legendas <idioma>|nenhuma: legendas de mods nos filmes e nas falas (padrao: en-US, ou legendas.idioma do\n"
+    "       instalacao.toml; en-US recua para en; sem legendas no idioma, nada aparece)\n"
+    "     --audio nativo|legado: os tres provedores de audio de uma vez (padrao: nativo; legado = SDK de som e driver\n"
+    "       Manatee originais na AICA emulada, fallback temporario); as opcoes abaixo valem sobre ela\n"
+    "     --audio-efeitos nativo|legado: efeitos sonoros (padrao: nativo = BS_SND.MLT do disco pelo mixer nativo)\n"
+    "     --audio-falas nativo|legado: falas (padrao: nativo = WAV do disco e dublagens de mods)\n"
+    "     --audio-musica nativo|legado: musica (padrao: nativo = sequenciador e sintetizador Manatee em C++ com os\n"
+    "       M*.MPB/MSB e o MANATEE.DRV do disco, e o DSP da AICA)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";
@@ -915,11 +1006,50 @@ int mainWindow(Args& a) {
         std::fprintf(stderr, "aviso: %s\n", warning.c_str());
         nativeBox(warning, MB_ICONWARNING);
     }
+    if (const wchar_t* rec = _wgetenv(L"BS_GRAVAR"); rec && *rec) {
+        const char* why = g_spectator.on ? "BS_GRAVAR e BS_INPUT_SCRIPT sao exclusivos"
+                          : a.time == bs::TimeProviderKind::Legacy ? "BS_GRAVAR exige --tempo nativo ou experimental (roteiro por passo)"
+                                                                   : nullptr;
+        if (why) {
+            std::fprintf(stderr, "erro: %s\n", why);
+            SDL_DestroyRenderer(renderer), SDL_DestroyWindow(window), SDL_Quit();
+            return 2;
+        }
+        g_recorder      = std::make_unique<Recorder>();
+        g_recorder->dir = fs::path(rec).parent_path();
+        g_recorder->f   = _wfopen(rec, L"w");
+        if (!g_recorder->f) {
+            std::fprintf(stderr, "erro: BS_GRAVAR: nao abre %s\n", utf8(rec).c_str());
+            SDL_DestroyRenderer(renderer), SDL_DestroyWindow(window), SDL_Quit();
+            return 2;
+        }
+        const char*    base  = std::getenv("BS_GRAVAR_BASE");
+        const char*    until = std::getenv("BS_GRAVAR_ATE");
+        const uint64_t ate   = base && *base && until ? std::strtoull(until, nullptr, 10) : 0;
+        std::fprintf(g_recorder->f, "# gravacao de sessao (BS_GRAVAR, %s %s)%s\nindice passo\n", kTitle, BS_VERSION,
+                     ate ? (" continuada de um roteiro ate o passo " + std::to_string(ate)).c_str() : "");
+        std::fflush(g_recorder->f);
+        try {
+            FILE* f         = g_recorder->f;
+            g_recorder->rec = std::make_unique<ib::SessionRecorder>(
+                [f](const std::string& line) { std::fprintf(f, "%s\n", line.c_str()), std::fflush(f); },
+                base && *base ? readFile(base) : std::string(), ate);
+        } catch (const std::exception& ex) {
+            std::fprintf(stderr, "erro: BS_GRAVAR_BASE: %s\n", ex.what());
+            std::fclose(g_recorder->f);
+            g_recorder.reset();
+            SDL_DestroyRenderer(renderer), SDL_DestroyWindow(window), SDL_Quit();
+            return 2;
+        }
+        input->set_filter([](const ni::SampleContext&, const ni::ControllerState& s) { return g_recorder->rec->filter(s); });
+        std::printf("[gravacao] gravando em %s\n", utf8(rec).c_str());
+    }
+    uint64_t endVblank = 0;
     {
         bs::GameHost host;
         bs::GameOptions opt = gameOptions(a);
         opt.input           = input.get();
-        if (g_spectator.on)
+        if (g_spectator.on || g_recorder)
             opt.vblankHook = [](const bs::GameOptions::VblankView& v) {
                 g_spectator.step = v.step;
                 uint32_t on      = 0;  // PDS_PERIPHERAL da porta A, campo `on` (+8)
@@ -933,6 +1063,12 @@ int mainWindow(Args& a) {
         // os caminhos (revisao Codex 2026-10-14)
         host.requestStop();
         host.join();
+        endVblank = host.vblanks();
+    }
+    if (g_recorder) {  // o ponto final (passo e o VBlank em que o jogo parou): a reproducao para no mesmo VBlank
+        g_recorder->rec->comment("fim passo " + std::to_string(g_spectator.step.load()) + " vblank " + std::to_string(endVblank));
+        std::fclose(g_recorder->f);
+        g_recorder.reset();
     }
     ib::install(nullptr);
     SDL_DestroyRenderer(renderer);

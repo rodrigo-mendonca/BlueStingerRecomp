@@ -28,7 +28,7 @@ foreach ($m in "legado", "nativo") {
     $env:BS_RELOGIO_FIXO = "1700000000"; $env:BS_INPUT_SCRIPT = (Resolve-Path $Rota).Path
     $env:BS_FRAME_LOG = "$Saida\$m.fr.tsv"; $env:BS_STATE_PASSO = "$Saida\$m.st.tsv"; $env:BS_STATE_PASSO_CADA = "1"
     try {
-        cmd /c "`"$Exe`" --data `"$Data`" --audio-efeitos $m --video legado --headless $VBlanks > `"$Saida\$m.out`" 2>&1"
+        cmd /c "`"$Exe`" --data `"$Data`" --audio legado --audio-efeitos $m --video legado --headless $VBlanks > `"$Saida\$m.out`" 2>&1"
         $rc = $LASTEXITCODE
     } finally {
         foreach ($k in "BS_RELOGIO_FIXO", "BS_INPUT_SCRIPT", "BS_FRAME_LOG", "BS_STATE_PASSO", "BS_STATE_PASSO_CADA") { Remove-Item "env:$k" -ErrorAction SilentlyContinue }

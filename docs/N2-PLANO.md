@@ -325,3 +325,38 @@ Todos os achados foram conferidos no código e no binário antes de entrar:
 | MÉDIA | Investigação concluía antes de provar e usava atraso | **Aceito.** Seção 3: método sem intervenção primeiro; perturbação rotulada; convergência é hipótese (B4) |
 | MÉDIA | Exceções abertas e poucos casos negativos | **Aceito.** Lista fechada versionada; coluna de mutação negativa; B9 com tolerância; C4 virou condição de liberação |
 | MÉDIA | Mods podem contornar os slots de espera | **Aceito.** Primitiva abaixo do slot; B10 com mod negativo |
+
+## 11. Pendências trazidas de outras etapas
+
+### 11.1 Tempo do download de música para a RAM de som (do N6-F, 2026-10-20; decisão do mantenedor: opção C)
+
+O `8C15D534` (download de SMPB/SMSB e das unidades do `BS_SND.MLT`) no original deixa o SH-4 esperando o DMA para a RAM de
+som, linear no tamanho: ~177 ns/byte (~5,66 MB/s), medido no Flycast (`tools/dev/n6_oraculo.py --musica`, entrada e volta
+da função com o TMU0): 85,5 ms para o banco da M2A (483 680 bytes), 2,5 ms para a sequência (13 984). Com
+`--audio-musica nativo` o download devolve na hora; o legado (DMA emulado) também não segue o original. No jogo: o estado
+lógico por passo é o mesmo, mas as cargas acabam 1–2 VBlanks antes (boot e troca de sala da M2A). **Não resolvido:** a
+espera (andar os ciclos do contexto e atender os eventos como o laço gerado faz) é do modelo de tempo deste N2, retomado
+depois do N7 e antes do N8; até lá a música nativa não tem fidelidade temporal completa nas cargas. Detalhes em
+`docs/N6-PLANO.md` seção 18.5.
+
+Consequência audível medida depois (Flycast, troca M2A → M2C pelo carregador do jogo `8C02A660`): o carregador manda
+`vol −113 t0, pan, parar` **antes** dos downloads e `vol −16 t0, tocar, vol −16 t2000` **depois**. No original, a espera
+do DMA (~66 ms) deixa o ARM7 aplicar o primeiro lote antes do segundo: a porta vai a −113 e o `t2000` faz um **fade de
+entrada** a partir dali (1,55 s; os 18 primeiros key-on da M2C no oráculo têm TL 141–190). No nativo o download é
+instantâneo, os dois lotes caem no mesmo quadro e a música nova começa direto em −16. Some quando a espera do download
+for reproduzida (este item); não foi compensada no N6.
+
+O mesmo efeito na **M3** (2026-10-21, `--injetar-musica 2700:3` × `bs-musica M3`): os 48 key-on que não pareiam com
+todos os registradores estão todos no 1º 1,4 s, com o TL do original 94 acima do nativo (a porta ainda em −113); fora
+disso, 3 207/3 255 com todos os registradores e 3 255/3 255 em amostra e tom (janela de 100 ms).
+
+### 11.2 Desempenho do gameplay e o áudio em tempo real (do N6-H, 2026-10-21)
+
+Na janela, o gameplay leva em média **~18,4 ms por campo** nesta máquina (42 % dos campos acima de 16,68 ms, picos de
+~140 ms), **igual com o áudio legado e o nativo** na mesma rota (18,36 × 18,16 ms headless; já medido no N2: 17,23 ms no
+estável e 14,75 ms no experimental). O áudio nativo manda um VBlank de mistura por campo; abaixo do tempo real a fila da
+saída esvazia e o dispositivo toca silêncio (faltas de dados). A saída do jogo ganhou uma reserva de 66 ms (N6-H,
+`docs/N6-PLANO.md` 20.3), que absorve campos atrasados isolados (faltas 1 399 → 345 em 7 200 blocos), mas não um jogo mais
+lento que o tempo real na média. **O critério H9 do N6 (0 faltas de dados) fica bloqueado por este item**: só passa com o
+desempenho do gameplay dentro do tempo real (o provedor experimental, −12 a −14 %, ou outra melhoria do modelo de tempo),
+retomado depois do N7 e antes do N8, junto com o 11.1. O limite do H9 não foi afrouxado.

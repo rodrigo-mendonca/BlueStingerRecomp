@@ -305,3 +305,40 @@ BS_TEST(audio_sd_other_events_bounded) {
     for (int i = 0; i < 10; ++i) h.render(1000), h.sd.sync(h.mixer.now());
     BS_CHECK(delivered >= 99 && h.sd.take_other_events().empty() && h.sd.other_overflow() == 0);
 }
+
+// Fase G: o parar e um key-off: a voz solta pela RR do descritor (envelope da AICA, linear em dB) em vez de cortar; os
+// 211 efeitos do BS_SND.MLT tem RR 31 (taxa efetiva 62/63: 3,6/3,1 ms para 1 024 unidades; 0x3BF = 89,9 dB). A porta fica
+// livre na hora (o jogo ve o fim no parar, como antes); um tocar no mesmo canal corta o que ainda soltava (o key-on
+// reescreve o canal da AICA).
+BS_TEST(audio_sd_stop_releases_with_rr) {
+    na::AudioMixer mixer(44100, 8);
+    auto           s = std::make_shared<na::SoundData>();
+    s->rate          = 44100;
+    s->pcm.assign(44100, 8000);
+    const double dbps = 1024.0 / 0.0036 * 0.09375;  // RR 31, taxa 62
+    na::SdAdapter sd(mixer, [s, dbps](uint8_t, uint8_t) {
+        na::SdSound r{s};
+        r.releaseDbPerSecond = dbps;
+        return r;
+    });
+    sd.set_initialized(true);
+    na::SdHandle         h{2};
+    std::vector<int16_t> out(2 * 441);
+    sd.play(&h, 0, 32, 0);
+    mixer.render(out);
+    sd.stop(&h);
+    BS_CHECK(!sd.busy(2) && mixer.active() == 1);  // a porta livre, a voz soltando
+    std::vector<int16_t> rel(2 * 200);             // 200 quadros = 4,5 ms
+    mixer.render(rel);
+    const int antes = out[out.size() - 2];  // o nivel logo antes do parar (o volume do efeito vale)
+    BS_CHECK(antes > 0 && rel[0] > antes * 9 / 10 && std::abs(rel[2 * 100]) < antes / 100 && mixer.active() == 0);  // caiu e acabou antes de 4,5 ms
+    // o fim da soltura: 89,9 dB / dbps segundos (~3,4 ms = ~148 quadros)
+    const double fim = 89.9 / dbps * 44100.0;
+    BS_CHECK(fim > 140 && fim < 160);
+    // tocar de novo no mesmo canal corta a soltura anterior na hora
+    sd.play(&h, 0, 32, 0);
+    sd.stop(&h);
+    sd.play(&h, 0, 32, 0);
+    BS_CHECK(mixer.active() == 1);
+    sd.sync(mixer.now());
+}

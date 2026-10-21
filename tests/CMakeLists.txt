@@ -43,7 +43,7 @@ add_test(NAME video COMMAND bs_video_tests)
 
 # N6: audio de gameplay portavel, sem o jogo nem dispositivo de audio
 add_executable(bs_audio_tests unit/main.cpp unit/test_audio_native.cpp unit/test_audio_sd.cpp unit/test_audio_sosb.cpp
-                              unit/test_audio_voice.cpp unit/test_audio_flac.cpp unit/test_audio_voice_glue.cpp
+                              unit/test_audio_voice.cpp unit/test_audio_flac.cpp unit/test_audio_ogg.cpp unit/test_audio_manatee.cpp unit/test_audio_manatee_seq.cpp unit/test_audio_manatee_synth.cpp unit/test_audio_manatee_player.cpp unit/test_audio_voice_glue.cpp unit/test_audio_dsp.cpp
                               ${PROJECT_SOURCE_DIR}/transitional/voice_mw_glue.cpp)  # a cola das falas e portavel (sem runtime)
 target_include_directories(bs_audio_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit ${PROJECT_SOURCE_DIR}/transitional)
 target_link_libraries(bs_audio_tests PRIVATE bs_native_audio_core)

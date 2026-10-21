@@ -2,6 +2,7 @@
 
 #include <toml++/toml.hpp>
 
+#include <cctype>
 #include <cerrno>
 #include <fstream>
 #include <sstream>
@@ -34,6 +35,10 @@ InstallConfig read_config(const fs::path& dir, std::string* warning) {
     }
     try {
         const toml::table t = toml::parse(ss.str());
+        if (const auto v = t["legendas"]["idioma"].value<std::string>()) {
+            if (!parse_subtitles(*v, &c.subtitles) && warning)
+                *warning = "instalacao.toml: legendas.idioma = \"" + *v + "\" invalido; usando " + kDefaultSubtitles;
+        }
         if (const auto v = t["saves"]["local"].value<std::string>()) {
             if (*v == "portatil") c.saves = SavesLocation::Portable;
             else if (*v != "documentos" && warning)
@@ -51,7 +56,19 @@ std::string config_text(const InstallConfig& c) {
                        "#              \"portatil\"   = pasta saves ao lado do BlueStinger.exe.\n"
                        "# Trocar o valor nao move as partidas de um lugar para o outro.\n"
                        "[saves]\nlocal = \"") +
-           (c.saves == SavesLocation::Portable ? "portatil" : "documentos") + "\"\n";
+           (c.saves == SavesLocation::Portable ? "portatil" : "documentos") + "\"\n" +
+           "\n# legendas.idioma: \"en-US\" (padrao), outro idioma (pt-BR...) ou \"nenhuma\". As legendas vem de mods\n"
+           "# (mods\\video, mods\\<pacote>\\legendas); sem legendas no idioma, nada aparece.\n"
+           "[legendas]\nidioma = \"" + (c.subtitles.empty() ? std::string("nenhuma") : c.subtitles) + "\"\n";
+}
+
+bool parse_subtitles(const std::string& v, std::string* out) {
+    if (v == "nenhuma" || v == "off" || v == "nao" || v == "none") return *out = "", true;
+    if (v.empty() || v.size() > 35 || !std::isalpha(static_cast<unsigned char>(v[0]))) return false;
+    for (char ch : v)
+        if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '-') return false;
+    *out = v;
+    return true;
 }
 
 bool write_config(const fs::path& dir, const InstallConfig& c, std::string* err, std::error_code* code) {

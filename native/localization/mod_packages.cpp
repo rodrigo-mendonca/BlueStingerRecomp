@@ -49,6 +49,7 @@ ModPackages ModPackages::discover(const fs::path& modsDir, std::string_view game
         p.name     = t["nome"].value_or(p.id);
         p.version  = t["versao"].value_or(std::string());
         p.priority = int(t["prioridade"].value_or(int64_t(0)));
+        p.provisional = t["provisorio"].value_or(false);
         if (!valid_resource_id(p.id)) { fail("id invalido: '" + p.id + "'"); continue; }
         if (!valid_utf8(p.name)) { fail("nome nao e UTF-8"); continue; }
         if (const auto want = t["jogo"].value<std::string>(); want && !gameVersion.empty() && *want != gameVersion) {

@@ -26,6 +26,7 @@ inline constexpr int kModFormat = 1;
 struct ModPackage {
     std::string           id, name, version;
     int                   priority = 0;
+    bool                  provisional = false;  // provisorio = true: conteudo nao revisado (ex.: legendas por IA)
     std::vector<std::string> languages;  // canonicos
     std::filesystem::path dir;           // canonico (o que foi conferido e o que se abre)
 };

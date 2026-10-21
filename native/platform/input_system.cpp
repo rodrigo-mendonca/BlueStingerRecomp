@@ -136,6 +136,7 @@ struct InputSystem::Impl {
     bool                         xinput = false;
     XInputReader                 xreader;  // vazio: XInputGetState
     SampleFn                     test;
+    InputSystem::FilterFn        filter;
     ControllerState              last;
     std::vector<ConnectionEvent> events;
     uint64_t                     tick = 0;
@@ -288,6 +289,11 @@ void InputSystem::set_test_source(SampleFn fn) {
     impl_->test = std::move(fn);
 }
 
+void InputSystem::set_filter(FilterFn fn) {
+    std::lock_guard lk(impl_->mu);
+    impl_->filter = std::move(fn);
+}
+
 ControllerState InputSystem::latch(const SampleContext& ctx) {
     std::lock_guard lk(impl_->mu);
     if (impl_->test) return impl_->last = impl_->test(ctx);
@@ -297,6 +303,7 @@ ControllerState InputSystem::latch(const SampleContext& ctx) {
     if (const int a = impl_->active(map_.options); a >= 0) parts.push_back(padState(impl_->pads[size_t(a)], map_));
     ControllerState s = merge(parts);
     s.connected       = true;  // a janela sempre tem o teclado: a porta do jogador 1 nunca fica vazia
+    if (impl_->filter) s = impl_->filter(ctx, s);
     return impl_->last = s;
 }
 

@@ -181,6 +181,8 @@ void stepLogWrite(uint64_t step, void*) {
     std::fprintf(g_stepLog.f, "%llu\t%llu\t%016llX\t%d\t%.3f\t%.3f\t%.3f\n", static_cast<unsigned long long>(step),
                  static_cast<unsigned long long>(g_stepLog.host->vblanks()), static_cast<unsigned long long>(h), life, p[0],
                  p[1], p[2]);
+    // a cada ~2 s de jogo no disco: uma queda perde no maximo a cauda (as gravacoes de sessao conferem a continuidade)
+    if (step % 64 == 0) std::fflush(g_stepLog.f);
 }
 
 // Periodo de um campo NTSC: 1001 / 60000 s (59,94 Hz).
@@ -455,25 +457,35 @@ void GameHost::threadMain() {
         // continua o recompilado). Sem o BS_SND.MLT nos dados, a sessao falha com a mensagem do adaptador.
         // N6 fase E: falas pelo provedor nativo (o MW WAV da CRI; o player do jogo continua o recompilado), no mesmo
         // mixer dos efeitos.
-        if (opt_.audioEffects == AudioEffectsProvider::Native || opt_.audioVoices == AudioVoicesProvider::Native) {
+        // N6 fase F: musica pelo provedor nativo (as entradas do SDK do gerenciador de musica e o download de SMPB/SMSB;
+        // o gerenciador continua o recompilado), no mesmo mixer. Sem o MANATEE.DRV conferido, a sessao falha.
+        if (opt_.audioEffects == AudioEffectsProvider::Native || opt_.audioVoices == AudioVoicesProvider::Native ||
+            opt_.audioMusic == AudioMusicProvider::Native) {
             transitional::sound::Options so;
             so.effects   = opt_.audioEffects == AudioEffectsProvider::Native;
             so.mlt       = opt_.data / L"disc" / L"BSDATA" / L"BS_SND.MLT";
             so.voices    = opt_.audioVoices == AudioVoicesProvider::Native;
             so.voiceDir  = opt_.data / L"disc" / L"BSDATA";
+            so.music     = opt_.audioMusic == AudioMusicProvider::Native;
+            so.driver    = opt_.data / L"disc" / L"BSDATA" / L"MANATEE.DRV";
             so.modsAudio = opt_.modAudio;
             so.language  = opt_.dubbing;
-            if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(); };
+            // o audio do jogo segue a saida padrao do Windows e sobrevive a fila cheia (N6-H; os filmes ficam como no N5)
+            if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(200, true); };
             if (so.voices && !opt_.subtitles.empty()) {  // legendas das falas (mods\<pacote>\legendas\falas.<idioma>.toml)
-                dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path()),
+                // a versao do jogo que o Builder valida (o jogo = ... dos pacotes; revisao Codex 2026-10-21)
+                dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path(), "T13001N V1.000"),
                                              opt_.subtitles));
+                for (const auto& p : dialogue_->mods.packages())
+                    if (p.provisional)
+                        std::fprintf(stderr, "[legenda] pacote %s %s: provisorio (nao revisado)\n", p.id.c_str(), p.version.c_str());
                 so.onDialogue = [this](const native::audio::DialogueEvent& e) { dialogue_->bridge.on_event(e); };
             }
             const std::string dirText = disc::pathText(so.voiceDir);  // antes do move
-            const bool        fx = so.effects, vz = so.voices;
+            const bool        fx = so.effects, vz = so.voices, mu = so.music;
             transitional::sound::install(transitional::boundary_registry(), std::move(so));
-            std::fprintf(stderr, "[audio] nativo: %s%s%s (%s)\n", fx ? "efeitos" : "", fx && vz ? " e " : "",
-                         vz ? "falas" : "", dirText.c_str());
+            std::fprintf(stderr, "[audio] nativo: %s%s%s%s%s (%s)\n", fx ? "efeitos" : "", fx && vz ? " e " : "",
+                         vz ? "falas" : "", (fx || vz) && mu ? " e " : "", mu ? "musica" : "", dirText.c_str());
         }
         // N2a: tempo e eventos pelo provedor nativo (antes do boot: o reset do hardware o inicia)
         if (opt_.time == TimeProviderKind::Native || opt_.time == TimeProviderKind::Experimental) {

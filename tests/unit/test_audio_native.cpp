@@ -94,6 +94,29 @@ BS_TEST(audio_wav_loading) {
 }
 
 // mixer: fim no quadro certo (com reamostragem), eventos, volume por barramento, pan
+// N6-H (H4): clipping de SOMA (fontes de ate 16 bits cada, o modelo da AICA) x clipping de FONTE (uma fonte so acima
+// de 16 bits: ganho acima de 0 dB, que o backend introduziria). O contador separa os dois.
+BS_TEST(audio_mixer_source_over_vs_sum) {
+    na::AudioMixer m(44100, 8);
+    m.play(tone(1000, 30000), {na::Bus::Effects, 1.0f, 0.0f});
+    m.play(tone(1000, 30000), {na::Bus::Effects, 1.0f, 0.0f});  // a soma passa de 16 bits; cada fonte, nao
+    std::vector<int16_t> o(200);
+    m.render(o);
+    BS_CHECK(o[0] == 32767 && o[1] == 32767 && m.source_over() == 0);
+    na::AudioMixer g(44100, 8);
+    g.play(tone(1000, 30000), {na::Bus::Effects, 1.5f, 0.0f});  // ganho de +3,5 dB numa fonte so (o play nao limita)
+    g.render(o);
+    BS_CHECK(o[0] == 32767 && g.source_over() == 100);  // os 100 quadros do bloco
+    na::AudioMixer n(44100, 8);  // o extremo negativo do PCM16 com ganho 1 e valido; passar dele, nao
+    n.play(tone(1000, -32768), {na::Bus::Effects, 1.0f, 0.0f});
+    n.render(o);
+    BS_CHECK(o[0] == -32768 && n.source_over() == 0);
+    na::AudioMixer x(44100, 8);
+    x.play(tone(1000, -32768), {na::Bus::Effects, 1.01f, 0.0f});
+    x.render(o);
+    BS_CHECK(o[0] == -32768 && x.source_over() == 100);
+}
+
 BS_TEST(audio_mixer_finish_volume_pan) {
     na::AudioMixer m(44100, 8);
     const auto     v = m.play(tone(22050, 10000, 22050), {na::Bus::Voice, 1.0f, 0.0f, 0, false, 77});  // 1 s a 22 kHz

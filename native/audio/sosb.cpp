@@ -51,6 +51,7 @@ std::optional<SosbBanks> SosbBanks::parse(std::vector<uint8_t> b, std::string* e
             const uint32_t sa = (uint32_t(b[p + 4]) << 16) | u16(b, p + 6);
             s.flags     = b[p + 5];
             s.baseTl    = b[p + 0x19];
+            s.eg10      = u16(b, p + 0x0C), s.eg14 = u16(b, p + 0x0E), s.dsp20 = u16(b, p + 0x14), s.reg24 = u16(b, p + 0x16);
             s.loopStart = u16(b, p + 8);
             s.samples   = u16(b, p + 10);
             const uint32_t pitch = u32(b, p + 16);

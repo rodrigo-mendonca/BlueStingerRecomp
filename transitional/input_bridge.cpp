@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
+#include <stdexcept>
 
 namespace bs::transitional::input_bridge {
 namespace ni = native::input;
@@ -71,6 +73,34 @@ void install(ni::InputSystem* sys) { input_set_source(sys ? std::make_unique<Lat
 
 ni::SampleFn from_runtime_source(std::shared_ptr<InputSource> src) {
     return [src = std::move(src)](const ni::SampleContext& ctx) { return to_controller(src->read(0, ctx.sample)); };
+}
+
+SessionRecorder::SessionRecorder(Writer write, const std::string& baseText, uint64_t baseUntil)
+    : write_(std::move(write)), baseUntil_(baseText.empty() ? 0 : baseUntil) {
+    if (baseText.empty()) return;
+    base_ = std::shared_ptr<InputSource>(make_scripted_input(baseText));  // lanca com a linha em caso de erro
+    std::istringstream in(baseText);
+    for (std::string l; std::getline(in, l);)
+        if (l.substr(0, l.find('#')).find("DESCONECTADO") != std::string::npos)
+            throw std::runtime_error("roteiro base da gravacao: DESCONECTADO nao e aceito (presenca fora do filtro)");
+}
+
+ni::ControllerState SessionRecorder::filter(const ni::ControllerState& live) {
+    const uint64_t  s = input_step_or(UINT64_MAX);
+    std::lock_guard lk(mu_);
+    if (s == step_) return frozen_;
+    const PadState p = base_ && s < baseUntil_ ? base_->read(0, 0) : to_pad(live);
+    frozen_          = to_controller(p);
+    if (s == UINT64_MAX) return frozen_;  // antes do contador de passos (nao acontece com --tempo nativo)
+    step_               = s;
+    const std::string t = pad_state_text(p);
+    if (t != last_) write_(std::to_string(s) + " " + t), last_ = t;
+    return frozen_;
+}
+
+void SessionRecorder::comment(const std::string& text) {
+    std::lock_guard lk(mu_);
+    write_("# " + text);
 }
 
 } // namespace bs::transitional::input_bridge
