@@ -39,5 +39,5 @@
     "static-recompilation",
     "survival-horror"
   ],
-  "notes": "Runs on Windows from the user's own disc (CDI image of NTSC-U T13001N V1.000; the executable inside is checked by SHA-256). Native file system, timing, controls (keyboard, Xbox controller), saves and movies are done; native audio (effects, voices, Manatee music, AICA DSP) is in final validation. Next: Vulkan renderer, removal of the emulated console layer, Linux. No game data is included."
+  "notes": "Runs on Windows from the user's own disc (CDI image of NTSC-U T13001N V1.000; the executable inside is checked by SHA-256). Native file system, controls (keyboard, Xbox controller), saves, movies and audio (effects, voices, Manatee music, AICA DSP) are done and on by default; English subtitles by default (mod package). Timing is partially native and gameplay is still slightly below real time on a development PC. Rendering still goes through the emulated PowerVR2; next: Vulkan renderer, then removal of the emulated console layer and Linux. No game data is included."
 }
