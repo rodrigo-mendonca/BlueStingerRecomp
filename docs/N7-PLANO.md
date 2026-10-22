@@ -763,3 +763,135 @@ edição de arquivos. As opções de linha de comando continuam, para automaçã
 - roteiro que abre o menu, muda e confirma com controle virtual (`BS_CONTROLE_VIRTUAL`);
 - reversão automática sem confirmação;
 - o estado do jogo por passo é igual com e sem o menu aberto.
+
+## 18. N7c: legendas das falas durante o gameplay (requisito obrigatório)
+
+O N6 já decide **que texto** está ativo e **quando**:
+- `SubtitleService`, alimentado pela `DialogueBridge` com os eventos das falas nativas, no tempo
+  lógico do mixer;
+- pausa, interrupção e troca de cena encerram as falas.
+
+O N5 desenha as legendas dentro do quadro do filme. O que faltava é **desenhar as falas sobre o
+gameplay**, sem duplicar nada disso.
+
+**Desenho (camada visual separada):**
+- **`GameFrame::subtitle`:** o texto das falas ativas é publicado **com o quadro do mesmo VBlank**
+  (`GameHost::dialogueVblank`). Legendas desligadas (`--legendas nenhuma`, `legendas.toml`)
+  produzem texto vazio.
+- **`app/subtitle_overlay`:** desenha com o rasterizador DirectWrite das legendas dos filmes
+  (`native/video`, modo `draw_overlay`) numa **camada transparente** (ARGB pré-multiplicado):
+  - texto embaixo e centralizado na área do jogo;
+  - margem segura e quebra de linha;
+  - tamanho proporcional à altura da área do jogo;
+  - contorno e/ou fundo translúcido.
+
+  A imagem do jogo **não é tocada**: o hash dos quadros (`BS_FRAME_LOG`), as comparações de
+  fidelidade e o Vulkan × software não veem a legenda.
+- **Na janela:** a camada é feita na **resolução de saída** (texto nítido em qualquer escala, sem o
+  borrado de ampliar 640×480) e misturada por cima do quadro (`SDL_BLENDMODE_BLEND_PREMULTIPLIED`).
+  É refeita só quando o texto ou o tamanho mudam. O mesmo vale para software e Vulkan, porque os
+  dois entregam o mesmo quadro.
+- **Capturas** (`--capture`, F12, `BS_CAPTURA_VBLANKS`/`BS_CAPTURA_CRUA` para os testes): a camada é
+  composta sobre uma cópia do quadro, ou seja, o que o jogador vê.
+- **4:3, 16:9, redimensionamento e tela cheia:** a camada recebe a **área do jogo** (`cx, cy, cw,
+  ch`). Hoje é a saída inteira; com barras ou 16:9 (N7c), é o retângulo da imagem, e o texto fica
+  dentro dele. Uma mudança de tamanho refaz a camada.
+- **Mods (N9):** o texto vem dos pacotes (`legendas/falas.<idioma>.toml`), com o idioma por
+  `legendas.toml` ou pela linha de comando, e a fonte pode vir do pacote (`SubtitleStyle::font`, já
+  previsto).
+
+**Critério de aceitação:** uma fala identificada pelo N6 aparece **na imagem apresentada**, no
+momento certo, em gameplay real; não basta o evento no log. O teste é
+`tools/dev/n7_legendas.py --sessao sessao-20261021-145006 [--render software|nativo]`:
+- reproduz a gravação real;
+- captura as faixas das falas;
+- exige diferença entre o quadro composto e o cru **na faixa de baixo** enquanto a fala está ativa;
+- exige **nenhuma legenda** antes, entre e depois das falas (sem legenda persistente).
+
+**Resultado (2026-10-22):**
+- **Software:** APROVADO, com 866 quadros com fala, todos com a legenda na faixa de baixo, e 338
+  quadros sem fala, limpos.
+- **Vulkan:** APROVADO, com 860 e 341.
+
+As 17 linhas cobertas são das vozes `e025a`, `e025b` e `e005b`, sobre música e com troca de cena.
+
+**Unitários:** `subtitle_overlay_*`:
+- texto só embaixo;
+- quadro sem legenda idêntico;
+- tamanho e fundo;
+- mistura pré-multiplicada.
+
+## 19. N7c: composição, menu interno e resoluções modernas (arquitetura)
+
+### Camadas da apresentação
+
+| Ordem | Camada | Resolução | Efeitos |
+|---|---|---|---|
+| 1 | Imagem do jogo (software ou Vulkan; o HUD original **dentro** dela) | interna (fiel: 640×480; N7c: 720p a 4K) | os do PVR2 |
+| 2 | Pós-processamento opcional (nitidez, CRT, cor, bloom, SSAO) | interna ou de saída | só na camada 1 |
+| 3 | Legendas e interface nativa (menu) | **de saída** (nítida) | **nenhum**: o CRT e o bloom não tocam texto nem menu |
+| 4 | Apresentação na janela e capturas | de saída | — |
+
+Hoje as camadas 1, 3 e 4 existem: a imagem do jogo vai pelo framebuffer emulado até a janela SDL, e
+a camada 3 vai por cima.
+
+As resoluções maiores exigem que o Vulkan **apresente direto** (swapchain própria), sem passar a
+imagem pelo framebuffer de 640×480:
+- a imagem do jogo continua a mesma IR;
+- o modo fiel continua sendo a referência;
+- o caminho aprimorado (sem `F_EXACT`, interpolação da GPU, escala) é separado e opcional.
+
+### Menu interno (Configurações)
+
+**Estrutura:**
+- **Gráficos:** os campos de `graphics_settings.h` e os presets.
+- **Áudio:** volumes geral, música, efeitos e vozes (`user_settings.h`, `audio.toml`), multiplicados
+  no fim do mixer do N6, sem mexer no que o jogo manda.
+- **Legendas:** ligar/desligar, idioma dos pacotes encontrados, tamanho, contorno e fundo
+  (`legendas.toml`; inglês ligado por padrão).
+- **Controles:** abre o mapeamento existente do N3 (`controles.toml`, `InputSystem`), sem
+  reimplementar.
+
+**Separação:**
+- **Modelo** (`native/platform/*_settings`, portável e testado): valores, faixas, presets,
+  persistência, `apply_kind` e `requires_confirmation`.
+- **Capacidades** (`Capabilities` + `Features`): só o que o renderizador **já implementa** aparece
+  como opção ativa; o resto aparece indisponível ("em breve"), nunca como enfeite.
+- **Aplicação:**
+  - imediata: filtragem e efeitos;
+  - recriação entre quadros: tamanho, modo de tela, MSAA e V-Sync;
+  - com confirmação e reversão em 15 s: tamanho e modo de tela.
+- **Interface:** desenhada na camada 3, pelo mesmo rasterizador das legendas (texto) mais retângulos
+  simples.
+
+**Abertura e pausa:** uma tecla ou botão dedicado (Esc / Back do controle, configurável) abre o
+menu e **segura o jogo entre VBlanks**, do mesmo jeito que o gameplay assistido já pausa
+(`app/assist.h`), sem tocar a lógica do Dreamcast. Enquanto o menu está aberto, a entrada vai para o
+menu e não para o jogo.
+
+Também pelo menu principal do jogo: uma opção "Configurações" sobre a tela de título exige
+reconhecer a tela (o ID do estado do título), a definir com o gameplay assistido. A tecla dedicada
+funciona em qualquer tela.
+
+**Ordem de implementação:**
+1. modelos e testes (feito: `graphics_settings`, `user_settings`);
+2. a sobreposição do menu com navegação (controle, teclado, mouse) e a pausa entre VBlanks;
+3. as seções Legendas e Áudio (aplicáveis já: tamanho, contorno, fundo, idioma, volumes);
+4. a seção Gráficos (as opções acendem conforme as `Features` do N7c ficam prontas);
+5. Controles (abre o mapeamento do N3).
+
+### Resoluções modernas (preparação)
+
+- **Resolução interna** (`internal_height`): 480 (fiel), 720, 1080, 1440, 2160 × escala de 50 a
+  200 %. O alvo do Vulkan e a IR são escalados: posições × fator, recortes e tesoura × fator, 1/w
+  inalterado.
+- **4:3 e 16:9.**
+  - A projeção do jogo é a do Dreamcast, então ampliar a 16:9 exige conhecer as matrizes (análise do
+    gameplay).
+  - Sem isso, 16:9 é 4:3 com barras e as legendas dentro da área do jogo.
+  - O HUD é reposicionado só com dados confiáveis (`Features::aspect_wide`).
+- **60 FPS:** não. O ritmo é o do relógio lógico (N2).
+
+Critérios a cumprir antes de qualquer opção acender no menu:
+- a imagem no modo fiel continua idêntica ao software, na resolução original;
+- cada modo aprimorado tem um teste de imagem (PSNR ≥ 40 dB contra o fiel ampliado, medido).

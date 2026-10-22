@@ -192,13 +192,14 @@ constexpr auto kField = std::chrono::nanoseconds(16683333);
 } // namespace
 
 // N6 fase E: as falas nativas avisam inicio, fim, interrupcao e pausa (native/audio/voice_player.h); a ponte as
-// leva ao SubtitleService no tempo logico do mixer. Nada e desenhado (N7); o texto ativo so vai para o log quando
-// muda ("[legenda] ..."), o que torna o caminho observavel no headless.
+// leva ao SubtitleService no tempo logico do mixer. N7c: o texto ativo vai com o quadro do mesmo VBlank
+// (GameFrame::subtitle) e quem apresenta o desenha por cima do gameplay; o log ("[legenda] ...") continua.
 struct GameHost::Dialogue {
     native::localization::ModPackages     mods;
     native::localization::SubtitleService subs;
     native::localization::DialogueBridge  bridge;
     std::string                           last;
+    std::wstring                          text;  // as falas ativas, uma por linha (o que aparece na tela)
     Dialogue(native::localization::ModPackages m, const std::string& lang)
         : mods(std::move(m)), subs(mods, lang), bridge(subs, 44100) {}
 };
@@ -208,9 +209,12 @@ void GameHost::DialogueDelete::operator()(Dialogue* d) const { delete d; }
 void GameHost::dialogueVblank(uint64_t n) {
     dialogue_->bridge.logical_frame(n * 44100ull * 1001 / 60000);  // o mesmo relogio do mixer (sound_adapter.cpp)
     std::string now;
+    dialogue_->text.clear();
     for (const auto& a : dialogue_->subs.active())
-        if (a.source == native::localization::ActiveSubtitle::Source::Dialogue)
+        if (a.source == native::localization::ActiveSubtitle::Source::Dialogue) {
             now += (now.empty() ? "" : ", ") + a.id + " (" + std::to_string(a.text.size()) + " caracteres)";
+            dialogue_->text += (dialogue_->text.empty() ? L"" : L"\n") + a.text;
+        }
     if (now != dialogue_->last) {
         std::fprintf(stderr, "[legenda] VBlank %llu: %s\n", static_cast<unsigned long long>(n), now.empty() ? "nenhuma" : now.c_str());
         dialogue_->last = std::move(now);
@@ -343,6 +347,8 @@ void GameHost::vblank() {
                      static_cast<unsigned long long>(transitional::time::game_steps()));
         if (n % 250 == 0) std::fflush(frameLog);
     }
+    scratch_.vblank   = n;
+    scratch_.subtitle = dialogue_ ? dialogue_->text : std::wstring();
     {
         std::lock_guard<std::mutex> lock(mutex_);
         std::swap(frame_, scratch_);

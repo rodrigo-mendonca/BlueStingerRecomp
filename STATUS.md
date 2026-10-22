@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real), modelos das configurações e do menu interno; ver "N7c: legendas no gameplay". N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2261,6 +2261,58 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
 - Testes: `bs_ui_tests` 25/25 (`ui_install_config_subtitles`), `bs_localization_tests` 9/9
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
+
+### N7c: legendas no gameplay, modelos das configurações e do menu (2026-10-22; worktree n7-vulkan)
+
+**Legendas das falas na imagem** (`docs/N7-PLANO.md`, seção 18):
+- **Origem do texto:** o `SubtitleService` do N6 (sem nova lógica de eventos ou sincronização),
+  publicado com o quadro do mesmo VBlank (`GameFrame::subtitle`).
+- **Desenho:** `app/subtitle_overlay` usa o rasterizador DirectWrite do N5 numa camada transparente
+  na resolução da janela, por cima do jogo. A imagem do jogo não muda: o hash dos quadros e as
+  comparações de fidelidade não a veem. Funciona igual com software e Vulkan.
+- **Capturas:** compõem a legenda (o que o jogador vê).
+
+**Teste de aceitação em gameplay real:** `tools/dev/n7_legendas.py` com a gravação
+`sessao-20261021-145006`:
+- reproduz a gravação e captura as faixas das falas que o N6 anuncia;
+- exige a legenda **na imagem** (quadro composto ≠ cru, só na faixa de baixo) durante cada fala e
+  **nenhuma** fora delas.
+
+| Renderizador | Quadros com fala, com a legenda na imagem | Quadros sem fala, limpos | Resultado |
+|---|---|---|---|
+| software | 866 | 338 | APROVADO |
+| Vulkan | 860 | 341 | APROVADO |
+
+As falas cobertas são as 17 linhas de `voz/e025a`, `voz/e025b` e `voz/e005b`, sobre música, com
+troca de cena. Conferido também visualmente: uma captura do Vulkan mostra a legenda da fala embaixo,
+legível.
+
+**Modelos** (sem interface ainda; o menu funcional vem depois):
+- `native/platform/graphics_settings`:
+  - presets, faixas e persistência (`graficos.toml`);
+  - `Features`: só o que o renderizador implementa aparece ativo;
+  - `apply_kind`: imediato ou recriação;
+  - confirmação com reversão em 15 s;
+  - proporção automática e tamanho da janela.
+- `native/platform/user_settings`: `audio.toml` (volumes) e `legendas.toml` (ligadas, idioma,
+  tamanho, contorno ou fundo; inglês ligado por padrão).
+- `app/settings_menu`: o modelo do menu interno.
+  - Páginas: Gráficos, Áudio, Legendas, Controles.
+  - Navegação por ações (controle, teclado e mouse).
+  - Opções não implementadas aparecem como "em breve".
+  - Confirmação e reversão automática; "Restaurar padrões".
+  - O pedido do mapeamento do N3.
+
+**Testes:** `bs_unit_tests` 285 de 285, entre eles:
+- `subtitle_overlay_*` (2);
+- `graphics_*` (5);
+- `user_settings_*` (1);
+- `settings_menu_*` (4).
+
+**Pendente no N7c:**
+- desenhar o menu e a pausa entre VBlanks na janela;
+- aplicar `legendas.toml` e `audio.toml`;
+- resoluções e efeitos (as `Features` acendem conforme ficam prontos).
 
 ### N7b: backend Vulkan (2026-10-22; worktree n7-vulkan)
 

@@ -17,6 +17,7 @@
 #include "disc/disc_image.h"
 #include "funcs.h"
 #include "game_host.h"
+#include "subtitle_overlay.h"
 #include "gdfs_adapter.h"
 #include "input/input.h"
 #include "input_bridge.h"
@@ -375,12 +376,38 @@ int runHeadless(bs::GameHost& host, const Args& a) {
         std::error_code ec;
         fs::create_directories(a.capture, ec);
         uint64_t      next = a.dumpEvery, seq = 0;
-        bs::GameFrame f;
+        bs::GameFrame       f;
+        bs::SubtitleOverlay subs;  // N7c: a captura mostra a legenda como o jogador a ve
+        // testes das legendas: BS_CAPTURA_VBLANKS=a-b,c-d limita as capturas a essas faixas; BS_CAPTURA_CRUA=1 grava
+        // tambem o quadro sem a legenda (vNNNNNN_crua.bmp) quando ha legenda
+        std::vector<std::pair<uint64_t, uint64_t>> ranges;
+        if (const char* r = std::getenv("BS_CAPTURA_VBLANKS"))
+            for (const char* q = r; *q;) {
+                unsigned long long x = 0, y = 0;
+                int                n = 0;
+                if (std::sscanf(q, "%llu-%llu%n", &x, &y, &n) != 2) break;
+                ranges.push_back({x, y}), q += n;
+                if (*q == ',') ++q;
+            }
+        const bool raw = std::getenv("BS_CAPTURA_CRUA") != nullptr;
+        auto       wanted = [&](uint64_t v) {
+            if (ranges.empty()) return true;
+            for (const auto& [x, y] : ranges)
+                if (v >= x && v <= y) return true;
+            return false;
+        };
         while (host.running()) {
             if (host.vblanks() >= next && host.latestFrame(f, seq)) {
-                char name[32];
-                std::snprintf(name, sizeof name, "v%06llu.bmp", (unsigned long long)host.vblanks());
-                writeBmp(a.capture / name, f);
+                char           name[40];
+                const uint64_t v = f.vblank ? f.vblank : host.vblanks();
+                if (wanted(v)) {
+                    std::snprintf(name, sizeof name, "v%06llu.bmp", (unsigned long long)v);
+                    writeBmp(a.capture / name, subs.composed(f));
+                    if (raw && !f.subtitle.empty()) {
+                        std::snprintf(name, sizeof name, "v%06llu_crua.bmp", (unsigned long long)v);
+                        writeBmp(a.capture / name, f);
+                    }
+                }
                 next = host.vblanks() / a.dumpEvery * a.dumpEvery + a.dumpEvery;
             }
             Sleep(1);
@@ -531,6 +558,11 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
               SDL_Renderer* renderer) {
     SDL_Texture*  texture = nullptr;
     uint32_t      texW = 0, texH = 0;
+    // N7c: legendas das falas por cima do gameplay, na resolucao da janela (camada propria; o quadro nao e tocado)
+    bs::SubtitleOverlay subs;
+    SDL_Texture*        subTex = nullptr;
+    uint32_t            subW = 0, subH = 0;
+    const std::vector<uint32_t>* subLayer = nullptr;
     bs::GameFrame frame;
     uint64_t      seq  = 0;
     bool          quit = false, fullscreen = false;
@@ -554,7 +586,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
                 if (e.key.key == SDLK_F12 && e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && !a.capture.empty() &&
                     frame.width) {  // captura do quadro exibido
                     const fs::path path = a.capture / ("quadro_" + std::to_string(++captures) + ".bmp");
-                    std::printf("captura %s: %s\n", utf8(path).c_str(), writeBmp(path, frame) ? "ok" : "FALHOU");
+                    std::printf("captura %s: %s\n", utf8(path).c_str(), writeBmp(path, subs.composed(frame)) ? "ok" : "FALHOU");
                     break;
                 }
                 if (e.key.key == SDLK_F5 && g_recorder) {
@@ -601,6 +633,23 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         ok &= SDL_RenderClear(renderer);
         if (texture) ok &= SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+        // a legenda ativa do quadro, na resolucao de saida (o quadro ocupa a saida inteira)
+        int outW = 0, outH = 0;
+        SDL_GetCurrentRenderOutputSize(renderer, &outW, &outH);
+        subLayer = outW > 0 && outH > 0 ? subs.layer(frame.subtitle, uint32_t(outW), uint32_t(outH), 0, 0, float(outW), float(outH))
+                                        : nullptr;
+        if (subLayer) {
+            if (!subTex || subW != uint32_t(outW) || subH != uint32_t(outH)) {
+                if (subTex) SDL_DestroyTexture(subTex);
+                subTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
+                if (subTex) SDL_SetTextureBlendMode(subTex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
+                subW = uint32_t(outW), subH = uint32_t(outH);
+            }
+            if (subTex) {
+                SDL_UpdateTexture(subTex, nullptr, subLayer->data(), outW * 4);
+                SDL_RenderTexture(renderer, subTex, nullptr, nullptr);
+            }
+        }
         ok &= SDL_RenderPresent(renderer);
         gfxFailures = ok ? 0 : gfxFailures + 1;
         if (gfxFailures >= 120) {
@@ -630,6 +679,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
     const std::string err = host.error();
     if (!err.empty()) errorBox(window, "O jogo parou com erro:\n" + err);
     else if (!gfxError.empty()) errorBox(window, "Falha de video:\n" + gfxError);
+    if (subTex) SDL_DestroyTexture(subTex);
     if (texture) SDL_DestroyTexture(texture);
     return err.empty() && gfxError.empty() ? 0 : 1;
 }

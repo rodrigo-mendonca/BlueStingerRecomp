@@ -1,0 +1,229 @@
+#include "settings_menu.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <functional>
+#include <utility>
+
+namespace bs {
+namespace st = native::settings;
+
+namespace {
+
+std::string onoff(bool b) { return b ? "ligado" : "desligado"; }
+std::string pct(uint32_t v) { return std::to_string(v) + " %"; }
+
+template <class E> E cycle(E e, int dir, int count) { return E((int(e) + dir + count) % count); }
+
+uint32_t step(uint32_t v, int dir, uint32_t lo, uint32_t hi, uint32_t by) {
+    const int64_t n = int64_t(v) + int64_t(dir) * by;
+    return uint32_t(std::clamp<int64_t>(n, lo, hi));
+}
+
+} // namespace
+
+// Uma linha do menu: rotulo, valor, se pode mudar, e o que Esquerda/Direita (ou Confirmar) fazem
+struct SettingsMenu::Entry {
+    std::string                         label, value;
+    bool                                enabled = true;
+    std::function<void(Preferences&, int)> change;  // dir = -1 / +1 (Confirmar = +1)
+    std::function<void(SettingsMenu&)>     action;  // em vez de mudar valor: abrir pagina etc.
+};
+
+SettingsMenu::SettingsMenu(Preferences prefs, st::Capabilities caps, std::vector<std::string> languages)
+    : prefs_(std::move(prefs)), caps_(caps), languages_(std::move(languages)) {
+    if (languages_.empty()) languages_.push_back("en-US");
+}
+
+void SettingsMenu::open() { open_ = true, page_ = Page::Main, sel_ = 0; }
+void SettingsMenu::close() {
+    if (pending_ == Pending::Display) prefs_ = before_, dirty_ = true;  // fechar sem confirmar: volta
+    pending_ = Pending::None, open_ = false;
+}
+
+bool SettingsMenu::take_changes(Preferences& out) {
+    if (!dirty_) return false;
+    out = prefs_, dirty_ = false;
+    return true;
+}
+bool SettingsMenu::take_controls_request() { return std::exchange(controls_, false); }
+
+std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
+    std::vector<Entry> e;
+    const st::Features& f = caps_.features;
+    auto page = [](Page p) { return [p](SettingsMenu& m) { m.page_ = p, m.sel_ = 0; }; };
+    switch (page_) {
+    case Page::Main:
+        e.push_back({"Graficos", "", true, nullptr, page(Page::Graphics)});
+        e.push_back({"Audio", "", true, nullptr, page(Page::Audio)});
+        e.push_back({"Legendas", "", true, nullptr, page(Page::Subtitles)});
+        e.push_back({"Controles", "", true, nullptr, page(Page::Controls)});
+        e.push_back({"Restaurar padroes", "", true, nullptr, [](SettingsMenu& m) {
+                         m.pending_ = Pending::Restore;
+                     }});
+        e.push_back({"Voltar ao jogo", "", true, nullptr, [](SettingsMenu& m) { m.close(); }});
+        break;
+    case Page::Graphics: {
+        const auto& g   = prefs_.graphics;
+        const char* res[] = {"original (640x480)", "720p", "1080p", "1440p", "4K"};
+        const char* asp[] = {"4:3 (original)", "16:9", "automatico"};
+        const char* win[] = {"janela", "tela cheia", "sem bordas"};
+        const char* flt[] = {"original", "bilinear", "anisotropica"};
+        const char* pre[] = {"Original Dreamcast", "Equilibrado", "Alta Qualidade", "Personalizado"};
+        auto        soon  = [](bool have, std::string v) { return have ? v : v + " (em breve)"; };
+        const bool presets = f.scaling || f.filtering || f.msaa;  // sem melhorias, so o Original existe
+        e.push_back({"Predefinicao", soon(presets, pre[size_t(st::classify(g))]), presets, [](Preferences& p, int d) {
+                         const auto cur = st::classify(p.graphics);
+                         const int  n   = (int(cur == st::Preset::Custom ? st::Preset::Original : cur) + d + 3) % 3;
+                         st::GraphicsSettings g = st::preset(st::Preset(n));
+                         g.window = p.graphics.window, g.window_w = p.graphics.window_w, g.window_h = p.graphics.window_h;
+                         g.aspect = p.graphics.aspect, g.vsync = p.graphics.vsync;
+                         p.graphics = g;
+                     }});
+        e.push_back({"Resolucao interna", soon(f.scaling, res[size_t(g.resolution)]), f.scaling,
+                     [](Preferences& p, int d) { p.graphics.resolution = cycle(p.graphics.resolution, d, 5); }});
+        e.push_back({"Escala de renderizacao", soon(f.scaling, pct(g.scale_pct)), f.scaling,
+                     [](Preferences& p, int d) { p.graphics.scale_pct = step(p.graphics.scale_pct, d, 50, 200, 25); }});
+        e.push_back({"Proporcao", soon(f.aspect_wide, asp[size_t(g.aspect)]), f.aspect_wide,
+                     [](Preferences& p, int d) { p.graphics.aspect = cycle(p.graphics.aspect, d, 3); }});
+        e.push_back({"Modo de tela", soon(f.window_modes, win[size_t(g.window)]), f.window_modes,
+                     [](Preferences& p, int d) { p.graphics.window = cycle(p.graphics.window, d, 3); }});
+        e.push_back({"V-Sync", soon(f.vsync, onoff(g.vsync)), f.vsync, [](Preferences& p, int) { p.graphics.vsync = !p.graphics.vsync; }});
+        e.push_back({"Filtragem de texturas", soon(f.filtering, flt[size_t(g.filter)]), f.filtering,
+                     [](Preferences& p, int d) { p.graphics.filter = cycle(p.graphics.filter, d, 3); }});
+        e.push_back({"Antialiasing (MSAA)", soon(f.msaa, g.msaa == 1 ? "desligado" : std::to_string(g.msaa) + "x"), f.msaa,
+                     [](Preferences& p, int d) {
+                         const uint32_t v[] = {1, 2, 4, 8};
+                         int            i   = int(std::find(v, v + 4, p.graphics.msaa) - v);
+                         p.graphics.msaa    = v[std::clamp(i + d, 0, 3)];
+                     }});
+        e.push_back({"Sombras", soon(f.shadows, g.shadows == st::Shadows::Original ? "original" : "aprimoradas"), f.shadows,
+                     [](Preferences& p, int d) { p.graphics.shadows = cycle(p.graphics.shadows, d, 2); }});
+        e.push_back({"Iluminacao aprimorada", soon(f.lighting, onoff(g.lighting)), f.lighting,
+                     [](Preferences& p, int) { p.graphics.lighting = !p.graphics.lighting; }});
+        e.push_back({"Texturas HD", soon(f.hd_textures, onoff(g.hd_textures)), f.hd_textures,
+                     [](Preferences& p, int) { p.graphics.hd_textures = !p.graphics.hd_textures; }});
+        e.push_back({"Bloom", soon(f.post, onoff(g.bloom)), f.post, [](Preferences& p, int) { p.graphics.bloom = !p.graphics.bloom; }});
+        e.push_back({"SSAO", soon(f.post, onoff(g.ssao)), f.post, [](Preferences& p, int) { p.graphics.ssao = !p.graphics.ssao; }});
+        e.push_back({"Nitidez", soon(f.post, pct(uint32_t(std::lround(g.sharpen * 100)))), f.post, [](Preferences& p, int d) {
+                         p.graphics.sharpen = std::clamp(p.graphics.sharpen + 0.25f * float(d), 0.f, 1.f);
+                     }});
+        e.push_back({"Filtro CRT", soon(f.post, onoff(g.crt)), f.post, [](Preferences& p, int) { p.graphics.crt = !p.graphics.crt; }});
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
+        break;
+    }
+    case Page::Audio: {
+        const auto& a = prefs_.audio;
+        auto        vol = [](uint32_t st::AudioSettings::*m) {
+            return [m](Preferences& p, int d) { p.audio.*m = step(p.audio.*m, d, 0, 100, 5); };
+        };
+        e.push_back({"Volume geral", pct(a.master), true, vol(&st::AudioSettings::master)});
+        e.push_back({"Musica", pct(a.music), true, vol(&st::AudioSettings::music)});
+        e.push_back({"Efeitos", pct(a.effects), true, vol(&st::AudioSettings::effects)});
+        e.push_back({"Vozes", pct(a.voices), true, vol(&st::AudioSettings::voices)});
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
+        break;
+    }
+    case Page::Subtitles: {
+        const auto& s     = prefs_.subtitles;
+        const auto  langs = languages_;
+        e.push_back({"Legendas", onoff(s.enabled), true, [](Preferences& p, int) { p.subtitles.enabled = !p.subtitles.enabled; }});
+        e.push_back({"Idioma", s.language, s.enabled, [langs](Preferences& p, int d) {
+                         auto it = std::find(langs.begin(), langs.end(), p.subtitles.language);
+                         int  i  = it == langs.end() ? 0 : int(it - langs.begin()) + d;
+                         p.subtitles.language = langs[size_t((i + int(langs.size())) % int(langs.size()))];
+                     }});
+        e.push_back({"Tamanho do texto", pct(s.size_pct), s.enabled,
+                     [](Preferences& p, int d) { p.subtitles.size_pct = step(p.subtitles.size_pct, d, 50, 200, 10); }});
+        e.push_back({"Contorno", onoff(s.outline), s.enabled, [](Preferences& p, int) {
+                         p.subtitles.outline = !p.subtitles.outline;
+                         if (!p.subtitles.outline && !p.subtitles.box) p.subtitles.box = true;  // um dos dois sempre
+                     }});
+        e.push_back({"Fundo", onoff(s.box), s.enabled, [](Preferences& p, int) {
+                         p.subtitles.box = !p.subtitles.box;
+                         if (!p.subtitles.outline && !p.subtitles.box) p.subtitles.outline = true;
+                     }});
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
+        break;
+    }
+    case Page::Controls:
+        e.push_back({"Mapeamento de controles e teclado", "", true, nullptr, [](SettingsMenu& m) { m.controls_ = true; }});
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
+        break;
+    }
+    return e;
+}
+
+void SettingsMenu::commit(const Preferences& wanted, double now) {
+    Preferences next = wanted;
+    next.graphics    = st::clamp_to(next.graphics, caps_);  // nada que o renderizador nao tenha
+    if (next == prefs_) return;
+    if (st::requires_confirmation(prefs_.graphics, next.graphics) && pending_ != Pending::Display)
+        before_ = prefs_, pending_ = Pending::Display, deadline_ = now + st::kConfirmSeconds;
+    prefs_ = next, dirty_ = true;
+}
+
+void SettingsMenu::change(int dir, double now) {
+    const auto e = entries();
+    if (sel_ < 0 || sel_ >= int(e.size()) || !e[size_t(sel_)].enabled) return;
+    if (e[size_t(sel_)].change) {
+        Preferences next = prefs_;
+        e[size_t(sel_)].change(next, dir);
+        commit(next, now);
+    }
+}
+
+void SettingsMenu::input(MenuAction a, double now) {
+    if (!open_) return;
+    tick(now);
+    if (pending_ != Pending::None) {  // so Confirmar (mantem / restaura) ou Voltar (desfaz / cancela)
+        if (a == MenuAction::Confirm) {
+            if (pending_ == Pending::Restore) {
+                pending_ = Pending::None;
+                commit(Preferences{}, now);  // Original Dreamcast, volumes 100, legendas en-US ligadas
+                if (pending_ == Pending::Display) pending_ = Pending::None;  // restaurar ja foi confirmado
+            } else {
+                pending_ = Pending::None;  // mantem
+            }
+        } else if (a == MenuAction::Back) {
+            if (pending_ == Pending::Display) prefs_ = before_, dirty_ = true;
+            pending_ = Pending::None;
+        }
+        return;
+    }
+    const auto e = entries();
+    const int  n = int(e.size());
+    switch (a) {
+    case MenuAction::Up: sel_ = (sel_ - 1 + n) % n; break;
+    case MenuAction::Down: sel_ = (sel_ + 1) % n; break;
+    case MenuAction::Left: change(-1, now); break;
+    case MenuAction::Right: change(+1, now); break;
+    case MenuAction::Confirm:
+        if (e[size_t(sel_)].action) e[size_t(sel_)].action(*this);
+        else change(+1, now);
+        break;
+    case MenuAction::Back:
+        if (page_ == Page::Main) close();
+        else page_ = Page::Main, sel_ = 0;
+        break;
+    }
+}
+
+void SettingsMenu::tick(double now) {
+    if (pending_ == Pending::Display && now >= deadline_) prefs_ = before_, dirty_ = true, pending_ = Pending::None;
+}
+
+MenuView SettingsMenu::view() const {
+    MenuView    v;
+    const char* titles[] = {"Configuracoes", "Configuracoes > Graficos", "Configuracoes > Audio", "Configuracoes > Legendas",
+                            "Configuracoes > Controles"};
+    v.title = titles[size_t(page_)];
+    for (const auto& e : entries()) v.items.push_back({e.label, e.value, e.enabled});
+    v.selected = sel_;
+    if (pending_ == Pending::Display) v.prompt = "Manter esta configuracao de tela? (Confirmar = manter, Voltar = desfazer)";
+    if (pending_ == Pending::Restore) v.prompt = "Restaurar todas as configuracoes padrao? (Confirmar / Voltar)";
+    return v;
+}
+
+} // namespace bs

@@ -23,6 +23,10 @@ namespace bs {
 struct GameFrame {
     std::vector<uint32_t> argb;  // ARGB8888
     uint32_t              width = 0, height = 0;
+    uint64_t              vblank = 0;  // o VBlank em que o quadro foi publicado
+    // N7c: legenda das falas ativa neste VBlank (SubtitleService do N6; vazia = nenhuma ou legendas desligadas).
+    // Fica fora da imagem: quem apresenta a desenha por cima (app/subtitle_overlay.h).
+    std::wstring          subtitle;
 };
 
 // Desempenho medido na thread do jogo. "Trabalho" = tempo de host gasto emulando um campo
