@@ -48,7 +48,8 @@ bool same_quality(const GraphicsSettings& a, const GraphicsSettings& b) {
            a.bloom == b.bloom && a.ssao == b.ssao && a.tonemap == b.tonemap && a.crt == b.crt && a.sharpen == b.sharpen &&
            a.gamma == b.gamma && a.saturation == b.saturation && a.color == b.color && a.brightness == b.brightness &&
            a.contrast == b.contrast && a.shader_params == b.shader_params && a.exposure == b.exposure &&
-           a.highlights == b.highlights && a.tone_shadows == b.tone_shadows;
+           a.highlights == b.highlights && a.tone_shadows == b.tone_shadows && a.bloom_threshold == b.bloom_threshold &&
+           a.bloom_radius == b.bloom_radius && a.bloom_strength == b.bloom_strength;
 }
 
 } // namespace
@@ -96,6 +97,9 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
     s.exposure         = std::clamp(s.exposure, -2.f, 2.f);
     s.highlights       = std::clamp(s.highlights, 0.f, 1.f);
     s.tone_shadows     = std::clamp(s.tone_shadows, -0.5f, 0.5f);
+    s.bloom_threshold  = std::clamp(s.bloom_threshold, 0.f, 1.f);
+    s.bloom_radius     = std::clamp(s.bloom_radius, 0.005f, 0.05f);
+    s.bloom_strength   = std::clamp(s.bloom_strength, 0.f, 2.f);
     if (s.msaa != 1 && s.msaa != 2 && s.msaa != 4 && s.msaa != 8) s.msaa = 1;
     s.window_w = s.window_w ? std::clamp<uint32_t>(s.window_w, 320, 16384) : 0;
     s.window_h = s.window_h ? std::clamp<uint32_t>(s.window_h, 240, 16384) : 0;
@@ -129,7 +133,9 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
     off(f.tonemap, s.tonemap || s.exposure != 0 || s.highlights != 0.5f || s.tone_shadows != 0,
         [&] { s.tonemap = false, s.exposure = 0, s.highlights = 0.5f, s.tone_shadows = 0; }, "tonemapping");
     off(f.sharpen, s.sharpen != 0, [&] { s.sharpen = 0; }, "nitidez");
-    off(f.post, s.bloom || s.ssao || s.crt, [&] { s.bloom = s.ssao = s.crt = false; }, "pos-processamento");
+    off(f.bloom, s.bloom || s.bloom_threshold != 0.7f || s.bloom_radius != 0.02f || s.bloom_strength != 0.6f,
+        [&] { s.bloom = false, s.bloom_threshold = 0.7f, s.bloom_radius = 0.02f, s.bloom_strength = 0.6f; }, "bloom");
+    off(f.post, s.ssao || s.crt, [&] { s.ssao = s.crt = false; }, "pos-processamento");
     if (!f.shaders) s.shader_params.clear();
     while (internal_height(s) > caps.max_height && (s.resolution != Resolution::Original || s.scale_pct > 100)) {
         if (s.scale_pct > 100) s.scale_pct = 100;
@@ -184,7 +190,10 @@ std::string to_toml(const GraphicsSettings& s) {
       << "contraste = " << s.contrast << "\n"
       << "exposicao = " << s.exposure << "\n"
       << "altas_luzes = " << s.highlights << "\n"
-      << "sombras_tom = " << s.tone_shadows << "\n\n[tela]\n"
+      << "sombras_tom = " << s.tone_shadows << "\n"
+      << "bloom_limiar = " << s.bloom_threshold << "\n"
+      << "bloom_raio = " << s.bloom_radius << "\n"
+      << "bloom_intensidade = " << s.bloom_strength << "\n\n[tela]\n"
       << "modo = \"" << name(s.window) << "\"\n"
       << "largura = " << s.window_w << "\n"
       << "altura = " << s.window_h << "\n"
@@ -236,6 +245,8 @@ GraphicsSettings from_toml(const std::string& text, std::string* warning) {
     flt("efeitos", "saturacao", s.saturation), bln("efeitos", "cor", s.color), flt("efeitos", "brilho", s.brightness);
     flt("efeitos", "contraste", s.contrast), flt("efeitos", "exposicao", s.exposure);
     flt("efeitos", "altas_luzes", s.highlights), flt("efeitos", "sombras_tom", s.tone_shadows);
+    flt("efeitos", "bloom_limiar", s.bloom_threshold), flt("efeitos", "bloom_raio", s.bloom_radius);
+    flt("efeitos", "bloom_intensidade", s.bloom_strength);
     if (const auto* t = doc["shader_parametros"].as_table())
         for (const auto& [k, v] : *t)
             if (auto d = v.value<double>()) s.shader_params[std::string(k.str())] = float(*d);

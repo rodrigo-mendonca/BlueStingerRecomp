@@ -7,6 +7,8 @@
 #include "render/vulkan/vk_internal.h"
 #include "render/post_shader.h"
 #include "render/vulkan/spirv/post_color_frag.h"
+#include "render/vulkan/spirv/post_bloom_h_frag.h"
+#include "render/vulkan/spirv/post_bloom_v_frag.h"
 #include "render/vulkan/spirv/post_sharpen_frag.h"
 #include "render/vulkan/spirv/post_tonemap_frag.h"
 #include "render/vulkan/spirv/post_vert.h"
@@ -85,6 +87,8 @@ public:
         if (!builtin(PostBuiltin::Color, kPostColorFrag, sizeof kPostColorFrag)) return false;
         if (!builtin(PostBuiltin::Tonemap, kPostTonemapFrag, sizeof kPostTonemapFrag)) return false;
         if (!builtin(PostBuiltin::Sharpen, kPostSharpenFrag, sizeof kPostSharpenFrag)) return false;
+        if (!builtin(PostBuiltin::BloomBlurH, kPostBloomHFrag, sizeof kPostBloomHFrag)) return false;
+        if (!builtin(PostBuiltin::BloomBlurV, kPostBloomVFrag, sizeof kPostBloomVFrag)) return false;
         builtinColor_ = builtins_[size_t(PostBuiltin::Color)];
         // tempo de GPU por passe: dois timestamps por passe
         if (b_.tsPeriod_ > 0) {

@@ -51,6 +51,8 @@ struct GraphicsSettings {
     float      brightness = 0, contrast = 1.0f;
     // tonemapping (`tonemap`): exposicao em EV, compressao das altas luzes (0 a 1) e tom das sombras (-0,5 a 0,5)
     float      exposure = 0, highlights = 0.5f, tone_shadows = 0;
+    // bloom (`bloom`): limiar de luminancia (0 a 1), raio (fracao da altura) e intensidade (0 a 2)
+    float      bloom_threshold = 0.7f, bloom_radius = 0.02f, bloom_strength = 0.6f;
     // do jogador (fora dos presets)
     WindowMode window = WindowMode::Windowed;
     uint32_t   window_w = 0, window_h = 0;  // tamanho da janela (0 = o padrao); tela cheia usa a do monitor
@@ -67,9 +69,10 @@ struct Features {
     bool color = false;    // N7c: correcao de cor (pos-processamento)
     bool tonemap = false;  // N7c: tonemapping; `post` = os efeitos de imagem ainda sem recurso proprio
     bool sharpen = false;  // N7c: nitidez
+    bool bloom = false;    // N7c: bloom
     static Features all() {
         Features f{true, true, true, true, true, true, true, true, true, true, true};
-        f.color = f.tonemap = f.sharpen = true;
+        f.color = f.tonemap = f.sharpen = f.bloom = true;
         return f;
     }
 };

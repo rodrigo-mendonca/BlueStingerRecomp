@@ -231,7 +231,8 @@ BS_TEST(post_cost_4k) {
             if (p.shader < 0) continue;
             p.params[1] = p.params[2] = p.params[3] = 1;  // valores tipicos nao neutros
             p.params[0] = 0.5f;
-            if (nr::PostBuiltin(b) == nr::PostBuiltin::BloomBlurV) p.original = -1;
+            if (nr::PostBuiltin(b) == nr::PostBuiltin::BloomBlurH || nr::PostBuiltin(b) == nr::PostBuiltin::BloomBlurV)
+                p.params[1] = 0.02f;  // raio padrao
             for (int i = 0; i < 12; ++i) BS_CHECK(d->post_run(img, w, h, {&p, 1}, out).ok());
         }
         const auto t = d->post_timings();
@@ -271,6 +272,44 @@ BS_TEST(post_sharpen_gpu) {
         std::fprintf(stderr, "  borda 80|160 -> %d|%d; areas lisas %d e %d\n", left, right, flatL, flatR);
         BS_CHECK(left < 80 && right > 160 && left > 40 && right < 220);  // realce sem estourar
         BS_CHECK(flatL == 80 && flatR == 160);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// N7c: bloom (dois passes, o vertical com o binding 1 na imagem de antes do primeiro). Um ponto claro num fundo escuro:
+// em volta dele a imagem clareia (o brilho), longe nao muda; com o limiar em 1 (nada passa) a imagem fica igual; o
+// bloom depois de outro passe compoe sobre a saida dele (a referencia ao passe anterior, nao a original).
+BS_TEST(post_bloom_gpu) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const uint32_t        w = 128, h = 96;
+        std::vector<uint32_t> img(size_t(w) * h, 0xFF101010u), out;
+        for (uint32_t y = 44; y < 52; ++y)
+            for (uint32_t x = 60; x < 68; ++x) img[size_t(y) * w + x] = 0xFFFFFFFFu;  // ponto claro
+        nr::PostPass bh, bv;
+        bh.shader = d->post_builtin(nr::PostBuiltin::BloomBlurH), bv.shader = d->post_builtin(nr::PostBuiltin::BloomBlurV);
+        BS_CHECK(bh.shader >= 0 && bv.shader >= 0);
+        bh.params[0] = 0.7f, bh.params[1] = bv.params[1] = 0.05f, bv.params[2] = 1.0f, bv.original = 0;
+        const nr::PostPass two[2] = {bh, bv};
+        BS_CHECK(d->post_run(img, w, h, two, out).ok());
+        const int near = int(out[size_t(48) * w + 69] & 0xFF), far = int(out[size_t(5) * w + 5] & 0xFF), spot = int(out[size_t(48) * w + 64] & 0xFF);
+        std::fprintf(stderr, "  perto do ponto %d (antes 16), longe %d, no ponto %d\n", near, far, spot);
+        BS_CHECK(near >= 24 && far == 16 && spot == 255);  // 30% da energia do branco passa do limiar 0,7
+        nr::PostPass t1 = bh;
+        t1.params[0] = 1.0f;  // limiar maximo: nada passa
+        const nr::PostPass none[2] = {t1, bv};
+        BS_CHECK(d->post_run(img, w, h, none, out).ok() && out == img);
+        // depois de um passe de cor (saturacao 0, brilho -0,05): o bloom soma sobre a saida dele
+        nr::PostPass c;
+        c.shader = d->post_builtin_color(), c.params[0] = -0.05f, c.params[1] = 1, c.params[2] = 1, c.params[3] = 0;
+        nr::PostPass bv2 = bv;
+        bv2.original = 1;
+        const nr::PostPass three[3] = {c, bh, bv2};
+        std::vector<uint32_t> only;
+        BS_CHECK(d->post_run(img, w, h, {&c, 1}, only).ok() && d->post_run(img, w, h, three, out).ok());
+        BS_CHECK((out[size_t(5) * w + 5] & 0xFF) == (only[size_t(5) * w + 5] & 0xFF));  // longe: a saida do passe de cor
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
 }

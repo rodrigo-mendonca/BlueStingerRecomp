@@ -206,7 +206,14 @@ private:
         m.shader = mod;
         for (size_t i = 0; i < spec_.shaderParams.size() && i < nr::kPostParams; ++i) m.params[i] = spec_.shaderParams[i];
         if (mod >= 0 && spec_.shader->before_builtin) passes_.push_back(m);
-        // ordem dos internos: tonemapping (na luz da cena), correcao de cor
+        // ordem dos internos: bloom (sobre a imagem do jogo), tonemapping, correcao de cor, nitidez
+        if (spec_.bloom) {
+            nr::PostPass h, v;
+            h.shader = dev_->post_builtin(nr::PostBuiltin::BloomBlurH), v.shader = dev_->post_builtin(nr::PostBuiltin::BloomBlurV);
+            h.params[0] = spec_.bloomThreshold, h.params[1] = v.params[1] = spec_.bloomRadius, v.params[2] = spec_.bloomStrength;
+            v.original = int(passes_.size());  // o binding 1 do passe vertical: a imagem de antes do bloom
+            if (h.shader >= 0 && v.shader >= 0) passes_.push_back(h), passes_.push_back(v);
+        }
         if (spec_.tonemap) {
             nr::PostPass t;
             t.shader    = dev_->post_builtin(nr::PostBuiltin::Tonemap);
