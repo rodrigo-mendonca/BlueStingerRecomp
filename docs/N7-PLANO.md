@@ -945,3 +945,91 @@ resolução interna, caminho A". Não é a arquitetura final: o custo da transfe
 - Resolução interna, resolução da janela e escala de renderização ficam separadas.
 - 1440p e 4K só depois da apresentação direta estabilizar, respeitando os limites da GPU.
 - 16:9 só com a projeção, a câmera e o HUD corrigidos (até lá, 4:3 com faixas).
+
+**Caminho B: feito (2026-10-22).** Validado com gameplay real, de 1080p a 4K, em janela 4:3, 16:9 e sem bordas
+21:9 (`STATUS.md`, "N7c: apresentação direta pelo Vulkan, caminho B"). Decisões tomadas na implementação:
+- duas filas da mesma família (renderizador e apresentação): o `vkQueuePresentKHR` com V-Sync pode esperar o monitor
+  e, numa fila só, segurava a thread do jogo;
+- slots em `GENERAL`, semáforo por escrita, fixação até a cerca da apresentação;
+- 1440p e 4K liberados depois da apresentação direta estabilizar, até o limite da GPU (`max_internal_height`).
+
+### Critérios de aceitação (resoluções)
+
+1. O modo original continua idêntico pixel a pixel à referência do software (rota de combate, 9000 quadros).
+2. Na resolução maior, a geometria é desenhada no alvo maior. A prova é o teste de borda do triângulo e o detalhe
+   acima da resolução original maior que o da imagem original ampliada (`n7_resolucao.py`).
+3. Medidos: qualidade, tempo de GPU, tempo de apresentação, custo das transferências (tabela do `STATUS.md`).
+4. Menu, legendas e HUD conferidos em janela 4:3, 16:9 e 21:9 (`n7_janela.py`).
+5. A pendência AMD continua aberta até a evidência.
+
+## 21. N7c: pós-processamento e shaders personalizados (complemento do mantenedor, 2026-10-22)
+
+**Objetivo:** iluminação visualmente melhor e shaders personalizados, sem alterar os recursos originais e sem perder o
+visual original.
+
+### Cadeia
+
+- Na apresentação direta, **entre a imagem do jogo e a composição** das camadas nativas: os efeitos tocam só a
+  imagem do jogo. Menu e legendas vêm depois, nítidos.
+- Cada passe é um shader de fragmento de tela cheia. Lê a imagem anterior (e, quando o passe declarar, a original) e
+  escreve numa imagem intermediária na resolução da fonte (a interna, ou 640×480 para o software).
+- O último passe vai para a área 4:3 da janela.
+- **Original Dreamcast:** a cadeia é vazia, e o caminho é exatamente o de hoje (nenhum passe extra, a mesma imagem).
+- Ordem fixa dos internos:
+  1. correção de cor (brilho, contraste, gamma, saturação);
+  2. tonemapping;
+  3. bloom (limiar, desfoque em pirâmide, soma);
+  4. nitidez (adaptativa).
+- Os externos entram na posição que o manifesto declara (antes ou depois dos internos).
+- Persistência em `graficos.toml` (`[efeitos]` e `[shaders]`). Os presets Equilibrado e Alta Qualidade
+  ("aprimorados") ligam efeitos; Personalizado guarda qualquer combinação.
+- Menu: cada efeito liga e desliga sozinho, com os parâmetros. A mudança vale no quadro seguinte (sem confirmação:
+  não muda o tamanho da tela).
+
+### Shaders externos (formato; pacotes completos e ferramentas no N9)
+
+- **Pasta:** `mods/shaders/<nome>/`, com `manifesto.toml` e `shader.spv`.
+- **Formato:** SPIR-V já compilado. O jogo não compila GLSL; quem cria usa o `glslangValidator`. O fonte GLSL vai
+  junto, por transparência.
+- **O que o manifesto declara:**
+  - nome, versão do formato (`formato = 1`) e descrição;
+  - a posição na cadeia;
+  - até 16 parâmetros float: nome, rótulo, mínimo, máximo, padrão e passo.
+- **Interface fixa do shader:**
+  - só estágio de fragmento, ponto de entrada `main`;
+  - `set 0, binding 0`: `sampler2D` da imagem anterior;
+  - `binding 1` (opcional): a original;
+  - bloco de push constants com o tamanho da imagem e os 16 parâmetros (até 80 bytes);
+  - saída `location 0`.
+- **Validação antes de usar:**
+  - número mágico e versão do SPIR-V;
+  - a reflexão mínima do próprio jogo: modelo de execução Fragment, `main`, só os bindings permitidos, push
+    constants dentro do limite, nenhuma outra entrada ou saída;
+  - `vkCreateShaderModule` e o pipeline criados sem erro.
+- **Falha em qualquer passo:** o shader fica desativado, com o motivo no log e no menu ("inválido: ..."). O jogo
+  continua com os outros efeitos.
+- **Uma perda do dispositivo durante um passo externo** o desativa para a sessão, e a recuperação do N7b recria o
+  dispositivo.
+- **Segurança:** nada de código nativo de mods. O shader só lê as imagens que a cadeia entrega e só escreve na saída
+  do passe; não há buffers graváveis nem acesso à memória do jogo.
+
+### Iluminação, SSAO e sombras (preparados, sem inventar dados)
+
+- **SSAO:** só com a profundidade que o renderizador já tem (o 1/w das opacas, no alvo da resolução interna).
+- **Luz e sombras:**
+  - interface reservada (`PostInput`: profundidade e, no futuro, normais ou dados de luz confiáveis);
+  - nada de luz inventada, e a lógica do jogo não muda;
+  - os efeitos de iluminação desta etapa são de imagem (bloom, tonemapping, cor), que não fingem dados que o jogo não
+    fornece.
+
+### Ordem e critérios de aceitação
+
+1. Cadeia mínima (correção de cor interna) e o **shader externo de demonstração** (correção de cor) pelo menu.
+2. Testes:
+   - liga e desliga em tempo real (a imagem muda; desligado, volta igual pixel a pixel à de antes);
+   - persistência depois de reiniciar;
+   - shader inválido (SPIR-V corrompido, binding fora da interface, push constants grandes demais) desativado com o
+     motivo, sem derrubar a imagem;
+   - o preset Original continua sem nenhum passe.
+3. Depois, um efeito por vez: tonemapping, nitidez, bloom; SSAO por último, se a profundidade servir.
+4. Pacotes completos de mods gráficos e ferramentas de criação: N9.

@@ -413,11 +413,16 @@ void GameHost::vblank() {
     // N5: durante um filme nativo o quadro exibido e o dele (o PVR nao desenha o filme)
     const bool movie = transitional::video::playing() && movie_.width;
     if (movie) scratch_ = movie_;
-    scratch_.hires.reset(), scratch_.hiresWidth = scratch_.hiresHeight = 0;
-    if (!movie && renderer_.load() == int(RenderProvider::Native)) {  // N7c: a imagem maior do render exibido
-        auto hi = transitional::render_capture::hires_for(scratch_.argb, scratch_.width, scratch_.height);
-        scratch_.hires = std::move(hi.argb), scratch_.hiresWidth = hi.width, scratch_.hiresHeight = hi.height;
+    scratch_.hires.reset(), scratch_.hiresSeq = 0, scratch_.hiresWidth = scratch_.hiresHeight = 0;
+    if (!movie && renderer_.load() == int(RenderProvider::Native)) {  // N7c: o slot da imagem maior do render exibido
+        const auto hi     = transitional::render_capture::hires_for(scratch_.argb, scratch_.width, scratch_.height);
+        scratch_.hiresSeq = hi.seq, scratch_.hiresWidth = hi.width, scratch_.hiresHeight = hi.height;
         scratch_.hiresY0 = hi.y0, scratch_.hiresRows = hi.rows;
+        // capturas (--capture): a imagem maior volta para a CPU so nos quadros capturados
+        if (hi.seq && opt_.captureEvery && opt_.capture && n % opt_.captureEvery == 0) {
+            auto v = std::make_shared<std::vector<uint32_t>>();
+            if (transitional::render_capture::read_hires(hi, *v)) scratch_.hires = std::move(v), scratch_.hiresY0 = 0;
+        }
     }
     // Diagnostico (N2b-2): BS_FRAME_LOG=<arquivo> grava o hash do quadro exibido a cada VBlank
     // (compara a sequencia de quadros entre modos de tempo com linhas do tempo deslocadas)

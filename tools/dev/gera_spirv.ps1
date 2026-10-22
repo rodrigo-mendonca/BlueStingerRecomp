@@ -28,7 +28,11 @@ $jobs = @(
     @("resolve_comp_fc.h", "resolve.comp", "kResolveCompFc", @("-DFLOAT_CONTROLS")),
     @("pvr_frag_fcd.h", "pvr.frag", "kPvrFragFcd", @("-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
     @("pvr_frag_autosort_fcd.h", "pvr.frag", "kPvrFragAutosortFcd", @("-DAUTOSORT", "-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
-    @("resolve_comp_fcd.h", "resolve.comp", "kResolveCompFcd", @("-DFLOAT_CONTROLS", "-DDENORM_PRESERVE"))
+    @("resolve_comp_fcd.h", "resolve.comp", "kResolveCompFcd", @("-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
+    # N7c: apresentacao direta e reducao da resolucao interna
+    @("present_vert.h", "present.vert", "kPresentVert", @()),
+    @("present_frag.h", "present.frag", "kPresentFrag", @()),
+    @("downsample_comp.h", "downsample.comp", "kDownsampleComp", @())
 )
 $fail = 0
 foreach ($j in $jobs) {

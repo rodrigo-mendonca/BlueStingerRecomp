@@ -19,6 +19,7 @@
 #include "game_host.h"
 #include "subtitle_overlay.h"
 #include "menu_overlay.h"
+#include "window_present.h"
 #include "settings_menu.h"
 #include "localization/mod_packages.h"
 #include "platform/graphics_settings.h"
@@ -33,6 +34,7 @@
 #include "platform/input.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <algorithm>
 #include <atomic>
@@ -89,6 +91,7 @@ struct Args {
     int render = -1;  // --render nativo|software (N7b; -1 = nao dado)
     bool renderExplicit = false;  // --render ou BS_RENDER dados (valem sobre o graficos.toml do menu)
     uint32_t internalHeight = 0;  // --resolucao-interna <altura> (N7c; 0 = a do graficos.toml)
+    int      present = -1;        // --apresentacao vulkan|sdl (N7c; -1 = Vulkan quando houver)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
     bs::AudioMusicProvider   audioMusic   = bs::AudioMusicProvider::Legacy;    // --audio-musica nativo|legado (N6 fase F)
@@ -164,6 +167,11 @@ bool parseArgs(Args& a) {
             else return false;
         }
         else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v)), a.subtitlesSet = true;
+        else if (s == L"--apresentacao" && (v = next())) {
+            if (*v == L"vulkan") a.present = 1;
+            else if (*v == L"sdl") a.present = 0;
+            else return false;
+        }
         else if (s == L"--resolucao-interna" && (v = next())) {
             a.internalHeight = uint32_t(std::wcstoul(v->c_str(), nullptr, 10));
             if (a.internalHeight < 240 || a.internalHeight > 4320) return false;
@@ -570,18 +578,10 @@ std::unique_ptr<Recorder> g_recorder;
 
 namespace st = bs::native::settings;
 
-// A area do jogo na saida: o maior retangulo 4:3 centrado (faixas pretas nas sobras). Calculada a cada quadro a partir
-// do tamanho REAL da saida (janela, tela cheia, sem bordas), sem a apresentacao logica do SDL: o quadro, as legendas e
-// o menu usam o mesmo espaco de pixels (revisao 2026-10-22: a apresentacao logica ligada e desligada no meio do quadro
-// deslocava e esticava as camadas depois de uma troca de modo de tela).
-SDL_FRect gameArea(SDL_Renderer* renderer) {
-    int w = 0, h = 0;
-    SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
-    if (w <= 0 || h <= 0) return {0, 0, 640, 480};
-    const float sw = float(w), sh = float(h);
-    const float aw = (std::min)(sw, sh * 4.0f / 3.0f), ah = aw * 3.0f / 4.0f;
-    return {std::floor((sw - aw) / 2), std::floor((sh - ah) / 2), std::floor(aw), std::floor(ah)};
-}
+// A apresentacao da janela (Vulkan direta ou SDL); trocada pelo SDL se a do Vulkan falhar (o menu usa a atual).
+struct PresenterRef {
+    std::unique_ptr<bs::WindowPresenter> p;
+};
 
 // N7c: o menu interno na janela (docs/N7-PLANO.md secao 19). O estado e a navegacao sao de app/settings_menu, o desenho
 // de app/menu_overlay; aqui so a ligacao com o SDL e com o jogo:
@@ -598,10 +598,10 @@ public:
     // `prefs`: a configuracao efetiva (com as opcoes da linha de comando); `persisted`: a dos arquivos. Uma opcao da
     // linha de comando (`renderOverride`, `subtitleOverride`) vale so nesta execucao e nunca vai para o arquivo, a nao
     // ser que o jogador mude esse item no menu (revisao Codex 2026-10-22).
-    InGameMenu(bs::GameHost& host, ni::InputSystem& input, SDL_Window* window, SDL_Renderer* renderer, fs::path dir,
+    InGameMenu(bs::GameHost& host, ni::InputSystem& input, SDL_Window* window, PresenterRef& pres, fs::path dir,
                bs::Preferences prefs, bs::Preferences persisted, bool renderOverride, bool subtitleOverride,
                st::Capabilities caps, std::vector<std::string> languages)
-        : host_(host), input_(input), window_(window), renderer_(renderer), dir_(std::move(dir)),
+        : host_(host), input_(input), window_(window), pres_(pres), dir_(std::move(dir)),
           menu_(prefs, caps, std::move(languages)), applied_(prefs), persisted_(std::move(persisted)),
           renderOverride_(renderOverride), subtitleOverride_(subtitleOverride), confirmed_(prefs.graphics) {
         std::vector<bs::MenuItem> info;
@@ -714,35 +714,38 @@ public:
         }
     }
 
-    // As camadas nativas (legendas e menu) por cima do quadro: em pixels de saida, na area do jogo (o retangulo 4:3
-    // da apresentacao logica), sem a escala da area logica (texto nitido, sem distorcer).
-    void draw(bs::SubtitleOverlay& subs, const std::wstring& subtitle) {
-        int w = 0, h = 0;
-        SDL_GetCurrentRenderOutputSize(renderer_, &w, &h);
+    // As camadas nativas (legendas e menu) por cima do quadro, em pixels da saida w x h, posicionadas na area do jogo
+    // (texto nitido, sem distorcer). capture = a apresentacao deste quadro deve ser capturada (BS_MENU_CAPTURA).
+    void layers(bs::SubtitleOverlay& subs, const std::wstring& subtitle, int w, int h, const SDL_FRect& area,
+                std::vector<bs::WindowLayer>& out, bool& capture) {
+        capture = false;
+        out.assign(2, bs::WindowLayer{});  // indices fixos: 0 legendas, 1 menu
         if (w <= 0 || h <= 0) return;
-        const SDL_FRect area = gameArea(renderer_);
         if (styleDirty_) subs.set_style(style_), styleDirty_ = false;
-        if (const auto* l = subs.layer(subtitle, uint32_t(w), uint32_t(h), area.x, area.y, area.w, area.h)) blit(subTex_, *l, w, h);
+        if (const auto* l = subs.layer(subtitle, uint32_t(w), uint32_t(h), area.x, area.y, area.w, area.h))
+            out[0] = {l, uint32_t(w), uint32_t(h), subs.version()};
         if (menu_.is_open()) {
             const bs::MenuView v = menu_.view();
-            blit(menuTex_, overlay_.layer(v, uint32_t(w), uint32_t(h), area.x, area.y, area.w, area.h), w, h);
+            const auto&        l = overlay_.layer(v, uint32_t(w), uint32_t(h), area.x, area.y, area.w, area.h);
+            out[1] = {&l, uint32_t(w), uint32_t(h), overlay_.version()};
             // diagnostico: BS_MENU_CAPTURA=<pasta> grava a imagem APRESENTADA (jogo + legendas + menu) a cada mudanca do menu
             static const char* capDir = std::getenv("BS_MENU_CAPTURA");
             const std::string  k      = v.title + "|" + std::to_string(v.selected) + "|" + v.prompt +
                                   (v.selected >= 0 && v.selected < int(v.items.size()) ? v.items[size_t(v.selected)].value : "");
-            if (capDir && *capDir && k != lastCapture_) {
-                lastCapture_ = k;
-                if (SDL_Surface* shot = SDL_RenderReadPixels(renderer_, nullptr)) {
-                    char name[48];
-                    std::snprintf(name, sizeof name, "menu_%03d.bmp", ++captures_);
-                    std::error_code ec;
-                    fs::create_directories(capDir, ec);
-                    SDL_SaveBMP(shot, (fs::path(capDir) / name).string().c_str());
-                    SDL_DestroySurface(shot);
-                }
-            }
+            if (capDir && *capDir && k != lastCapture_) lastCapture_ = k, capture = true;
         }
         outW_ = w, outH_ = h;
+    }
+    void captured(const std::vector<uint32_t>& img, int w, int h) {
+        static const char* capDir = std::getenv("BS_MENU_CAPTURA");
+        if (!capDir || !*capDir || w <= 0 || h <= 0 || img.size() < size_t(w) * h) return;
+        bs::GameFrame f;
+        f.argb = img, f.width = uint32_t(w), f.height = uint32_t(h);
+        char name[48];
+        std::snprintf(name, sizeof name, "menu_%03d.bmp", ++captures_);
+        std::error_code ec;
+        fs::create_directories(capDir, ec);
+        writeBmp(fs::path(capDir) / name, f);
     }
 
     // As preferencias que ja valem na partida (no inicio e a cada mudanca do menu); `start` = so aplica, sem gravar.
@@ -764,7 +767,7 @@ public:
         // resolucao interna (so o Vulkan; o software desenha na do jogo): altura interna / 480
         if (start || g.vulkan != old.graphics.vulkan || st::internal_height(g) != st::internal_height(old.graphics))
             host_.setRenderScale(g.vulkan ? float(st::internal_height(g)) / 480.f : 1.f);
-        if (start || g.vsync != old.graphics.vsync) SDL_SetRenderVSync(renderer_, g.vsync ? 1 : SDL_RENDERER_VSYNC_DISABLED);
+        if ((start || g.vsync != old.graphics.vsync) && pres_.p) pres_.p->set_vsync(g.vsync);
         if (start || g.window != old.graphics.window || g.window_w != old.graphics.window_w || g.window_h != old.graphics.window_h) {
             if (!applyWindow(g)) {  // o SDL recusou: nunca fica sem imagem
                 std::fprintf(stderr, "[menu] modo de tela recusado (%s): ", SDL_GetError());
@@ -808,16 +811,11 @@ public:
         if (wrote) std::fprintf(stderr, "[menu] preferencias gravadas em %s\n", utf8(dir_).c_str());
     }
 
-    ~InGameMenu() {
-        if (subTex_) SDL_DestroyTexture(subTex_);
-        if (menuTex_) SDL_DestroyTexture(menuTex_);
-    }
-
 private:
     bs::GameHost&                     host_;
     ni::InputSystem&                  input_;
     SDL_Window*                       window_;
-    SDL_Renderer*                     renderer_;
+    PresenterRef&                     pres_;
     fs::path                          dir_;
     bs::SettingsMenu                  menu_;
     bs::MenuOverlay                   overlay_;
@@ -841,8 +839,7 @@ public:
     void disable() { enabled_ = false; }  // modo espectador: o roteiro controla, sem menu
 
 private:
-    SDL_Texture *                     subTex_ = nullptr, *menuTex_ = nullptr;
-    int                               texW_[2] = {}, texH_[2] = {}, outW_ = 0, outH_ = 0;
+    int                               outW_ = 0, outH_ = 0;
     int                               held_ = -1, captures_ = 0;
     std::string                       lastCapture_;
     double                            nextRepeat_ = 0;
@@ -904,30 +901,20 @@ private:
         if (ok) ok = SDL_SyncWindow(window_);
         return ok;
     }
-
-    void blit(SDL_Texture*& tex, const std::vector<uint32_t>& layer, int w, int h) {
-        const int k = &tex == &subTex_ ? 0 : 1;
-        if (!tex || texW_[k] != w || texH_[k] != h) {
-            if (tex) SDL_DestroyTexture(tex);
-            tex = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-            if (tex) SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
-            texW_[k] = w, texH_[k] = h;
-        }
-        if (!tex || layer.size() < size_t(w) * h) return;
-        SDL_UpdateTexture(tex, nullptr, layer.data(), w * 4);
-        SDL_RenderTexture(renderer_, tex, nullptr, nullptr);
-    }
 };
 
-int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Window* window,
-              SDL_Renderer* renderer, InGameMenu& menu) {
-    SDL_Texture*  texture = nullptr;
-    uint32_t      texW = 0, texH = 0;
-    // N7c: a imagem na resolucao interna (quando o quadro exibido e um render do Vulkan na escala), em textura propria
-    // com filtragem linear (a do jogo fica com a dele: alternar entre as duas nao recria texturas)
-    SDL_Texture*  hiTexture = nullptr;
-    uint32_t      hiW = 0, hiH = 0;
-    bool          useHi = false;
+// A apresentacao Vulkan falhou de vez: a janela continua com o SDL_Renderer (nunca sem imagem).
+bool fallbackToSdl(SDL_Window* window, PresenterRef& pres, SDL_Renderer*& renderer) {
+    std::fprintf(stderr, "[apresentacao] a apresentacao Vulkan falhou: recuando para o SDL\n");
+    pres.p.reset();
+    if (!renderer) renderer = SDL_CreateRenderer(window, nullptr);
+    pres.p = bs::make_sdl_presenter(window, renderer);
+    if (pres.p) pres.p->set_vsync(true);
+    return pres.p != nullptr;
+}
+
+int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Window* window, PresenterRef& pres,
+              SDL_Renderer*& renderer, InGameMenu& menu) {
     // N7c: legendas das falas por cima do gameplay, na resolucao da janela (camada propria; o quadro nao e tocado)
     bs::SubtitleOverlay subs;
     bs::GameFrame frame;
@@ -936,6 +923,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
     uint64_t      lastTitle = SDL_GetTicks();
     int           captures  = 0;
     int           gfxFailures = 0;
+    uint64_t      lastWinShot = 0;  // BS_JANELA_CAPTURA
     std::string   gfxError;
     std::unique_ptr<VirtualPad> virtualPad;
     if (const char* v = std::getenv("BS_CONTROLE_VIRTUAL"); v && *v) virtualPad = std::make_unique<VirtualPad>(readFile(v));
@@ -983,43 +971,48 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
         // falhas de apresentacao viram erro (janela preta com codigo 0 pareceria sucesso):
         // criar a textura falha de vez; as demais so se persistirem (~2 s seguidos)
         bool ok = true;
-        if (host.latestFrame(frame, seq) && frame.width && frame.height) {
-            if (!texture || texW != frame.width || texH != frame.height) {
-                if (texture) SDL_DestroyTexture(texture);
-                texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                            int(frame.width), int(frame.height));
-                texW = frame.width, texH = frame.height;
-                if (!texture) {
-                    gfxError = std::string("nao foi possivel criar a textura do quadro: ") + SDL_GetError();
-                    break;
-                }
-            }
-            useHi = frame.hires && frame.hiresWidth && frame.hiresHeight;
-            if (useHi && (!hiTexture || hiW != frame.hiresWidth || hiH != frame.hiresHeight)) {
-                if (hiTexture) SDL_DestroyTexture(hiTexture);
-                hiTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                              int(frame.hiresWidth), int(frame.hiresHeight));
-                hiW = frame.hiresWidth, hiH = frame.hiresHeight;
-                if (hiTexture) SDL_SetTextureScaleMode(hiTexture, SDL_SCALEMODE_LINEAR);
-                useHi = hiTexture != nullptr;  // sem a textura maior, a do jogo (nunca sem imagem)
-            }
-            if (useHi) ok &= SDL_UpdateTexture(hiTexture, nullptr, frame.hires->data(), int(frame.hiresWidth * 4));
-            else ok &= SDL_UpdateTexture(texture, nullptr, frame.argb.data(), int(frame.width * 4));
-        }
+        host.latestFrame(frame, seq);
         if (g_recorder && g_recorder->pendingCheckpoint)  // F5: com o quadro desta iteracao
             g_recorder->pendingCheckpoint = false, g_recorder->checkpoint(g_spectator.step.load(), frame);
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        ok &= SDL_RenderClear(renderer);
-        if (texture) {  // o quadro na area 4:3 da saida (faixas pretas nas sobras)
-            const SDL_FRect area = gameArea(renderer);
-            const SDL_FRect src{0, float(frame.hiresY0), float(frame.hiresWidth), float(frame.hiresRows)};  // linhas exibidas
-            ok &= SDL_RenderTexture(renderer, useHi ? hiTexture : texture, useHi ? &src : nullptr, &area);
-        }
-        // N7c: legendas e menu por cima do quadro, em pixels de saida na area do jogo (nitidos, sem distorcer)
+        // N7c: o quadro na area 4:3 da saida e as camadas nativas (legendas, menu) por cima, pela apresentacao atual
         menu.update();
-        menu.draw(subs, frame.subtitle);
-        ok &= SDL_RenderPresent(renderer);
+        int ow = 0, oh = 0;
+        pres.p->output_size(ow, oh);
+        const SDL_FRect              area = bs::game_area(ow, oh);
+        std::vector<bs::WindowLayer> layers;
+        bool                         shot = false;
+        menu.layers(subs, frame.subtitle, ow, oh, area, layers, shot);
+        // diagnostico: BS_JANELA_CAPTURA=<pasta> grava a imagem APRESENTADA a cada BS_JANELA_CAPTURA_CADA quadros novos do
+        // jogo (padrao 300): o que o jogador ve, com legendas e menu, no tamanho real da janela; BS_JANELA_CAPTURA_VBLANKS=a-b
+        // limita a essa faixa
+        static const char*     winDir   = std::getenv("BS_JANELA_CAPTURA");
+        static const uint64_t  winEvery = [] {
+            const char* v = std::getenv("BS_JANELA_CAPTURA_CADA");
+            return v && *v ? std::max<uint64_t>(1, std::strtoull(v, nullptr, 10)) : 300ull;
+        }();
+        static const std::pair<uint64_t, uint64_t> winRange = [] {
+            unsigned long long x = 0, y = ~0ull;
+            if (const char* v = std::getenv("BS_JANELA_CAPTURA_VBLANKS")) std::sscanf(v, "%llu-%llu", &x, &y);
+            return std::pair<uint64_t, uint64_t>{x, y};
+        }();
+        const bool winShot = winDir && *winDir && frame.vblank && frame.vblank / winEvery != lastWinShot &&
+                             frame.vblank >= winRange.first && frame.vblank <= winRange.second;
+        std::vector<uint32_t> image;
+        ok &= pres.p->present(frame, seq, area, layers, shot || winShot ? &image : nullptr);
+        if (shot && !image.empty()) menu.captured(image, ow, oh);
+        if (winShot && !image.empty() && image.size() >= size_t(ow) * oh) {
+            lastWinShot = frame.vblank / winEvery;
+            bs::GameFrame f;
+            f.argb = std::move(image), f.width = uint32_t(ow), f.height = uint32_t(oh);
+            std::error_code ec;
+            fs::create_directories(winDir, ec);
+            char name[64];
+            std::snprintf(name, sizeof name, "janela_v%06llu_%dx%d.bmp", (unsigned long long)frame.vblank, ow, oh);
+            writeBmp(fs::path(winDir) / name, f);
+        }
         gfxFailures = ok ? 0 : gfxFailures + 1;
+        if (gfxFailures >= 120 && std::strcmp(pres.p->name(), "Vulkan") == 0 && fallbackToSdl(window, pres, renderer))
+            gfxFailures = 0;
         if (gfxFailures >= 120) {
             gfxError = std::string("falha ao apresentar o quadro: ") + SDL_GetError();
             break;
@@ -1044,11 +1037,10 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
     host.requestStop();
     host.join();
     printStats(host);
+    if (pres.p) std::fprintf(stderr, "%s", pres.p->stats().c_str());
     const std::string err = host.error();
     if (!err.empty()) errorBox(window, "O jogo parou com erro:\n" + err);
     else if (!gfxError.empty()) errorBox(window, "Falha de video:\n" + gfxError);
-    if (texture) SDL_DestroyTexture(texture);
-    if (hiTexture) SDL_DestroyTexture(hiTexture);
     return err.empty() && gfxError.empty() ? 0 : 1;
 }
 
@@ -1302,6 +1294,9 @@ const char* kUsage =
     "       legado = Sofdec original, fallback temporario)\n"
     "     --render software|nativo: renderizador (padrao: software = rasterizador de referencia; nativo = Vulkan, com\n"
     "       recuo para o software sem Vulkan; BS_RENDER=nativo muda o padrao)\n"
+    "     --apresentacao vulkan|sdl: janela (padrao: vulkan = apresentacao direta pelo dispositivo do renderizador, a\n"
+    "       resolucao interna sem passar pela CPU; sdl = SDL_Renderer, recuo; BS_APRESENTACAO=sdl muda o padrao)\n"
+    "     --resolucao-interna <altura>: resolucao interna do Vulkan so nesta execucao (480 = original; 720, 1080)\n"
     "     --legendas <idioma>|nenhuma: legendas de mods nos filmes e nas falas (padrao: en-US, ou legendas.idioma do\n"
     "       instalacao.toml; en-US recua para en; sem legendas no idioma, nada aparece)\n"
     "     --audio nativo|legado: os tres provedores de audio de uma vez (padrao: nativo; legado = SDK de som e driver\n"
@@ -1414,19 +1409,44 @@ int mainWindow(Args& a) {
         nativeBox(msg, MB_ICONERROR);
         return 1;
     }
-    const std::string title    = std::string(kTitle) + " " + BS_VERSION;
-    SDL_Window*       window   = SDL_CreateWindow(title.c_str(), 640 * a.scale, 480 * a.scale, SDL_WINDOW_RESIZABLE);
-    SDL_Renderer*     renderer = window ? SDL_CreateRenderer(window, nullptr) : nullptr;
-    if (!renderer) {
-        errorBox(window, std::string("nao foi possivel criar a janela: ") + SDL_GetError());
+    const std::string title = std::string(kTitle) + " " + BS_VERSION;
+    // N7c: apresentacao direta pelo Vulkan (o mesmo dispositivo do renderizador: a resolucao interna nao passa pela
+    // CPU) quando ha Vulkan; senao, ou com --apresentacao sdl / BS_APRESENTACAO=sdl, o SDL_Renderer
+    bool wantVk = a.present != 0;
+    if (const char* e = std::getenv("BS_APRESENTACAO"); a.present < 0 && e && std::strcmp(e, "sdl") == 0) wantVk = false;
+    if (wantVk && SDL_Vulkan_LoadLibrary(nullptr)) {
+        Uint32             n   = 0;
+        const char* const* ext = SDL_Vulkan_GetInstanceExtensions(&n);
+        if (ext && n) bs::native::render::vulkan_shared_configure(std::vector<std::string>(ext, ext + n));
+        else wantVk = false;
+    } else {
+        wantVk = false;
+    }
+    SDL_Window* window = SDL_CreateWindow(title.c_str(), 640 * a.scale, 480 * a.scale,
+                                          SDL_WINDOW_RESIZABLE | (wantVk ? SDL_WINDOW_VULKAN : 0));
+    PresenterRef  pres;
+    SDL_Renderer* renderer = nullptr;
+    if (window && wantVk) {
+        std::string perr;
+        pres.p = bs::make_vulkan_presenter(window, &perr);
+        if (!pres.p) std::fprintf(stderr, "[apresentacao] Vulkan indisponivel (%s): SDL\n", perr.c_str());
+    }
+    if (window && !pres.p) {
+        renderer = SDL_CreateRenderer(window, nullptr);
+        pres.p   = bs::make_sdl_presenter(window, renderer);
+    }
+    auto cleanup = [&] {
+        pres.p.reset();  // a superficie Vulkan antes da janela
+        if (renderer) SDL_DestroyRenderer(renderer);
         if (window) SDL_DestroyWindow(window);
         SDL_Quit();
+    };
+    if (!pres.p) {
+        errorBox(window, std::string("nao foi possivel criar a janela: ") + SDL_GetError());
+        cleanup();
         return 1;
     }
-    SDL_SetRenderVSync(renderer, 1);  // a janela apresenta na frequencia do monitor
-    // 4:3 com faixas pretas ao redimensionar: a area do jogo e calculada a cada quadro (gameArea), em pixels de saida
-    SDL_RenderClear(renderer);
-    SDL_RenderPresent(renderer);
+    pres.p->set_vsync(true);  // a janela apresenta na frequencia do monitor (o menu aplica o V-Sync escolhido)
 
     int rc = 0;
     // modo espectador: o roteiro (setupInput o escolhe antes do teclado) e a sala pelo registro de arquivos
@@ -1450,7 +1470,7 @@ int mainWindow(Args& a) {
                                                                    : nullptr;
         if (why) {
             std::fprintf(stderr, "erro: %s\n", why);
-            SDL_DestroyRenderer(renderer), SDL_DestroyWindow(window), SDL_Quit();
+            cleanup();
             return 2;
         }
         g_recorder      = std::make_unique<Recorder>();
@@ -1458,7 +1478,7 @@ int mainWindow(Args& a) {
         g_recorder->f   = _wfopen(rec, L"w");
         if (!g_recorder->f) {
             std::fprintf(stderr, "erro: BS_GRAVAR: nao abre %s\n", utf8(rec).c_str());
-            SDL_DestroyRenderer(renderer), SDL_DestroyWindow(window), SDL_Quit();
+            cleanup();
             return 2;
         }
         const char*    base  = std::getenv("BS_GRAVAR_BASE");
@@ -1476,7 +1496,7 @@ int mainWindow(Args& a) {
             std::fprintf(stderr, "erro: BS_GRAVAR_BASE: %s\n", ex.what());
             std::fclose(g_recorder->f);
             g_recorder.reset();
-            SDL_DestroyRenderer(renderer), SDL_DestroyWindow(window), SDL_Quit();
+            cleanup();
             return 2;
         }
         input->set_filter([](const ni::SampleContext&, const ni::ControllerState& s) { return g_recorder->rec->filter(s); });
@@ -1510,14 +1530,20 @@ int mainWindow(Args& a) {
         }
     }
     st::Capabilities caps;  // o que o renderizador ja implementa (o resto: "em breve" no menu)
+    uint32_t         gpuMaxHeight = 480;
     {
         std::string vkErr;
-        caps.vulkan = bs::native::render::VulkanDevice::create(&vkErr) != nullptr;
+        const auto  dev = bs::native::render::vulkan_shared(&vkErr);  // o dispositivo do processo (o mesmo da janela)
+        caps.vulkan     = dev != nullptr;
+        if (dev) gpuMaxHeight = dev->stats().max_internal_height;
         if (!caps.vulkan) std::fprintf(stderr, "[menu] Vulkan indisponivel (%s): so o renderizador em software\n", vkErr.c_str());
     }
     caps.max_height = 480, caps.features.window_modes = true, caps.features.vsync = true;
-    // N7c: resolucao interna com o Vulkan; ate a apresentacao direta estabilizar, no maximo 1080 (1440 e 4K depois)
-    if (caps.vulkan) caps.features.scaling = true, caps.max_height = 1080;
+    // N7c: resolucao interna com o Vulkan e a apresentacao direta (pela do SDL a imagem maior nao chega a janela): ate 4K
+    // (2160), no maximo o que a GPU comporta (o lado das imagens e a memoria local; VulkanStats::max_internal_height)
+    if (caps.vulkan && std::strcmp(pres.p->name(), "Vulkan") == 0)
+        caps.features.scaling = true, caps.max_height = (std::min)(2160u, gpuMaxHeight);
+    if (caps.vulkan) std::fprintf(stderr, "[menu] resolucao interna: ate %u (GPU: ate %u)\n", caps.max_height, gpuMaxHeight);
     prefs.graphics = st::clamp_to(prefs.graphics, caps);
     if (!prefs.graphics.vulkan) a.render = 0;
     std::vector<std::string> languages;  // os idiomas dos pacotes de legendas encontrados
@@ -1540,11 +1566,11 @@ int mainWindow(Args& a) {
                 return true;
             };
         host.start(std::move(opt));
-        InGameMenu menu(host, *input, window, renderer, prefsDir, prefs, persisted, renderOverride, subtitleOverride, caps, languages);
+        InGameMenu menu(host, *input, window, pres, prefsDir, prefs, persisted, renderOverride, subtitleOverride, caps, languages);
         if (g_spectator.on) menu.disable();
         menu.apply(prefs, true);
         if (a.internalHeight) host.setRenderScale(float(a.internalHeight) / 480.f);  // so nesta execucao
-        rc = runWindow(host, *input, a, window, renderer, menu);
+        rc = runWindow(host, *input, a, window, pres, renderer, menu);
         // a thread do jogo le a fonte de entrada: para e espera ANTES de destrui-la, em todos
         // os caminhos (revisao Codex 2026-10-14)
         host.requestStop();
@@ -1557,9 +1583,7 @@ int mainWindow(Args& a) {
         g_recorder.reset();
     }
     ib::install(nullptr);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    cleanup();
     return rc;
 }
 

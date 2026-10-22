@@ -28,6 +28,7 @@ public:
 
     // O quadro com a legenda dele por cima (as capturas mostram o que o jogador ve). Sem legenda: o proprio quadro.
     GameFrame composed(const GameFrame& f);
+    uint64_t  version() const { return version_; }  // muda a cada camada redesenhada (a apresentacao reenvia so entao)
 
 private:
     std::unique_ptr<native::video::ISubtitleRasterizer> raster_;
@@ -37,6 +38,7 @@ private:
     uint32_t                                            w_ = 0, h_ = 0;
     float                                               area_[4] = {};
     bool                                                valid_ = false;
+    uint64_t                                            version_ = 0;
 };
 
 // mistura pre-multiplicada: dst = src + dst * (1 - alfa(src)), por canal

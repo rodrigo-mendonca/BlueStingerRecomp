@@ -40,7 +40,7 @@ if(BS_BUILD_GAME AND TARGET bs_generated)
   configure_file(bs_version.h.in ${CMAKE_CURRENT_BINARY_DIR}/bs_version.h @ONLY)
 
   # Subsistema grafico (sem janela de console); a entrada continua sendo main().
-  add_executable(bluestinger WIN32 main_sdl.cpp)
+  add_executable(bluestinger WIN32 main_sdl.cpp window_present.cpp)  # N7c: apresentacao Vulkan direta ou SDL
   target_include_directories(bluestinger PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   target_link_libraries(bluestinger PRIVATE bs_app_core bs_generated SDL3::SDL3-static)
   # mods do projeto editavel: cada .cpp de BS_MODS_DIR entra no executavel (BS_MOD registra)

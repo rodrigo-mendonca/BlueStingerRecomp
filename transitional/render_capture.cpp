@@ -266,7 +266,7 @@ private:
     std::set<std::pair<uint64_t, uint64_t>> keys_, ids_;  // para o resumo: quantas chaves e quantos conteudos
 
     // ---- N7b: backend Vulkan ----
-    std::unique_ptr<nr::VulkanDevice> vk_;
+    std::shared_ptr<nr::VulkanDevice> vk_;  // o dispositivo do processo (o mesmo da apresentacao direta)
     bool                              vkTried_ = false, vkOk_ = false;
     std::vector<uint32_t>             vkImage_;
     struct VkTex {
@@ -283,21 +283,11 @@ private:
     // N7c: os ultimos renders na escala (o mais novo na frente): a imagem reduzida que foi para a VRAM (para achar o
     // render exibido) e a maior. Tres por causa do buffer duplo (o exibido e o anterior ao ultimo) com folga.
     struct Hires {
-        std::vector<uint32_t>                  down;
-        std::shared_ptr<std::vector<uint32_t>> image;
-        uint32_t                               w = 0, h = 0, iw = 0, ih = 0;
+        std::vector<uint32_t> down;
+        uint64_t              seq = 0;
+        uint32_t              w = 0, h = 0, iw = 0, ih = 0;
     };
     std::deque<Hires> hires_;
-
-    // buffer para a proxima imagem maior: o do mais antigo, se ninguem (um quadro publicado) ainda o usa
-    std::shared_ptr<std::vector<uint32_t>> hires_buffer() {
-        if (hires_.size() >= 3) {
-            std::shared_ptr<std::vector<uint32_t>> b = std::move(hires_.back().image);
-            hires_.pop_back();
-            if (b && b.use_count() == 1) return b;
-        }
-        return std::make_shared<std::vector<uint32_t>>();
-    }
 
 public:
     HiresImage hires_for(std::span<const uint32_t> shown, uint32_t w, uint32_t h) {
@@ -324,7 +314,7 @@ public:
                     }
                 if (n && bad * 1000 <= n) {  // ate 0,1 % fora (bordas de recorte do framebuffer)
                     ++st.hires_shown;
-                    HiresImage r{e.image, e.iw, e.ih};
+                    HiresImage r{e.seq, e.iw, e.ih};
                     // as linhas da imagem maior que correspondem as exibidas
                     r.y0 = uint32_t(std::lround(double(dy) * e.ih / e.h)), r.rows = uint32_t(std::lround(double(h) * e.ih / e.h));
                     r.rows = std::min(r.rows, e.ih - r.y0);
@@ -336,19 +326,20 @@ public:
         return {};
     }
 
+    bool read_hires(const HiresImage& h, std::vector<uint32_t>& argb, uint32_t& w) {
+        return vk_ && h.seq && vk_->read_slot(h.seq, h.y0, h.rows, argb, w);
+    }
+
     std::string dumpDir;
     uint32_t    dumpEvery = 300;
-    ~Capture() override {
-        if (vk_)
-            for (auto& [k, t] : vkTex_) vk_->destroy_texture(t.handle);
-    }
+    ~Capture() override { drop_vk(false); }
 
 private:
     bool ensure_vk() {
         if (vk_) return true;
         if (vkTried_) return false;
         vkTried_ = true;
-        vk_      = nr::VulkanDevice::create(&st.vk_error);
+        vk_      = nr::vulkan_shared(&st.vk_error);
         if (!vk_) {
             std::fprintf(stderr, "[render] Vulkan indisponivel (%s): renderizador em software\n", st.vk_error.c_str());
             return false;
@@ -434,7 +425,7 @@ private:
             ++st.vk_recoveries;
             std::fprintf(stderr, "[render] Vulkan: falha no render %llu (%s); recriando o dispositivo (%u de %u)\n",
                          static_cast<unsigned long long>(st.renders + 1), why.c_str(), unsigned(st.vk_recoveries), kRecoveries);
-            drop_vk();
+            drop_vk(true);
             vkTried_ = false;  // ensure_vk cria de novo
             std::string again;
             if (vk_attempt(w, h, out, &again)) return true;
@@ -444,14 +435,22 @@ private:
         st.vk_error = "falha do dispositivo Vulkan no render " + std::to_string(st.renders + 1) + " (" + why +
                       "): renderizador em software ate o fim da sessao";
         std::fprintf(stderr, "[render] %s\n", st.vk_error.c_str());
-        drop_vk();
+        drop_vk(true);
         vkTried_ = true;  // nao tenta mais
         return false;
     }
 
-    void drop_vk() {
-        for (auto& [k, t] : vkTex_) t.handle = {};
+    // lost = o dispositivo se perdeu: o compartilhado e descartado (o proximo e outro); senao as texturas deste uso saem
+    // dele (a apresentacao pode continuar com ele)
+    void drop_vk(bool lost) {
+        if (vk_ && !lost) {
+            vk_->set_scale(1.f);
+            for (auto& [k, t] : vkTex_)
+                if (t.handle) vk_->destroy_texture(t.handle);
+        }
+        if (vk_ && lost) nr::vulkan_shared_lost(vk_.get());
         vkTex_.clear();
+        hires_.clear();
         vk_.reset();
     }
 
@@ -472,26 +471,29 @@ private:
         uint32_t   rw = 0, rh = 0;
         // N7c: a escala so no nativo (o modo comparar compara na resolucao do jogo)
         const float    sc = mode == Mode::Native ? g_scale : 1.f;
-        const uint32_t ew = nr::scaled_size(w, sc), eh = nr::scaled_size(h, sc);
         vk_->set_scale(sc);
-        std::shared_ptr<std::vector<uint32_t>> hi = sc == 1.f ? nullptr : hires_buffer();
         if (sc == 1.f) hires_.clear();
         // testes: Device falha esta tentativa e a da recuperacao; DeviceOnce so esta
         const bool injected = g_fault == Fault::Device || g_fault == Fault::DeviceOnce || g_fault == Fault::DeviceAgain;
         if (g_fault == Fault::Device) g_fault = Fault::DeviceAgain;
         else if (injected) g_fault = Fault::None;
         const auto t0 = std::chrono::steady_clock::now();
-        const bool ok = !injected && vk_->submit(frame.cl).ok() && vk_->read_frame(hi ? *hi : out, rw, rh).ok() && rw == ew &&
-                        rh == eh;
+        const bool submitted = !injected && vk_->submit(frame.cl).ok();
+        const auto t1        = std::chrono::steady_clock::now();
+        // a leitura de volta e sempre na resolucao do jogo (com a escala, a reducao feita na GPU)
+        const bool ok = submitted && vk_->read_frame(out, rw, rh).ok() && rw == w && rh == h;
         frame.cl.draws = saved;
-        if (ok && hi) {  // o framebuffer recebe a imagem reduzida; a maior fica para a apresentacao
-            nr::downsample(*hi, rw, rh, out, w, h);
+        uint32_t       iw = 0, ih = 0;
+        const uint64_t seq = ok && sc != 1.f ? vk_->last_slot(iw, ih) : 0;
+        if (ok && sc != 1.f) {
+            ++st.hires_renders, st.hires_w = iw, st.hires_h = ih;
+            st.hires_cpu_ms_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
+        }
+        if (seq) {  // a imagem maior ficou num slot da GPU (para a apresentacao direta)
             Hires e;
-            e.down = out, e.image = std::move(hi), e.w = w, e.h = h, e.iw = rw, e.ih = rh;
+            e.down = out, e.seq = seq, e.w = w, e.h = h, e.iw = iw, e.ih = ih;
             hires_.push_front(std::move(e));
-            ++st.hires_renders, st.hires_w = rw, st.hires_h = rh;
-            st.hires_cpu_ms_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() -
-                                     (vk_->stats().gpu_ms_total - st.vk_gpu_ms_total);
+            if (hires_.size() > 3) hires_.pop_back();
         }
         if (ok) {
             ++st.vk_frames;
@@ -502,8 +504,8 @@ private:
         }
         *why = injected                           ? std::string("falha injetada")
                : !vk_->stats().last_error.empty() ? vk_->stats().last_error
-               : (rw != ew || rh != eh)           ? "tamanho " + std::to_string(rw) + "x" + std::to_string(rh) + " em vez de " +
-                                                        std::to_string(ew) + "x" + std::to_string(eh)
+               : (rw != w || rh != h)             ? "tamanho " + std::to_string(rw) + "x" + std::to_string(rh) + " em vez de " +
+                                                        std::to_string(w) + "x" + std::to_string(h)
                                                   : std::string("leitura do quadro");
         return false;
     }
@@ -806,6 +808,11 @@ HiresImage hires_for(std::span<const uint32_t> shown, uint32_t width, uint32_t h
     return g_cap ? g_cap->hires_for(shown, width, height) : HiresImage{};
 }
 
+bool read_hires(const HiresImage& h, std::vector<uint32_t>& argb) {
+    uint32_t w = 0;
+    return g_cap && g_cap->read_hires(h, argb, w) && w == h.width;
+}
+
 namespace {
 constexpr char kDumpMagic[8] = {'B', 'S', 'I', 'R', '1', 0, 0, 0};
 template <class T> void put(std::ofstream& o, const T& v) { o.write(reinterpret_cast<const char*>(&v), sizeof v); }
@@ -929,8 +936,8 @@ std::string summary() {
     if (s.hires_renders) {  // N7c: resolucao interna
         char r[300];
         std::snprintf(r, sizeof r,
-                      "[render-escala] alvo %ux%u: renders %llu; VBlanks com a imagem maior %llu, sem %llu; leitura de volta + "
-                      "reducao na CPU: media %.2f ms por render\n",
+                      "[render-escala] alvo %ux%u: renders %llu; VBlanks com a imagem maior %llu, sem %llu; leitura de volta "
+                      "(so a reduzida, feita na GPU): media %.2f ms por render\n",
                       s.hires_w, s.hires_h, (unsigned long long)s.hires_renders, (unsigned long long)s.hires_shown,
                       (unsigned long long)s.hires_missed, s.hires_cpu_ms_total / double(s.hires_renders));
         out += r;

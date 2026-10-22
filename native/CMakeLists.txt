@@ -69,7 +69,7 @@ target_link_libraries(bs_native_render PUBLIC bs_native_api)
 
 # N7b: backend Vulkan (offscreen; o Vulkan e carregado em tempo de execucao, sem SDK; cabecalhos Khronos em
 # third_party/vulkan, Apache-2.0; SPIR-V versionado em render/vulkan/spirv, gerado por tools/dev/gera_spirv.ps1)
-add_library(bs_native_render_vk STATIC render/vulkan/vk_device.cpp)
+add_library(bs_native_render_vk STATIC render/vulkan/vk_device.cpp render/vulkan/vk_present.cpp)
 target_include_directories(bs_native_render_vk PRIVATE ${PROJECT_SOURCE_DIR}/third_party/vulkan)
 target_link_libraries(bs_native_render_vk PUBLIC bs_native_render PRIVATE ${CMAKE_DL_LIBS})
 

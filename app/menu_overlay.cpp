@@ -43,6 +43,7 @@ std::string key(const MenuView& v, uint32_t w, uint32_t h, float cx, float cy, f
 } // namespace
 
 struct MenuOverlay::Impl {
+    uint64_t version = 0;
     bool                com = false;
     IDWriteFactory*     dw  = nullptr;
     ID2D1Factory*       d2d = nullptr;
@@ -70,12 +71,14 @@ MenuOverlay::MenuOverlay() : impl_(std::make_unique<Impl>()) {
 MenuOverlay::~MenuOverlay() = default;
 bool MenuOverlay::ok() const { return impl_->dw && impl_->d2d && impl_->wic; }
 
+uint64_t MenuOverlay::version() const { return impl_->version; }
+
 const std::vector<uint32_t>& MenuOverlay::layer(const MenuView& v, uint32_t w, uint32_t h, float cx, float cy, float cw,
                                                 float ch) {
     Impl& m = *impl_;
     const std::string k = key(v, w, h, cx, cy, cw, ch);
     if (k == m.last && m.buf.size() == size_t(w) * h) return m.buf;
-    m.last = k;
+    m.last = k, ++m.version;
     m.buf.assign(size_t(w) * h, 0u);
     m.rows.clear();
     if (!ok() || !w || !h) return m.buf;

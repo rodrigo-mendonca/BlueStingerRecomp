@@ -11,9 +11,9 @@
 #include "render/vulkan/spirv/resolve_comp.h"
 #include "render/vulkan/spirv/resolve_comp_fc.h"
 #include "render/vulkan/spirv/resolve_comp_fcd.h"
+#include "render/vulkan/spirv/downsample_comp.h"
 
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
+#include "render/vulkan/vk_internal.h"
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -38,37 +38,6 @@
 namespace bs::native::render {
 namespace {
 
-std::atomic<int> g_live{0};
-
-#define VK_GFUNCS(X) X(vkCreateInstance)
-#define VK_IFUNCS(X)                                                                                           \
-    X(vkDestroyInstance) X(vkEnumeratePhysicalDevices) X(vkGetPhysicalDeviceProperties)                        \
-    X(vkGetPhysicalDeviceQueueFamilyProperties) X(vkGetPhysicalDeviceMemoryProperties)                          \
-    X(vkGetPhysicalDeviceFeatures) X(vkGetPhysicalDeviceFormatProperties) X(vkCreateDevice) X(vkGetDeviceProcAddr) \
-    X(vkEnumerateDeviceExtensionProperties) X(vkGetPhysicalDeviceProperties2)
-#define VK_DFUNCS(X)                                                                                           \
-    X(vkDestroyDevice) X(vkGetDeviceQueue) X(vkCreateCommandPool) X(vkDestroyCommandPool)                      \
-    X(vkAllocateCommandBuffers) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkResetCommandBuffer)           \
-    X(vkCmdPipelineBarrier) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) X(vkCmdCopyBuffer)              \
-    X(vkCmdFillBuffer) X(vkCmdUpdateBuffer) X(vkQueueSubmit) X(vkQueueWaitIdle) X(vkDeviceWaitIdle) X(vkCreateFence)               \
-    X(vkDestroyFence) X(vkWaitForFences) X(vkResetFences) X(vkCreateBuffer) X(vkDestroyBuffer)                  \
-    X(vkGetBufferMemoryRequirements) X(vkAllocateMemory) X(vkFreeMemory) X(vkBindBufferMemory) X(vkMapMemory)   \
-    X(vkUnmapMemory) X(vkCreateImage) X(vkDestroyImage) X(vkGetImageMemoryRequirements) X(vkBindImageMemory)    \
-    X(vkCreateImageView) X(vkDestroyImageView) X(vkCreateRenderPass) X(vkDestroyRenderPass)                     \
-    X(vkCreateFramebuffer) X(vkDestroyFramebuffer) X(vkCreateShaderModule) X(vkDestroyShaderModule)             \
-    X(vkCreatePipelineLayout) X(vkDestroyPipelineLayout) X(vkCreateGraphicsPipelines)                           \
-    X(vkCreateComputePipelines) X(vkDestroyPipeline) X(vkCmdBeginRenderPass) X(vkCmdEndRenderPass)              \
-    X(vkCmdBindPipeline) X(vkCmdNextSubpass) X(vkCmdBindVertexBuffers) X(vkCmdDraw) X(vkCmdDispatch) X(vkCmdPushConstants)          \
-    X(vkCmdSetViewport) X(vkCmdSetScissor) X(vkCreateDescriptorSetLayout) X(vkDestroyDescriptorSetLayout)       \
-    X(vkCreateDescriptorPool) X(vkDestroyDescriptorPool) X(vkAllocateDescriptorSets) X(vkFreeDescriptorSets)    \
-    X(vkUpdateDescriptorSets) X(vkCmdBindDescriptorSets) X(vkCreateSampler) X(vkDestroySampler)
-
-struct Fn {
-    PFN_vkGetInstanceProcAddr gipa = nullptr;
-#define DECL(n) PFN_##n n = nullptr;
-    VK_GFUNCS(DECL) VK_IFUNCS(DECL) VK_DFUNCS(DECL)
-#undef DECL
-};
 
 // Constantes de envio de um lote: o layout de `Batch` em pvr.vert/pvr.frag
 struct Push {
@@ -89,19 +58,7 @@ constexpr uint32_t F_TEXTURED = 1, F_GOURAUD = 2, F_OFFSET = 4, F_USE_ALPHA = 8,
                    F_SAMPLE_CORNER = 1u << 22, F_ATTR_CORNER = 1u << 23, F_RAW_DEPTH = 1u << 24;
 constexpr uint32_t kFragBytes = 32;  // struct Frag (std430)
 constexpr uint32_t kHeader    = 32;  // cabecalho das listas por pixel (Heads: 8 palavras)
-constexpr uint32_t kNone      = 0xFFFFFFFFu;
 
-struct Buffer {
-    VkBuffer       buf = VK_NULL_HANDLE;
-    VkDeviceMemory mem = VK_NULL_HANDLE;
-    void*          map = nullptr;
-    VkDeviceSize   size = 0;
-};
-struct Image {
-    VkImage        img = VK_NULL_HANDLE;
-    VkDeviceMemory mem = VK_NULL_HANDLE;
-    VkImageView    view = VK_NULL_HANDLE;
-};
 struct Tex {
     TextureDesc     desc;
     Image           image;
@@ -109,25 +66,31 @@ struct Tex {
     bool            ready = false;  // ja recebeu dados (layout de leitura)
 };
 
-class VkDev final : public VulkanDevice {
+class VkDev final : public VulkanDevice, public VkBase, public SlotSource {
 public:
     ~VkDev() override { destroy(); }
 
-    bool init(std::string* error) {
+    bool init(std::string* error, const std::vector<std::string>& instanceExtensions) {
         if (!load(error)) return false;
         VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         app.pApplicationName = "Blue Stinger Native PC", app.apiVersion = VK_API_VERSION_1_1;
         VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ici.pApplicationInfo = &app;
+        // N7c: as extensoes da superficie da janela (apresentacao direta); sem elas, so offscreen
+        std::vector<const char*> iext;
+        for (const std::string& e : instanceExtensions) iext.push_back(e.c_str());
+        ici.enabledExtensionCount = uint32_t(iext.size()), ici.ppEnabledExtensionNames = iext.data();
+        surfaceExt_ = !iext.empty();
         if (!ok(f_.vkCreateInstance(&ici, nullptr, &inst_), "vkCreateInstance", error)) return false;
         ++g_live;
 #define LOADI(n) f_.n = reinterpret_cast<PFN_##n>(f_.gipa(inst_, #n));
         VK_IFUNCS(LOADI)
+        VK_SFUNCS(LOADI)
 #undef LOADI
         if (!pick(error)) return false;
-        const float             prio = 1.0f;
         VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-        qi.queueFamilyIndex = qfam_, qi.queueCount = 1, qi.pQueuePriorities = &prio;
+        const float prios[2] = {1.0f, 1.0f};
+        qi.queueFamilyIndex = qfam_, qi.queueCount = std::min(queueCount_, 2u), qi.pQueuePriorities = prios;
         VkPhysicalDeviceFeatures feat{};
         feat.depthClamp = VK_TRUE, feat.fragmentStoresAndAtomics = VK_TRUE;
         // acessos fora dos limites dos buffers devolvem valores definidos em vez de falha de pagina (obrigatorio no
@@ -159,6 +122,8 @@ public:
         }
         if (has(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME))
             rawDepth_ = true, ext.push_back(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
+        if (surfaceExt_ && has(VK_KHR_SWAPCHAIN_EXTENSION_NAME))  // apresentacao direta (N7c)
+            swapchainExt_ = true, ext.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         dci.queueCreateInfoCount = 1, dci.pQueueCreateInfos = &qi, dci.pEnabledFeatures = &feat;
         dci.enabledExtensionCount = uint32_t(ext.size()), dci.ppEnabledExtensionNames = ext.data();
@@ -167,8 +132,11 @@ public:
         ++g_live;
 #define LOADD(n) f_.n = reinterpret_cast<PFN_##n>(f_.vkGetDeviceProcAddr(dev_, #n));
         VK_DFUNCS(LOADD)
+        VK_PFUNCS(LOADD)
 #undef LOADD
         f_.vkGetDeviceQueue(dev_, qfam_, 0, &queue_);
+        presentQueue_ = queue_;
+        if (qi.queueCount > 1) f_.vkGetDeviceQueue(dev_, qfam_, 1, &presentQueue_);
         VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, pci.queueFamilyIndex = qfam_;
         if (!ok(f_.vkCreateCommandPool(dev_, &pci, nullptr, &pool_), "vkCreateCommandPool", error)) return false;
@@ -236,8 +204,30 @@ public:
 
     Result<void> submit(const CommandList& cl) override {
         prepare_frame(cl, prep_, true, scale_);  // modo fiel: retangulos envolventes, a cobertura e a do shader
-        if (!target(scaled_size(cl.frame.width, scale_), scaled_size(cl.frame.height, scale_)))
+        if (!target(scaled_size(cl.frame.width, scale_), scaled_size(cl.frame.height, scale_), cl.frame.width, cl.frame.height))
             return fail("alvo do quadro (imagens/passe)");
+        // N7c: com a escala, a imagem maior vai para um slot livre (nenhuma apresentacao usando); sem slot livre, o quadro
+        // sai so na resolucao do jogo
+        writeSlot_ = -1;
+        if (scale_ != 1.f) {
+            std::lock_guard<std::mutex> lock(slotMutex_);
+            for (int i = 0; i < kSlots; ++i)
+                if (!slots_[i].pins && (writeSlot_ < 0 || slots_[i].seq < slots_[writeSlot_].seq)) writeSlot_ = i;
+            if (writeSlot_ >= 0) {
+                Slot& sl = slots_[writeSlot_];
+                sl.seq   = 0;  // em escrita: nao pode ser fixado pela apresentacao
+                if (sl.readyPending || !sl.ready) remakeReady(writeSlot_);  // sinal anterior nunca esperado: o semaforo e refeito
+                if (sl.w != w_ || sl.h != h_) {
+                    freeImage(sl.image);
+                    sl.image = makeImage(w_, h_, VK_FORMAT_R8G8B8A8_UNORM,
+                                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                         VK_IMAGE_ASPECT_COLOR_BIT);
+                    sl.w = sl.image.img ? w_ : 0, sl.h = sl.image.img ? h_ : 0, sl.shaderRead = false, ++sl.version;
+                    if (!sl.image.img || !sl.ready) writeSlot_ = -1;
+                }
+            }
+            if (writeSlot_ < 0) ++st_.slots_skipped;
+        }
         for (int attempt = 0; attempt < 2; ++attempt) {
             if (auto r = record(cl); !r) return r;
             const uint32_t* head = static_cast<const uint32_t*>(headerRead_.map);
@@ -245,20 +235,134 @@ public:
             st_.max_layers = std::max<uint64_t>(st_.max_layers, head[4]);
             st_.fragments += std::min(used, fragCapacity_);
             if (!overflow) break;
-            // a lista do pixel nao coube: cresce e refaz o MESMO quadro (sem perder fragmentos)
+            // a lista do pixel nao coube: cresce e refaz o MESMO quadro (sem perder fragmentos); o semaforo do slot ja foi
+            // sinalizado pela tentativa anterior (concluida: cerca) e e refeito para a nova sinalizar
             ++st_.fragment_retries;
+            if (writeSlot_ >= 0 && !remakeReady(writeSlot_)) writeSlot_ = -1;
             if (!fragments(used + used / 2 + 1024)) return fail("listas por pixel (memoria)");
         }
         st_.frames++, st_.triangles += prep_.triangles, st_.culled += prep_.culled;
         st_.nonfinite_depth += prep_.nonfinite_depth, st_.batches += prep_.batches.size();
         st_.negative_depth_frames += prep_.depth_bias != 0;  // so importa sem profundidade crua
         uploads_.clear(), uploadBytes_.clear();
-        imageW_ = w_, imageH_ = h_;
+        imageW_ = gameW_, imageH_ = gameH_;  // a leitura de volta e sempre na resolucao do jogo
+        {
+            std::lock_guard<std::mutex> lock(slotMutex_);
+            lastSlot_ = 0;
+            if (writeSlot_ >= 0) slots_[writeSlot_].seq = lastSlot_ = ++slotSeq_, slots_[writeSlot_].readyPending = true, ++st_.slots_written;
+        }
         return {};
     }
 
     void  set_scale(float s) override { scale_ = s > 0 ? s : 1.f; }
     float scale() const override { return scale_; }
+
+    bool remakeReady(int i) {
+        auto& sl = slots_[i];
+        if (sl.ready) f_.vkDestroySemaphore(dev_, sl.ready, nullptr), --g_live, sl.ready = VK_NULL_HANDLE;
+        VkSemaphoreCreateInfo sci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        if (f_.vkCreateSemaphore(dev_, &sci, nullptr, &sl.ready) != VK_SUCCESS) return sl.ready = VK_NULL_HANDLE, false;
+        ++g_live, sl.readyPending = false;
+        return true;
+    }
+
+    uint64_t last_slot(uint32_t& width, uint32_t& height) const override {
+        width = w_, height = h_;
+        return lastSlot_;
+    }
+
+    // capturas e testes (thread do jogo, a mesma do submit: usa o buffer de comandos dele)
+    bool read_slot(uint64_t seq, uint32_t y0, uint32_t rows, std::vector<uint32_t>& argb, uint32_t& width) override {
+        VkImage  img = VK_NULL_HANDLE;
+        VkImageView view;
+        uint32_t w = 0, h = 0;
+        int      idx = -1;
+        VkSemaphore unused = VK_NULL_HANDLE;
+        if (!seq || !pinShared(seq, img, view, w, h, idx, nullptr, unused)) return false;
+        rows = std::min(rows, h > y0 ? h - y0 : 0u);
+        bool ok = rows > 0;
+        Buffer buf;
+        if (ok) buf = makeBuffer(VkDeviceSize(w) * rows * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true), ok = buf.map != nullptr;
+        if (ok) {
+            f_.vkResetCommandBuffer(cmd_, 0);
+            VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            f_.vkBeginCommandBuffer(cmd_, &bi);
+            // o slot fica em GENERAL: a copia so le (a apresentacao pode amostrar ao mesmo tempo); a escrita dele foi na
+            // mesma fila (a do renderizador), antes
+            barrier(f_, cmd_, img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+            VkBufferImageCopy c{};
+            c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, c.imageOffset = {0, int32_t(y0), 0}, c.imageExtent = {w, rows, 1};
+            f_.vkCmdCopyImageToBuffer(cmd_, img, VK_IMAGE_LAYOUT_GENERAL, buf.buf, 1, &c);
+            VkMemoryBarrier hb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            hb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, hb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+            f_.vkCmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &hb, 0, nullptr, 0, nullptr);
+            f_.vkEndCommandBuffer(cmd_);
+            VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+            si.commandBufferCount = 1, si.pCommandBuffers = &cmd_;
+            f_.vkResetFences(dev_, 1, &fence_);
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                ok = f_.vkQueueSubmit(queue_, 1, &si, fence_) == VK_SUCCESS;
+            }
+            ok = ok && f_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+        }
+        if (ok) {
+            const uint8_t* p = static_cast<const uint8_t*>(buf.map);
+            argb.resize(size_t(w) * rows);
+            for (size_t i = 0; i < argb.size(); ++i, p += 4)
+                argb[i] = (uint32_t(p[3]) << 24) | (uint32_t(p[0]) << 16) | (uint32_t(p[1]) << 8) | p[2];
+            width = w, st_.readback_bytes += argb.size() * 4;
+        }
+        freeBuffer(buf);
+        unpin(idx);
+        return ok;
+    }
+
+    // ---- apresentacao direta (vk_present.cpp) ----
+    uint64_t instance_handle() const override { return reinterpret_cast<uint64_t>(inst_); }
+    bool     present_attach(uint64_t surface, std::string* error) override {
+        if (!swapchainExt_) {
+            if (error) *error = surfaceExt_ ? "o dispositivo nao tem VK_KHR_swapchain" : "instancia criada sem as extensoes da superficie";
+            return false;
+        }
+        if (!presenter_) presenter_ = make_presenter(*this, *this);
+        return presenter_->attach(reinterpret_cast<VkSurfaceKHR>(surface), error);
+    }
+    void present_detach() override {
+        if (presenter_) presenter_->detach();
+    }
+    Result<void> present(const PresentRequest& r) override { return presenter_ ? presenter_->present(r) : Result<void>(Error::NotFound); }
+    const PresentStats& present_stats() const override {
+        static const PresentStats none;
+        return presenter_ ? presenter_->stats() : none;
+    }
+
+    // SlotSource: a apresentacao fixa o slot enquanto o desenha (o renderizador nao o reaproveita)
+    bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait) override {
+        bool consume = true;
+        return pinShared(seq, img, view, w, h, idx, &consume, wait);
+    }
+    // consume != nullptr: a apresentacao (outra fila) recebe o semaforo da escrita na primeira fixacao
+    bool pinShared(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, bool* consume,
+                   VkSemaphore& wait) {
+        std::lock_guard<std::mutex> lock(slotMutex_);
+        wait = VK_NULL_HANDLE;
+        for (int i = 0; i < kSlots; ++i)
+            if (seq && slots_[i].seq == seq && slots_[i].shaderRead) {
+                ++slots_[i].pins;
+                img = slots_[i].image.img, view = slots_[i].image.view, w = slots_[i].w, h = slots_[i].h, idx = i;
+                if (consume && slots_[i].readyPending && presentQueue_ != queue_) wait = slots_[i].ready;
+                if (consume) slots_[i].readyPending = false;  // a mesma fila: a ordem de submissao basta
+                return true;
+            }
+        return false;
+    }
+    void unpin(int idx) override {
+        std::lock_guard<std::mutex> lock(slotMutex_);
+        if (idx >= 0 && idx < kSlots && slots_[idx].pins > 0) --slots_[idx].pins;
+    }
 
     Result<void> present_image(std::span<const uint32_t> argb, uint32_t width, uint32_t height) override {
         if (argb.size() < size_t(width) * height) return Error::OutOfRange;
@@ -287,20 +391,38 @@ public:
     const VulkanStats& stats() const override { return st_; }
 
 private:
-    Fn               f_;
-    void*            lib_ = nullptr;
-    VkInstance       inst_ = VK_NULL_HANDLE;
-    VkPhysicalDevice phys_ = VK_NULL_HANDLE;
-    VkPhysicalDeviceMemoryProperties mem_{};
-    VkDevice         dev_ = VK_NULL_HANDLE;
-    VkQueue          queue_ = VK_NULL_HANDLE;
-    uint32_t         qfam_ = 0;
     VkCommandPool    pool_ = VK_NULL_HANDLE;
     VkCommandBuffer  cmd_ = VK_NULL_HANDLE;
     VkFence          fence_ = VK_NULL_HANDLE;
     VulkanStats      st_;
     bool             floatControls_ = false, denormPreserve_ = false, rawDepth_ = false;
     float            scale_ = 1.f;  // resolucao interna (N7c)
+    bool             surfaceExt_ = false, swapchainExt_ = false;  // apresentacao direta possivel (N7c)
+    std::unique_ptr<PresenterImpl> presenter_;
+
+    // N7c: imagens na resolucao interna para a apresentacao (anel; a apresentacao fixa a que esta desenhando)
+    struct Slot {
+        Image    image;
+        uint32_t w = 0, h = 0;
+        uint64_t seq = 0;      // render guardado (0 = vazio ou em escrita)
+        int      pins = 0;     // apresentacoes em curso
+        bool     shaderRead = false;  // ja escrito (GENERAL)
+        uint32_t version = 0;  // muda quando a imagem e recriada
+        VkSemaphore ready = VK_NULL_HANDLE;  // sinalizado pela escrita, esperado pela primeira apresentacao
+        bool        readyPending = false;    // sinalizado e ainda nao esperado
+    };
+    static constexpr int kSlots = 4;
+    Slot                 slots_[kSlots];
+    std::mutex           slotMutex_;
+    uint64_t             slotSeq_ = 0, lastSlot_ = 0;
+    int                  writeSlot_ = -1;
+    uint32_t             gameW_ = 0, gameH_ = 0;  // resolucao do jogo do quadro atual
+    Buffer               down_;                   // a reducao na GPU (gameW_ x gameH_)
+    VkDescriptorSetLayout downLayout_ = VK_NULL_HANDLE;
+    VkPipelineLayout     downPipeLayout_ = VK_NULL_HANDLE;
+    VkShaderModule       downMod_ = VK_NULL_HANDLE;
+    VkPipeline           downPipe_ = VK_NULL_HANDLE;
+    VkDescriptorSet      downSet_ = VK_NULL_HANDLE;
 
     // layouts, pipelines e amostrador (fixos)
     VkDescriptorSetLayout texLayout_ = VK_NULL_HANDLE, fragLayout_ = VK_NULL_HANDLE, resolveLayout_ = VK_NULL_HANDLE;
@@ -339,11 +461,6 @@ private:
         return Error::Io;
     }
 
-    static bool ok(VkResult r, const char* what, std::string* error) {
-        if (r == VK_SUCCESS) return true;
-        if (error) *error = std::string(what) + " falhou (VkResult " + std::to_string(int(r)) + ")";
-        return false;
-    }
 
     bool load(std::string* error) {
 #ifdef _WIN32
@@ -395,7 +512,7 @@ private:
                 f_.vkGetPhysicalDeviceQueueFamilyProperties(d, &nq, qs.data());
                 for (uint32_t q = 0; q < nq; ++q)
                     if ((qs[q].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (qs[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
-                        phys_ = d, qfam_ = q, st_.device = p.deviceName;
+                        phys_ = d, qfam_ = q, queueCount_ = qs[q].queueCount, st_.device = p.deviceName;
                         break;
                     }
                 if (phys_) break;
@@ -405,104 +522,20 @@ private:
             return false;
         }
         f_.vkGetPhysicalDeviceMemoryProperties(phys_, &mem_);
+        {  // N7c: limite da resolucao interna
+            VkPhysicalDeviceProperties p;
+            f_.vkGetPhysicalDeviceProperties(phys_, &p);
+            VkDeviceSize heap = 0;
+            for (uint32_t i = 0; i < mem_.memoryHeapCount; ++i)
+                if (mem_.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) heap = std::max(heap, mem_.memoryHeaps[i].size);
+            const double pixels = double(heap) / 4.0 / 96.0;                       // pixels do alvo que cabem
+            const double byMem  = std::sqrt(pixels * 3.0 / 4.0);                    // altura 4:3
+            const double byDim  = double(p.limits.maxImageDimension2D) * 3.0 / 4.0;  // a largura e 4/3 da altura
+            st_.max_internal_height = uint32_t(std::max(480.0, std::min(byMem, byDim)));
+        }
         return true;
     }
 
-    uint32_t memType(uint32_t bits, VkMemoryPropertyFlags want) const {
-        for (uint32_t i = 0; i < mem_.memoryTypeCount; ++i)
-            if ((bits & (1u << i)) && (mem_.memoryTypes[i].propertyFlags & want) == want) return i;
-        return kNone;
-    }
-
-    // host: mapeado (envio); readback: mapeado e de preferencia em memoria com cache da CPU (ler da memoria
-    // combinada para escrita, a sem cache, custa dezenas de ms por quadro de 640x480)
-    Buffer makeBuffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host, bool readback = false) {
-        Buffer             b;
-        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bi.size = size, bi.usage = usage, bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        if (f_.vkCreateBuffer(dev_, &bi, nullptr, &b.buf) != VK_SUCCESS) return {};
-        ++g_live;
-        VkMemoryRequirements mr;
-        f_.vkGetBufferMemoryRequirements(dev_, b.buf, &mr);
-        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        ai.allocationSize  = mr.size;
-        const VkMemoryPropertyFlags hv = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        ai.memoryTypeIndex             = kNone;
-        if (readback) ai.memoryTypeIndex = memType(mr.memoryTypeBits, hv | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
-        if (ai.memoryTypeIndex == kNone)
-            ai.memoryTypeIndex = memType(mr.memoryTypeBits, host ? hv : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (ai.memoryTypeIndex == kNone || f_.vkAllocateMemory(dev_, &ai, nullptr, &b.mem) != VK_SUCCESS) {
-            f_.vkDestroyBuffer(dev_, b.buf, nullptr), --g_live;
-            return {};
-        }
-        ++g_live;
-        b.size = size;
-        if (f_.vkBindBufferMemory(dev_, b.buf, b.mem, 0) != VK_SUCCESS ||
-            (host && (f_.vkMapMemory(dev_, b.mem, 0, size, 0, &b.map) != VK_SUCCESS || !b.map))) {
-            b.map = nullptr;
-            freeBuffer(b);
-            return {};
-        }
-        return b;
-    }
-    void freeBuffer(Buffer& b) {
-        if (!b.buf) return;
-        if (b.map) f_.vkUnmapMemory(dev_, b.mem);
-        f_.vkDestroyBuffer(dev_, b.buf, nullptr), --g_live;
-        f_.vkFreeMemory(dev_, b.mem, nullptr), --g_live;
-        b = {};
-    }
-    bool ensureHost(Buffer& b, VkDeviceSize size, VkBufferUsageFlags usage) {
-        if (b.size >= size) return true;
-        freeBuffer(b);
-        b = makeBuffer(std::max<VkDeviceSize>(size, 64 * 1024) * 3 / 2, usage, true);
-        return b.buf != VK_NULL_HANDLE && b.map;
-    }
-
-    Image makeImage(uint32_t w, uint32_t h, VkFormat fmt, VkImageUsageFlags usage, VkImageAspectFlags aspect) {
-        Image             im;
-        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-        ii.imageType = VK_IMAGE_TYPE_2D, ii.format = fmt, ii.extent = {w, h, 1};
-        ii.mipLevels = 1, ii.arrayLayers = 1, ii.samples = VK_SAMPLE_COUNT_1_BIT, ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ii.usage = usage, ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE, ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (f_.vkCreateImage(dev_, &ii, nullptr, &im.img) != VK_SUCCESS) return {};
-        ++g_live;
-        VkMemoryRequirements mr;
-        f_.vkGetImageMemoryRequirements(dev_, im.img, &mr);
-        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        ai.allocationSize = mr.size, ai.memoryTypeIndex = memType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (ai.memoryTypeIndex == kNone || f_.vkAllocateMemory(dev_, &ai, nullptr, &im.mem) != VK_SUCCESS) {
-            f_.vkDestroyImage(dev_, im.img, nullptr), --g_live;
-            return {};
-        }
-        ++g_live;
-        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        vi.image = im.img, vi.viewType = VK_IMAGE_VIEW_TYPE_2D, vi.format = fmt, vi.subresourceRange = {aspect, 0, 1, 0, 1};
-        if (f_.vkBindImageMemory(dev_, im.img, im.mem, 0) != VK_SUCCESS ||
-            f_.vkCreateImageView(dev_, &vi, nullptr, &im.view) != VK_SUCCESS) {
-            im.view = VK_NULL_HANDLE;
-            f_.vkDestroyImage(dev_, im.img, nullptr), --g_live;
-            f_.vkFreeMemory(dev_, im.mem, nullptr), --g_live;
-            return {};
-        }
-        ++g_live;
-        return im;
-    }
-    void freeImage(Image& im) {
-        if (!im.img) return;
-        f_.vkDestroyImageView(dev_, im.view, nullptr), --g_live;
-        f_.vkDestroyImage(dev_, im.img, nullptr), --g_live;
-        f_.vkFreeMemory(dev_, im.mem, nullptr), --g_live;
-        im = {};
-    }
-
-    VkShaderModule module(const uint32_t* code, size_t bytes) {
-        VkShaderModuleCreateInfo si{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        si.codeSize = bytes, si.pCode = code;
-        VkShaderModule m = VK_NULL_HANDLE;
-        if (f_.vkCreateShaderModule(dev_, &si, nullptr, &m) == VK_SUCCESS) ++g_live;
-        return m;
-    }
 
     bool layouts(std::string* error) {
         VkDescriptorSetLayoutBinding tb{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
@@ -529,9 +562,9 @@ private:
         pi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, pi.maxSets = 8192, pi.poolSizeCount = 1, pi.pPoolSizes = &tps;
         if (!ok(f_.vkCreateDescriptorPool(dev_, &pi, nullptr, &texPool_), "pool das texturas", error)) return false;
         ++g_live;
-        VkDescriptorPoolSize fps[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
+        VkDescriptorPoolSize fps[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2},
                                        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1}};
-        pi.flags = 0, pi.maxSets = 2, pi.poolSizeCount = 3, pi.pPoolSizes = fps;
+        pi.flags = 0, pi.maxSets = 3, pi.poolSizeCount = 3, pi.pPoolSizes = fps;
         if (!ok(f_.vkCreateDescriptorPool(dev_, &pi, nullptr, &framePool_), "pool do quadro", error)) return false;
         ++g_live;
         VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -539,6 +572,14 @@ private:
         if (!ok(f_.vkAllocateDescriptorSets(dev_, &ai, &fragSet_), "conjunto das listas", error)) return false;
         ai.pSetLayouts = &resolveLayout_;
         if (!ok(f_.vkAllocateDescriptorSets(dev_, &ai, &resolveSet_), "conjunto do resolve", error)) return false;
+        // N7c: reducao da resolucao interna (downsample.comp): imagem de armazenamento -> buffer
+        VkDescriptorSetLayoutBinding db[2] = {{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                                              {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+        li.bindingCount = 2, li.pBindings = db;
+        if (!ok(f_.vkCreateDescriptorSetLayout(dev_, &li, nullptr, &downLayout_), "layout da reducao", error)) return false;
+        ++g_live;
+        ai.pSetLayouts = &downLayout_;
+        if (!ok(f_.vkAllocateDescriptorSets(dev_, &ai, &downSet_), "conjunto da reducao", error)) return false;
 
         VkPushConstantRange        pr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};  // 64 <= 128
         VkDescriptorSetLayout      sets[2] = {texLayout_, fragLayout_};
@@ -576,6 +617,24 @@ private:
         if (!ok(f_.vkCreateComputePipelines(dev_, VK_NULL_HANDLE, 1, &cp, nullptr, &resolve_), "pipeline do resolve", error))
             return false;
         ++g_live;
+        {
+            VkPushConstantRange        dpr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
+            VkPipelineLayoutCreateInfo dl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+            dl.setLayoutCount = 1, dl.pSetLayouts = &downLayout_, dl.pushConstantRangeCount = 1, dl.pPushConstantRanges = &dpr;
+            if (!ok(f_.vkCreatePipelineLayout(dev_, &dl, nullptr, &downPipeLayout_), "layout da reducao", error)) return false;
+            ++g_live;
+            downMod_ = module(kDownsampleComp, sizeof kDownsampleComp);
+            if (!downMod_) {
+                if (error) *error = "shader da reducao";
+                return false;
+            }
+            VkComputePipelineCreateInfo dc{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+            dc.stage  = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, downMod_, "main", nullptr};
+            dc.layout = downPipeLayout_;
+            if (!ok(f_.vkCreateComputePipelines(dev_, VK_NULL_HANDLE, 1, &dc, nullptr, &downPipe_), "pipeline da reducao", error))
+                return false;
+            ++g_live;
+        }
 
         VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         si.magFilter = si.minFilter = VK_FILTER_NEAREST;  // texelFetch: a amostragem e a do shader
@@ -630,11 +689,12 @@ private:
 
     // alvo w x h: cor RGBA8 (anexo, armazenamento do resolve, origem da leitura), profundidade D32, cabecas das
     // listas por pixel, leitura de volta
-    bool target(uint32_t w, uint32_t h) {
-        if (w == w_ && h == h_ && pass_) return true;
-        f_.vkDeviceWaitIdle(dev_);
+    bool target(uint32_t w, uint32_t h, uint32_t gw, uint32_t gh) {
+        gameW_ = gw, gameH_ = gh;
+        if (w == w_ && h == h_ && gw == downW_ && gh == downH_ && pass_) return true;
+        waitIdle();
         freeTarget();
-        w_ = w, h_ = h;
+        w_ = w, h_ = h, downW_ = gw, downH_ = gh;
         color_ = makeImage(w, h, VK_FORMAT_R8G8B8A8_UNORM,
                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                            VK_IMAGE_ASPECT_COLOR_BIT);
@@ -692,7 +752,20 @@ private:
         ++g_live;
         heads_      = makeBuffer(kHeader + VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
-        readback_   = makeBuffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true);
+        // a leitura de volta e sempre na resolucao do jogo: com a escala, a reducao feita na GPU (down_)
+        readback_   = makeBuffer(VkDeviceSize(gw) * gh * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true);
+        if (w != gw || h != gh) {
+            down_ = makeBuffer(VkDeviceSize(gw) * gh * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
+            if (!down_.buf) return false;
+            VkDescriptorImageInfo  ii{VK_NULL_HANDLE, color_.view, VK_IMAGE_LAYOUT_GENERAL};
+            VkDescriptorBufferInfo bi{down_.buf, 0, VK_WHOLE_SIZE};
+            VkWriteDescriptorSet   dw[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+            dw[0].dstSet = downSet_, dw[0].dstBinding = 0, dw[0].descriptorCount = 1, dw[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            dw[0].pImageInfo = &ii;
+            dw[1].dstSet = downSet_, dw[1].dstBinding = 1, dw[1].descriptorCount = 1, dw[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            dw[1].pBufferInfo = &bi;
+            f_.vkUpdateDescriptorSets(dev_, 2, dw, 0, nullptr);
+        }
         headerRead_ = makeBuffer(kHeader, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true);
         if (!heads_.buf || !readback_.buf || !headerRead_.buf) return false;
         for (auto& [k, p] : pipes_) f_.vkDestroyPipeline(dev_, p, nullptr), --g_live;  // o passe mudou
@@ -701,7 +774,9 @@ private:
         return fragments(std::max(fragCapacity_, w * h * (scale_ == 1.f ? 4u : 2u)));
     }
 
+    uint32_t downW_ = 0, downH_ = 0;  // tamanho do jogo do alvo atual
     void freeTarget() {
+        freeBuffer(down_);
         for (auto& [k, p] : pipes_) f_.vkDestroyPipeline(dev_, p, nullptr), --g_live;
         pipes_.clear();
         if (fb_) f_.vkDestroyFramebuffer(dev_, fb_, nullptr), --g_live, fb_ = VK_NULL_HANDLE;
@@ -940,9 +1015,42 @@ private:
         }
         bufferBarrier(heads_.buf, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                       VK_ACCESS_TRANSFER_READ_BIT);
-        VkBufferImageCopy rc{};
-        rc.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, rc.imageExtent = {w_, h_, 1};
-        f_.vkCmdCopyImageToBuffer(cmd_, color_.img, VK_IMAGE_LAYOUT_GENERAL, readback_.buf, 1, &rc);
+        if (w_ == downW_ && h_ == downH_) {  // resolucao do jogo: a imagem inteira volta (o modo fiel)
+            VkBufferImageCopy rc{};
+            rc.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, rc.imageExtent = {w_, h_, 1};
+            f_.vkCmdCopyImageToBuffer(cmd_, color_.img, VK_IMAGE_LAYOUT_GENERAL, readback_.buf, 1, &rc);
+        } else {
+            // N7c: a imagem maior fica na GPU (slot, para a apresentacao) e so a reducao volta para a CPU
+            imageBarrier(color_.img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT);
+            if (writeSlot_ >= 0) {
+                Slot& sl = slots_[writeSlot_];
+                // GENERAL sempre (amostrado pela apresentacao e copiado pelas capturas sem transicoes); a leitura
+                // anterior terminou (a fixacao so cai depois da cerca da apresentacao)
+                imageBarrier(sl.image.img, sl.shaderRead ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+                VkImageCopy ic{};
+                ic.srcSubresource = ic.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, ic.extent = {w_, h_, 1};
+                f_.vkCmdCopyImage(cmd_, color_.img, VK_IMAGE_LAYOUT_GENERAL, sl.image.img, VK_IMAGE_LAYOUT_GENERAL, 1, &ic);
+                imageBarrier(sl.image.img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT);
+                sl.shaderRead = true;
+            }
+            f_.vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_COMPUTE, downPipe_);
+            f_.vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_COMPUTE, downPipeLayout_, 0, 1, &downSet_, 0, nullptr);
+            const uint32_t sizes[4] = {w_, h_, downW_, downH_};
+            f_.vkCmdPushConstants(cmd_, downPipeLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, sizes);
+            f_.vkCmdDispatch(cmd_, (downW_ + 7) / 8, (downH_ + 7) / 8, 1);
+            bufferBarrier(down_.buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_ACCESS_TRANSFER_READ_BIT);
+            VkBufferCopy dc{0, 0, VkDeviceSize(downW_) * downH_ * 4};
+            f_.vkCmdCopyBuffer(cmd_, down_.buf, readback_.buf, 1, &dc);
+        }
+        st_.readback_bytes += uint64_t(downW_) * downH_ * 4;
         // a maior lista e escrita pelo resolve (compute): a copia espera por ele (barreira de compute para transferencia)
         bufferBarrier(heads_.buf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                       VK_ACCESS_TRANSFER_READ_BIT);
@@ -954,6 +1062,9 @@ private:
         f_.vkEndCommandBuffer(cmd_);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.commandBufferCount = 1, si.pCommandBuffers = &cmd_;
+        if (writeSlot_ >= 0 && w_ != downW_) {  // a apresentacao (outra fila) espera a escrita do slot por este semaforo
+            si.signalSemaphoreCount = 1, si.pSignalSemaphores = &slots_[writeSlot_].ready;
+        }
         f_.vkResetFences(dev_, 1, &fence_);
         // diagnostico: BS_VK_ATRASO_MS=<ms> espera antes de cada submissao (a GPU ociosa entre quadros, como no modo
         // comparar, em que o software ocupa a CPU)
@@ -963,12 +1074,18 @@ private:
         }();
         if (idleMs > 0) std::this_thread::sleep_for(std::chrono::milliseconds(idleMs));
         const auto t0 = std::chrono::steady_clock::now();
-        if (VkResult r = f_.vkQueueSubmit(queue_, 1, &si, fence_); r != VK_SUCCESS) return fail("vkQueueSubmit", r);
+        {  // a fila e compartilhada com a apresentacao (thread da janela)
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            if (VkResult r = f_.vkQueueSubmit(queue_, 1, &si, fence_); r != VK_SUCCESS) return fail("vkQueueSubmit", r);
+        }
         if (VkResult r = f_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX); r != VK_SUCCESS)
             return fail("vkWaitForFences", r);
         // a perda do dispositivo pode sinalizar a cerca sem o trabalho feito (AMD integrada, 2026-10-22: o quadro saia
         // com a imagem anterior e so o envio seguinte acusava): a fila ociosa confirma que o quadro terminou de fato
-        if (VkResult r = f_.vkQueueWaitIdle(queue_); r != VK_SUCCESS) return fail("vkQueueWaitIdle", r);
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            if (VkResult r = f_.vkQueueWaitIdle(queue_); r != VK_SUCCESS) return fail("vkQueueWaitIdle", r);
+        }
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         st_.gpu_ms_total += ms, st_.gpu_ms_max = std::max(st_.gpu_ms_max, ms);
         uploads_.clear();  // ja copiados (uma nova tentativa do quadro nao os repete)
@@ -976,6 +1093,18 @@ private:
     }
 
     void destroy() {
+        presenter_.reset();  // a apresentacao primeiro (usa o dispositivo)
+        if (dev_) {
+            f_.vkDeviceWaitIdle(dev_);
+            for (Slot& sl : slots_) {
+                freeImage(sl.image);
+                if (sl.ready) f_.vkDestroySemaphore(dev_, sl.ready, nullptr), --g_live, sl.ready = VK_NULL_HANDLE;
+            }
+            if (downPipe_) f_.vkDestroyPipeline(dev_, downPipe_, nullptr), --g_live, downPipe_ = VK_NULL_HANDLE;
+            if (downMod_) f_.vkDestroyShaderModule(dev_, downMod_, nullptr), --g_live, downMod_ = VK_NULL_HANDLE;
+            if (downPipeLayout_) f_.vkDestroyPipelineLayout(dev_, downPipeLayout_, nullptr), --g_live, downPipeLayout_ = VK_NULL_HANDLE;
+            if (downLayout_) f_.vkDestroyDescriptorSetLayout(dev_, downLayout_, nullptr), --g_live, downLayout_ = VK_NULL_HANDLE;
+        }
         if (dev_) {
             f_.vkDeviceWaitIdle(dev_);
             freeTarget();
@@ -1010,12 +1139,65 @@ private:
 
 } // namespace
 
-std::unique_ptr<VulkanDevice> VulkanDevice::create(std::string* error) {
+std::unique_ptr<VulkanDevice> VulkanDevice::create(std::string* error, const std::vector<std::string>& instance_extensions) {
     auto d = std::make_unique<VkDev>();
-    if (!d->init(error)) return nullptr;
+    if (!d->init(error, instance_extensions)) return nullptr;
     return d;
 }
 
-int vulkan_live_objects() { return g_live.load(); }
+namespace {
+struct Shared {
+    std::mutex                    m;
+    std::vector<std::string>      ext;
+    std::weak_ptr<VulkanDevice>   dev;
+    std::shared_ptr<VulkanDevice> keep;  // ate alguem perder o dispositivo, ele fica vivo (os dois lados o reusam)
+    uint64_t                      generation = 0;
+    std::string                   error;
+    bool                          failed = false;
+};
+Shared& shared() {
+    static Shared s;
+    return s;
+}
+} // namespace
+
+void vulkan_shared_configure(std::vector<std::string> instance_extensions) {
+    std::lock_guard<std::mutex> lock(shared().m);
+    shared().ext = std::move(instance_extensions);
+}
+
+std::shared_ptr<VulkanDevice> vulkan_shared(std::string* error) {
+    Shared&                     s = shared();
+    std::lock_guard<std::mutex> lock(s.m);
+    if (auto d = s.dev.lock()) return d;
+    if (s.failed) {  // sem Vulkan: nao tenta de novo a cada chamada
+        if (error) *error = s.error;
+        return nullptr;
+    }
+    std::string err;
+    std::shared_ptr<VulkanDevice> d(VulkanDevice::create(&err, s.ext).release());
+    if (!d) {
+        s.failed = true, s.error = err;
+        if (error) *error = err;
+        return nullptr;
+    }
+    s.dev = d, s.keep = d, ++s.generation;
+    return d;
+}
+
+void vulkan_shared_lost(const VulkanDevice* lost) {
+    Shared&                     s = shared();
+    std::lock_guard<std::mutex> lock(s.m);
+    if (s.keep.get() == lost) s.keep.reset();
+    if (auto d = s.dev.lock(); d.get() == lost) s.dev.reset();
+    s.failed = false;
+}
+
+uint64_t vulkan_shared_generation() {
+    std::lock_guard<std::mutex> lock(shared().m);
+    return shared().generation;
+}
+
+int vulkan_live_objects() { return detail::g_live.load(); }
 
 } // namespace bs::native::render

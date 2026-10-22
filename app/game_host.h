@@ -28,11 +28,13 @@ struct GameFrame {
     // N7c: legenda das falas ativa neste VBlank (SubtitleService do N6; vazia = nenhuma ou legendas desligadas).
     // Fica fora da imagem: quem apresenta a desenha por cima (app/subtitle_overlay.h).
     std::wstring          subtitle;
-    // N7c: resolucao interna. Quando o quadro exibido e um render do Vulkan na escala, a imagem maior dele (mesmo
-    // conteudo; `argb` continua a da VRAM, que as capturas e o hash dos quadros usam). Vazio = apresentar `argb`.
-    std::shared_ptr<const std::vector<uint32_t>> hires;
+    // N7c: resolucao interna. Quando o quadro exibido e um render do Vulkan na escala, o slot da imagem maior dele na GPU
+    // (hiresSeq != 0; a apresentacao direta a desenha sem passar pela CPU). `argb` continua a da VRAM, que as capturas,
+    // o hash dos quadros e a apresentacao SDL usam. `hires` (CPU) so nos quadros capturados (--capture).
+    uint64_t                                     hiresSeq = 0;
     uint32_t                                     hiresWidth = 0, hiresHeight = 0;
     uint32_t                                     hiresY0 = 0, hiresRows = 0;  // as linhas que correspondem a `argb`
+    std::shared_ptr<const std::vector<uint32_t>> hires;
 };
 
 // Desempenho medido na thread do jogo. "Trabalho" = tempo de host gasto emulando um campo

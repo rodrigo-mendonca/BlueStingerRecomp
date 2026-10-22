@@ -80,7 +80,8 @@ BS_TEST(render_vulkan_fidelity_scenes) {
 // N7c: resolucao interna. Com escala, o Vulkan desenha a GEOMETRIA no alvo maior (as contas do modo fiel em cada
 // pixel do alvo), nao amplia a imagem do jogo: (1) as provas das cenas fieis continuam certas nos pontos
 // correspondentes do alvo; (2) a borda inclinada de um triangulo tem degraus mais finos que a imagem original
-// ampliada; (3) a imagem reduzida (frame_prep: downsample) volta perto da original.
+// ampliada; (3) a imagem reduzida volta perto da original. Caminho B: a imagem maior fica num slot da GPU (lida aqui
+// com read_slot); read_frame devolve a reducao feita na GPU, que tem de ser IGUAL a da CPU (frame_prep: downsample).
 BS_TEST(render_vulkan_internal_resolution) {
     std::string err;
     {
@@ -98,10 +99,16 @@ BS_TEST(render_vulkan_internal_resolution) {
                 nr::CommandList cl = s.cl;
                 for (size_t i = 0; i < cl.draws.size(); ++i)
                     cl.draws[i].state.texture = s.draw_texture[i] >= 0 ? handles[size_t(s.draw_texture[i])] : nr::TextureHandle{};
-                std::vector<uint32_t> img;
-                uint32_t              w = 0, h = 0;
-                BS_CHECK(d->submit(cl).ok() && d->read_frame(img, w, h).ok());
-                BS_CHECK(w == nr::scaled_size(cl.frame.width, sc) && h == nr::scaled_size(cl.frame.height, sc));
+                std::vector<uint32_t> img, small, cpu;
+                uint32_t              w = 0, h = 0, sw = 0, shh = 0;
+                BS_CHECK(d->submit(cl).ok() && d->read_frame(small, sw, shh).ok());
+                BS_CHECK(sw == cl.frame.width && shh == cl.frame.height);  // a leitura de volta: na resolucao do jogo
+                const uint64_t seq = d->last_slot(w, h);
+                BS_CHECK(seq && w == nr::scaled_size(cl.frame.width, sc) && h == nr::scaled_size(cl.frame.height, sc));
+                uint32_t rw = 0;
+                BS_CHECK(d->read_slot(seq, 0, h, img, rw) && rw == w && img.size() == size_t(w) * h);
+                nr::downsample(img, w, h, cpu, sw, shh);
+                BS_CHECK(cpu == small);  // a reducao da GPU e a da CPU sao a mesma conta
                 for (auto hd : handles) d->destroy_texture(hd);
                 if (img.size() != size_t(w) * h) continue;
                 for (const auto& p : s.probes) {  // o pixel do alvo com o centro no centro do pixel da prova
@@ -127,12 +134,15 @@ BS_TEST(render_vulkan_internal_resolution) {
         nr::Draw dr;
         dr.vertex_count = 3, dr.state.depth = nr::DepthTest::Always;
         cl.draws = {dr};
-        std::vector<uint32_t> lo, hi;
-        uint32_t              lw = 0, lh = 0, hw = 0, hh = 0;
+        std::vector<uint32_t> lo, hi, dummy;
+        uint32_t              lw = 0, lh = 0, hw = 0, hh = 0, rw = 0;
         d->set_scale(1);
         BS_CHECK(d->submit(cl).ok() && d->read_frame(lo, lw, lh).ok() && lw == 64 && lh == 48);
+        BS_CHECK(d->last_slot(hw, hh) == 0);  // na escala 1 nao ha slot
         d->set_scale(3);
-        BS_CHECK(d->submit(cl).ok() && d->read_frame(hi, hw, hh).ok() && hw == 192 && hh == 144);
+        BS_CHECK(d->submit(cl).ok() && d->read_frame(dummy, lw, lh).ok() && lw == 64 && lh == 48);
+        const uint64_t seq = d->last_slot(hw, hh);
+        BS_CHECK(seq && hw == 192 && hh == 144 && d->read_slot(seq, 0, hh, hi, rw) && rw == hw);
         if (lo.size() == 64u * 48 && hi.size() == 192u * 144) {
             // a borda esquerda (do vertice de cima ao de baixo) por linha do alvo: na imagem ampliada ela so anda de 3
             // em 3 pixels; desenhada no alvo, aparece em posicoes que nao sao multiplos de 3

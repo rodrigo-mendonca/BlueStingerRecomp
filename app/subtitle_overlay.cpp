@@ -21,7 +21,7 @@ const std::vector<uint32_t>* SubtitleOverlay::layer(const std::wstring& text, ui
     if (!valid_ || text != text_ || w != w_ || h != h_ || !std::equal(area, area + 4, area_)) {
         buf_.resize(size_t(w) * h);
         raster_->draw_overlay(buf_, w, h, text, cx, cy, cw, ch, style_);
-        text_ = text, w_ = w, h_ = h, valid_ = true;
+        text_ = text, w_ = w, h_ = h, valid_ = true, ++version_;
         std::copy(area, area + 4, area_);
     }
     return &buf_;

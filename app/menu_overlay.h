@@ -31,6 +31,7 @@ public:
     const std::vector<uint32_t>& layer(const MenuView& v, uint32_t w, uint32_t h, float cx, float cy, float cw, float ch);
     // O item (e a parte) no ponto (x, y) da ultima camada desenhada.
     std::optional<MenuHit> hit(float x, float y) const;
+    uint64_t               version() const;  // muda a cada camada redesenhada
 
 private:
     struct Impl;

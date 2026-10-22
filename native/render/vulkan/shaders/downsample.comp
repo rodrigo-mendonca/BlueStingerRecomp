@@ -1,0 +1,25 @@
+#version 450
+// N7c: a imagem na resolucao interna reduzida para a do jogo (o framebuffer emulado continua coerente), na GPU: so a
+// imagem pequena volta para a CPU. As mesmas contas inteiras de frame_prep.cpp (downsample): o destino x cobre as
+// colunas de origem [(x * sw + dw / 2) / dw, ((x + 1) * sw + dw / 2) / dw), media arredondada por canal.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, rgba8) uniform readonly image2D src;
+layout(std430, set = 0, binding = 1) writeonly buffer Dst { uint px[]; };
+
+layout(push_constant) uniform Sizes { uvec2 srcSize, dstSize; } pc;
+
+void main() {
+    const uvec2 d = gl_GlobalInvocationID.xy;
+    if (d.x >= pc.dstSize.x || d.y >= pc.dstSize.y) return;
+    const uvec2 s0 = (d * pc.srcSize + pc.dstSize / 2u) / pc.dstSize;
+    const uvec2 s1 = max(((d + 1u) * pc.srcSize + pc.dstSize / 2u) / pc.dstSize, s0 + 1u);
+    uvec4 acc = uvec4(0);
+    uint  n   = 0u;
+    for (uint y = s0.y; y < s1.y && y < pc.srcSize.y; ++y)
+        for (uint x = s0.x; x < s1.x && x < pc.srcSize.x; ++x, ++n)
+            acc += uvec4(round(imageLoad(src, ivec2(x, y)) * 255.0));  // o byte guardado (RGBA)
+    n = max(n, 1u);
+    const uvec4 r = (acc + n / 2u) / n;
+    px[d.y * pc.dstSize.x + d.x] = r.r | (r.g << 8) | (r.b << 16) | (r.a << 24);  // RGBA na memoria, como a leitura de volta
+}
