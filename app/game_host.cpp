@@ -26,6 +26,7 @@
 #include "localization/mod_packages.h"
 #include "localization/subtitle_service.h"
 #include "cri_idle.h"
+#include "free_camera.h"
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_video.h"
@@ -78,6 +79,7 @@ struct StepLog {
     uint64_t        every = 10;
     const uint8_t*  ram   = nullptr;
     const GameHost* host  = nullptr;
+    bool            noCamera = false;  // BS_STATE_PASSO_SEM_CAMERA=1: sem o objeto camera do SDK (N7c, camera livre)
 } g_stepLog;
 
 // Diagnostico BS_PAD_TRACE (N3-0): a cada passo de jogo, no inicio do passo (antes do servidor
@@ -175,7 +177,12 @@ void stepLogWrite(uint64_t step, void*) {
     if (!g_stepLog.f || step % g_stepLog.every) return;
     const uint8_t* ram = g_stepLog.ram;
     uint64_t       h   = 0xCBF29CE484222325ull;
-    for (uint32_t a = 0x240000; a < 0x260000; ++a) h = (h ^ ram[a]) * 0x100000001B3ull;
+    for (uint32_t a = 0x240000; a < 0x260000; ++a) {
+        // N7c: o objeto camera do SDK (0x8C24CC38, 0x78 bytes: matriz, posicao, vetor de visao) e o que a camera livre
+        // muda; so o SDK o le (docs/N7-PLANO.md secao 23.1). Sem ele, Original e camera livre devem dar o mesmo estado.
+        if (g_stepLog.noCamera && a >= 0x24CC38 && a < 0x24CCB0) continue;
+        h = (h ^ ram[a]) * 0x100000001B3ull;
+    }
     int16_t life;
     float   p[3];
     std::memcpy(&life, ram + 0x24FBCC, 2);
@@ -299,6 +306,14 @@ void GameHost::setRenderScale(float scale) {
     notifyRequest();
 }
 
+void GameHost::setCamera(const native::settings::CameraSettings& s) {
+    {
+        std::lock_guard<std::mutex> lock(reqMutex_);
+        camera_ = s, cameraPending_ = true;
+    }
+    notifyRequest();
+}
+
 void GameHost::setRenderer(RenderProvider r) {
     rendererPending_.store(int(r));
     notifyRequest();
@@ -307,13 +322,18 @@ void GameHost::setRenderer(RenderProvider r) {
 void GameHost::applyRequests() {
     requestsPending_.store(false);
     float       v[3];
-    bool        vol = false, lang = false;
+    bool        vol = false, lang = false, cam = false;
     std::string language;
+    native::settings::CameraSettings camera;
     {
         std::lock_guard<std::mutex> lock(reqMutex_);
-        std::swap(vol, volumesPending_), std::swap(lang, langPending_);
+        std::swap(vol, volumesPending_), std::swap(lang, langPending_), std::swap(cam, cameraPending_);
         std::copy(volumes_, volumes_ + 3, v);
-        language = lang_;
+        language = lang_, camera = camera_;
+    }
+    if (cam) {  // N7c: Original desinstala os slots; os outros modos instalam (na thread do jogo, entre VBlanks)
+        transitional::free_camera::set_settings(transitional::boundary_registry(), camera);
+        std::fprintf(stderr, "[camera] modo %s\n", native::settings::camera_mode_name(camera.mode));
     }
     if (vol) transitional::sound::set_bus_volumes(v[0], v[1], v[2]);
     if (lang) {
@@ -342,6 +362,7 @@ void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
     maple_vblank_in();  // N3-0: indice "vblank" dos roteiros e negativo do ponto de amostragem
     applyRequests();  // N7c: pedidos do menu (volumes, idioma das legendas, renderizador)
+    transitional::free_camera::vblank(n);  // N7c: um passo da camera livre (nada no modo Original)
     transitional::sound::vblank(n);  // N6: tempo logico do mixer nativo (nada se os provedores sao o legado)
     if (dialogue_) dialogueVblank(n);
     // Diagnostico: BS_RAM_DUMP=<vblank>[,<vblank>...]:<arquivo> grava os 16 MB da RAM do guest
@@ -529,6 +550,22 @@ void GameHost::threadMain() {
             transitional::pad::install(transitional::boundary_registry(), *opt_.input, mut,
                                        opt_.time != TimeProviderKind::Experimental);
         }
+        // N7c: camera livre (secao 23 do N7-PLANO). Original: nada instalado. Diagnostico: BS_CAMERA_ROTEIRO (analogico por
+        // VBlank, no lugar do controle), BS_CAMERA_LOG (uma linha por montagem), BS_CAMERA_FIXA=yaw,pitch (deslocamento fixo)
+        {
+            transitional::free_camera::Options co;
+            co.cfg = opt_.camera;
+            if (opt_.input) co.input = [in = opt_.input] { return in->peek(); };
+            if (const char* v = std::getenv("BS_CAMERA_ROTEIRO")) co.script = v;
+            if (const char* v = std::getenv("BS_CAMERA_LOG")) co.log = v;
+            if (const char* v = std::getenv("BS_CAMERA_FIXA"); v && *v) {  // "yaw,pitch" em graus
+                if (std::sscanf(v, "%f,%f", &co.fixedYaw, &co.fixedPitch) != 2) throw std::runtime_error("BS_CAMERA_FIXA: use yaw,pitch");
+                co.fixed = true;
+            }
+            transitional::free_camera::configure(transitional::boundary_registry(), std::move(co));
+            if (transitional::free_camera::installed())
+                std::fprintf(stderr, "[camera] modo %s\n", native::settings::camera_mode_name(opt_.camera.mode));
+        }
         // N4: saves pelo provedor nativo (API bu sobre arquivos; sem VMU nem Maple)
         if (opt_.saves == SavesProvider::Native) {
             if (opt_.savesRoot.empty()) throw std::runtime_error("--saves nativo sem pasta de saves");
@@ -624,6 +661,7 @@ void GameHost::threadMain() {
                 g_stepLog.f = std::fopen(v, "w");
                 if (!g_stepLog.f) throw std::runtime_error(std::string("BS_STATE_PASSO: nao abre ") + v);
                 g_stepLog.every = 10;
+                if (const char* k = std::getenv("BS_STATE_PASSO_SEM_CAMERA")) g_stepLog.noCamera = std::strcmp(k, "1") == 0;
                 if (const char* k = std::getenv("BS_STATE_PASSO_CADA"))
                     g_stepLog.every = std::max<uint64_t>(1, std::strtoull(k, nullptr, 10));
                 std::fprintf(g_stepLog.f, "passo\tvblank\testado\tvida\tx\ty\tz\n");
@@ -720,6 +758,8 @@ void GameHost::threadMain() {
                      static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions),
                      static_cast<unsigned long long>(s.vblankCollapsed));
     }
+    if (transitional::free_camera::stats().builds) std::fputs(transitional::free_camera::summary().c_str(), stderr);
+    transitional::free_camera::uninstall(transitional::boundary_registry());  // sempre (o menu pode ter instalado)
     if (transitional::render_capture::stats().renders)  // N7a: BS_RENDER_IR
         std::fputs(transitional::render_capture::summary().c_str(), stderr);
     transitional::render_capture::install(transitional::render_capture::Mode::Off);  // sempre (revisao Codex 2026-10-21)

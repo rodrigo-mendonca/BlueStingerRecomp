@@ -22,6 +22,7 @@
 #include "window_present.h"
 #include "settings_menu.h"
 #include "localization/mod_packages.h"
+#include "platform/camera_settings.h"
 #include "platform/graphics_settings.h"
 #include "platform/user_settings.h"
 #include "render/vulkan/vk_device.h"
@@ -91,6 +92,7 @@ struct Args {
     int render = -1;  // --render nativo|software (N7b; -1 = nao dado)
     bool renderExplicit = false;  // --render ou BS_RENDER dados (valem sobre o graficos.toml do menu)
     uint32_t internalHeight = 0;  // --resolucao-interna <altura> (N7c; 0 = a do graficos.toml)
+    int      cameraMode = -1;     // --camera original|hibrida|livre (N7c; -1 = a do controles.toml, ou Original sem janela)
     int      present = -1;        // --apresentacao vulkan|sdl (N7c; -1 = Vulkan quando houver)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
@@ -170,6 +172,12 @@ bool parseArgs(Args& a) {
         else if (s == L"--apresentacao" && (v = next())) {
             if (*v == L"vulkan") a.present = 1;
             else if (*v == L"sdl") a.present = 0;
+            else return false;
+        }
+        else if (s == L"--camera" && (v = next())) {
+            if (*v == L"original") a.cameraMode = 0;
+            else if (*v == L"hibrida") a.cameraMode = 1;
+            else if (*v == L"livre") a.cameraMode = 2;
             else return false;
         }
         else if (s == L"--resolucao-interna" && (v = next())) {
@@ -599,11 +607,12 @@ public:
     // linha de comando (`renderOverride`, `subtitleOverride`) vale so nesta execucao e nunca vai para o arquivo, a nao
     // ser que o jogador mude esse item no menu (revisao Codex 2026-10-22).
     InGameMenu(bs::GameHost& host, ni::InputSystem& input, SDL_Window* window, PresenterRef& pres, fs::path dir,
-               bs::Preferences prefs, bs::Preferences persisted, bool renderOverride, bool subtitleOverride,
+               bs::Preferences prefs, bs::Preferences persisted, bool renderOverride, bool subtitleOverride, bool cameraOverride,
                st::Capabilities caps, std::vector<std::string> languages)
         : host_(host), input_(input), window_(window), pres_(pres), dir_(std::move(dir)),
           menu_(prefs, caps, std::move(languages)), applied_(prefs), persisted_(std::move(persisted)),
-          renderOverride_(renderOverride), subtitleOverride_(subtitleOverride), confirmed_(prefs.graphics) {
+          renderOverride_(renderOverride), subtitleOverride_(subtitleOverride), cameraOverride_(cameraOverride),
+          confirmed_(prefs.graphics) {
         std::vector<bs::MenuItem> info;
         for (const char* action : {"A", "B", "X", "Y", "START", "UP", "DOWN", "LEFT", "RIGHT", "LT", "RT"}) {
             std::string keys, pads;
@@ -814,9 +823,12 @@ public:
                 }
             }
         }
+        // N7c: camera livre (o GameHost ja comecou com ela; a troca de modo instala ou desinstala na thread do jogo)
+        if (!start && !(p.camera == old.camera)) host_.setCamera(p.camera);
         if (start) return;
         // um item da linha de comando mudado no menu deixa de ser so desta execucao
         if (g.vulkan != old.graphics.vulkan) renderOverride_ = false;
+        if (p.camera.mode != old.camera.mode) cameraOverride_ = false;
         if (p.subtitles.enabled != old.subtitles.enabled || p.subtitles.language != old.subtitles.language) subtitleOverride_ = false;
         persist();
     }
@@ -834,11 +846,14 @@ public:
         if (renderOverride_) d.graphics.vulkan = persisted_.graphics.vulkan;
         d.subtitles = applied_.subtitles;
         if (subtitleOverride_) d.subtitles.enabled = persisted_.subtitles.enabled, d.subtitles.language = persisted_.subtitles.language;
+        d.camera = applied_.camera;
+        if (cameraOverride_) d.camera.mode = persisted_.camera.mode;
         std::string err;
         bool        wrote = false;
         if (!(d.graphics == persisted_.graphics)) wrote = true, st::write_graphics(dir_, d.graphics, &err) || log(err);
         if (!(d.audio == persisted_.audio)) wrote = true, st::write_audio(dir_, d.audio, &err) || log(err);
         if (!(d.subtitles == persisted_.subtitles)) wrote = true, st::write_subtitles(dir_, d.subtitles, &err) || log(err);
+        if (!(d.camera == persisted_.camera)) wrote = true, st::write_camera(dir_, d.camera, &err) || log(err);  // so a secao [camera]
         persisted_ = d;
         if (wrote) std::fprintf(stderr, "[menu] preferencias gravadas em %s\n", utf8(dir_).c_str());
     }
@@ -869,7 +884,7 @@ private:
     bs::SettingsMenu                  menu_;
     bs::MenuOverlay                   overlay_;
     bs::Preferences                   applied_, persisted_;
-    bool                              renderOverride_ = false, subtitleOverride_ = false;
+    bool                              renderOverride_ = false, subtitleOverride_ = false, cameraOverride_ = false;
     st::GraphicsSettings              confirmed_;  // a ultima tela aceita (a que vai para o arquivo)
 
     static bool sameDisplay(const st::GraphicsSettings& a, const st::GraphicsSettings& b) {
@@ -1320,6 +1335,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.modVideo          = exeDir() / L"mods" / L"video";  // filmes e legendas de mods (opcional)
     opt.subtitles         = subtitlesLanguage(a);
     opt.registerFunctions = [] { bsg::register_functions(); };
+    if (a.cameraMode >= 0) opt.camera.mode = st::CameraMode(a.cameraMode);
     opt.realtime          = a.headless == 0;
     opt.vblankLimit       = a.headless;
     return opt;
@@ -1355,6 +1371,8 @@ const char* kUsage =
     "     --audio-falas nativo|legado: falas (padrao: nativo = WAV do disco e dublagens de mods)\n"
     "     --audio-musica nativo|legado: musica (padrao: nativo = sequenciador e sintetizador Manatee em C++ com os\n"
     "       M*.MPB/MSB e o MANATEE.DRV do disco, e o DSP da AICA)\n"
+    "     --camera original|hibrida|livre: camera livre no analogico direito so nesta execucao (padrao: [camera] do\n"
+    "       controles.toml, ou original; original = a camera do jogo, sem nada instalado)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"
     "Controles: controles.toml na pasta do usuario (ao lado do bluestinger.log), criado na primeira execucao.\n";
@@ -1505,10 +1523,16 @@ int mainWindow(Args& a) {
         bs::file_log_init(utf8(fs::temp_directory_path() / L"bs-espectador-arquivos.tsv"));
     std::string                      warning;
     std::unique_ptr<ni::InputSystem> input = setupInput(a, true, warning);
-    // controles pelo SDL3; sem o subsistema de controles, o XInput de reserva
-    if (!g_spectator.on && input->map().options.backend == "sdl" && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
-        std::fprintf(stderr, "[controles] SDL3 Gamepad indisponivel (%s): usando XInput\n", SDL_GetError());
-        input->enable_xinput();
+    // controles pelo SDL3; sem o subsistema de controles, o XInput de reserva. No modo espectador o jogo so ve o roteiro
+    // (fonte de teste), mas o controle ainda chega a camera livre (N7c: InputSystem::peek)
+    if (input->map().options.backend == "sdl" && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+        if (g_spectator.on)  // o XInput de reserva so e lido na amostra do jogo, que o roteiro substitui
+            std::fprintf(stderr, "[controles] SDL3 Gamepad indisponivel (%s): no modo espectador, sem controle para a camera\n",
+                         SDL_GetError());
+        else {
+            std::fprintf(stderr, "[controles] SDL3 Gamepad indisponivel (%s): usando XInput\n", SDL_GetError());
+            input->enable_xinput();
+        }
     }
     if (!warning.empty()) {
         std::fprintf(stderr, "aviso: %s\n", warning.c_str());
@@ -1556,17 +1580,20 @@ int mainWindow(Args& a) {
     // instalacao.toml > padroes (software; legendas en-US ligadas; volumes 100).
     const fs::path  prefsDir = userDir();
     bs::Preferences prefs, persisted;
-    bool            renderOverride = false, subtitleOverride = false;
+    bool            renderOverride = false, subtitleOverride = false, cameraOverride = false;
     {
-        std::string w1, w2, w3;
+        std::string w1, w2, w3, w4;
         bool        legFile = false;
         prefs.graphics  = st::read_graphics(prefsDir, &w1);
         prefs.audio     = st::read_audio(prefsDir, &w2);
         prefs.subtitles = st::read_subtitles(prefsDir, &w3, &legFile);
-        for (const std::string& w : {w1, w2, w3})
+        prefs.camera    = st::read_camera(prefsDir, &w4);
+        for (const std::string& w : {w1, w2, w3, w4})
             if (!w.empty()) std::fprintf(stderr, "[menu] %s\n", w.c_str());
         persisted        = prefs;
         renderOverride   = a.renderExplicit;
+        cameraOverride   = a.cameraMode >= 0;
+        if (cameraOverride) prefs.camera.mode = st::CameraMode(a.cameraMode);
         subtitleOverride = a.subtitlesSet || !legFile;  // sem legendas.toml, o idioma vem do instalacao.toml
         if (a.renderExplicit) prefs.graphics.vulkan = a.render == 1;
         else a.render = prefs.graphics.vulkan ? 1 : 0;
@@ -1614,6 +1641,7 @@ int mainWindow(Args& a) {
         bs::GameHost host;
         bs::GameOptions opt = gameOptions(a);
         opt.input           = input.get();
+        opt.camera          = prefs.camera;  // N7c: [camera] do controles.toml (--camera troca o modo so nesta execucao)
         if (g_spectator.on || g_recorder)
             opt.vblankHook = [](const bs::GameOptions::VblankView& v) {
                 g_spectator.step = v.step;
@@ -1623,7 +1651,8 @@ int mainWindow(Args& a) {
                 return true;
             };
         host.start(std::move(opt));
-        InGameMenu menu(host, *input, window, pres, prefsDir, prefs, persisted, renderOverride, subtitleOverride, caps, languages);
+        InGameMenu menu(host, *input, window, pres, prefsDir, prefs, persisted, renderOverride, subtitleOverride, cameraOverride, caps,
+                        languages);
         if (g_spectator.on) menu.disable();
         menu.set_shaders(std::move(postShaders));
         menu.apply(prefs, true);

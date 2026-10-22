@@ -182,6 +182,15 @@ slots = [
   0x8C15DC40,  # pan(h, v, t): comando 0x06 (fade: 0x4E18 e 0x66E0)
   0x8C15D768,  # comando 0x35 (global; sem chamada nas rotas medidas: o nativo repassa ao original e conta)
   0x8C15D6A0,  # comando 0x36 (idem)
+  # N7c (docs/N7-PLANO.md secao 23, camera livre; no modo Original os slots apontam para o gerado): as seis chamadas da
+  # montagem da camera de gameplay (8C052240) sao diretas no gerado; transitional/free_camera filtra pelo PR e repassa
+  # qualquer outro chamador sem mudanca
+  0x8C174148,  # pitch do objeto camera (gira o vetor de visao em X)
+  0x8C174180,  # yaw do objeto camera (gira o vetor de visao em Y)
+  0x8C174308,  # soma a posicao do objeto camera
+  0x8C1713A4,  # translacao da matriz (52 chamadores)
+  0x8C170DC8,  # giro em Y da matriz (33 chamadores)
+  0x8C170D34,  # giro em X da matriz (25 chamadores)
 ]
 # N2b (docs/N2b-PLANO.md, secao 1.2): back-edges dos lacos que esperam uma condicao acesa por
 # evento. O gerador emite BS_WAIT no desvio de volta e BS_WAIT_END na instrucao seguinte (por

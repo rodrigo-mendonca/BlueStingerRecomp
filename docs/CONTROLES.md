@@ -29,7 +29,9 @@ com erro é ignorado: o jogo avisa (linha e motivo) e usa o mapa padrão.
 | `LT` `RT` | gatilhos (o jogo usa como botões: ativos a partir da metade do curso) | `Q` `W` | `lefttrigger` `righttrigger` |
 | `ANALOG_UP` `ANALOG_DOWN` `ANALOG_LEFT` `ANALOG_RIGHT` | analógico no limite | `I` `K` `J` `L` | (botões) |
 | `ANALOG_X` `ANALOG_Y` | analógico inteiro (só controle; `"-lefty"` inverte) | — | `leftx` `lefty` |
-| `ANALOG2_X` `ANALOG2_Y` | segundo analógico (o jogo não usa) | — | — |
+| `ANALOG2_X` `ANALOG2_Y` | segundo analógico do console (o jogo não usa) | — | — |
+| `CAMERA_X` `CAMERA_Y` | câmera livre (N7c; o jogo não vê; modos e opções em `[camera]`) | — | `rightx` `righty` |
+| `CAMERA_CENTRALIZAR` | volta a câmera livre ao enquadramento do jogo | — | `rightstick` |
 | `C` `Z` `D` | botões que o controle original suportava e o jogo não usa | — | — |
 
 - **Teclas válidas:** letras, dígitos, `ENTER`, `SPACE`, `ESC`, `TAB`, `BACKSPACE`, `SHIFT`, `CTRL`,
@@ -88,3 +90,26 @@ perfil <nome>)` ou `mapa [controle]`. Copie o GUID para `[perfis."<GUID>"]`. Mai
 pelo Maple. `--controles legado` é o fallback temporário: entrega a entrada pelo Maple emulado, como
 até o N3-2. Use-o se algum controle se comportar diferente no padrão, e informe o caso. O mapa e os
 perfis valem igual nos dois.
+
+## Câmera livre (N7c)
+
+O analógico direito gira a vista em volta do Eliot. Só a imagem muda: o jogo, o movimento (o analógico esquerdo
+continua relativo à câmera do jogo) e as gravações ficam iguais. Cinemáticas, diálogos, câmeras de evento e cortes
+de câmera voltam ao enquadramento original. O menu (Esc/Back > Controles > Câmera) grava esta seção; editar a mão
+também vale, e o resto do arquivo não é tocado.
+
+```toml
+[camera]
+modo = "original"          # "original" (a do jogo, nada instalado), "hibrida" (volta sozinha) ou "livre" (até o R3)
+sensibilidade_x = 120      # graus por segundo com o analógico no fim (10 a 360)
+sensibilidade_y = 80
+zona_morta = 0.15          # 0 a 0.6, só da câmera
+inverter_y = false
+suavizacao = 0.5           # 0 a 0.9
+retorno_s = 3              # híbrida: segundos sem usar até voltar (1 a 15)
+r3_recentraliza = true
+pitch_cima = 25            # limites em graus (0 a 45)
+pitch_baixo = 25
+```
+
+`--camera original|hibrida|livre` troca o modo só na execução.

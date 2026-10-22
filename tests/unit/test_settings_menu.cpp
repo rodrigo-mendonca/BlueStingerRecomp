@@ -169,3 +169,39 @@ BS_TEST(settings_menu_effects_page) {
     m.input(MenuAction::Back, 0);
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Graphics);
 }
+
+// N7c (secao 23): Configuracoes > Controles > Camera. Original deixa as opcoes inativas; Voltar volta a Controles.
+BS_TEST(settings_menu_camera_page) {
+    bs::SettingsMenu m({}, {}, {"en-US"});
+    m.open();
+    go(m, "Controles");
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Controls && m.view().items[0].value == "Original");
+    go(m, "C\u00e2mera");
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Camera);
+    auto v = m.view();
+    for (const char* l : {"Sensibilidade horizontal", "Zona morta", "Inverter eixo Y", "Retorno autom\u00e1tico", "Limite para cima"})
+        BS_CHECK(find(v, l) >= 0 && !v.items[size_t(find(v, l))].enabled);
+    bs::Preferences p;
+    BS_CHECK(!m.take_changes(p));
+    go(m, "Modo");
+    m.input(MenuAction::Right, 0);  // Hibrida
+    BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Hybrid);
+    v = m.view();
+    BS_CHECK(v.items[size_t(find(v, "Retorno autom\u00e1tico"))].enabled && v.items[size_t(find(v, "Zona morta"))].enabled);
+    go(m, "Sensibilidade horizontal");
+    m.input(MenuAction::Right, 0);
+    BS_CHECK(m.take_changes(p) && p.camera.sens_x == 130);
+    go(m, "Inverter eixo Y");
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.take_changes(p) && p.camera.invert_y);
+    go(m, "Modo");
+    m.input(MenuAction::Right, 0);  // Livre: o retorno automatico e so da hibrida
+    v = m.view();
+    BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Free && !v.items[size_t(find(v, "Retorno autom\u00e1tico"))].enabled);
+    m.input(MenuAction::Right, 0);  // volta ao Original
+    BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Original && p.camera.sens_x == 130);
+    m.input(MenuAction::Back, 0);
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Controls);
+}

@@ -2345,12 +2345,71 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
-| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta e efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod); faltam a câmera livre (proposta pronta, aguarda decisão), a validação com as camadas do Vulkan e o fechamento | 80 |
+| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta, efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod) e câmera livre no analógico direito (Original, Híbrida, Livre); faltam o SSAO, a validação com as camadas do Vulkan e o fechamento | 85 |
 | N8 Sem legado | não iniciada | 0 |
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~66 % (onze etapas de peso igual).
+Progresso geral: ~67 % (onze etapas de peso igual).
+
+### N7c: câmera livre e segundo analógico (2026-10-22; worktree n7-vulkan)
+
+Aprovada pelo mantenedor (2026-10-22): interceptação da montagem da câmera filtrada pelo ponto de chamada, sem
+escrever em `0x8C24CD50`. Desenho, semântica e evidências: `docs/N7-PLANO.md` seções 23.1 e 23.2.
+
+**O que o jogador tem:**
+- analógico direito gira a vista em volta do Eliot, e R3 recentraliza;
+- três modos em Esc/Back > Controles > **Câmera** (ou `--camera`):
+  - **Original:** a câmera do jogo, nada instalado (padrão);
+  - **Híbrida:** volta sozinha depois do tempo escolhido;
+  - **Livre:** fica até nova entrada ou R3;
+- opções: sensibilidades, zona morta, inverter Y, suavização, retorno automático, R3 e limites de pitch;
+- as opções ficam na seção `[camera]` do `controles.toml`; gravar troca só essa seção.
+
+O analógico esquerdo e o movimento não mudam. Cinemáticas, diálogos e câmeras de evento (`CD68` ≠ 0) e cortes de
+câmera zeram o deslocamento.
+
+**Como:**
+- as seis chamadas da montagem (`8C052240`) são diretas no código gerado: `sh4_override` não as alcança (correção da
+  seção 23). Por isso as seis funções do SDK entraram em `[native] slots`; o gerado só troca a macro dessas chamadas,
+  conferido arquivo a arquivo;
+- `transitional/free_camera` (rig puro e wrappers) altera os argumentos só com o PR da montagem do gameplay.
+
+**Validação** (método e números em `docs/N7-PLANO.md` 23.2):
+
+| Teste | Resultado |
+|---|---|
+| Original, rota de combate | 9000/9000 quadros idênticos à referência e o mesmo trabalho do guest |
+| Híbrida com o analógico parado | 9000/9000 idênticos |
+| Livre e Híbrida com deslocamento (fixo, por roteiro e varrendo na exploração) | estado por passo idêntico ao Original (`BS_STATE_PASSO_SEM_CAMERA`): 4321, 7821 e 2332 passos, este último carregando um save, com as pastas de saves iguais |
+| Vulkan × software com o mesmo deslocamento | 0 pixels diferentes |
+| Janela com o controle virtual do SDL | o analógico real gira, o limite de pitch segura e o R3 recentraliza |
+| Menu | troca de modo ao vivo; a seção gravada sem mudar as outras linhas; lida no início seguinte |
+| Unitários | 298/298, com os seis slots exercitados por sentinelas: PR estrangeiro, fora de ordem, `CD68`, RAM da câmera do jogo intacta e Original devolvendo os slots |
+
+**Revisão Codex** (`reviews/codex-20261022-151544.md`): três achados, todos aceitos e corrigidos.
+- **[MÉDIA]** Faltava um teste dos wrappers com `Sh4Context`. Criado `test_camera_slots.cpp`.
+- **[BAIXA]** O espectador anunciava o XInput de reserva, que a câmera não lê. A mensagem foi corrigida.
+- **[BAIXA]** O Original lia e abria os diagnósticos (roteiro, log). Agora ignora; `BS_CAMERA_FIXA` foi para
+  `Options`.
+
+Pontos que o Codex conferiu sem problema:
+- ordem e PRs das seis chamadas;
+- argumentos;
+- `~(yaw + Δ)`;
+- `CD68` em 16 bits;
+- nenhuma escrita em `CD50`;
+- outros chamadores intactos;
+- Original sem instalar nada;
+- pedidos do menu com mutex e aplicados na thread do jogo;
+- a câmera não chega ao pad do Dreamcast;
+- gravação só da seção `[camera]`.
+
+**Limitações:**
+- objetos perto da câmera original e sprites orientados por ela seguem a câmera do jogo;
+- sem colisão da câmera orbitada;
+- `CD68` comprovado na rota de combate (tratamento conservador fora dela);
+- movimento relativo à câmera vista fica para depois (opção separada, após validar mira, combate e animações).
 
 ### N7c: pós-processamento e shaders de mod (2026-10-22; worktree n7-vulkan)
 

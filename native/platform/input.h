@@ -34,11 +34,14 @@ enum Button : uint32_t {
     C         = 1u << 9,   // botoes extras que o controle original suporta e o padrao nao tem
     Z         = 1u << 10,
     D         = 1u << 11,
+    // N7c: so da camera livre (o jogo nunca ve: o adaptador do controle so leva os botoes e eixos do console)
+    CameraRecenter = 1u << 12,
 };
-constexpr int kButtonCount = 12;
+constexpr int kButtonCount = 13;
 
-enum class Axis : uint8_t { StickX, StickY, Stick2X, Stick2Y, TriggerL, TriggerR };
-constexpr int kAxisCount = 6;
+// CameraX/CameraY: o analogico da camera livre (N7c), separado do segundo analogico do console (Stick2), que o jogo le
+enum class Axis : uint8_t { StickX, StickY, Stick2X, Stick2Y, TriggerL, TriggerR, CameraX, CameraY };
+constexpr int kAxisCount = 8;
 
 struct ControllerState {
     uint32_t buttons          = 0;
@@ -161,6 +164,9 @@ public:
     // Amostra do jogador 1 no ponto de amostragem; fica guardada como a ultima amostra.
     ControllerState latch(const SampleContext& ctx);
     ControllerState last() const;
+    // O estado dos dispositivos do host agora (teclado e controle ativo), sem congelar nada, sem filtro (gravacao) e mesmo
+    // com a fonte de teste: para quem nao e o jogo (a camera livre, N7c).
+    ControllerState peek();
     // Presenca do jogador 1 sem tirar amostra (sondagens do protocolo que nao leem o estado).
     // Com dispositivos do host, sempre presente (o teclado); com fonte de teste, o que ela diz.
     bool connected(const SampleContext& ctx);

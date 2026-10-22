@@ -71,6 +71,7 @@ ControllerState padState(const Pad& p, const ActionMap& m) {
     const float dz = prof && prof->deadzone >= 0 ? prof->deadzone : m.options.deadzone;
     apply_radial_deadzone(s.axis(Axis::StickX), s.axis(Axis::StickY), dz);
     apply_radial_deadzone(s.axis(Axis::Stick2X), s.axis(Axis::Stick2Y), dz);
+    // os eixos da camera livre ficam crus: a zona morta deles e a da camera ([camera] em controles.toml)
     return s;
 }
 
@@ -101,7 +102,7 @@ ControllerState keyboardState(const std::set<std::string>& down, const ActionMap
 // (analogico, segundo analogico, gatilhos) vem da primeira fonte fora do neutro.
 ControllerState merge(const std::vector<ControllerState>& in) {
     ControllerState out;
-    bool            stick = false, stick2 = false, trig = false;
+    bool            stick = false, stick2 = false, trig = false, cam = false;
     for (const auto& s : in) {
         out.buttons |= s.buttons;
         if (!stick && !neutralPair(s.axis(Axis::StickX), s.axis(Axis::StickY))) {
@@ -109,6 +110,9 @@ ControllerState merge(const std::vector<ControllerState>& in) {
         }
         if (!stick2 && !neutralPair(s.axis(Axis::Stick2X), s.axis(Axis::Stick2Y))) {
             out.axis(Axis::Stick2X) = s.axis(Axis::Stick2X), out.axis(Axis::Stick2Y) = s.axis(Axis::Stick2Y), stick2 = true;
+        }
+        if (!cam && !neutralPair(s.axis(Axis::CameraX), s.axis(Axis::CameraY))) {
+            out.axis(Axis::CameraX) = s.axis(Axis::CameraX), out.axis(Axis::CameraY) = s.axis(Axis::CameraY), cam = true;
         }
         if (!trig && !neutralPair(s.axis(Axis::TriggerL), s.axis(Axis::TriggerR))) {
             out.axis(Axis::TriggerL) = s.axis(Axis::TriggerL), out.axis(Axis::TriggerR) = s.axis(Axis::TriggerR), trig = true;
@@ -305,6 +309,16 @@ ControllerState InputSystem::latch(const SampleContext& ctx) {
     s.connected       = true;  // a janela sempre tem o teclado: a porta do jogador 1 nunca fica vazia
     if (impl_->filter) s = impl_->filter(ctx, s);
     return impl_->last = s;
+}
+
+ControllerState InputSystem::peek() {
+    // sempre os dispositivos do host, mesmo com a fonte de teste: um roteiro controla o jogo e o analogico direito real
+    // (ou o controle virtual do SDL) ainda gira a camera, que nao muda o estado do jogo
+    std::lock_guard lk(impl_->mu);
+    std::vector<ControllerState> parts;
+    parts.push_back(keyboardState(impl_->keys, map_));
+    if (const int a = impl_->active(map_.options); a >= 0) parts.push_back(padState(impl_->pads[size_t(a)], map_));
+    return merge(parts);
 }
 
 ControllerState InputSystem::last() const {

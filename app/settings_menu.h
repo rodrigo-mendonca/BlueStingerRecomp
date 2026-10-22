@@ -10,6 +10,7 @@
 //   - mudanca de tamanho/modo de tela (requires_confirmation) aplica e pede confirmacao: sem ela em 15 s (ou com
 //     Voltar), a configuracao anterior volta sozinha;
 //   - "Restaurar padroes" pede confirmacao e volta tudo ao padrao (Original Dreamcast, volumes 100, legendas en-US).
+#include "platform/camera_settings.h"
 #include "platform/graphics_settings.h"
 #include "platform/user_settings.h"
 
@@ -23,6 +24,7 @@ struct Preferences {
     native::settings::GraphicsSettings graphics;
     native::settings::AudioSettings    audio;
     native::settings::SubtitleSettings subtitles;
+    native::settings::CameraSettings   camera;  // N7c: camera livre ([camera] do controles.toml)
     bool                               operator==(const Preferences&) const = default;
 };
 
@@ -81,7 +83,7 @@ public:
     bool display_pending() const { return pending_ == Pending::Display; }
     void cancel_display();
 
-    enum class Page : uint8_t { Main, Graphics, Audio, Subtitles, Controls, Effects };
+    enum class Page : uint8_t { Main, Graphics, Audio, Subtitles, Controls, Effects, Camera };
     Page page() const { return page_; }
 
 private:

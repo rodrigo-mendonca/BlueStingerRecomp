@@ -1077,7 +1077,7 @@ visual original.
 3. Validação com as camadas do Vulkan num terminal não elevado (pendência AMD e caminho B).
 4. Fechamento do N7 (nível 2): testes completos do subsistema e comparação com o legado.
 
-## 23. Câmera livre e segundo analógico: investigação e proposta (2026-10-22; aguarda a decisão do mantenedor)
+## 23. Câmera livre e segundo analógico: investigação, proposta (aprovada em 2026-10-22) e implementação (23.2)
 
 ### Método
 
@@ -1254,3 +1254,94 @@ O caminho `8C078FC0` (câmera fixa/de evento) não é interceptado.
 - com deslocamento grande, um objeto perto da vista nova pode tapar a imagem, e sprites podem aparecer de lado.
 
 Mitigação: limites de yaw e pitch e o retorno do modo híbrido.
+
+### 23.2 Implementação e validação (2026-10-22)
+
+**Correção do mecanismo.** A seção 23 dizia que as chamadas da montagem eram indiretas e que `sh4_override` as
+interceptaria. O código gerado mostra outra coisa: o recompilador resolveu os alvos (`BS_EXPECT_TARGET` +
+`BSG_FN(8C174148)(c)`), então as chamadas são diretas e `sh4_override` não as vê. A interceptação usa o mecanismo
+das fronteiras migráveis:
+- as seis funções do SDK entraram em `[native] slots` (`config/bluestinger_us.toml`);
+- regenerado, o código só troca a macro dessas chamadas (`BSG_FN` → `BSG_SLOT`), conferido arquivo a arquivo contra
+  o gerado anterior;
+- `transitional/free_camera` troca os slots pelo registro de fronteiras e filtra pelo PR, como aprovado. Qualquer
+  outro chamador recebe a função anterior (o gerado, ou um mod) sem mudança.
+
+**Semântica confirmada no disassembly:**
+
+| Função | Argumentos e efeito |
+|---|---|
+| `8C1740DC` | zera o objeto; vetor de visão (0, 0, −1) |
+| `8C174148` | gira o vetor de visão em X por r5 (y' = y·c − z·s; z' = z·c + y·s) |
+| `8C174180` | gira o vetor de visão em Y por r5 (x' = x·c + z·s; z' = z·c − x·s) |
+| `8C174308` | soma (fr4, fr5, fr6) à posição do objeto (+0x40) |
+| `8C1713A4` (PR `8C0528DA`) | translação por (x, −y, −z) da posição do jogo (fr4 sem negação, fr5 e fr6 negados) |
+| `8C170DC8` / `8C170D34` | giros em Y por `~yaw` e em X pelo mesmo pitch composto (`[CD5C]` + tabela) |
+
+Ângulos em unidades Ninja (0x10000 = 360°, `fsca` usa os 16 bits baixos). O `CD68` é escrito com 16 bits
+(`BS_ESCRITOR`). O segundo objeto (`0x8C2D0CC0`) só é lido pelo SDK (`BS_LEITOR`, rota de combate: `8C171330`, a
+cópia para o desenho, chamada de `8C0841CA`, e as próprias primitivas).
+
+**Geometria:**
+- o deslocamento gira a vista em volta do ponto da linha de visão mais perto do Eliot (`D668`), com o raio limitado a
+  20–600 unidades (medido no gameplay: 376–402);
+- com o Eliot atrás ou embaixo da câmera, o raio cai e a vista gira no lugar;
+- pitch final limitado a ±80°, além dos limites do jogador.
+
+Sinais conferidos por captura: o yaw do jogo cresce girando a vista para a esquerda, e o pitch positivo olha para
+cima.
+
+**Suspensão e cortes:**
+- com `CD68` ≠ 0, ou sem montagem de gameplay há 30 VBlanks, o deslocamento é zero e o rig recomeça do centro;
+- um salto entre montagens maior que 60 unidades ou 40° é corte de câmera e também zera;
+- medido: no gameplay a câmera anda até 39 unidades e 4° entre montagens (uma a cada 2 VBlanks); os cortes reais
+  foram de 145 a 406 unidades e de 90° a 116°.
+
+**Entrada (N3):**
+- eixos `CAMERA_X`/`CAMERA_Y` e o botão `CAMERA_CENTRALIZAR` (padrão `rightx`, `righty`, `rightstick`), que o
+  adaptador do controle não leva ao jogo;
+- `InputSystem::peek` lê os dispositivos do host mesmo com roteiro (o jogo só vê o roteiro);
+- no modo espectador o SDL Gamepad agora é iniciado (só para a câmera);
+- a zona morta é a da câmera.
+
+**Opções:**
+- seção `[camera]` do `controles.toml`; o parser do N3 aceita a seção, e a gravação troca só ela (o resto do
+  arquivo fica byte a byte, inclusive CRLF);
+- menu Configurações > Controles > Câmera: modo, sensibilidades, zona morta, inverter Y, suavização, retorno
+  automático (só Híbrida), R3, limites de pitch;
+- `--camera original|hibrida|livre` vale só na execução;
+- o menu aplica na thread do jogo, entre VBlanks: Original desinstala os slots.
+
+**Diagnóstico:** `BS_CAMERA_ROTEIRO` (analógico por VBlank), `BS_CAMERA_LOG` (uma linha por montagem),
+`BS_CAMERA_FIXA=yaw,pitch` e `BS_STATE_PASSO_SEM_CAMERA=1` (o hash de estado por passo sem o objeto câmera do SDK,
+`CC38`–`CCAF`, que é o que a câmera livre muda).
+
+**Validação (2026-10-22, build `n7-game` com o gerado novo; rotas com `--video legado`):**
+
+| Teste | Resultado |
+|---|---|
+| Original com os slots novos, rota de combate | 9000/9000 quadros idênticos à referência; trabalho do guest idêntico (2 268 687 036) |
+| Híbrida instalada, analógico parado | 9000/9000 quadros idênticos |
+| Livre com yaw +30° e pitch +15° fixos (891 montagens com deslocamento) | estado por passo idêntico ao Original em 4321 passos; captura: a vista gira em volta do Eliot |
+| Híbrida e Livre com o analógico por roteiro | Híbrida: gira 120°/s, segura 3 s, volta suave; pitch para no limite (25°); Livre: fica até o R3, que recentraliza suave; estado idêntico |
+| Exploração (`passo_newgame_exploracao`, 16 000 VBlanks), Híbrida varrendo o analógico | 5191 montagens com deslocamento; estado idêntico em 7821 passos |
+| Carregar save (`passo_load_slot1`), Livre fixa | estado idêntico em 2332 passos; pastas de saves iguais |
+| Vulkan × software, mesmo deslocamento | 0 pixels diferentes (VBlank 6000) |
+| Janela, espectador + controle virtual do SDL (`rightx`, `righty`, `rightstick`) | o analógico real gira, sobe até o limite e o R3 recentraliza |
+| Janela, menu pelo controle virtual | Híbrida → Livre ao vivo; `[camera]` gravada, as 55 linhas anteriores iguais; o próximo início lê Livre; Original desinstala e grava |
+| Unitários | 298/298 (rig, geometria, opções, seção, menu, entrada e os seis slots com sentinelas: PR estrangeiro, fora de ordem, `CD68`, RAM da câmera do jogo intacta, Original devolvendo os slots) |
+
+**Custo:** com Original, nada instalado; o trabalho do guest é idêntico e o tempo por campo fica no ruído. Com a
+câmera girada, o trabalho do guest muda 0,04%: o SDK desenha e recorta outra vista, como faria no console. O estado
+do jogo continua idêntico.
+
+**Limitações conhecidas:**
+- objetos a menos de 100 unidades da câmera original e os sprites orientados por ela (`8C08AC60`) seguem a câmera
+  do jogo;
+- a câmera orbitada não testa colisão: com deslocamento grande, pode atravessar paredes;
+- logo depois de cinemáticas, o jogo às vezes põe a câmera em cima do Eliot (VBlank 5346–5640 da rota de combate),
+  e então a vista gira no lugar;
+- `CD68` como "câmera roteirizada" foi comprovado na rota de combate; em outras cenas, o tratamento conservador é o
+  mesmo;
+- o movimento continua relativo à câmera do jogo (analógico esquerdo intocado). Movimento relativo à câmera vista
+  fica para depois, como opção separada, após validação de mira, combate e animações.

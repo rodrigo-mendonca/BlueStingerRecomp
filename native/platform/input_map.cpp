@@ -27,6 +27,7 @@ const ActionDef kActions[] = {
     {"Y", button(Y)},          {"START", button(Start)},   {"UP", button(DpadUp)},
     {"DOWN", button(DpadDown)}, {"LEFT", button(DpadLeft)}, {"RIGHT", button(DpadRight)},
     {"C", button(C)},          {"Z", button(Z)},           {"D", button(D)},
+    {"CAMERA_CENTRALIZAR", button(CameraRecenter)},  // N7c: camera livre (o jogo nao ve)
     {"LT", direction(Axis::TriggerL, 1)},       {"RT", direction(Axis::TriggerR, 1)},
     {"ANALOG_UP", direction(Axis::StickY, -1)}, {"ANALOG_DOWN", direction(Axis::StickY, 1)},
     {"ANALOG_LEFT", direction(Axis::StickX, -1)}, {"ANALOG_RIGHT", direction(Axis::StickX, 1)},
@@ -35,6 +36,7 @@ const ActionDef kActions[] = {
 const ActionDef kAxisActions[] = {
     {"ANALOG_X", full(Axis::StickX)},   {"ANALOG_Y", full(Axis::StickY)},
     {"ANALOG2_X", full(Axis::Stick2X)}, {"ANALOG2_Y", full(Axis::Stick2Y)},
+    {"CAMERA_X", full(Axis::CameraX)},  {"CAMERA_Y", full(Axis::CameraY)},  // N7c: camera livre (o jogo nao ve)
 };
 
 const char* const kGamepadButtons[] = {"a", "b", "x", "y", "back", "guide", "start", "leftstick", "rightstick",
@@ -91,7 +93,10 @@ const char* kDefaultKeyboard[][2] = {{"UP", "UP"},       {"DOWN", "DOWN"},  {"LE
 const char* kDefaultGamepad[][2] = {{"A", "a"},        {"B", "b"},           {"X", "x"},          {"Y", "y"},
                                     {"START", "start"}, {"UP", "dpup"},       {"DOWN", "dpdown"},  {"LEFT", "dpleft"},
                                     {"RIGHT", "dpright"}, {"LT", "lefttrigger"}, {"RT", "righttrigger"},
-                                    {"ANALOG_X", "leftx"}, {"ANALOG_Y", "lefty"}};
+                                    {"ANALOG_X", "leftx"}, {"ANALOG_Y", "lefty"},
+                                    // N7c: a camera livre no analogico direito e no R3 (o segundo analogico do console fica
+                                    // sem ligacao, como antes: o jogo nao ve nada disto)
+                                    {"CAMERA_X", "rightx"}, {"CAMERA_Y", "righty"}, {"CAMERA_CENTRALIZAR", "rightstick"}};
 
 std::vector<Binding> bindingsFrom(const char* (*table)[2], size_t n, bool gamepad) {
     std::vector<Binding> v;
@@ -206,8 +211,11 @@ Result<ActionMap> ActionMap::parse(std::string_view text, std::string* error) {
             if (!parseSection(*t, k == "controle", k == "controle" ? m.gamepad : m.keyboard, error, k)) return Error::Corrupt;
         } else if (k == "perfis") {
             if (!node.as_table()) return fail(error, "[perfis] deve ser uma secao"), Error::Corrupt;
+        } else if (k == "camera") {
+            // N7c: opcoes da camera livre, lidas por platform/camera_settings (valores invalidos voltam ao padrao la)
+            if (!node.as_table()) return fail(error, "[camera] deve ser uma secao"), Error::Corrupt;
         } else {
-            fail(error, "chave desconhecida: " + k + " (secoes: [opcoes], [teclado], [controle], [perfis.\"<guid>\"])");
+            fail(error, "chave desconhecida: " + k + " (secoes: [opcoes], [teclado], [controle], [perfis.\"<guid>\"], [camera])");
             return Error::Corrupt;
         }
     }
@@ -285,7 +293,8 @@ std::string ActionMap::default_text() {
         "# Blue Stinger - controles (criado na primeira execucao; apague para voltar ao padrao).\n"
         "# Acoes: A B X Y START UP DOWN LEFT RIGHT (direcional) C Z D, LT RT (gatilhos),\n"
         "#        ANALOG_UP ANALOG_DOWN ANALOG_LEFT ANALOG_RIGHT (analogico pelo teclado),\n"
-        "#        ANALOG_X ANALOG_Y ANALOG2_X ANALOG2_Y (eixos do controle; \"-lefty\" inverte).\n"
+        "#        ANALOG_X ANALOG_Y ANALOG2_X ANALOG2_Y (eixos do controle; \"-lefty\" inverte),\n"
+        "#        CAMERA_X CAMERA_Y CAMERA_CENTRALIZAR (camera livre; o jogo nao ve; opcoes em [camera]).\n"
         "# Cada acao aceita um texto ou uma lista: A = [\"Z\", \"SPACE\"]. Uma acao listada aqui substitui o\n"
         "# padrao dela; as que nao aparecem continuam com o padrao.\n"
         "versao = 1\n\n"

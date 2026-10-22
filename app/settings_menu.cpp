@@ -13,6 +13,10 @@ namespace {
 
 std::string onoff(bool b) { return b ? "ligado" : "desligado"; }
 std::string pct(uint32_t v) { return std::to_string(v) + " %"; }
+std::string camera_label(st::CameraMode m) {
+    static const char* n[] = {"Original", "H\u00edbrida", "Livre"};
+    return n[size_t(m)];
+}
 
 template <class E> E cycle(E e, int dir, int count) { return E((int(e) + dir + count) % count); }
 
@@ -241,10 +245,37 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         break;
     }
     case Page::Controls:
+        e.push_back({"C\u00e2mera", camera_label(prefs_.camera.mode), true, nullptr, page(Page::Camera)});
         for (const MenuItem& i : controlsInfo_) e.push_back({i.label, i.value, true, nullptr, nullptr});
         e.push_back({"Remapear pelo menu", "em breve (controles.toml)", false, nullptr, nullptr});
         e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
         break;
+    case Page::Camera: {
+        // N7c (secao 23): analogico direito. Original = a camera do jogo (nada instalado): as outras opcoes ficam inativas.
+        const auto& c   = prefs_.camera;
+        const bool  on  = c.mode != st::CameraMode::Original;
+        auto        num = [](float v, int places, const char* unit) {
+            char b[32];
+            std::snprintf(b, sizeof b, "%.*f%s", places, double(v), unit);
+            return std::string(b);
+        };
+        auto fstep = [](float st::CameraSettings::*m, float by, float lo, float hi) {
+            return [=](Preferences& p, int d) { p.camera.*m = std::clamp(std::round((p.camera.*m + by * float(d)) / by) * by, lo, hi); };
+        };
+        e.push_back({"Modo", camera_label(c.mode), true, [](Preferences& p, int d) { p.camera.mode = cycle(p.camera.mode, d, 3); }});
+        e.push_back({"Sensibilidade horizontal", num(c.sens_x, 0, " \u00b0/s"), on, fstep(&st::CameraSettings::sens_x, 10, 10, 360)});
+        e.push_back({"Sensibilidade vertical", num(c.sens_y, 0, " \u00b0/s"), on, fstep(&st::CameraSettings::sens_y, 10, 10, 360)});
+        e.push_back({"Zona morta", num(c.deadzone, 2, ""), on, fstep(&st::CameraSettings::deadzone, 0.05f, 0, 0.6f)});
+        e.push_back({"Inverter eixo Y", onoff(c.invert_y), on, [](Preferences& p, int) { p.camera.invert_y = !p.camera.invert_y; }});
+        e.push_back({"Suaviza\u00e7\u00e3o", num(c.smoothing, 1, ""), on, fstep(&st::CameraSettings::smoothing, 0.1f, 0, 0.9f)});
+        e.push_back({"Retorno autom\u00e1tico", num(c.return_s, 1, " s"), c.mode == st::CameraMode::Hybrid,
+                     fstep(&st::CameraSettings::return_s, 0.5f, 1, 15)});
+        e.push_back({"Recentralizar com R3", onoff(c.r3_recenter), on, [](Preferences& p, int) { p.camera.r3_recenter = !p.camera.r3_recenter; }});
+        e.push_back({"Limite para cima", num(c.pitch_up, 0, "\u00b0"), on, fstep(&st::CameraSettings::pitch_up, 5, 0, 45)});
+        e.push_back({"Limite para baixo", num(c.pitch_down, 0, "\u00b0"), on, fstep(&st::CameraSettings::pitch_down, 5, 0, 45)});
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Controls)});
+        break;
+    }
     }
     return e;
 }
@@ -299,7 +330,7 @@ void SettingsMenu::input(MenuAction a, double now) {
         break;
     case MenuAction::Back:
         if (page_ == Page::Main) close();
-        else page_ = page_ == Page::Effects ? Page::Graphics : Page::Main, sel_ = 0;  // Efeitos volta para Graficos
+        else page_ = page_ == Page::Effects ? Page::Graphics : page_ == Page::Camera ? Page::Controls : Page::Main, sel_ = 0;
         break;
     }
 }
@@ -336,7 +367,8 @@ void SettingsMenu::tick(double now) {
 MenuView SettingsMenu::view() const {
     MenuView    v;
     const char* titles[] = {"Configura\u00e7\u00f5es", "Configura\u00e7\u00f5es > Gr\u00e1ficos", "Configura\u00e7\u00f5es > \u00c1udio", "Configura\u00e7\u00f5es > Legendas",
-                            "Configura\u00e7\u00f5es > Controles", "Configura\u00e7\u00f5es > Gr\u00e1ficos > Efeitos de imagem"};
+                            "Configura\u00e7\u00f5es > Controles", "Configura\u00e7\u00f5es > Gr\u00e1ficos > Efeitos de imagem",
+                            "Configura\u00e7\u00f5es > Controles > C\u00e2mera"};
     v.title = titles[size_t(page_)];
     for (const auto& e : entries()) v.items.push_back({e.label, e.value, e.enabled});
     v.selected = sel_;

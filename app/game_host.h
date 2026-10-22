@@ -4,6 +4,7 @@
 // encerramento limpo. O front-end (SDL3, app/main_sdl.cpp) so apresenta quadros e entrega
 // eventos; a frequencia de apresentacao dele e independente da do jogo.
 #include "cpu/sh4_context.h"
+#include "platform/camera_settings.h"
 #include "platform/data_files.h"
 #include "platform/saves.h"
 
@@ -112,6 +113,8 @@ struct GameOptions {
     std::string           dubbing;   // idioma da dublagem ("" = vozes originais)
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).
     native::input::InputSystem* input = nullptr;
+    // N7c: camera livre (secao [camera] do controles.toml; Original = nada instalado). Le o analogico de `input`.
+    native::settings::CameraSettings camera;
     // Registra a tabela do codigo recompilado (bsg::register_functions no executavel).
     std::function<void()> registerFunctions;
     // Prepara RAM e registradores. Padrao: boot nativo a partir de `data`. Testes trocam.
@@ -162,6 +165,7 @@ public:
     void           setSubtitleLanguage(const std::string& language);      // falas e filmes; "" = desligadas
     void           setRenderer(RenderProvider r);
     void           setRenderScale(float scale);  // N7c: resolucao interna do Vulkan (1 = fiel; altura interna / 480)
+    void           setCamera(const native::settings::CameraSettings& s);  // N7c: camera livre (modo e opcoes)
     RenderProvider renderer() const { return RenderProvider(renderer_.load()); }
 
 private:
@@ -208,6 +212,8 @@ private:
     bool                                           voicesNative_ = false;  // o servico de legendas das falas existe
     std::atomic<bool>                              requestsPending_{false};  // acorda a pausa para aplicar pedidos
     std::atomic<float>                             scalePending_{0.f};         // 0 = nenhum pedido
+    bool                                           cameraPending_ = false;     // protegido por reqMutex_
+    native::settings::CameraSettings               camera_;
     void                                           notifyRequest();
 };
 

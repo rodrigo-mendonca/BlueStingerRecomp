@@ -11,7 +11,8 @@ add_library(bs_native STATIC platform/data_files.cpp platform/clock.cpp platform
             platform/progress.cpp platform/input_map.cpp platform/input_system.cpp
             platform/saves_format.cpp platform/saves_store.cpp platform/install_config.cpp
             platform/graphics_settings.cpp   # N7: modelo das configuracoes graficas (graficos.toml)
-            platform/user_settings.cpp)      # N7c: audio.toml e legendas.toml (menu interno)
+            platform/user_settings.cpp       # N7c: audio.toml e legendas.toml (menu interno)
+            platform/camera_settings.cpp)    # N7c: camera livre ([camera] em controles.toml)
 target_link_libraries(bs_native PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus xinput)
 
 # N5: filmes nativos (catalogo por ID com mods, leitura e gravacao MP4 por Media Foundation)
