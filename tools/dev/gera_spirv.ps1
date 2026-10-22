@@ -36,6 +36,7 @@ $jobs = @(
     # N7c secao 21: pos-processamento (o passe interno e o exemplo de mod, para os testes do validador)
     @("post_vert.h", "post.vert", "kPostVert", @()),
     @("post_color_frag.h", "post_color.frag", "kPostColorFrag", @()),
+    @("post_tonemap_frag.h", "post_tonemap.frag", "kPostTonemapFrag", @()),
     @("post_exemplo_frag.h", "..\..\..\..\mods-exemplos\shaders\cor-quente\shader.frag", "kPostExemploFrag", @()),
     # testes do validador: um passe que escreve num buffer e um com push constants grandes demais
     @("post_teste_buffer_frag.h", "teste\post_buffer.frag", "kPostTesteBufferFrag", @()),

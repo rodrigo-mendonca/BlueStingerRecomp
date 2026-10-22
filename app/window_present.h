@@ -33,6 +33,8 @@ struct WindowLayer {
 struct PostSpec {
     bool  color = false;
     float brightness = 0, contrast = 1, gamma = 1, saturation = 1;
+    bool  tonemap = false;
+    float exposure = 0, highlights = 0.5f, toneShadows = 0;
     const native::render::PostShaderPackage* shader = nullptr;  // shader de mod (ja validado) ou nenhum
     std::vector<float>                       shaderParams;      // na ordem dos parametros do manifesto
     bool operator==(const PostSpec&) const = default;

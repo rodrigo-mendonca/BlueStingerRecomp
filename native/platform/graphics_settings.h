@@ -49,6 +49,8 @@ struct GraphicsSettings {
     // N7c (secao 21): correcao de cor (passe interno de pos-processamento); desligada = a imagem como o jogo a desenha
     bool       color = false;
     float      brightness = 0, contrast = 1.0f;
+    // tonemapping (`tonemap`): exposicao em EV, compressao das altas luzes (0 a 1) e tom das sombras (-0,5 a 0,5)
+    float      exposure = 0, highlights = 0.5f, tone_shadows = 0;
     // do jogador (fora dos presets)
     WindowMode window = WindowMode::Windowed;
     uint32_t   window_w = 0, window_h = 0;  // tamanho da janela (0 = o padrao); tela cheia usa a do monitor
@@ -62,10 +64,11 @@ struct GraphicsSettings {
 struct Features {
     bool scaling = false, msaa = false, filtering = false, window_modes = false, vsync = false, aspect_wide = false;
     bool hd_textures = false, lighting = false, shadows = false, shaders = false, post = false;
-    bool color = false;  // N7c: correcao de cor (pos-processamento); `post` = os outros efeitos de imagem
+    bool color = false;    // N7c: correcao de cor (pos-processamento)
+    bool tonemap = false;  // N7c: tonemapping; `post` = os efeitos de imagem ainda sem recurso proprio
     static Features all() {
         Features f{true, true, true, true, true, true, true, true, true, true, true};
-        f.color = true;
+        f.color = f.tonemap = true;
         return f;
     }
 };

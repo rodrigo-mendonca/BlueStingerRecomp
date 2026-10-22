@@ -7,9 +7,11 @@
 #include "render/vulkan/vk_internal.h"
 #include "render/post_shader.h"
 #include "render/vulkan/spirv/post_color_frag.h"
+#include "render/vulkan/spirv/post_tonemap_frag.h"
 #include "render/vulkan/spirv/post_vert.h"
 
 #include <cstring>
+#include <map>
 
 namespace bs::native::render {
 namespace {
@@ -73,10 +75,23 @@ public:
         dp.maxSets = kMaxPasses, dp.poolSizeCount = 1, dp.pPoolSizes = &ps;
         if (f_.vkCreateDescriptorPool(b_.dev_, &dp, nullptr, &pool_) != VK_SUCCESS) return fail(error, "conjuntos");
         ++g_live;
-        // o passe interno de correcao de cor (interface igual a dos externos)
-        std::vector<uint32_t> color(kPostColorFrag, kPostColorFrag + sizeof kPostColorFrag / 4);
-        builtinColor_ = load(color, error);
-        return builtinColor_ >= 0;
+        // os passes internos (interface igual a dos externos)
+        auto builtin = [&](PostBuiltin b, const uint32_t* code, size_t bytes) {
+            std::vector<uint32_t> w(code, code + bytes / 4);
+            builtins_[size_t(b)] = load(w, error);
+            return builtins_[size_t(b)] >= 0;
+        };
+        if (!builtin(PostBuiltin::Color, kPostColorFrag, sizeof kPostColorFrag)) return false;
+        if (!builtin(PostBuiltin::Tonemap, kPostTonemapFrag, sizeof kPostTonemapFrag)) return false;
+        builtinColor_ = builtins_[size_t(PostBuiltin::Color)];
+        // tempo de GPU por passe: dois timestamps por passe
+        if (b_.tsPeriod_ > 0) {
+            VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            qi.queryType = VK_QUERY_TYPE_TIMESTAMP, qi.queryCount = 2 * kMaxPasses;
+            if (f_.vkCreateQueryPool(b_.dev_, &qi, nullptr, &queries_) == VK_SUCCESS) ++g_live;
+            else queries_ = VK_NULL_HANDLE;
+        }
+        return true;
     }
 
     int load(std::span<const uint32_t> spirv, std::string* error) override {
@@ -95,23 +110,51 @@ public:
         return int(shaders_.size()) - 1;
     }
     int builtin_color() const override { return builtinColor_; }
+    int builtin(PostBuiltin which) const override { return which < PostBuiltin::Count ? builtins_[size_t(which)] : -1; }
+
+    std::vector<PostTiming> timings() override {
+        std::lock_guard<std::mutex> lock(m_);
+        collect();
+        std::vector<PostTiming> out;
+        for (const auto& [id, t] : timing_) out.push_back({id, t.first, t.second});
+        return out;
+    }
 
     VkImageView record(VkCommandBuffer cmd, VkImageView src, VkImageLayout srcLayout, uint32_t w, uint32_t h,
                        std::span<const PostPass> passes) override {
         std::lock_guard<std::mutex> lock(m_);
         if (passes.empty() || !w || !h) return VK_NULL_HANDLE;
         if (!targets(w, h)) return VK_NULL_HANDLE;
+        collect();                                    // os tempos do quadro anterior (ja terminado)
         f_.vkResetDescriptorPool(b_.dev_, pool_, 0);  // o quadro anterior terminou (cerca de quem grava)
-        VkImageView in = src;
+        if (queries_) f_.vkCmdResetQueryPool(cmd, queries_, 0, 2 * kMaxPasses);
+        VkImageView   in = src;
         VkImageLayout inLayout = srcLayout;
-        int out = 0, done = 0;
-        for (const PostPass& p : passes) {
-            if (done == int(kMaxPasses) || p.shader < 0 || p.shader >= int(shaders_.size()) || !shaders_[size_t(p.shader)].pipe) continue;
+        int           done = 0;
+        // tres imagens em rodizio: a saida de um passe nunca e a entrada dele nem a imagem que o passe seguinte usa no
+        // binding 1 (a entrada deste: bloom)
+        std::vector<VkImageView>   inputs;
+        std::vector<VkImageLayout> inputLayouts;
+        for (size_t i = 0; i < passes.size(); ++i) {
+            const PostPass& p = passes[i];
+            if (done == int(kMaxPasses) || p.shader < 0 || p.shader >= int(shaders_.size()) || !shaders_[size_t(p.shader)].pipe) {
+                inputs.push_back(in), inputLayouts.push_back(inLayout);
+                continue;
+            }
+            inputs.push_back(in), inputLayouts.push_back(inLayout);
+            // binding 1: a original, ou a entrada do passe imediatamente anterior
+            VkImageView   orig = src;
+            VkImageLayout origLayout = srcLayout;
+            if (p.original >= 0 && size_t(p.original) + 1 == i) orig = inputs[i - 1], origLayout = inputLayouts[i - 1];
+            const VkImageView keep = i + 1 < passes.size() && passes[i + 1].original == int(i) ? in : VK_NULL_HANDLE;
+            int out = 0;
+            while (out < 3 && (img_[out].view == in || img_[out].view == orig || img_[out].view == keep)) ++out;
+            if (out == 3) break;  // nao acontece com as referencias permitidas
             VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
             ai.descriptorPool = pool_, ai.descriptorSetCount = 1, ai.pSetLayouts = &setLayout_;
             VkDescriptorSet set = VK_NULL_HANDLE;
             if (f_.vkAllocateDescriptorSets(b_.dev_, &ai, &set) != VK_SUCCESS) break;
-            VkDescriptorImageInfo ii[2] = {{sampler_, in, inLayout}, {sampler_, src, srcLayout}};
+            VkDescriptorImageInfo ii[2] = {{sampler_, in, inLayout}, {sampler_, orig, origLayout}};
             VkWriteDescriptorSet  wr[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
             for (int k = 0; k < 2; ++k)
                 wr[k].dstSet = set, wr[k].dstBinding = uint32_t(k), wr[k].descriptorCount = 1,
@@ -119,6 +162,7 @@ public:
             f_.vkUpdateDescriptorSets(b_.dev_, 2, wr, 0, nullptr);
             VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
             rb.renderPass = pass_, rb.framebuffer = fb_[out], rb.renderArea = {{0, 0}, {w_, h_}};
+            if (queries_) f_.vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, queries_, uint32_t(2 * done));
             f_.vkCmdBeginRenderPass(cmd, &rb, VK_SUBPASS_CONTENTS_INLINE);
             const VkViewport vp{0, 0, float(w_), float(h_), 0, 1};
             const VkRect2D   sc{{0, 0}, {w_, h_}};
@@ -132,8 +176,10 @@ public:
             f_.vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof q, &q);
             f_.vkCmdDraw(cmd, 3, 1, 0, 0);
             f_.vkCmdEndRenderPass(cmd);
+            if (queries_) f_.vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries_, uint32_t(2 * done + 1));
+            recorded_.push_back(p.shader);
             in = img_[out].view, inLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            out ^= 1, ++done;
+            ++done;
         }
         return done ? in : VK_NULL_HANDLE;
     }
@@ -160,8 +206,25 @@ private:
     VkDescriptorPool      pool_ = VK_NULL_HANDLE;
     std::vector<Shader>   shaders_;
     int                   builtinColor_ = -1;
-    Image                 img_[2];
-    VkFramebuffer         fb_[2] = {};
+    int                   builtins_[size_t(PostBuiltin::Count)] = {-1, -1, -1, -1, -1, -1};
+    Image                 img_[3];
+    VkFramebuffer         fb_[3] = {};
+    VkQueryPool           queries_ = VK_NULL_HANDLE;
+    std::vector<int>      recorded_;  // os shaders do quadro gravado, na ordem dos timestamps
+    std::map<int, std::pair<uint64_t, double>> timing_;  // shader -> (passes, ms)
+
+    // os tempos do quadro gravado por ultimo (quem chama garante que ele terminou)
+    void collect() {
+        if (!queries_ || recorded_.empty()) return recorded_.clear();
+        std::vector<uint64_t> ts(recorded_.size() * 2);
+        if (f_.vkGetQueryPoolResults(b_.dev_, queries_, 0, uint32_t(ts.size()), ts.size() * 8, ts.data(), 8, VK_QUERY_RESULT_64_BIT) ==
+            VK_SUCCESS)
+            for (size_t i = 0; i < recorded_.size(); ++i) {
+                auto& t = timing_[recorded_[i]];
+                ++t.first, t.second += double(ts[2 * i + 1] - ts[2 * i]) * b_.tsPeriod_ / 1e6;
+            }
+        recorded_.clear();
+    }
     uint32_t              w_ = 0, h_ = 0;
 
     static bool fail(std::string* e, const char* m) {
@@ -172,7 +235,7 @@ private:
     bool targets(uint32_t w, uint32_t h) {
         if (w == w_ && h == h_ && fb_[0]) return true;
         freeTargets();
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < 3; ++i) {
             img_[i] = b_.makeImage(w, h, VK_FORMAT_R8G8B8A8_UNORM,
                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                    VK_IMAGE_ASPECT_COLOR_BIT);
@@ -186,7 +249,7 @@ private:
         return true;
     }
     void freeTargets() {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < 3; ++i) {
             if (fb_[i]) f_.vkDestroyFramebuffer(b_.dev_, fb_[i], nullptr), --g_live, fb_[i] = VK_NULL_HANDLE;
             b_.freeImage(img_[i]);
         }
@@ -233,6 +296,7 @@ private:
         }
         shaders_.clear();
         if (pool_) f_.vkDestroyDescriptorPool(b_.dev_, pool_, nullptr), --g_live, pool_ = VK_NULL_HANDLE;
+        if (queries_) f_.vkDestroyQueryPool(b_.dev_, queries_, nullptr), --g_live, queries_ = VK_NULL_HANDLE;
         if (sampler_) f_.vkDestroySampler(b_.dev_, sampler_, nullptr), --g_live, sampler_ = VK_NULL_HANDLE;
         if (vert_) f_.vkDestroyShaderModule(b_.dev_, vert_, nullptr), --g_live, vert_ = VK_NULL_HANDLE;
         if (layout_) f_.vkDestroyPipelineLayout(b_.dev_, layout_, nullptr), --g_live, layout_ = VK_NULL_HANDLE;

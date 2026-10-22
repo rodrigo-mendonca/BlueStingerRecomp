@@ -126,8 +126,8 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         e.push_back({"Texturas HD", soon(f.hd_textures, onoff(g.hd_textures)), f.hd_textures,
                      [](Preferences& p, int) { p.graphics.hd_textures = !p.graphics.hd_textures; }});
         {  // N7c (secao 21): os efeitos de imagem numa pagina propria
-            const bool any = f.color || f.post || f.shaders;
-            const bool on  = g.color || !g.shader.empty() || g.bloom || g.tonemap || g.sharpen != 0;
+            const bool any = f.color || f.tonemap || f.post || f.shaders;
+            const bool on  = g.color || !g.shader.empty() || g.bloom || g.tonemap || g.sharpen != 0 || g.crt;
             e.push_back({"Efeitos de imagem", any ? (on ? "ligados" : "desligados") : "(em breve)", any, nullptr, page(Page::Effects)});
         }
         e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
@@ -155,7 +155,12 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         e.push_back({"Contraste", num(g.contrast, 2), cc, fstep([](Preferences& p) { return &p.graphics.contrast; }, 0.05f, 0.5f, 1.5f)});
         e.push_back({"Gamma", num(g.gamma, 2), cc, fstep([](Preferences& p) { return &p.graphics.gamma; }, 0.05f, 0.5f, 2.5f)});
         e.push_back({"Satura\u00e7\u00e3o", num(g.saturation, 2), cc, fstep([](Preferences& p) { return &p.graphics.saturation; }, 0.05f, 0.f, 2.f)});
-        e.push_back({"Tonemapping", soon(f.post, onoff(g.tonemap)), f.post, [](Preferences& p, int) { p.graphics.tonemap = !p.graphics.tonemap; }});
+        e.push_back({"Tonemapping", soon(f.tonemap, onoff(g.tonemap)), f.tonemap,
+                     [](Preferences& p, int) { p.graphics.tonemap = !p.graphics.tonemap; }});
+        const bool tm = f.tonemap && g.tonemap;
+        e.push_back({"  Exposi\u00e7\u00e3o (EV)", num(g.exposure, 2), tm, fstep([](Preferences& p) { return &p.graphics.exposure; }, 0.1f, -2.f, 2.f)});
+        e.push_back({"  Altas luzes", num(g.highlights, 2), tm, fstep([](Preferences& p) { return &p.graphics.highlights; }, 0.1f, 0.f, 1.f)});
+        e.push_back({"  Sombras", num(g.tone_shadows, 2), tm, fstep([](Preferences& p) { return &p.graphics.tone_shadows; }, 0.05f, -0.5f, 0.5f)});
         e.push_back({"Nitidez", soon(f.post, pct(uint32_t(std::lround(g.sharpen * 100)))), f.post, [](Preferences& p, int d) {
                          p.graphics.sharpen = std::clamp(p.graphics.sharpen + 0.25f * float(d), 0.f, 1.f);
                      }});

@@ -35,7 +35,8 @@ inline constexpr uint32_t kNone = 0xFFFFFFFFu;
     X(vkGetPhysicalDeviceSurfaceFormatsKHR) X(vkGetPhysicalDeviceSurfacePresentModesKHR) X(vkDestroySurfaceKHR)
 #define VK_PFUNCS(X)                                                                                           \
     X(vkCreateSwapchainKHR) X(vkDestroySwapchainKHR) X(vkGetSwapchainImagesKHR) X(vkAcquireNextImageKHR)        \
-    X(vkQueuePresentKHR) X(vkCreateSemaphore) X(vkDestroySemaphore) X(vkCmdCopyImage) X(vkResetDescriptorPool)
+    X(vkQueuePresentKHR) X(vkCreateSemaphore) X(vkDestroySemaphore) X(vkCmdCopyImage) X(vkResetDescriptorPool)    \
+    X(vkCreateQueryPool) X(vkDestroyQueryPool) X(vkCmdResetQueryPool) X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults)
 #define VK_DFUNCS(X)                                                                                           \
     X(vkDestroyDevice) X(vkGetDeviceQueue) X(vkCreateCommandPool) X(vkDestroyCommandPool)                      \
     X(vkAllocateCommandBuffers) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkResetCommandBuffer)           \
@@ -88,6 +89,7 @@ struct VkBase {
     VkQueue          presentQueue_ = VK_NULL_HANDLE;
     std::mutex       presentMutex_;
     uint32_t         queueCount_ = 1;  // filas da familia
+    float            tsPeriod_ = 0;    // ns por tique de timestamp (0 = sem timestamps na fila)
     std::mutex&      presentLock() { return presentQueue_ == queue_ ? queueMutex_ : presentMutex_; }
     void             waitIdle() {  // vkDeviceWaitIdle exige todas as filas sincronizadas
         std::scoped_lock lock(queueMutex_, presentMutex_);
@@ -229,6 +231,8 @@ public:
     virtual ~PostChain()                                                  = default;
     virtual int         load(std::span<const uint32_t> spirv, std::string* error) = 0;
     virtual int         builtin_color() const                                     = 0;
+    virtual int         builtin(PostBuiltin which) const                          = 0;
+    virtual std::vector<PostTiming> timings()                                     = 0;  // recolhe o ultimo quadro (ja terminado)
     virtual VkImageView record(VkCommandBuffer cmd, VkImageView src, VkImageLayout srcLayout, uint32_t w, uint32_t h,
                                std::span<const PostPass> passes)                  = 0;
     virtual VkImage     image_of(VkImageView view) const                          = 0;

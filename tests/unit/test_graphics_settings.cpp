@@ -134,12 +134,14 @@ BS_TEST(graphics_post_effects) {
     st::GraphicsSettings s;
     s.color = true, s.brightness = 0.1f, s.contrast = 1.2f, s.saturation = 0.5f, s.shader = "cor-quente";
     s.shader_params = {{"temperatura", 0.75f}, {"vinheta", 0.25f}};
+    s.tonemap = true, s.exposure = 0.5f, s.highlights = 0.8f, s.tone_shadows = -0.2f;
     BS_CHECK(st::from_toml(st::to_toml(s)) == s);
     BS_CHECK(st::classify(s) == st::Preset::Custom);
     st::Capabilities none;
     none.vulkan = true;  // sem Features: os efeitos nao existem
     const st::GraphicsSettings c = st::clamp_to(s, none);
     BS_CHECK(!c.color && c.brightness == 0 && c.contrast == 1.0f && c.saturation == 1.0f && c.shader_params.empty());
+    BS_CHECK(!c.tonemap && c.exposure == 0 && c.highlights == 0.5f && c.tone_shadows == 0);
     // faixas
     BS_CHECK(st::from_toml("[efeitos]\ncor = true\nbrilho = 9.0\ncontraste = 0.1\n").brightness == 0.5f);
 }

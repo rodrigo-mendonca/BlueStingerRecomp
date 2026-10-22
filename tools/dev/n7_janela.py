@@ -37,6 +37,8 @@ largura = {w}
 altura = {h}
 vsync = true
 renderizador = "{render}"
+[efeitos]
+{efeitos}
 """
 
 
@@ -57,6 +59,7 @@ def main():
     ap.add_argument("--render", default="nativo", choices=["nativo", "software"])
     ap.add_argument("--cada", type=int, default=45)
     ap.add_argument("--manter", action="store_true")
+    ap.add_argument("--efeitos", default="", help='chaves de [efeitos] separadas por virgula: "tonemap=true,exposicao=1.0"')
     a = ap.parse_args()
 
     exe = os.path.abspath(a.exe)
@@ -79,7 +82,8 @@ def main():
     res = {"original": "original", "720": "720p", "1080": "1080p", "1440": "1440p", "2160": "2160p"}[a.resolucao]
     with open(gfile, "w", encoding="utf-8") as f:
         f.write(GRAFICOS.format(res=res, modo="sem_bordas" if a.sem_bordas else "janela", w=0 if a.sem_bordas else w,
-                                h=0 if a.sem_bordas else h, render="vulkan" if a.render == "nativo" else "software"))
+                                h=0 if a.sem_bordas else h, render="vulkan" if a.render == "nativo" else "software",
+                                efeitos="\n".join(x.strip() for x in a.efeitos.split(",") if x.strip())))
     env = dict(os.environ)
     for k in ("BS_INPUT_SCRIPT", "BS_GRAVAR", "BS_ASSISTIDO", "BS_RENDER", "BS_APRESENTACAO"):
         env.pop(k, None)
@@ -138,6 +142,7 @@ def main():
                 falhas.append("%s: faixa fora da area 4:3 nao e preta" % c)
             # a imagem do jogo dentro da area
             dentro = [lum(x0 + aw * i // 20, y0 + ah * j // 20) for i in range(1, 20) for j in range(1, 20)]
+            media = sum(dentro) / len(dentro)
             if max(dentro) < 10:
                 falhas.append("%s: area do jogo preta" % c)
             # legenda: na faixa de baixo da area, texto claro (>= 235) colado a contorno escuro (<= 40)
@@ -148,7 +153,7 @@ def main():
                     if lum(x, y) >= 235 and min(lum(x + dx, y) for dx in (-3, 3)) <= 40:
                         claros += 1
             tem = claros >= 25
-            print("%s: %s, texto na faixa da legenda: %d amostras%s" % (c, "fala" if fala else "sem fala", claros,
+            print("%s: %s, luma media %.1f, texto na faixa da legenda: %d amostras%s" % (c, "fala" if fala else "sem fala", media, claros,
                                                                         "" if tem == fala else "  <-- DIVERGE"))
             if fala and not tem:
                 falhas.append("%s: fala sem legenda na imagem" % c)

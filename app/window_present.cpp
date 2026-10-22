@@ -206,6 +206,13 @@ private:
         m.shader = mod;
         for (size_t i = 0; i < spec_.shaderParams.size() && i < nr::kPostParams; ++i) m.params[i] = spec_.shaderParams[i];
         if (mod >= 0 && spec_.shader->before_builtin) passes_.push_back(m);
+        // ordem dos internos: tonemapping (na luz da cena), correcao de cor
+        if (spec_.tonemap) {
+            nr::PostPass t;
+            t.shader    = dev_->post_builtin(nr::PostBuiltin::Tonemap);
+            t.params[0] = spec_.exposure, t.params[1] = spec_.highlights, t.params[2] = spec_.toneShadows;
+            if (t.shader >= 0) passes_.push_back(t);
+        }
         if (spec_.color) {
             nr::PostPass c;
             c.shader = dev_->post_builtin_color();

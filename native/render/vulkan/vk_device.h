@@ -53,6 +53,18 @@ struct PresentLayer {
 struct PostPass {
     int   shader = -1;
     float params[kPostParams] = {};
+    // binding 1 do passe: -1 = a imagem original do jogo (antes da cadeia); k = a ENTRADA do passe k, que so pode ser o
+    // imediatamente anterior (o bloom compoe o borrado sobre a imagem de antes dele)
+    int   original = -1;
+};
+
+// Passes internos (secao 21), na interface dos de mods. Os ainda nao implementados devolvem -1 em post_builtin.
+enum class PostBuiltin : uint8_t { Color, Tonemap, Sharpen, BloomBlurH, BloomBlurV, Crt, Count };
+
+struct PostTiming {  // tempo de GPU de um shader da cadeia (consultas de timestamp)
+    int      shader = -1;
+    uint64_t passes = 0;
+    double   ms_total = 0;
 };
 
 struct PresentRequest {
@@ -111,6 +123,9 @@ public:
     // fora da janela (testes); sem passes, a propria imagem.
     virtual int          post_load(std::span<const uint32_t> spirv, std::string* error) = 0;
     virtual int          post_builtin_color() = 0;
+    virtual int          post_builtin(PostBuiltin which) = 0;
+    // tempo de GPU medido por shader desde o inicio (vazio sem timestamps no dispositivo)
+    virtual std::vector<PostTiming> post_timings() = 0;
     virtual Result<void> post_run(std::span<const uint32_t> argb, uint32_t width, uint32_t height, std::span<const PostPass> passes,
                                   std::vector<uint32_t>& out) = 0;
 };

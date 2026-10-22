@@ -154,3 +154,96 @@ BS_TEST(post_chain_gpu) {
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
 }
+
+namespace {
+// imagem de teste com tons do preto ao branco (gradiente) e cores
+std::vector<uint32_t> ramp(uint32_t w, uint32_t h) {
+    std::vector<uint32_t> img(size_t(w) * h);
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w; ++x) {
+            const uint32_t v = x * 255 / (w - 1), c = (y * 255 / (h - 1));
+            img[size_t(y) * w + x] = 0xFF000000u | (v << 16) | (((v + c) / 2) << 8) | (255 - c) * v / 255;
+        }
+    return img;
+}
+double mean_luma(const std::vector<uint32_t>& img) {
+    double s = 0;
+    for (uint32_t c : img) s += 0.2126 * ((c >> 16) & 0xFF) + 0.7152 * ((c >> 8) & 0xFF) + 0.0722 * (c & 0xFF);
+    return s / double(img.size());
+}
+size_t clipped(const std::vector<uint32_t>& img) {
+    size_t n = 0;
+    for (uint32_t c : img) n += ((c >> 16) & 0xFF) == 255 || ((c >> 8) & 0xFF) == 255;
+    return n;
+}
+} // namespace
+
+// N7c: tonemapping interno. Neutro = a mesma imagem (1 nivel); exposicao +1 EV clareia; com exposicao +2 a compressao
+// das altas luzes corta (satura em 255) muito menos pixels que sem ela; sombras positivas levantam o escuro.
+BS_TEST(post_tonemap_gpu) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const uint32_t w = 128, h = 64;
+        const auto     img = ramp(w, h);
+        std::vector<uint32_t> out, a, b;
+        nr::PostPass t;
+        t.shader = d->post_builtin(nr::PostBuiltin::Tonemap);
+        BS_CHECK(t.shader >= 0);
+        t.params[0] = 0, t.params[1] = 0, t.params[2] = 0;
+        BS_CHECK(d->post_run(img, w, h, {&t, 1}, out).ok());
+        int m = 0;
+        for (size_t i = 0; i < img.size(); ++i)
+            for (int s = 0; s < 24; s += 8) m = std::max(m, std::abs(int((img[i] >> s) & 0xFF) - int((out[i] >> s) & 0xFF)));
+        std::fprintf(stderr, "  neutro: maior diferenca %d\n", m);
+        BS_CHECK(m <= 1);
+        t.params[0] = 1;  // +1 EV
+        BS_CHECK(d->post_run(img, w, h, {&t, 1}, out).ok() && mean_luma(out) > mean_luma(img) + 15);
+        t.params[0] = 2, t.params[1] = 0;
+        BS_CHECK(d->post_run(img, w, h, {&t, 1}, a).ok());
+        t.params[1] = 1;
+        BS_CHECK(d->post_run(img, w, h, {&t, 1}, b).ok());
+        std::fprintf(stderr, "  +2 EV: pixels cortados sem compressao %zu, com compressao %zu (de %zu)\n", clipped(a), clipped(b), img.size());
+        BS_CHECK(clipped(b) * 2 < clipped(a));
+        t.params[0] = 0, t.params[1] = 0, t.params[2] = 0.5f;  // sombras
+        BS_CHECK(d->post_run(img, w, h, {&t, 1}, out).ok());
+        const uint32_t dark = img[size_t(h / 2) * w + w / 16], lifted = out[size_t(h / 2) * w + w / 16];
+        BS_CHECK(((lifted >> 16) & 0xFF) > ((dark >> 16) & 0xFF) + 10);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// Custo de GPU de cada passe interno em 4K interno (2880 x 2160), pelos timestamps da cadeia: medido e impresso (o
+// criterio do plano e o custo medido por efeito; aqui so se exige que exista e fique abaixo de 4 ms por passe).
+BS_TEST(post_cost_4k) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const uint32_t w = 2880, h = 2160;
+        const auto     img = ramp(w, h);
+        std::vector<uint32_t> out;
+        const char* names[] = {"correcao de cor", "tonemapping", "nitidez", "bloom (borrao H)", "bloom (borrao V + soma)", "CRT"};
+        for (int b = 0; b < int(nr::PostBuiltin::Count); ++b) {
+            nr::PostPass p;
+            p.shader = d->post_builtin(nr::PostBuiltin(b));
+            if (p.shader < 0) continue;
+            p.params[1] = p.params[2] = p.params[3] = 1;  // valores tipicos nao neutros
+            p.params[0] = 0.5f;
+            if (nr::PostBuiltin(b) == nr::PostBuiltin::BloomBlurV) p.original = -1;
+            for (int i = 0; i < 12; ++i) BS_CHECK(d->post_run(img, w, h, {&p, 1}, out).ok());
+        }
+        const auto t = d->post_timings();
+        if (t.empty()) std::fprintf(stderr, "  (sem timestamps neste dispositivo)\n");
+        for (const auto& x : t) {
+            int b = 0;
+            while (b < int(nr::PostBuiltin::Count) && d->post_builtin(nr::PostBuiltin(b)) != x.shader) ++b;
+            const double ms = x.ms_total / double(x.passes);
+            std::fprintf(stderr, "  %-24s %.3f ms de GPU por passe (4K, %llu passes)\n", b < int(nr::PostBuiltin::Count) ? names[b] : "?", ms,
+                         (unsigned long long)x.passes);
+            BS_CHECK(ms < 4.0);
+        }
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}

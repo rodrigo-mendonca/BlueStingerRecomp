@@ -364,6 +364,14 @@ public:
         PostChain* c = post_chain();
         return c ? c->builtin_color() : -1;
     }
+    int post_builtin(PostBuiltin which) override {
+        PostChain* c = post_chain();
+        return c ? c->builtin(which) : -1;
+    }
+    std::vector<PostTiming> post_timings() override {
+        PostChain* c = post_chain();
+        return c ? c->timings() : std::vector<PostTiming>{};
+    }
     // testes: a cadeia fora da janela, com o buffer de comandos do renderizador (a mesma thread dele)
     Result<void> post_run(std::span<const uint32_t> argb, uint32_t w, uint32_t h, std::span<const PostPass> passes,
                           std::vector<uint32_t>& out) override {
@@ -597,6 +605,7 @@ private:
                 for (uint32_t q = 0; q < nq; ++q)
                     if ((qs[q].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (qs[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                         phys_ = d, qfam_ = q, queueCount_ = qs[q].queueCount, st_.device = p.deviceName;
+                        tsPeriod_ = qs[q].timestampValidBits ? p.limits.timestampPeriod : 0.f;
                         break;
                     }
                 if (phys_) break;

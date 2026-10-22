@@ -775,6 +775,7 @@ public:
         if (pres_.p) {
             bs::PostSpec ps;
             ps.color = g.color, ps.brightness = g.brightness, ps.contrast = g.contrast, ps.gamma = g.gamma, ps.saturation = g.saturation;
+            ps.tonemap = g.tonemap, ps.exposure = g.exposure, ps.highlights = g.highlights, ps.toneShadows = g.tone_shadows;
             for (const auto& pkg : shaders_)
                 if (pkg.error.empty() && pkg.name == g.shader) {
                     ps.shader = &pkg;
@@ -1589,6 +1590,7 @@ int mainWindow(Args& a) {
     if (caps.vulkan && std::strcmp(pres.p->name(), "Vulkan") == 0) {
         caps.features.scaling = true, caps.max_height = (std::min)(2160u, gpuMaxHeight);
         caps.features.color = caps.features.shaders = true;  // N7c (secao 21): pos-processamento na apresentacao direta
+        caps.features.tonemap = true;
     }
     // shaders de pos-processamento de mods (mods\shaders\<nome>): validados aqui; os invalidos ficam com o motivo
     auto postShaders = bs::native::render::discover_post_shaders(exeDir() / L"mods" / L"shaders");
