@@ -40,6 +40,7 @@ $jobs = @(
     @("post_sharpen_frag.h", "post_sharpen.frag", "kPostSharpenFrag", @()),
     @("post_bloom_h_frag.h", "post_bloom_h.frag", "kPostBloomHFrag", @()),
     @("post_bloom_v_frag.h", "post_bloom_v.frag", "kPostBloomVFrag", @()),
+    @("post_crt_frag.h", "post_crt.frag", "kPostCrtFrag", @()),
     @("post_exemplo_frag.h", "..\..\..\..\mods-exemplos\shaders\cor-quente\shader.frag", "kPostExemploFrag", @()),
     # testes do validador: um passe que escreve num buffer e um com push constants grandes demais
     @("post_teste_buffer_frag.h", "teste\post_buffer.frag", "kPostTesteBufferFrag", @()),

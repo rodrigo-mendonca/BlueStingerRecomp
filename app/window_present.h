@@ -38,6 +38,8 @@ struct PostSpec {
     float sharpen = 0;  // 0 = sem nitidez
     bool  bloom = false;
     float bloomThreshold = 0.7f, bloomRadius = 0.02f, bloomStrength = 0.6f;
+    bool  crt = false;
+    float crtScanlines = 0.6f, crtMask = 0.3f, crtVignette = 0.3f;
     const native::render::PostShaderPackage* shader = nullptr;  // shader de mod (ja validado) ou nenhum
     std::vector<float>                       shaderParams;      // na ordem dos parametros do manifesto
     bool operator==(const PostSpec&) const = default;

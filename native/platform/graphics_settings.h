@@ -24,6 +24,8 @@ namespace bs::native::settings {
 
 inline constexpr const wchar_t* kGraphicsFile   = L"graficos.toml";
 inline constexpr int            kConfirmSeconds = 15;  // mudanca de resolucao/modo de tela sem confirmacao: volta
+// o filtro CRT desenha as 480 linhas do jogo com o perfil do feixe: precisa de pelo menos ~2 linhas da imagem por linha
+inline constexpr uint32_t       kCrtMinHeight   = 1080;
 
 enum class Preset : uint8_t { Original, Balanced, High, Custom };
 enum class Resolution : uint8_t { Original, P720, P1080, P1440, P2160 };  // altura interna 480/720/1080/1440/2160
@@ -53,6 +55,8 @@ struct GraphicsSettings {
     float      exposure = 0, highlights = 0.5f, tone_shadows = 0;
     // bloom (`bloom`): limiar de luminancia (0 a 1), raio (fracao da altura) e intensidade (0 a 2)
     float      bloom_threshold = 0.7f, bloom_radius = 0.02f, bloom_strength = 0.6f;
+    // filtro CRT (`crt`): linhas de varredura, mascara de abertura e vinheta (0 a 1)
+    float      crt_scanlines = 0.6f, crt_mask = 0.3f, crt_vignette = 0.3f;
     // do jogador (fora dos presets)
     WindowMode window = WindowMode::Windowed;
     uint32_t   window_w = 0, window_h = 0;  // tamanho da janela (0 = o padrao); tela cheia usa a do monitor
@@ -70,9 +74,10 @@ struct Features {
     bool tonemap = false;  // N7c: tonemapping; `post` = os efeitos de imagem ainda sem recurso proprio
     bool sharpen = false;  // N7c: nitidez
     bool bloom = false;    // N7c: bloom
+    bool crt = false;      // N7c: filtro CRT (so com resolucao interna >= kCrtMinHeight)
     static Features all() {
         Features f{true, true, true, true, true, true, true, true, true, true, true};
-        f.color = f.tonemap = f.sharpen = f.bloom = true;
+        f.color = f.tonemap = f.sharpen = f.bloom = f.crt = true;
         return f;
     }
 };

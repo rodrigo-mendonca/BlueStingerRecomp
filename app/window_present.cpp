@@ -232,6 +232,12 @@ private:
             if (n.shader >= 0) passes_.push_back(n);
         }
         if (mod >= 0 && !spec_.shader->before_builtin) passes_.push_back(m);
+        if (spec_.crt) {  // por ultimo: a "tela" sobre a imagem final do jogo
+            nr::PostPass c;
+            c.shader = dev_->post_builtin(nr::PostBuiltin::Crt);
+            c.params[0] = spec_.crtScanlines, c.params[1] = spec_.crtMask, c.params[2] = spec_.crtVignette;
+            if (c.shader >= 0) passes_.push_back(c);
+        }
         return mod < 0 && spec_.shader ? err : std::string();
     }
 

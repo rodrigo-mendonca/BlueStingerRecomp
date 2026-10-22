@@ -49,7 +49,8 @@ bool same_quality(const GraphicsSettings& a, const GraphicsSettings& b) {
            a.gamma == b.gamma && a.saturation == b.saturation && a.color == b.color && a.brightness == b.brightness &&
            a.contrast == b.contrast && a.shader_params == b.shader_params && a.exposure == b.exposure &&
            a.highlights == b.highlights && a.tone_shadows == b.tone_shadows && a.bloom_threshold == b.bloom_threshold &&
-           a.bloom_radius == b.bloom_radius && a.bloom_strength == b.bloom_strength;
+           a.bloom_radius == b.bloom_radius && a.bloom_strength == b.bloom_strength && a.crt_scanlines == b.crt_scanlines &&
+           a.crt_mask == b.crt_mask && a.crt_vignette == b.crt_vignette;
 }
 
 } // namespace
@@ -100,6 +101,9 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
     s.bloom_threshold  = std::clamp(s.bloom_threshold, 0.f, 1.f);
     s.bloom_radius     = std::clamp(s.bloom_radius, 0.005f, 0.05f);
     s.bloom_strength   = std::clamp(s.bloom_strength, 0.f, 2.f);
+    s.crt_scanlines    = std::clamp(s.crt_scanlines, 0.f, 1.f);
+    s.crt_mask         = std::clamp(s.crt_mask, 0.f, 1.f);
+    s.crt_vignette     = std::clamp(s.crt_vignette, 0.f, 1.f);
     if (s.msaa != 1 && s.msaa != 2 && s.msaa != 4 && s.msaa != 8) s.msaa = 1;
     s.window_w = s.window_w ? std::clamp<uint32_t>(s.window_w, 320, 16384) : 0;
     s.window_h = s.window_h ? std::clamp<uint32_t>(s.window_h, 240, 16384) : 0;
@@ -135,12 +139,17 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
     off(f.sharpen, s.sharpen != 0, [&] { s.sharpen = 0; }, "nitidez");
     off(f.bloom, s.bloom || s.bloom_threshold != 0.7f || s.bloom_radius != 0.02f || s.bloom_strength != 0.6f,
         [&] { s.bloom = false, s.bloom_threshold = 0.7f, s.bloom_radius = 0.02f, s.bloom_strength = 0.6f; }, "bloom");
-    off(f.post, s.ssao || s.crt, [&] { s.ssao = s.crt = false; }, "pos-processamento");
+    off(f.crt, s.crt, [&] { s.crt = false; }, "filtro CRT");
+    off(f.post, s.ssao, [&] { s.ssao = false; }, "SSAO");
     if (!f.shaders) s.shader_params.clear();
     while (internal_height(s) > caps.max_height && (s.resolution != Resolution::Original || s.scale_pct > 100)) {
         if (s.scale_pct > 100) s.scale_pct = 100;
         else s.resolution = Resolution(uint8_t(s.resolution) - 1);
         note("resolucao interna reduzida para o limite da GPU");
+    }
+    if (s.crt && internal_height(s) < kCrtMinHeight) {
+        s.crt = false;
+        note("filtro CRT desligado: precisa de resolucao interna de 1080p ou mais");
     }
     while (s.msaa > caps.max_msaa) s.msaa /= 2, note("MSAA reduzido para o suportado");
     if (s.filter == Filter::Anisotropic && caps.max_anisotropy < 2) s.filter = Filter::Bilinear, note("sem filtragem anisotropica");
@@ -193,7 +202,10 @@ std::string to_toml(const GraphicsSettings& s) {
       << "sombras_tom = " << s.tone_shadows << "\n"
       << "bloom_limiar = " << s.bloom_threshold << "\n"
       << "bloom_raio = " << s.bloom_radius << "\n"
-      << "bloom_intensidade = " << s.bloom_strength << "\n\n[tela]\n"
+      << "bloom_intensidade = " << s.bloom_strength << "\n"
+      << "crt_linhas = " << s.crt_scanlines << "\n"
+      << "crt_mascara = " << s.crt_mask << "\n"
+      << "crt_vinheta = " << s.crt_vignette << "\n\n[tela]\n"
       << "modo = \"" << name(s.window) << "\"\n"
       << "largura = " << s.window_w << "\n"
       << "altura = " << s.window_h << "\n"
@@ -246,7 +258,8 @@ GraphicsSettings from_toml(const std::string& text, std::string* warning) {
     flt("efeitos", "contraste", s.contrast), flt("efeitos", "exposicao", s.exposure);
     flt("efeitos", "altas_luzes", s.highlights), flt("efeitos", "sombras_tom", s.tone_shadows);
     flt("efeitos", "bloom_limiar", s.bloom_threshold), flt("efeitos", "bloom_raio", s.bloom_radius);
-    flt("efeitos", "bloom_intensidade", s.bloom_strength);
+    flt("efeitos", "bloom_intensidade", s.bloom_strength), flt("efeitos", "crt_linhas", s.crt_scanlines);
+    flt("efeitos", "crt_mascara", s.crt_mask), flt("efeitos", "crt_vinheta", s.crt_vignette);
     if (const auto* t = doc["shader_parametros"].as_table())
         for (const auto& [k, v] : *t)
             if (auto d = v.value<double>()) s.shader_params[std::string(k.str())] = float(*d);

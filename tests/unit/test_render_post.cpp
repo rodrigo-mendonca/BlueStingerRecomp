@@ -313,3 +313,26 @@ BS_TEST(post_bloom_gpu) {
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
 }
+
+// N7c: filtro CRT numa imagem de 1080 linhas (2,25 por linha do jogo): o centro de cada linha do jogo fica mais claro
+// que o vao entre duas; com tudo em 0 a imagem nao muda.
+BS_TEST(post_crt_gpu) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const uint32_t        w = 1440, h = 1080;
+        std::vector<uint32_t> img(size_t(w) * h, 0xFF808080u), out;
+        nr::PostPass c;
+        c.shader = d->post_builtin(nr::PostBuiltin::Crt);
+        BS_CHECK(c.shader >= 0);
+        BS_CHECK(d->post_run(img, w, h, {&c, 1}, out).ok() && out == img);  // linhas, mascara e vinheta em 0
+        c.params[0] = 1.0f;                                                 // so as linhas de varredura
+        BS_CHECK(d->post_run(img, w, h, {&c, 1}, out).ok());
+        // a linha do jogo 240 ocupa as linhas da imagem 540 a 542,25: centro ~541, vao entre ela e a 241 em ~542,25
+        const int center = int(out[size_t(541) * w + w / 2] & 0xFF), gap = int(out[size_t(542) * w + w / 2] & 0xFF);
+        std::fprintf(stderr, "  linha do jogo: centro %d, vao %d (cinza 128)\n", center, gap);
+        BS_CHECK(center > gap + 20);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}

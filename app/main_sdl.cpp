@@ -778,6 +778,8 @@ public:
             ps.tonemap = g.tonemap, ps.exposure = g.exposure, ps.highlights = g.highlights, ps.toneShadows = g.tone_shadows;
             ps.sharpen = g.sharpen;
             ps.bloom = g.bloom, ps.bloomThreshold = g.bloom_threshold, ps.bloomRadius = g.bloom_radius, ps.bloomStrength = g.bloom_strength;
+            ps.crt = g.crt && g.vulkan && st::internal_height(g) >= st::kCrtMinHeight;
+            ps.crtScanlines = g.crt_scanlines, ps.crtMask = g.crt_mask, ps.crtVignette = g.crt_vignette;
             for (const auto& pkg : shaders_)
                 if (pkg.error.empty() && pkg.name == g.shader) {
                     ps.shader = &pkg;
@@ -1592,7 +1594,7 @@ int mainWindow(Args& a) {
     if (caps.vulkan && std::strcmp(pres.p->name(), "Vulkan") == 0) {
         caps.features.scaling = true, caps.max_height = (std::min)(2160u, gpuMaxHeight);
         caps.features.color = caps.features.shaders = true;  // N7c (secao 21): pos-processamento na apresentacao direta
-        caps.features.tonemap = caps.features.sharpen = caps.features.bloom = true;
+        caps.features.tonemap = caps.features.sharpen = caps.features.bloom = caps.features.crt = true;
     }
     // shaders de pos-processamento de mods (mods\shaders\<nome>): validados aqui; os invalidos ficam com o motivo
     auto postShaders = bs::native::render::discover_post_shaders(exeDir() / L"mods" / L"shaders");

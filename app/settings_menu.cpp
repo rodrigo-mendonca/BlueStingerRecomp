@@ -126,7 +126,7 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         e.push_back({"Texturas HD", soon(f.hd_textures, onoff(g.hd_textures)), f.hd_textures,
                      [](Preferences& p, int) { p.graphics.hd_textures = !p.graphics.hd_textures; }});
         {  // N7c (secao 21): os efeitos de imagem numa pagina propria
-            const bool any = f.color || f.tonemap || f.sharpen || f.bloom || f.post || f.shaders;
+            const bool any = f.color || f.tonemap || f.sharpen || f.bloom || f.crt || f.post || f.shaders;
             const bool on  = g.color || !g.shader.empty() || g.bloom || g.tonemap || g.sharpen != 0 || g.crt;
             e.push_back({"Efeitos de imagem", any ? (on ? "ligados" : "desligados") : "(em breve)", any, nullptr, page(Page::Effects)});
         }
@@ -170,7 +170,16 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                      fstep([](Preferences& p) { return &p.graphics.bloom_radius; }, 0.005f, 0.005f, 0.05f)});
         e.push_back({"  Intensidade", num(g.bloom_strength, 2), bl, fstep([](Preferences& p) { return &p.graphics.bloom_strength; }, 0.1f, 0.f, 2.f)});
         e.push_back({"SSAO", soon(false, onoff(g.ssao)), false, nullptr});
-        e.push_back({"Filtro CRT", soon(f.post, onoff(g.crt)), f.post, [](Preferences& p, int) { p.graphics.crt = !p.graphics.crt; }});
+        {
+            const bool tall = st::internal_height(g) >= st::kCrtMinHeight;  // as linhas do jogo precisam de espaco
+            e.push_back({"Filtro CRT", !f.crt ? soon(false, onoff(g.crt)) : tall ? onoff(g.crt) : "requer resolu\u00e7\u00e3o interna 1080p ou mais",
+                         f.crt && tall, [](Preferences& p, int) { p.graphics.crt = !p.graphics.crt; }});
+            const bool cr = f.crt && tall && g.crt;
+            e.push_back({"  Linhas de varredura", num(g.crt_scanlines, 2), cr,
+                         fstep([](Preferences& p) { return &p.graphics.crt_scanlines; }, 0.1f, 0.f, 1.f)});
+            e.push_back({"  M\u00e1scara", num(g.crt_mask, 2), cr, fstep([](Preferences& p) { return &p.graphics.crt_mask; }, 0.1f, 0.f, 1.f)});
+            e.push_back({"  Vinheta", num(g.crt_vignette, 2), cr, fstep([](Preferences& p) { return &p.graphics.crt_vignette; }, 0.1f, 0.f, 1.f)});
+        }
         // shader de mod: "nenhum" ou um dos validos (os invalidos aparecem numa linha so, com o motivo no log)
         std::vector<const ShaderChoice*> valid;
         int                              invalid = 0;

@@ -144,4 +144,13 @@ BS_TEST(graphics_post_effects) {
     BS_CHECK(!c.tonemap && c.exposure == 0 && c.highlights == 0.5f && c.tone_shadows == 0);
     // faixas
     BS_CHECK(st::from_toml("[efeitos]\ncor = true\nbrilho = 9.0\ncontraste = 0.1\n").brightness == 0.5f);
+    // CRT: so com resolucao interna de 1080p ou mais (desligado com o motivo)
+    st::Capabilities all;
+    all.vulkan = true, all.max_height = 2160, all.features = st::Features::all();
+    st::GraphicsSettings crt;
+    crt.crt = true;
+    std::vector<std::string> notes;
+    BS_CHECK(!st::clamp_to(crt, all, &notes).crt && !notes.empty() && notes.back().find("CRT") != std::string::npos);
+    crt.resolution = st::Resolution::P1080;
+    BS_CHECK(st::clamp_to(crt, all).crt);
 }
