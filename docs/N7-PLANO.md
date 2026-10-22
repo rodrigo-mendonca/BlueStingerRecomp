@@ -81,12 +81,12 @@ Nada de Vulkan aparece no jogo, no código recompilado ou nos contratos: só atr
 - **Compilador:** resolvido em 2026-10-20 com o Vulkan SDK 1.4.363.0 isolado (seção 10): `glslangValidator` gera o SPIR-V no build (`find_program` pelo `VULKAN_SDK`), `spirv-val` e `spirv-opt` validam. Para o produto, a escolha entre exigir o SDK no build ou levar o `glslang` (BSD/Apache) como dependência fica para a integração.
 - **No Builder e na distribuição:** os SPIR-V de referência vão prontos no kit (o usuário não compila
   shader). Shaders de mod podem vir em SPIR-V pronto, ou em fonte compilada na hora se o glslang
-  entrar no produto: decisão no N9.
-- **Texturas por mods** (N9, só preparado): a chave é o **conteúdo original** (hash do texel do PVR
+  entrar no produto: decisão no N9 (remasterização).
+- **Texturas por mods** (N10, só preparado): a chave é o **conteúdo original** (hash do texel do PVR
   depois da conversão), não o endereço de VRAM, como nos mods de arquivo do N1. Uma substituição
   maior que a original muda só a amostragem (UV normalizada).
 - **Resoluções:** resolução interna em múltiplos de 640×480; proporção original (4:3) como
-  referência; widescreen futuro só onde a geometria permitir (N9).
+  referência; widescreen futuro só onde a geometria permitir (N9, remasterização).
 - **Filtragem:** a do jogo (por desenho) na referência; escala de apresentação NEAREST inteira ou
   linear.
 - **Referência fiel:** escala 1×, 4:3, sem melhorias, é a configuração de comparação com o Flycast e
@@ -319,7 +319,7 @@ varredura; a lista definitiva sai do oráculo e da integração.
 - **amostragem de mipmaps:** o legado só lê o maior nível; o hardware escolhe o nível. O modo fiel precisa
   medir contra o Flycast, e o conversor já entrega todos os níveis.
 
-**Mods de textura (N9, preparado):**
+**Mods de textura (N10, preparado):**
 - chave pelo hash do conteúdo convertido (seção 4); PNG (RGBA8) substitui por chave, de qualquer tamanho
   (UV normalizada);
 - mipmaps do mod gerados no carregamento ou fornecidos;
@@ -484,7 +484,7 @@ do TA, STARTRENDER, modo conferir):
 
 **Escopo no N7.** Só os contratos e os pontos de extensão
 (`native/render/texture_replacement.h/.cpp`, testes `test_render_replacement.cpp`). Não há
-carregamento, upscale nem pacotes. As ferramentas, o carregador de mods e os pacotes ficam no N9.
+carregamento, upscale nem pacotes. As ferramentas, o carregador de mods e os pacotes ficam no N10.
 
 **Identidade (`TextureId`).**
 - É calculada pelo **conteúdo decodificado**: os texels ARGB8888 do maior nível mais a largura e a
@@ -501,11 +501,11 @@ carregamento, upscale nem pacotes. As ferramentas, o carregador de mods e os pac
 - o alfa vale como o original (punch-through, translúcidos, *ignore texture alpha*);
 - os mipmaps são gerados da substituição;
 - sem substituição, ou se ela for incompatível, vale sempre o original (fallback automático);
-- a preferência é configurável, e o padrão é o original até o N9.
+- a preferência é configurável, e o padrão é o original até o N9 (remasterização).
 
 **Ponto de extensão.** `ITextureReplacements::find(TextureId)`. Sem provedor, só os originais.
 
-**Formatos para o N9.**
+**Formatos para o N10.**
 - **PNG:** sem perda e simples.
 - **KTX2:** mipmaps prontos e compressão de GPU (BC7/BC1, ASTC via Basis).
 - O consumo de VRAM será medido, com orçamento e despejo no cache.
@@ -717,7 +717,7 @@ resolução: o ritmo continua o do relógio lógico. 60 FPS fixos ou FPS ilimita
 - SSAO (a partir do 1/w), bloom, correção de cor, gamma e tonemapping;
 - sombras melhores: só se os volumes modificadores do jogo permitirem mais resolução ou suavização
   sem mudar onde a sombra cai;
-- shaders configuráveis, preparados para mods (os mods de shader e as ferramentas ficam no N9).
+- shaders configuráveis, preparados para mods (os mods de shader e as ferramentas ficam no N10).
 
 **3. Ordem:**
 1. equivalência do Vulkan na resolução original (N7b);
@@ -796,7 +796,7 @@ gameplay**, sem duplicar nada disso.
 - **4:3, 16:9, redimensionamento e tela cheia:** a camada recebe a **área do jogo** (`cx, cy, cw,
   ch`). Hoje é a saída inteira; com barras ou 16:9 (N7c), é o retângulo da imagem, e o texto fica
   dentro dele. Uma mudança de tamanho refaz a camada.
-- **Mods (N9):** o texto vem dos pacotes (`legendas/falas.<idioma>.toml`), com o idioma por
+- **Mods (N10):** o texto vem dos pacotes (`legendas/falas.<idioma>.toml`), com o idioma por
   `legendas.toml` ou pela linha de comando, e a fonte pode vir do pacote (`SubtitleStyle::font`, já
   previsto).
 
@@ -923,7 +923,7 @@ infraestrutura existente; depois B, o caminho definitivo: apresentação direta 
   hash dos quadros continuam coerentes.
 - A apresentação acha qual render está sendo exibido pelo conteúdo (os 3 últimos, tolerando a quantização do
   framebuffer) e usa a imagem maior dele nas linhas exibidas (entrelaçado: 476 de 480).
-- Texturas: as originais, amostradas em mais pontos (bilinear no shader). HD continua no N9.
+- Texturas: as originais, amostradas em mais pontos (bilinear no shader). HD continua no N9 (remasterização).
 
 ### Caminho A (feito, 2026-10-22)
 
@@ -986,7 +986,7 @@ visual original.
 - Menu: cada efeito liga e desliga sozinho, com os parâmetros. A mudança vale no quadro seguinte (sem confirmação:
   não muda o tamanho da tela).
 
-### Shaders externos (formato; pacotes completos e ferramentas no N9)
+### Shaders externos (formato; pacotes completos e ferramentas no N10)
 
 - **Pasta:** `mods/shaders/<nome>/`, com `manifesto.toml` e `shader.spv`.
 - **Formato:** SPIR-V já compilado. O jogo não compila GLSL; quem cria usa o `glslangValidator`. O fonte GLSL vai
@@ -1034,7 +1034,7 @@ visual original.
 - **Formato dos mods:** `docs/MODS-SHADERS.md`.
 - **Decisões tomadas na implementação:**
   - **laços recusados no SPIR-V:** um passe tem de terminar. Laços com orçamento de execução, junto com vários
-    passes e LUTs, no N9;
+    passes e LUTs, no N10;
   - uma perda do dispositivo com um shader de mod ativo o desativa;
   - os passes rodam na resolução da fonte (a interna, se houver), e o último vai para a área 4:3.
 
@@ -1049,4 +1049,29 @@ visual original.
      motivo, sem derrubar a imagem;
    - o preset Original continua sem nenhum passe.
 3. Depois, um efeito por vez: tonemapping, nitidez, bloom; SSAO por último, se a profundidade servir.
-4. Pacotes completos de mods gráficos e ferramentas de criação: N9.
+4. Pacotes completos de mods gráficos e ferramentas de criação: N10.
+
+## 22. N7c: o que falta e o roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
+
+**Roadmap:**
+- **N9** passou a ser a **remasterização**: recursos audiovisuais oficiais do projeto, com o preset Remasterizado.
+- O antigo escopo de mods foi para o **N10**: ferramentas, manifestos, carregador de pacotes, idiomas, texturas,
+  áudio, vídeos, shaders e a elevação dos sistemas do jogo.
+- Neste documento, "N9" nas texturas HD do produto e no widescreen quer dizer a remasterização; o resto, N10.
+- A arquitetura de extensão continua preparada aqui (contrato das texturas HD, shaders de mod validados) sem antecipar
+  a implementação completa do N9 nem do N10.
+
+**Pendências do N7c (antes de fechar o N7):**
+1. Efeitos internos restantes, um por vez: tonemapping, nitidez, bloom; SSAO só se a profundidade servir.
+2. **Segundo analógico e câmera livre** (pedido do mantenedor). O controle do Dreamcast tem um analógico só, e a
+   câmera do Blue Stinger é do jogo: não há entrada que o jogo leia para girá-la. A ordem do trabalho:
+   - investigar, com o gameplay assistido, onde o jogo guarda e atualiza a câmera (estrutura da câmera, modos fixo e
+     de perseguição, quem escreve a cada passo de jogo);
+   - propor como mapear o analógico direito, sem mudar a lógica no modo original:
+     - opção desligada por padrão;
+     - o deslocamento aplicado à câmera depois do cálculo do jogo e só para a imagem, sem tocar a colisão, a IA nem
+       o que o jogo lê de volta;
+   - decidir com o mantenedor antes de implementar, porque toca o comportamento do jogo;
+   - o mapeamento do controle continua o do N3 (`controles.toml`).
+3. Validação com as camadas do Vulkan num terminal não elevado (pendência AMD e caminho B).
+4. Fechamento do N7 (nível 2): testes completos do subsistema e comparação com o legado.

@@ -165,4 +165,4 @@ No `bs-builder`, os novos são `--somente-exportar` e `--tipo`. Os comandos anti
 **Pendências:**
 - abrir o projeto numa IDE de verdade (VS, VS Code, CLion): só o CMake foi provado;
 - os indicadores do áudio na inspeção esperam o manifesto do N6;
-- as ferramentas de tradução e edição são do N9 (`docs/LOCALIZACAO-PLANO.md`, na worktree do N6).
+- as ferramentas de tradução e edição são do N10 (`docs/LOCALIZACAO-PLANO.md`, na worktree do N6).

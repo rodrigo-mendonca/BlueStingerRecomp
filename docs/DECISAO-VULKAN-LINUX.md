@@ -43,7 +43,7 @@ Para o Vulkan, o N7 cobre:
 | Resoluções modernas, escala e proporção | render target interno em múltiplos da resolução original; apresentação com escala e barras configuráveis; 4:3 por padrão |
 | Instrumentação e comparação com o Flycast | captura do framebuffer final (como `BS_FRAME_LOG`/`--dump` hoje) e comparação por quadro com o Flycast e o caminho legado (PSNR/SSIM, como no N5) |
 | Memória da GPU e recursos | vida útil por handle (`create`/`destroy`); destruição adiada até a GPU terminar o quadro que usa o recurso |
-| Melhorias visuais e mods (N9) | shaders e texturas substituíveis por arquivo, como os filmes do N5 (manifesto e mods); o formato (SPIR-V pronto ou fonte compilada) é decidido no N7, sem antecipar o N9 |
+| Melhorias visuais (N9, remasterização) e mods (N10) | shaders e texturas substituíveis por arquivo, como os filmes do N5 (manifesto e mods); o formato (SPIR-V pronto ou fonte compilada) é decidido no N7, sem antecipar o N9 e o N10 |
 
 **Fim do PowerVR emulado:** o N7 elimina a dependência permanente do PVR2. O caminho legado fica
 só como referência de comparação enquanto o N7 não for aprovado.
@@ -159,7 +159,7 @@ MSVC). A geração Windows continua prioritária.
 5. N6.
 6. N7 com Vulkan.
 7. Retorno às pendências do N2.
-8. N8 e N9.
+8. N8, N9 (remasterização) e N10 (mods).
 
 **Nada desta decisão antecipa o N6 ou o N7.** O CMake só ganha seleção de plataforma ou backend
 quando houver um segundo backend real.

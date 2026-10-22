@@ -9,9 +9,9 @@ O mod pode trazer:
 
 **Sem mods, o jogo se comporta como o original.**
 
-Roadmap mantido: N5 concluído → **N6 Áudio** → N7 Vulkan → pendências do N2 → N8 → N9. Nesta etapa entram só
+Roadmap mantido: N5 concluído → **N6 Áudio** → N7 Vulkan → pendências do N2 → N8 → N9 (remasterização) → N10 (mods). Nesta etapa entram só
 as fronteiras e os contratos difíceis de acrescentar depois. O overlay gráfico fica para o N7 e as ferramentas
-de edição para o N9.
+de edição para o N10.
 
 Legenda deste documento:
 - **[feito]** já implementado e testado;
@@ -26,7 +26,7 @@ original e preservando os códigos especiais do motor de texto.
 - **[preparado]** `TextLocalization` (`native/localization/text_localization`): `textos/<idioma>.toml`. O idioma
   exato vence o recuo; no mesmo idioma, vence o pacote de maior prioridade. IDs e UTF-8 são conferidos. Uma
   tradução que muda os códigos especiais é recusada e fica o original.
-- **[futuro, N9]** mapear os códigos do motor de texto do Blue Stinger e onde o jogo lê cada texto (a fronteira),
+- **[futuro, N10]** mapear os códigos do motor de texto do Blue Stinger e onde o jogo lê cada texto (a fronteira),
   e exportar os textos originais. Sem o mapa dos códigos, o contrato recebe o extrator (`Tokenizer`) pronto para
   ligar.
 
@@ -173,9 +173,9 @@ pacotes, mantendo as pastas antigas.
 A medida do texto vem do backend (`ITextMeasurer`). O mesmo layout serve sobre o filme e sobre o gameplay.
 **[futuro, N7]** o apresentador Vulkan e as regiões reais do HUD.
 
-## 10. Ferramentas previstas no Developer (N9)
+## 10. Ferramentas previstas no Developer (N10)
 
-O BlueStinger-Recompiler continua simples. No BlueStinger-Developer, no N9:
+O BlueStinger-Recompiler continua simples. No BlueStinger-Developer, no N10:
 - editor visual e pré-visualização sincronizada de legendas;
 - exportação dos textos originais;
 - ferramentas de tradução;
@@ -184,7 +184,7 @@ O BlueStinger-Recompiler continua simples. No BlueStinger-Developer, no N9:
 - fontes;
 - validação completa.
 
-Hoje a inspeção de recursos do Developer já mostra filmes, mods e manifestos. No N9 ela passa a mostrar também
+Hoje a inspeção de recursos do Developer já mostra filmes, mods e manifestos. No N10 ela passa a mostrar também
 os pacotes (`mod.toml`).
 
 ## 11. Plano de testes
@@ -208,7 +208,7 @@ Duração da dublagem modificada: `audio_dub_duration_policy` e `audio_sd_logica
 
 ## 12. Riscos e dependências
 
-1. **Códigos do motor de texto** e onde o jogo lê cada texto: sem eles a tradução de textos não liga (N9). O
+1. **Códigos do motor de texto** e onde o jogo lê cada texto: sem eles a tradução de textos não liga (N10). O
    contrato está pronto.
 2. **Mapa id → WAV:** resolvido (239 IDs, 233 nomes = 233 arquivos). Falta saber **quais IDs cada chamador usa
    em cada cena** (contexto para legendas por cena): oráculo de gameplay com falas.

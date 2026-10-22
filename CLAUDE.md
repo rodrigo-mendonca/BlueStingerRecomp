@@ -51,7 +51,7 @@ Ferramentas:
   incremental, unitários e testes ligados à mudança; **nível 2** (fechamento de N5, N6, N7) testes
   completos do subsistema, integração dirigida e comparação com o legado ou o Flycast, sem a regressão
   integral; **nível 3** (marcos críticos) regressão integral obrigatória antes da remoção do legado no N8,
-  depois dela (com referências independentes) e na revisão final do N9. Mudança transversal com testes
+  depois dela (com referências independentes) e na revisão final do N10. Mudança transversal com testes
   dirigidos insuficientes pode exigir uma regressão ampla antes; resultados aprovados e válidos pela chave
   não se repetem. Nunca enfraquecer validação para aprovar.
 - Controles (N3-1): `controles.toml` na pasta do usuário (criado na 1ª execução); diagnóstico

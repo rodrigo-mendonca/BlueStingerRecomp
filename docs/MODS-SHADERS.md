@@ -80,7 +80,7 @@ Antes de ir para a GPU, cada pacote é conferido:
    - só as capacidades `Shader`, `Matrix`, `ImageQuery` e `DerivativeControl`;
    - só o conjunto estendido `GLSL.std.450`;
    - **sem laços**: um passe tem de terminar. Use somas desenroladas; laços com orçamento de execução ficam para o
-     N9.
+     N10.
 3. **Interface:**
    - entradas só em `location 0` (o uv) e `gl_FragCoord`;
    - saída só em `location 0`;
@@ -102,4 +102,4 @@ Um pacote que falha em qualquer ponto fica **desativado**:
 - Os efeitos internos desta etapa são de imagem (correção de cor; tonemapping, nitidez e bloom em seguida). Não há
   dados de luz inventados.
 - SSAO só virá se a profundidade do renderizador servir (`docs/N7-PLANO.md`, seção 21).
-- Pacotes com vários passes, texturas próprias (LUTs) e as ferramentas de criação ficam para o N9.
+- Pacotes com vários passes, texturas próprias (LUTs) e as ferramentas de criação ficam para o N10.

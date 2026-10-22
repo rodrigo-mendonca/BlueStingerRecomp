@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". **Resolução interna até 4K com a apresentação direta pelo Vulkan (caminho B)** validada (modo original idêntico; a imagem maior não passa pela CPU; ver "N7c: apresentação direta pelo Vulkan, caminho B"). **Pós-processamento com shaders de mod validados** (correção de cor interna e o exemplo externo pelo menu; ver "N7c: pós-processamento e shaders de mod"). Próximo: tonemapping, nitidez e bloom. N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". **Resolução interna até 4K com a apresentação direta pelo Vulkan (caminho B)** validada (modo original idêntico; a imagem maior não passa pela CPU; ver "N7c: apresentação direta pelo Vulkan, caminho B"). **Pós-processamento com shaders de mod validados** (correção de cor interna e o exemplo externo pelo menu; ver "N7c: pós-processamento e shaders de mod"). Próximo: tonemapping, nitidez, bloom e o segundo analógico/câmera livre. **Roadmap N0–N10 (2026-10-22):** N9 = Remasterização, N10 = mods (antigo N9); ver "Roadmap N0–N10". N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2262,6 +2262,34 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
 
+### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
+
+A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
+viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
+1. terminar o N7 (N7c);
+2. retorno ao N2;
+3. N8;
+4. N9;
+5. N10.
+
+Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
+
+| Etapa | Situação | % |
+|---|---|---|
+| N0 Fundação | concluída | 100 |
+| N1 Arquivos | concluída | 100 |
+| N2 Tempo e eventos | **pausada** (N2a e N2b-0/1 feitos, experimental disponível; U5–U8 e N2c retomam depois do N7) | 50 |
+| N3 Controles | concluída | 100 |
+| N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
+| N5 Filmes | concluída | 100 |
+| N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
+| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta e efeitos de imagem; faltam tonemapping, nitidez, bloom, o segundo analógico/câmera livre (investigação) e a validação com as camadas do Vulkan | 75 |
+| N8 Sem legado | não iniciada | 0 |
+| N9 Remasterização | não iniciada | 0 |
+| N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
+
+Progresso geral: ~65 % (onze etapas de peso igual).
+
 ### N7c: pós-processamento e shaders de mod (2026-10-22; worktree n7-vulkan)
 
 **O que o jogador tem** (Esc/Back > Gráficos > **Efeitos de imagem**; só com a apresentação Vulkan):
@@ -2319,7 +2347,7 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
 | Achado | Correção |
 |---|---|
 | [ALTA] leituras fora do SPIR-V com instruções curtas | mínimo de operandos por opcode e strings terminadas dentro da instrução (teste) |
-| [ALTA] shader com execução ilimitada passava | laços recusados (teste); uma perda do dispositivo com o shader ativo o desativa; laços com orçamento no N9 |
+| [ALTA] shader com execução ilimitada passava | laços recusados (teste); uma perda do dispositivo com o shader ativo o desativa; laços com orçamento no N10 |
 | [ALTA] semáforo do slot podia ser sinalizado de novo sem espera | só com duas filas, e um semáforo novo a cada escrita do slot |
 | [MÉDIA] `sampler2D` e o limite de 80 bytes não eram conferidos de fato | `OpTypeImage` 2D simples exigido; push constants só com layout explícito (teste com `sampler3D`) |
 | [MÉDIA] escape por link simbólico ou junção | caminhos canônicos dentro do pacote (teste com link real) |
@@ -2330,7 +2358,7 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
 - tonemapping, nitidez e bloom (internos, um por vez);
 - SSAO, só se a profundidade servir;
 - iluminação e sombras: interface reservada, sem dados inventados;
-- várias passadas, LUTs e ferramentas: N9.
+- várias passadas, LUTs e ferramentas: N10.
 
 ### N7c: apresentação direta pelo Vulkan, caminho B (2026-10-22; worktree n7-vulkan)
 
@@ -2657,7 +2685,7 @@ Layers num terminal não elevado).
 
 **Contrato das texturas HD futuras** (`native/render/texture_replacement`): `TextureId` por
 conteúdo decodificado, regras de compatibilidade e o ponto de extensão `ITextureReplacements`. Não
-há carregamento nem upscale; as ferramentas e pacotes ficam no N9.
+há carregamento nem upscale; as ferramentas e pacotes ficam no N10.
 
 **Método.** Rota `passo_combate` (NEW GAME → combate), 9000 VBlanks, `--video legado`,
 `BS_RELOGIO_FIXO=1700000000`, `BS_FRAME_LOG` comparado com a linha de base do executável do N6.

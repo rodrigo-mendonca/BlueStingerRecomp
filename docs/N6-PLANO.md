@@ -343,7 +343,7 @@ o legado como padrão até a prova. Nada irreversível antes de as fronteiras es
   aceita as duas, e a AICA deixa de receber os efeitos porque as 5 entradas não chegam mais ao driver;
 - **chamadas por ponteiro** ao `sd` fora do gerenciador: o fechamento (0 chamadas aos originais) acusa.
 
-**Ordem do roadmap mantida:** N5 → **N6** → N7 → retorno ao N2 pendente → N8 → N9. O N7 fica preparado na
+**Ordem do roadmap mantida:** N5 → **N6** → N7 → retorno ao N2 pendente → N8 → N9 (remasterização) → N10 (mods). O N7 fica preparado na
 própria worktree, sem integração ao gameplay.
 
 ## 12. Fase B: oráculo O6 no Flycast (2026-10-20)
@@ -769,13 +769,13 @@ documentadas, não medidas em áudio) e o pitch bend: só a M2C tem (3 eventos n
 (`0xE0` → `0x13E4`: bend = (valor − 64)·128, por voz `(bend · faixa) >> 5` em 1/256 de semitom), mas a origem da faixa
 (bytes +0x0A/+0x0B da voz) não está provada; fica para a validação da M2C (achado MÉDIA do Codex, aceito e adiado).
 
-**Substituição por mods (plano, sem ferramentas do N9).** A música de mod entra no lugar da sequência inteira, não das
+**Substituição por mods (plano, sem ferramentas do N10).** A música de mod entra no lugar da sequência inteira, não das
 amostras: `mods\<pacote>\musica\<NOME>.{wav,flac,ogg}` (NOME = M2A … M99, o nome da tabela 0x8C09EC28), lida pela
 mesma `load_sound_file` dos efeitos e das falas (WAV, FLAC e OGG já validados). Laço por metadados: `smpl` no WAV,
 `LOOPSTART`/`LOOPLENGTH` (ou `LOOPEND`) nos comentários Vorbis/FLAC, em amostras; sem laço, toca uma vez e a porta fica
 livre como no fim da sequência original (0x83). Os comandos do gerenciador continuam valendo para a faixa: volume com
 fade (0x05, na mesma lei de TL), pan (0x06), parar (0x02); o estado do jogo (bytes 0x8C1F4C52/0x8C1F4C79, consulta do
-driver) não muda com a substituição. Amostras individuais do banco (por programa/camada) ficam para o N9.
+driver) não muda com a substituição. Amostras individuais do banco (por programa/camada) ficam para o N10.
 
 ### 18.5 Fase F no jogo: `--audio-musica nativo` e a M2A no gameplay (2026-10-20)
 

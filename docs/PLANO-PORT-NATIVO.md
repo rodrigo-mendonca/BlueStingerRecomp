@@ -214,12 +214,40 @@ migração versionada.
 - Critério operacional (seção 7), verificado por mapa do linker, imports, strings e
   instrumentação.
 
-**N9. Elevação dos sistemas do jogo** (contínua)
-- Câmera, movimentação, combate, IA, menus/HUD, inventário... viram módulos nomeados em
-  `native/game` com estruturas nativas.
-- Validação de contrato por função/sistema contra a versão gerada.
-- Código do SDK substituído e morto é **descartado**, não elevado.
-- A meta não é "100% das funções": é a ausência de dependência operacional (seção 7).
+**N9. Remasterização** (decisão do mantenedor, 2026-10-22; nova etapa antes dos mods)
+- Uma versão audiovisual aprimorada, oficial do projeto, que preserva a identidade e o conteúdo originais:
+  1. texturas remasterizadas em HD, com resoluções maiores quando úteis;
+  2. iluminação, shaders, sombras e pós-processamento;
+  3. modelos, personagens e cenários melhorados, quando tecnicamente viável;
+  4. cutscenes remasterizadas, com a mesma duração, sincronização e conteúdo;
+  5. trilhas e efeitos remasterizados, com a opção do áudio original;
+  6. apresentação do HUD, dos menus e das legendas;
+  7. presets **Original Dreamcast** e **Remasterizado**;
+  8. cada recurso liga e desliga pelo menu interno.
+- **Arquitetura:**
+  - reutiliza a infraestrutura Vulkan do N7 (resolução interna, apresentação direta, cadeia de pós-processamento) e os
+    contratos de substituição do N5 (filmes), do N6 (áudio) e do N7 (texturas HD por conteúdo, shaders);
+  - os recursos remasterizados ficam separados da lógica do jogo: saves, controles, sincronização, temporização e
+    comportamento são os originais;
+  - recurso remasterizado ausente: o original, automaticamente.
+- **Distribuição:**
+  - nenhum recurso comercial protegido no repositório sem autorização;
+  - separação clara entre a remasterização oficial do projeto e os mods dos usuários (N10).
+
+**N10. Sistema de mods e elevação dos sistemas do jogo** (o antigo N9; contínua)
+- Mods:
+  - ferramentas, manifestos, carregador e substituição de recursos;
+  - pacotes de idioma, texturas, áudio, vídeos e shaders personalizados.
+  - A arquitetura de extensão continua sendo preparada nas etapas anteriores, sem antecipar a implementação completa.
+- **Elevação dos sistemas do jogo:**
+  - câmera, movimentação, combate, IA, menus/HUD, inventário... viram módulos nomeados em `native/game`, com
+    estruturas nativas;
+  - validação de contrato por função ou sistema contra a versão gerada;
+  - código do SDK substituído e morto é **descartado**, não elevado;
+  - a meta não é "100% das funções": é a ausência de dependência operacional (seção 7).
+- A revisão final do projeto e a distribuição fecham o N10.
+- **Numeração:** documentos anteriores a 2026-10-22 (relatórios do N0 ao N6, `N3-PLANO.md`) chamam esta etapa de
+  "N9".
 
 ### 4.1 Diretriz permanente: vídeo e áudio moddáveis (registrada em 2026-10-16)
 
@@ -268,7 +296,7 @@ Só requisito de projeto. **Não muda a ordem do roadmap, não antecipa N5, N6 o
 ### 4.2 Sequência planejada e retorno ao N2 (decisão do mantenedor, 2026-10-19)
 
 Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: o retorno ao N2
-**não** é um N10.
+**não** ganha número novo. O N10 (2026-10-22) é o sistema de mods, que antes era o N9.
 
 1. **N4**: saves nativos (em andamento).
 2. **N5**: vídeos nativos.
@@ -278,7 +306,8 @@ Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: 
    `docs/DECISAO-VULKAN-LINUX.md`, seção 2.
 5. **Retorno ao N2**: encerrar as pendências do N2b e implementar o N2c.
 6. **N8**: remoção dos componentes de emulação.
-7. **N9**: gameplay C++ editável e suporte a mods.
+7. **N9**: remasterização (decisão de 2026-10-22).
+8. **N10**: gameplay C++ editável e sistema de mods (o antigo N9).
 
 **Escopo do retorno ao N2.**
 - **N2b**: fechar os critérios pendentes, inclusive U5–U8 (`docs/N2b-PROPOSTA.md`). Avaliar a
@@ -355,7 +384,7 @@ Antes de trocar:
 - **Matriz de cobertura**: cada sala, chefe, menu, save/load, cada FMV e o final, com
   roteiros determinísticos.
   - O smoke test atual (1ª área) continua.
-  - N8 e N9 exigem a **campanha completa**.
+  - N8, N9 e N10 exigem a **campanha completa**.
 - Suítes atuais como portões permanentes: `test_builder`, `test_preview`, `test_projeto`,
   `test_gameplay`.
 

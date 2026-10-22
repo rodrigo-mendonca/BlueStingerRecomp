@@ -1,7 +1,7 @@
 # transitional/
 
 Interoperabilidade da fase híbrida (`docs/PLANO-PORT-NATIVO.md`, seção 2). O código daqui
-**some** quando os chamadores forem elevados (N9). Nada daqui entra na API nativa.
+**some** quando os chamadores forem elevados (N10). Nada daqui entra na API nativa.
 
 | Arquivo | Papel |
 |---|---|
