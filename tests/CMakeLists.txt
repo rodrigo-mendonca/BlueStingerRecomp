@@ -14,6 +14,7 @@ add_executable(bs_unit_tests
   unit/test_threads.cpp
   unit/test_render.cpp
   unit/test_render_formats.cpp
+  unit/test_render_capture.cpp
   unit/test_maple.cpp
   unit/test_longjmp.cpp
   unit/test_tmu.cpp
@@ -54,6 +55,12 @@ add_executable(bs_localization_tests unit/main.cpp unit/test_localization.cpp)
 target_include_directories(bs_localization_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
 target_link_libraries(bs_localization_tests PRIVATE bs_native_localization)
 add_test(NAME localization COMMAND bs_localization_tests)
+
+# N7 (preparacao): regras portaveis da renderizacao nativa, sem GPU
+add_executable(bs_render_tests unit/main.cpp unit/test_render_native.cpp unit/test_render_textures.cpp unit/test_render_fidelity.cpp unit/test_render_replacement.cpp)
+target_include_directories(bs_render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
+target_link_libraries(bs_render_tests PRIVATE bs_native_render)
+add_test(NAME render COMMAND bs_render_tests)
 add_test(NAME unit COMMAND bs_unit_tests)
 
 # Interface do recompilador (catalogo de textos, configuracao da instalacao, troca da instalacao)

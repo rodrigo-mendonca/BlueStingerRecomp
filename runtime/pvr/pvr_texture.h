@@ -32,4 +32,8 @@ uint32_t pvr_mip_offset(uint32_t format, bool vq, uint32_t w);
 // Texel (x, y) ja dentro do tamanho, como ARGB8888.
 uint32_t pvr_texel(const TexInfo& t, uint32_t x, uint32_t y);
 
+// Bytes de textura pelo caminho de 64 bits da VRAM (o que o TSP le), a partir do deslocamento `off`: o que as
+// conversoes nativas da IR de render recebem (N7a).
+void pvr_texture_read(uint32_t off, uint8_t* out, uint32_t n);
+
 } // namespace bs

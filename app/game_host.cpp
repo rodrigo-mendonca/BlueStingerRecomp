@@ -17,6 +17,7 @@
 #include "input/input.h"
 #include "time_adapter.h"
 #include "sound_adapter.h"
+#include "render_capture.h"
 #include "video_adapter.h"
 #include "audio/audio.h"
 #include "audio/voice_player.h"
@@ -498,6 +499,15 @@ void GameHost::threadMain() {
             if (const char* v = std::getenv("BS_PROGRESSO_LIMITE")) to.stall_units = std::strtoull(v, nullptr, 10);
             else to.stall_units = transitional::time::kDefaultStallUnits;
             transitional::time::install(to);
+            // N7a: IR de render capturada do decodificador do TA (BS_RENDER_IR=capturar|conferir; BS_RENDER_IR_CADA=N
+            // confere 1 render a cada N). O rasterizador em software continua o mesmo e e a referencia.
+            if (const char* ir = std::getenv("BS_RENDER_IR"); ir && *ir) {
+                const char*    cada  = std::getenv("BS_RENDER_IR_CADA");
+                const uint32_t every = cada ? uint32_t(std::strtoul(cada, nullptr, 10)) : 1u;
+                transitional::render_capture::install(std::string(ir) == "conferir" ? transitional::render_capture::Mode::Check
+                                                                                     : transitional::render_capture::Mode::Capture,
+                                                      every);
+            }
             input_set_step_counter([] { return transitional::time::game_steps(); });  // roteiros por passo
             // Diagnostico (gameplay assistido): BS_STATE_PASSO=<arquivo> grava a cada BS_STATE_PASSO_CADA
             // passos de jogo (padrao 10), no inicio do passo, o hash da regiao de variaveis do jogo
@@ -583,6 +593,9 @@ void GameHost::threadMain() {
                      static_cast<unsigned long long>(s.cancelled), static_cast<unsigned long long>(s.clockRegressions),
                      static_cast<unsigned long long>(s.vblankCollapsed));
     }
+    if (transitional::render_capture::stats().renders)  // N7a: BS_RENDER_IR
+        std::fputs(transitional::render_capture::summary().c_str(), stderr);
+    transitional::render_capture::install(transitional::render_capture::Mode::Off);  // sempre (revisao Codex 2026-10-21)
     if (transitional::sound::installed()) {
         std::fputs(transitional::sound::summary().c_str(), stderr);
         transitional::sound::uninstall(transitional::boundary_registry());

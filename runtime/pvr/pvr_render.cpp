@@ -41,9 +41,7 @@ namespace {
 
 constexpr uint32_t R(uint32_t off) { return 0x005F8000 + off; }
 
-struct Color {
-    float a = 0, r = 0, g = 0, b = 0;
-};
+using Color = PvrColor;  // os tipos do decodificador sao os publicos (pvr_render.h): a captura da IR recebe os mesmos
 
 // O PVR e outro hardware: o modo de ponto flutuante do SH-4 (FPSCR: arredondamento para
 // zero, FTZ/DAZ), que o runtime aplica na thread do jogo, nao vale no render. Toda conta do
@@ -82,18 +80,10 @@ float q8(float v) {
 }
 Color fcolor(const uint32_t* w) { return {q8(f32(w[0])), q8(f32(w[1])), q8(f32(w[2])), q8(f32(w[3]))}; }
 
-struct Vtx {
-    float x = 0, y = 0, z = 0, u = 0, v = 0;
-    Color col, off;
-};
+using Vtx  = PvrVertex;
+using Prim = PvrTri;
 
-struct Prim {
-    uint32_t list = 0, isp = 0, tsp = 0, tcw = 0;
-    bool     tex = false, offset = false, gouraud = true;
-    uint32_t clipMode = 0;                       // PCW bits 17-16: 2 dentro, 3 fora do recorte
-    int      cx0 = 0, cy0 = 0, cx1 = 0, cy1 = 0;  // recorte do usuario em pixels (inclusivo)
-    Vtx      v[3];
-};
+PvrCaptureSink* g_sink = nullptr;  // N7a: captura da IR de render (pvr_render_set_capture)
 
 // Estado do parser (um global define os vertices seguintes).
 struct Global {
@@ -115,11 +105,12 @@ class Parser {
 public:
     std::vector<Prim> prims;
     RenderStats*      st;
+    PvrCaptureSink*   sink = nullptr;  // N7a: recebe o que este decodificador produz (nenhum segundo parser)
 
     void feed(const TaParam& p) {
         const uint32_t pcw = p.w[0], type = pcw >> 29;
         if (type == 0) {  // fim de lista
-            strip_.clear();
+            breakStrip();
             return;
         }
         if (type == 1) {  // recorte do usuario: w4..w7 = x/y minimo e maximo, em tiles de 32 pixels
@@ -129,6 +120,7 @@ public:
         }
         if (type == 2) return;  // conjunto de lista de objetos: sem efeito aqui
         if (type == 4 || type == 5) {
+            if (sink) sink->global(p);
             global(p, type == 5);
             return;
         }
@@ -136,7 +128,8 @@ public:
         list_ = p.list;
         if (!g_.supported || p.list == 1 || p.list == 3) {
             ++st->skipped;
-            if (pcw & (1u << 28)) strip_.clear();
+            if (sink) (p.list == 1 || p.list == 3) ? sink->modifier(gp_, p) : sink->skipped(p);
+            if (pcw & (1u << 28)) breakStrip();
             return;
         }
         if (g_.sprite) sprite(p);
@@ -145,17 +138,24 @@ public:
 
 private:
     Global           g_;
+    TaParam          gp_;  // o ultimo global, como chegou (os volumes modificadores tem o modo nele)
     std::vector<Vtx> strip_;
     uint32_t         list_ = 0;
     int              cx0_ = 0, cy0_ = 0, cx1_ = 0, cy1_ = 0;
 
+    void breakStrip() {
+        strip_.clear();
+        if (sink) sink->strip_break();
+    }
+
     void global(const TaParam& p, bool sprite) {
+        gp_       = p;
         g_.pcw    = p.w[0];
         g_.isp    = p.w[1];
         g_.tsp    = p.w[2];
         g_.tcw    = p.w[3];
         g_.sprite = sprite;
-        strip_.clear();
+        breakStrip();
         const uint32_t obj = g_.pcw & 0xFF, col = (obj >> 4) & 3;
         g_.supported       = true;
         if (p.list == 1 || p.list == 3) return;  // volume modificador
@@ -223,6 +223,7 @@ private:
             break;
         }
         strip_.push_back(v);
+        if (sink) sink->vertex(base(), v, (p.w[0] >> 28) & 1);
         if (strip_.size() >= 3) {
             Prim         t = base();
             const size_t n = strip_.size();
@@ -231,7 +232,7 @@ private:
             prims.push_back(t);
             ++st->triangles;
         }
-        if (p.w[0] & (1u << 28)) strip_.clear();  // fim de strip
+        if (p.w[0] & (1u << 28)) strip_.clear();  // fim de strip (a captura ja recebeu o fim no vertice)
     }
 
     void sprite(const TaParam& p) {
@@ -261,6 +262,7 @@ private:
             d.v = plane(a.v * a.z, b.v * b.z, cc.v * cc.z) / d.z;
         }
         for (Vtx* x : {&a, &b, &cc, &d}) x->col = unpack(g_.spriteBase), x->off = unpack(g_.spriteOff);
+        if (sink) sink->sprite(base(), a, b, cc, d);
         Prim t1 = base(), t2 = base();
         t1.v[0] = a, t1.v[1] = b, t1.v[2] = cc;
         t2.v[0] = a, t2.v[1] = cc, t2.v[2] = d;
@@ -287,10 +289,12 @@ private:
 class Raster {
 public:
     int                   w, h;
+    PvrFrame              fr;     // registradores do quadro (lidos uma vez, ou vindos da IR)
     std::vector<uint32_t> color;  // ARGB8888
     std::vector<float>    depth;  // 1/w
 
-    Raster(int w_, int h_) : w(w_), h(h_), color(size_t(w_) * h_, 0), depth(size_t(w_) * h_, 0.f) {}
+    Raster(int w_, int h_, const PvrFrame& f)
+        : w(w_), h(h_), fr(f), color(size_t(w_) * h_, 0), depth(size_t(w_) * h_, 0.f) {}
 
     // Fragmento ordenado por pixel (translucido em autosort ou punch-through).
     struct Frag {
@@ -366,7 +370,7 @@ public:
         const float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
         if (area == 0 || !std::isfinite(area)) return;
         const uint32_t cull = (t.isp >> 27) & 3;
-        if (cull == 1 && std::fabs(area) < 2 * f32(pvr_reg(R(0x078)))) return;  // FPU_CULL_VAL
+        if (cull == 1 && std::fabs(area) < 2 * fr.cull_val) return;  // FPU_CULL_VAL
         if (cull == 2 && area < 0) return;
         if (cull == 3 && area > 0) return;
         int x0 = std::max(0, int(std::floor(std::min({a.x, b.x, c.x}))));
@@ -384,22 +388,22 @@ public:
             tex.tcw    = t.tcw;
             tex.width  = 8u << ((t.tsp >> 3) & 7);
             tex.height = 8u << (t.tsp & 7);
-            tex.stride = (pvr_reg(R(0x0E4)) & 0x1F) * 32;  // TEXT_CONTROL
+            tex.stride = fr.tex_stride;  // TEXT_CONTROL
         }
         // listas ordenadas por pixel (translucida em autosort, punch-through): compare
         // forcado em >= (manual 3.4.2 e 3.4.3; revisao Codex 2026-10-14)
         const uint32_t cmp    = frags ? 6u : (t.isp >> 29);
         const bool     zwrite = !((t.isp >> 26) & 1);
-        const uint8_t  ptRef  = uint8_t(pvr_reg(R(0x11C)) & 0xFF);
+        const uint8_t  ptRef  = uint8_t(fr.pt_ref & 0xFF);
         // HALF_OFFSET (revisao Codex 2026-10-14): bit 0 amostra do FPU (cobertura e
         // profundidade), bit 1 amostra do TSP (atributos), bit 2 meio texel; 1 = centro do
         // pixel/texel, 0 = canto superior esquerdo. O jogo escreve 7.
-        const uint32_t half   = pvr_reg(R(0x080));
+        const uint32_t half   = fr.half_offset;
         const float    fpuOff = (half & 1) ? 0.5f : 0.f, tspOff = (half & 2) ? 0.5f : 0.f;
         const bool     texelHalf = half & 4;
         // color clamp do TSP (bit 21): limites ARGB de FPU_CLAMP_MAX (0x0BC) e MIN (0x0C0)
         const bool  clampOn = (t.tsp >> 21) & 1;
-        const Color cmax = unpack(pvr_reg(R(0x0BC))), cmin = unpack(pvr_reg(R(0x0C0)));
+        const Color cmax = unpack(fr.clamp_max), cmin = unpack(fr.clamp_min);
         for (int y = y0; y <= y1; ++y)
             for (int x = x0; x <= x1; ++x) {
                 if (t.clipMode == 3 && x >= t.cx0 && x <= t.cx1 && y >= t.cy0 && y <= t.cy1) continue;  // so fora
@@ -674,7 +678,53 @@ void writeBack(const Raster& r) {
         }
 }
 
+// As listas na ordem do hardware (opaca, punch-through, translucida) e a resolucao das ordenadas por pixel; `lap`
+// mede as fases (diagnostico). Devolve o numero de fragmentos translucidos ordenados.
+template <class Lap> size_t drawLists(const std::vector<Prim>& prims, Raster& r, Lap lap) {
+    // ISP_FEED_CFG (0x098) bit 0: 1 = pre-sort (translucidos na ordem de submissao),
+    // 0 = autosort por pixel (o jogo usa 0x00800408)
+    std::vector<Raster::Frag> frags;
+    const bool                autosort = r.fr.autosort;
+    for (uint32_t list : {0u, 4u, 2u}) {
+        r.frags = (list == 4 || (list == 2 && autosort)) ? &frags : nullptr;
+        for (const Prim& t : prims)
+            if (t.list == list) r.draw(t, list);
+        if (list == 4) r.resolvePunchThrough(frags);
+        lap(list == 0 ? 1 : (list == 4 ? 2 : 3));
+    }
+    const size_t nfrags = frags.size();
+    if (autosort) r.resolveSorted(frags);
+    lap(4);
+    return nfrags;
+}
+
 } // namespace
+
+void pvr_render_set_capture(PvrCaptureSink* sink) { g_sink = sink; }
+uint32_t pvr_background_color() { return backgroundColor(); }
+
+PvrFrame pvr_frame_from_regs() {
+    PvrFrame f;
+    f.background       = backgroundColor() & 0xFFFFFF;  // o alfa do fundo e sempre 0xFF (fillBackground)
+    f.background_depth = f32(pvr_reg(R(0x088)));           // ISP_BACKGND_D
+    f.cull_val         = f32(pvr_reg(R(0x078)));           // FPU_CULL_VAL
+    f.tex_stride       = (pvr_reg(R(0x0E4)) & 0x1F) * 32;  // TEXT_CONTROL
+    f.pt_ref           = pvr_reg(R(0x11C)) & 0xFF;         // PT_ALPHA_REF
+    f.half_offset      = pvr_reg(R(0x080)) & 7;            // HALF_OFFSET
+    f.clamp_max = pvr_reg(R(0x0BC)), f.clamp_min = pvr_reg(R(0x0C0));
+    // ISP_FEED_CFG (0x098) bit 0: 1 = pre-sort (translucidos na ordem de submissao), 0 = autosort por pixel
+    f.autosort = !(pvr_reg(R(0x098)) & 1);
+    return f;
+}
+
+std::vector<uint32_t> pvr_render_triangles(std::span<const PvrTri> tris, const PvrFrame& frame, uint32_t width,
+                                           uint32_t height) {
+    const RenderFpEnv fpEnv;
+    Raster            r{int(width), int(height), frame};
+    r.fillBackground(0xFF000000 | frame.background, frame.background_depth);
+    drawLists(std::vector<Prim>(tris.begin(), tris.end()), r, [](int) {});
+    return std::move(r.color);
+}
 
 RenderStats pvr_render(Sh4Context*) {
     const RenderFpEnv fpEnv;  // ambiente fixo nesta thread (os workers instalam o seu)
@@ -682,17 +732,16 @@ RenderStats pvr_render(Sh4Context*) {
     const uint32_t clip = pvr_reg(R(0x13C));  // TA_GLOB_TILE_CLIP
     st.width            = ((clip & 0x3F) + 1) * 32;
     st.height           = (((clip >> 16) & 0xF) + 1) * 32;
-    Raster r(int(st.width), int(st.height));
-    r.fillBackground(0xFF000000 | backgroundColor(), f32(pvr_reg(R(0x088))));  // ISP_BACKGND_D
+    const PvrFrame fr = pvr_frame_from_regs();
+    checkRegionSortModes(fr.autosort);
+    Raster r(int(st.width), int(st.height), fr);
+    r.fillBackground(0xFF000000 | fr.background, fr.background_depth);  // ISP_BACKGND_D
 
     Parser parser;
-    parser.st = &st;
+    parser.st   = &st;
+    parser.sink = g_sink;
+    if (g_sink) g_sink->begin(st.width, st.height);
     for (const auto& p : ta_params()) parser.feed(p);
-    // ISP_FEED_CFG (0x098) bit 0: 1 = pre-sort (translucidos na ordem de submissao),
-    // 0 = autosort por pixel (o jogo usa 0x00800408)
-    std::vector<Raster::Frag> frags;
-    const bool                autosort = !(pvr_reg(R(0x098)) & 1);
-    checkRegionSortModes(autosort);
     // Diagnostico: BS_RENDER_PROFILE=1 mede as fases (ms) e conta fragmentos translucidos
     static const bool prof = std::getenv("BS_RENDER_PROFILE") != nullptr;
     using Clock            = std::chrono::steady_clock;
@@ -704,16 +753,8 @@ RenderStats pvr_render(Sh4Context*) {
         tp = n;
     };
     lap(0);
-    for (uint32_t list : {0u, 4u, 2u}) {
-        r.frags = (list == 4 || (list == 2 && autosort)) ? &frags : nullptr;
-        for (const Prim& t : parser.prims)
-            if (t.list == list) r.draw(t, list);
-        if (list == 4) r.resolvePunchThrough(frags);
-        lap(list == 0 ? 1 : (list == 4 ? 2 : 3));
-    }
-    const size_t nfrags = frags.size();
-    if (autosort) r.resolveSorted(frags);
-    lap(4);
+    const size_t nfrags = drawLists(parser.prims, r, lap);
+    if (g_sink) g_sink->end(fr, parser.prims, r.color, st.width, st.height);
     writeBack(r);
     if (prof)
         std::fprintf(stderr, "[perfil] parse %.2f opaca %.2f pt %.2f transl %.2f resolve %.2f ms; fragmentos %zu\n",

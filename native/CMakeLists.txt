@@ -58,6 +58,12 @@ add_library(bs_native_localization STATIC localization/locale.cpp localization/m
             localization/dialogue_bridge.cpp)  # N6 fase E: eventos das falas -> legendas
 target_link_libraries(bs_native_localization PUBLIC bs_native_api bs_native_audio_core PRIVATE bs_native_video tomlplusplus::tomlplusplus)
 
+# N7 (preparacao): regras portaveis do renderer nativo (texturas do PVR para RGBA8, validacao e ordem
+# da IR de render); sem API grafica - o backend Vulkan fica fora do jogo ate a integracao
+add_library(bs_native_render STATIC render/texture_convert.cpp render/render_ir.cpp render/fidelity_scenes.cpp
+            render/texture_replacement.cpp)  # contrato das texturas HD futuras (sem carregamento no N7)
+target_link_libraries(bs_native_render PUBLIC bs_native_api)
+
 add_library(bs_native_audio STATIC audio/audio_output.cpp)
 target_link_libraries(bs_native_audio PUBLIC bs_native_api PRIVATE xaudio2 ole32)
 

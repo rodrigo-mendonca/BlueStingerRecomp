@@ -2,9 +2,10 @@
 # adaptadores Sh4Context <-> native/, registro de fronteiras com provedor legado/nativo.
 # Some quando os chamadores forem elevados.
 add_library(bs_transitional STATIC boundary_registry.cpp bu_adapter.cpp bu_machine.cpp cri_idle.cpp gdfs_adapter.cpp input_bridge.cpp
-            pad_adapter.cpp pad_contract.cpp pad_probe.cpp time_adapter.cpp)
+            pad_adapter.cpp pad_contract.cpp pad_probe.cpp time_adapter.cpp
+            render_capture.cpp)  # N7a: IR de render a partir do decodificador do TA
 target_include_directories(bs_transitional PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(bs_transitional PUBLIC bs_runtime bs_native bs_dcmap)
+target_link_libraries(bs_transitional PUBLIC bs_runtime bs_native bs_native_render bs_dcmap)
 
 # N5: nucleo do provedor nativo das entradas MW dos filmes (sem Sh4Context; a cola fica no adaptador)
 add_library(bs_video_mw STATIC video_mw_core.cpp video_mw_glue.cpp)

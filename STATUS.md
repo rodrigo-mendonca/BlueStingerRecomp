@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): preparação. N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. Próximo: backend Vulkan por `--render nativo` (software segue padrão). N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2262,6 +2262,56 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
 
+### N7a: captura do TA na IR de render (2026-10-21; worktree n7-vulkan)
+
+**O que foi feito** (detalhes em `docs/N7-PLANO.md` seção 13):
+- O decodificador do TA (`runtime/pvr/pvr_render.cpp`) ganhou um observador (`PvrCaptureSink`), sem
+  um segundo parser.
+- `transitional/render_capture` monta a `CommandList`: strips, sprites, estado completo, volumes
+  modificadores fechados pela instrução do global, `FrameParams` e a tabela de texturas.
+- O rasterizador passou a ler os registradores de quadro uma vez por render (`PvrFrame`).
+- Diagnóstico: `BS_RENDER_IR=capturar|conferir`, `BS_RENDER_IR_CADA=N`. O padrão continua sem
+  captura, com o renderizador em software.
+
+**Contrato das texturas HD futuras** (`native/render/texture_replacement`): `TextureId` por
+conteúdo decodificado, regras de compatibilidade e o ponto de extensão `ITextureReplacements`. Não
+há carregamento nem upscale; as ferramentas e pacotes ficam no N9.
+
+**Método.** Rota `passo_combate` (NEW GAME → combate), 9000 VBlanks, `--video legado`,
+`BS_RELOGIO_FIXO=1700000000`, `BS_FRAME_LOG` comparado com a linha de base do executável do N6.
+
+**Resultados:**
+
+| Medida | Resultado |
+|---|---|
+| Quadros sem captura | idênticos à linha de base |
+| Quadros com `conferir` | idênticos à linha de base |
+| Renders conferidos | 4487 de 4487 |
+| Desenhos / triângulos / sprites | 3.882.569 / 18.625.730 / 13.120 |
+| IR inválida | 0 |
+| Triângulos divergentes | 0 |
+| Imagens divergentes (redesenho só a partir da IR) | 0 |
+| `FrameParams` divergentes dos registradores usados | 0 |
+| Texturas conferidas texel a texel | 186.083, 0 divergentes |
+| Texturas sem conversão nativa | 140 |
+| Chaves de textura distintas (TCW + tamanho) | 249 |
+| Conteúdos de textura distintos | 121 |
+| Volumes modificadores | 76.290 (2.109.836 triângulos), 1.173 sem último polígono |
+| Parâmetros omitidos | 0 |
+
+O jogo envia vértices com 1/w NaN ou negativo (1 render). O `validate()` passou a só conferir a
+estrutura.
+
+**Unitários:**
+- `bs_unit_tests`: 269 de 269, incluindo 9 de `test_render_capture.cpp`;
+- `bs_render_tests`: 18 de 18, incluindo 4 de `test_render_replacement.cpp`.
+
+**Incidente da limpeza de 2026-10-21.** A remoção forçada das worktrees obsoletas apagou, por uma
+junção, as fontes do SDL3 em `build/msvc-release/_deps/sdl3-src` do repositório principal. Elas
+foram restauradas da tag fixada (`release-3.2.30`, clone raso do repositório oficial). Nenhum outro
+dado foi afetado: dados da Preview, `game-data`, ISO, `generated`, legendas, gravações e saves
+conferidos.
+
 ### N6-H: áudio nativo promovido a padrão, condicionalmente (2026-10-21; autorizado pelo mantenedor)
 
 **Método:** verificação dirigida (H1–H8 reaproveitados): H5 refeito, `test_gameplay` com o padrão nativo e com
@@ -2512,6 +2562,20 @@ Detalhes em `docs/LEGENDAS-EN-PLANO.md`.
 - **Testes:** `test_legendas.py` 11/11; `bs_audio_tests` 41/41; `bs_localization_tests` 8/8; `bs_video_tests` 42/42.
 
 ## Revisões independentes (Codex)
+
+### 2026-10-21: N7a (captura do TA na IR, contrato das texturas HD). Relatório em `reviews/codex-20261021-220352.md` (7 achados)
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Globais iguais de volume modificador eram fundidos num volume só | **Aceito** (e corrigido além do sugerido) | O volume fecha pela instrução do global (0 polígono, 1 inclusão, 2 exclusão), não pela troca de palavras. O sink recebe cada global (`PvrCaptureSink::global`). Teste `render_capture_modifier_volumes_close_on_last_polygon` (globais iguais, inclusão, exclusão, sem fechamento). Na rota: 76.290 volumes (antes, 153.514 pela regra errada), 1.173 sem último polígono |
+| [MÉDIA] Nomes de `Cull` 2/3 invertidos | **Aceito** | O rasterizador descarta área < 0 (anti-horário na tela, y para baixo) com 2. Enum reordenado; teste `render_capture_cull_names_follow_the_rasterizer` desenha um triângulo horário com 2 e 3 |
+| [MÉDIA] Round-trip perdia filtro 3, mip bias, supersample e SRC/DST select | **Aceito** | `Filter` com 4 códigos; os campos foram adicionados ao `DrawState`. O teste confere bit a bit todos os bits do TSP fora do tamanho (cada bit isolado e 64 combinações). Única exceção: flip com clamp não tem efeito, porque o clamp prevalece no rasterizador |
+| [MÉDIA] `FrameParams` perdia metade da tabela de fog e não tinha `FOG_COL_VERT`/`FOG_DENSITY` | **Aceito** | Tabela de 16 bits por entrada e os dois registradores guardados em bruto. O uso de fog pelo jogo ainda não foi verificado (o software não aplica fog) |
+| [MÉDIA] A imagem "a partir da IR" relia os registradores vivos | **Aceito** | `PvrFrame`: o rasterizador lê os registradores do quadro uma vez. `pvr_render_triangles` recebe `pvr_frame(Frame)`, convertido dos `FrameParams`, e o modo conferir exige `pvr_frame(Frame) == registradores usados`. Teste `render_capture_image_from_ir_ignores_live_registers` muda os registradores depois do render e a imagem não muda. Os texels continuam vindo da VRAM (conferidos à parte pelas conversões nativas) |
+| [BAIXA] Sink instalado depois de sessão sem render; estatísticas cumulativas | **Aceito** | `install(Off)` sempre no fim da sessão; `install` recria a captura (estatísticas, quadro e ids) |
+| [BAIXA] IR inválida ainda era percorrida | **Aceito** | `valid(Frame)` = `validate` + handles de textura dentro da tabela; se falhar, a conferência para |
+
+Depois das correções: unitários 269 de 269 e 18 de 18; rota de combate com 0 divergências e quadros idênticos à linha de base.
 
 ### 2026-10-21: critério de saturação do H4 e orçamento do `test_saves`. Relatório em `reviews/codex-20261021-190156.md` (2 achados)
 

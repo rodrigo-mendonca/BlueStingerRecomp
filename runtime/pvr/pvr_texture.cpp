@@ -107,6 +107,10 @@ uint32_t pvr_mip_offset(uint32_t fmt, bool vq, uint32_t w) {
     return fmt == 6 ? 3 + t : 6 + 2 * t;
 }
 
+void pvr_texture_read(uint32_t off, uint8_t* out, uint32_t n) {
+    for (uint32_t i = 0; i < n; ++i) out[i] = vram8_64(off + i);
+}
+
 uint32_t pvr_texel(const TexInfo& t, uint32_t x, uint32_t y) {
     const uint32_t fmt    = (t.tcw >> 27) & 7;
     const bool     mipmap = t.tcw >> 31, vq = (t.tcw >> 30) & 1;
