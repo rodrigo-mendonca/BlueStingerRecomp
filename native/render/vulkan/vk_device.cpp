@@ -79,8 +79,9 @@ struct Push {
     uint32_t texSize[2];
     uint32_t ptRef, blend, clampMin, clampMax;
     float    depthBias;  // subtraido de 1/w antes da escala (so com 1/w negativo no quadro)
+    float    invScale;   // 1 / escala da resolucao interna (N7c)
 };
-static_assert(sizeof(Push) == 60);
+static_assert(sizeof(Push) == 64);
 
 constexpr uint32_t F_TEXTURED = 1, F_GOURAUD = 2, F_OFFSET = 4, F_USE_ALPHA = 8, F_IGNORE_TEX_ALPHA = 16, F_CLAMP = 32,
                    F_CLIP_OUTSIDE = 64, F_CLAMP_U = 4096, F_CLAMP_V = 8192, F_FLIP_U = 16384, F_FLIP_V = 32768,
@@ -234,8 +235,9 @@ public:
     }
 
     Result<void> submit(const CommandList& cl) override {
-        prepare_frame(cl, prep_, true);  // modo fiel: retangulos envolventes, a cobertura e a do shader
-        if (!target(cl.frame.width, cl.frame.height)) return fail("alvo do quadro (imagens/passe)");
+        prepare_frame(cl, prep_, true, scale_);  // modo fiel: retangulos envolventes, a cobertura e a do shader
+        if (!target(scaled_size(cl.frame.width, scale_), scaled_size(cl.frame.height, scale_)))
+            return fail("alvo do quadro (imagens/passe)");
         for (int attempt = 0; attempt < 2; ++attempt) {
             if (auto r = record(cl); !r) return r;
             const uint32_t* head = static_cast<const uint32_t*>(headerRead_.map);
@@ -251,9 +253,12 @@ public:
         st_.nonfinite_depth += prep_.nonfinite_depth, st_.batches += prep_.batches.size();
         st_.negative_depth_frames += prep_.depth_bias != 0;  // so importa sem profundidade crua
         uploads_.clear(), uploadBytes_.clear();
-        imageW_ = cl.frame.width, imageH_ = cl.frame.height;
+        imageW_ = w_, imageH_ = h_;
         return {};
     }
+
+    void  set_scale(float s) override { scale_ = s > 0 ? s : 1.f; }
+    float scale() const override { return scale_; }
 
     Result<void> present_image(std::span<const uint32_t> argb, uint32_t width, uint32_t height) override {
         if (argb.size() < size_t(width) * height) return Error::OutOfRange;
@@ -295,6 +300,7 @@ private:
     VkFence          fence_ = VK_NULL_HANDLE;
     VulkanStats      st_;
     bool             floatControls_ = false, denormPreserve_ = false, rawDepth_ = false;
+    float            scale_ = 1.f;  // resolucao interna (N7c)
 
     // layouts, pipelines e amostrador (fixos)
     VkDescriptorSetLayout texLayout_ = VK_NULL_HANDLE, fragLayout_ = VK_NULL_HANDLE, resolveLayout_ = VK_NULL_HANDLE;
@@ -534,7 +540,7 @@ private:
         ai.pSetLayouts = &resolveLayout_;
         if (!ok(f_.vkAllocateDescriptorSets(dev_, &ai, &resolveSet_), "conjunto do resolve", error)) return false;
 
-        VkPushConstantRange        pr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};  // 60 <= 128
+        VkPushConstantRange        pr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};  // 64 <= 128
         VkDescriptorSetLayout      sets[2] = {texLayout_, fragLayout_};
         VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pl.setLayoutCount = 2, pl.pSetLayouts = sets, pl.pushConstantRangeCount = 1, pl.pPushConstantRanges = &pr;
@@ -691,7 +697,8 @@ private:
         if (!heads_.buf || !readback_.buf || !headerRead_.buf) return false;
         for (auto& [k, p] : pipes_) f_.vkDestroyPipeline(dev_, p, nullptr), --g_live;  // o passe mudou
         pipes_.clear();
-        return fragments(std::max(fragCapacity_, w * h * 4));
+        // 4 fragmentos por pixel na resolucao do jogo; com a escala, 2 (o quadro cresce sozinho se faltar)
+        return fragments(std::max(fragCapacity_, w * h * (scale_ == 1.f ? 4u : 2u)));
     }
 
     void freeTarget() {
@@ -827,6 +834,7 @@ private:
         p.blend   = (uint32_t(s.src) << 3) | uint32_t(s.dst);
         p.clampMin = fr.clamp_min, p.clampMax = fr.clamp_max;
         p.depthBias = prep_.depth_bias;
+        p.invScale  = 1.f / scale_;
         return p;
     }
 
@@ -904,9 +912,11 @@ private:
             if (!p) return fail("pipeline");  // o buffer de comandos e recomecado (reset) no proximo quadro
             if (p != bound) f_.vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, p), bound = p;
             VkRect2D sc{{0, 0}, {w_, h_}};
-            if (b.scissor) {
-                const int x0 = std::max(0, b.state.clip_x0), y0 = std::max(0, b.state.clip_y0);
-                const int x1 = std::min(int(w_) - 1, b.state.clip_x1), y1 = std::min(int(h_) - 1, b.state.clip_y1);
+            if (b.scissor) {  // o recorte "dentro" em pixels do jogo -> os pixels do alvo que ele cobre
+                auto      lo = [&](int v) { return scale_ == 1.f ? v : int(std::floor(float(v) * scale_)); };
+                auto      hi = [&](int v) { return scale_ == 1.f ? v : int(std::ceil(float(v + 1) * scale_)) - 1; };
+                const int x0 = std::max(0, lo(b.state.clip_x0)), y0 = std::max(0, lo(b.state.clip_y0));
+                const int x1 = std::min(int(w_) - 1, hi(b.state.clip_x1)), y1 = std::min(int(h_) - 1, hi(b.state.clip_y1));
                 if (x0 > x1 || y0 > y1) continue;
                 sc = {{x0, y0}, {uint32_t(x1 - x0 + 1), uint32_t(y1 - y0 + 1)}};
             }

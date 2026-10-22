@@ -21,6 +21,7 @@ layout(push_constant) uniform Batch {
     uint  blend;       // fonte (bits 5-3) e destino (bits 2-0) do TSP
     uint  clampMin, clampMax;
     float depthBias;   // subtraido de 1/w antes da escala (quadros com 1/w negativo)
+    float invScale;    // 1 / escala da resolucao interna: pixel do alvo -> coordenadas do jogo (1 no modo fiel)
 } pc;
 
 layout(location = 0) noperspective out float vZ;

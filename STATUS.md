@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". Próximo: resoluções modernas. N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". **Resolução interna (caminho A)** validada em 1080p (modo original idêntico; ver "N7c: resolução interna, caminho A"). Próximo: apresentação direta (caminho B). N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2261,6 +2261,61 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
 - Testes: `bs_ui_tests` 25/25 (`ui_install_config_subtitles`), `bs_localization_tests` 9/9
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
+
+### N7c: resolução interna, caminho A (validação mínima do 1080p) (2026-10-22; worktree n7-vulkan)
+
+**Decisão do mantenedor (2026-10-22):** seguir A → B. A é uma versão mínima para validar a renderização interna em
+1080p com a infraestrutura existente (não é uma arquitetura permanente); B, a apresentação direta pelo Vulkan
+(swapchain), é o caminho definitivo.
+
+**O que mudou** (`docs/N7-PLANO.md`, seção 20):
+- **Escala no modo fiel.** O Vulkan desenha a geometria num alvo `round(640 × e) × round(480 × e)`, com
+  `e = altura interna / 480`.
+  - Cada pixel do alvo roda as mesmas contas do software (cobertura, 1/w, atributos), num ponto de amostra entre
+    os pixels do jogo: `(pixel + 0,5) × 1/e`.
+  - Na escala 1, a multiplicação por 1,0 é exata e o modo fiel continua bit a bit.
+  - `frame_prep` leva o retângulo envolvente e o recorte "dentro" para os pixels do alvo; o recorte "fora" usa o
+    pixel do jogo que contém o centro.
+- **Framebuffer coerente.** A imagem maior, reduzida pela média (`downsample`), vai para a VRAM emulada. O resto do
+  caminho (capturas, hash dos quadros, recuo) continua igual.
+- **Imagem exibida.** O quadro exibido é localizado entre os 3 últimos renders pelo conteúdo, tolerando a
+  quantização do framebuffer. O vídeo entrelaçado mostra 640×476 de um render de 640×480, então o recorte vertical
+  é procurado. A janela recebe a imagem maior nas linhas exibidas.
+- **No caminho A** a imagem maior volta inteira para a CPU (o custo que o B elimina).
+- **Interface:**
+  - Menu: "Resolução interna" (original, 720p, 1080p; só com Vulkan; 1440p e 4K bloqueados até a apresentação
+    direta estabilizar) e "Escala de renderização", ambos com confirmação e reversão em 15 s.
+  - Linha de comando: `--resolucao-interna <altura>`, só nesta execução.
+  - As capturas do headless passaram a ser feitas na thread do jogo, nos VBlanks exatos (`--dump-every`), com
+    `vNNNNNN_hd.bmp` na resolução interna.
+
+**Testes:**
+- `bs_render_tests` 26 de 26, com dois novos:
+  - `render_vulkan_internal_resolution`: as provas das cenas fiéis nas escalas 1,5 e 2,25; a borda de um
+    triângulo desenhada na escala 3 tem degraus fora da grade da imagem original (80 de 120 linhas); a reduzida
+    volta perto da original;
+  - `render_downsample_box`.
+- `bs_unit_tests` 287 de 287.
+- Rota `passo_combate` (9000 VBlanks, `--video legado`, `BS_RELOGIO_FIXO`), RTX 5080:
+
+| Medida | Original (`--resolucao-interna 480`) | 1080p (1440×1080) |
+|---|---|---|
+| Quadros contra a referência do software | **9000 de 9000 idênticos** | (a VRAM recebe a reduzida, diferente por definição) |
+| VBlanks exibidos com a imagem maior | — | 8967 de 8967 |
+| GPU por quadro (média) | 1,44 ms | 2,83 ms |
+| Leitura de volta + redução na CPU | — | 3,5 ms por render (6,2 MB por quadro) |
+| Trabalho por campo (média) | 7,1 ms | 9,3 ms |
+
+- **Qualidade** (`tools/dev/n7_resolucao.py`, 18 quadros a cada 500 VBlanks, mesmos VBlanks nas duas execuções):
+  - a reduzida contra a original fica entre 29,6 e 44,2 dB (é o mesmo quadro; só a cobertura parcial das bordas
+    muda);
+  - o detalhe acima da resolução original é 1,40 a 2,08 vezes o da original ampliada (ampliar daria 1,0);
+  - a imagem maior contra a original ampliada fica entre 21 e 41 dB (é outra imagem);
+  - recorte visual: placas ("WELCOME to KIMRA Corp.") e bordas legíveis a 1080p, ilegíveis na original.
+- **Janela:** com o menu aberto sobre a imagem 1440×1080 em 1280×960, os 668 VBlanks exibidos usaram a imagem maior.
+
+**Limites do A** (resolvidos no B): a imagem maior passa pela CPU (6,2 MB e 3,5 ms por render a 1080p; a 4K seriam
+~33 MB) e a apresentação é a do SDL.
 
 ### N7c: menu interno de configurações (2026-10-22; worktree n7-vulkan)
 

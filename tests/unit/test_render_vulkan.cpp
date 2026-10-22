@@ -4,8 +4,11 @@
 #include "test.h"
 
 #include "render/fidelity_scenes.h"
+#include "render/frame_prep.h"
 #include "render/vulkan/vk_device.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -72,4 +75,103 @@ BS_TEST(render_vulkan_fidelity_scenes) {
         BS_CHECK(scenes == eligible && eligible >= 7);
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// N7c: resolucao interna. Com escala, o Vulkan desenha a GEOMETRIA no alvo maior (as contas do modo fiel em cada
+// pixel do alvo), nao amplia a imagem do jogo: (1) as provas das cenas fieis continuam certas nos pontos
+// correspondentes do alvo; (2) a borda inclinada de um triangulo tem degraus mais finos que a imagem original
+// ampliada; (3) a imagem reduzida (frame_prep: downsample) volta perto da original.
+BS_TEST(render_vulkan_internal_resolution) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        for (const float sc : {1.5f, 2.25f}) {
+            d->set_scale(sc);
+            int probes = 0, expected = 0;
+            for (const auto& s : nr::fidelity_scenes()) {
+                if (!s.blocked.empty() || s.mode != nr::SceneMode::Faithful || s.image) continue;
+                expected += int(s.probes.size());
+                std::vector<nr::TextureHandle> handles;
+                for (const auto& t : s.textures)
+                    handles.push_back(d->create_texture(t.desc, std::as_bytes(std::span<const uint32_t>(t.argb))).value());
+                nr::CommandList cl = s.cl;
+                for (size_t i = 0; i < cl.draws.size(); ++i)
+                    cl.draws[i].state.texture = s.draw_texture[i] >= 0 ? handles[size_t(s.draw_texture[i])] : nr::TextureHandle{};
+                std::vector<uint32_t> img;
+                uint32_t              w = 0, h = 0;
+                BS_CHECK(d->submit(cl).ok() && d->read_frame(img, w, h).ok());
+                BS_CHECK(w == nr::scaled_size(cl.frame.width, sc) && h == nr::scaled_size(cl.frame.height, sc));
+                for (auto hd : handles) d->destroy_texture(hd);
+                if (img.size() != size_t(w) * h) continue;
+                for (const auto& p : s.probes) {  // o pixel do alvo com o centro no centro do pixel da prova
+                    const uint32_t x = uint32_t((float(p.x) + 0.5f) * sc), y = uint32_t((float(p.y) + 0.5f) * sc);
+                    const uint32_t got = img[size_t(y) * w + x] & 0xFFFFFF;
+                    ++probes;
+                    if (!close(got, p.rgb, p.tolerance + 2))
+                        std::fprintf(stderr, "  escala %.2f cena %s (%u,%u): %06X, esperado %06X\n", sc, s.name.c_str(), p.x, p.y, got, p.rgb);
+                    BS_CHECK(close(got, p.rgb, p.tolerance + 2));
+                }
+            }
+            BS_CHECK(probes == expected && expected >= 10);
+        }
+        // um triangulo branco de borda inclinada num quadro 64 x 48
+        nr::CommandList cl;
+        cl.frame.width = 64, cl.frame.height = 48, cl.frame.clear_color = 0xFF000000;
+        auto vtx = [](float x, float y) {
+            nr::Vertex v;
+            v.x = x, v.y = y, v.inv_w = 1, v.color = 0xFFFFFFFF;
+            return v;
+        };
+        cl.vertices = {vtx(3.3f, 2.1f), vtx(60.7f, 9.4f), vtx(11.2f, 45.6f)};
+        nr::Draw dr;
+        dr.vertex_count = 3, dr.state.depth = nr::DepthTest::Always;
+        cl.draws = {dr};
+        std::vector<uint32_t> lo, hi;
+        uint32_t              lw = 0, lh = 0, hw = 0, hh = 0;
+        d->set_scale(1);
+        BS_CHECK(d->submit(cl).ok() && d->read_frame(lo, lw, lh).ok() && lw == 64 && lh == 48);
+        d->set_scale(3);
+        BS_CHECK(d->submit(cl).ok() && d->read_frame(hi, hw, hh).ok() && hw == 192 && hh == 144);
+        if (lo.size() == 64u * 48 && hi.size() == 192u * 144) {
+            // a borda esquerda (do vertice de cima ao de baixo) por linha do alvo: na imagem ampliada ela so anda de 3
+            // em 3 pixels; desenhada no alvo, aparece em posicoes que nao sao multiplos de 3
+            int offGrid = 0, rows = 0;
+            for (uint32_t y = 12; y < 132; ++y) {
+                uint32_t x = 0;
+                while (x < hw && (hi[size_t(y) * hw + x] & 0xFFFFFF) == 0) ++x;
+                if (x == hw) continue;
+                ++rows, offGrid += x % 3 != 0;
+            }
+            std::fprintf(stderr, "  borda: %d de %d linhas fora da grade da imagem original\n", offGrid, rows);
+            BS_CHECK(rows > 100 && offGrid > rows / 3);
+            // reduzida, volta perto da original (so a cobertura parcial das bordas difere)
+            std::vector<uint32_t> down;
+            nr::downsample(hi, hw, hh, down, 64, 48);
+            double se = 0;
+            for (size_t i = 0; i < lo.size(); ++i)
+                for (int s = 0; s < 24; s += 8) {
+                    const double dd = double(int((lo[i] >> s) & 0xFF) - int((down[i] >> s) & 0xFF));
+                    se += dd * dd;
+                }
+            const double psnr = 10 * std::log10(255.0 * 255.0 / std::max(se / (3.0 * double(lo.size())), 1e-9));
+            std::fprintf(stderr, "  reduzida x original: PSNR %.1f dB\n", psnr);
+            BS_CHECK(psnr > 20);
+        }
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// a reducao: media exata de blocos inteiros e cobertura completa das colunas com fator fracionario
+BS_TEST(render_downsample_box) {
+    std::vector<uint32_t> src(4 * 2), dst;
+    for (uint32_t i = 0; i < src.size(); ++i) src[i] = 0xFF000000u | (i * 10u);
+    nr::downsample(src, 4, 2, dst, 2, 1);
+    BS_CHECK(dst.size() == 2 && dst[0] == (0xFF000000u | ((0 + 10 + 40 + 50 + 2) / 4)) &&
+             dst[1] == (0xFF000000u | ((20 + 30 + 60 + 70 + 2) / 4)));
+    std::vector<uint32_t> big(9 * 9, 0xFF808080u), small;
+    nr::downsample(big, 9, 9, small, 4, 4);  // 2,25 por pixel: tudo cinza continua cinza
+    bool all = small.size() == 16;
+    for (uint32_t c : small) all = all && c == 0xFF808080u;
+    BS_CHECK(all);
 }

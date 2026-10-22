@@ -33,6 +33,11 @@ public:
     // A imagem do ultimo submit/present_image: ARGB8888, width x height, de cima para baixo.
     virtual Result<void>       read_frame(std::vector<uint32_t>& argb, uint32_t& width, uint32_t& height) = 0;
     virtual const VulkanStats& stats() const = 0;
+    // N7c: resolucao interna. Os quadros seguintes sao desenhados em round(w x scale) x round(h x scale) (a geometria
+    // de verdade, com as contas do modo fiel em cada pixel do alvo; frame_prep.h) e read_frame devolve esse tamanho.
+    // 1 = a resolucao do jogo (modo fiel, bit a bit igual ao software).
+    virtual void               set_scale(float scale) = 0;
+    virtual float              scale() const          = 0;
 };
 
 int vulkan_live_objects();  // objetos Vulkan criados e nao destruidos (0 depois de destruir o dispositivo)

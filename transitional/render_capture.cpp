@@ -3,16 +3,19 @@
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
+#include "render/frame_prep.h"
 #include "render/render_ir.h"
 #include "render/texture_convert.h"
 #include "render/vulkan/vk_device.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <deque>
 #include <map>
 #include <tuple>
 #include <memory>
@@ -73,6 +76,7 @@ bool same_vertex(const PvrVertex& a, const PvrVertex& b) {
 
 nr::ITextureReplacements* g_replacements = nullptr;  // texturas HD (set_texture_replacements)
 Fault                     g_fault        = Fault::None;     // testes do recuo (inject_fault)
+float                     g_scale        = 1.f;             // resolucao interna (set_scale)
 
 class Capture final : public PvrCaptureSink {
 public:
@@ -276,7 +280,62 @@ private:
     std::vector<uint8_t>  raw_;
     std::vector<uint32_t> argb_;
 
+    // N7c: os ultimos renders na escala (o mais novo na frente): a imagem reduzida que foi para a VRAM (para achar o
+    // render exibido) e a maior. Tres por causa do buffer duplo (o exibido e o anterior ao ultimo) com folga.
+    struct Hires {
+        std::vector<uint32_t>                  down;
+        std::shared_ptr<std::vector<uint32_t>> image;
+        uint32_t                               w = 0, h = 0, iw = 0, ih = 0;
+    };
+    std::deque<Hires> hires_;
+
+    // buffer para a proxima imagem maior: o do mais antigo, se ninguem (um quadro publicado) ainda o usa
+    std::shared_ptr<std::vector<uint32_t>> hires_buffer() {
+        if (hires_.size() >= 3) {
+            std::shared_ptr<std::vector<uint32_t>> b = std::move(hires_.back().image);
+            hires_.pop_back();
+            if (b && b.use_count() == 1) return b;
+        }
+        return std::make_shared<std::vector<uint32_t>>();
+    }
+
 public:
+    HiresImage hires_for(std::span<const uint32_t> shown, uint32_t w, uint32_t h) {
+        if (hires_.empty()) return {};
+        if (g_scale == 1.f) {
+            hires_.clear();
+            return {};
+        }
+        // o video pode mostrar so parte das linhas do render (entrelacado: 640 x 476 de um render de 640 x 480): procura a
+        // linha do render em que a imagem exibida comeca (ate 8 de deslocamento)
+        for (const Hires& e : hires_) {
+            if (e.w != w || h > e.h || shown.size() != size_t(w) * h) continue;
+            for (uint32_t dy = 0; dy <= std::min<uint32_t>(8, e.h - h); ++dy) {
+                // amostra de 1 pixel em 4 nas duas direcoes; diferenca por canal <= 16 (565/555/4444 perdem ate 4 bits)
+                uint32_t n = 0, bad = 0;
+                for (uint32_t y = 1; y < h && bad * 1000 <= n + 1000; y += 4)
+                    for (uint32_t x = 1; x < w; x += 4, ++n) {
+                        const uint32_t a = shown[size_t(y) * w + x], b = e.down[size_t(y + dy) * w + x];
+                        for (int s = 0; s < 24; s += 8)
+                            if (std::abs(int((a >> s) & 0xFF) - int((b >> s) & 0xFF)) > 16) {
+                                ++bad;
+                                break;
+                            }
+                    }
+                if (n && bad * 1000 <= n) {  // ate 0,1 % fora (bordas de recorte do framebuffer)
+                    ++st.hires_shown;
+                    HiresImage r{e.image, e.iw, e.ih};
+                    // as linhas da imagem maior que correspondem as exibidas
+                    r.y0 = uint32_t(std::lround(double(dy) * e.ih / e.h)), r.rows = uint32_t(std::lround(double(h) * e.ih / e.h));
+                    r.rows = std::min(r.rows, e.ih - r.y0);
+                    return r;
+                }
+            }
+        }
+        ++st.hires_missed;
+        return {};
+    }
+
     std::string dumpDir;
     uint32_t    dumpEvery = 300;
     ~Capture() override {
@@ -411,12 +470,29 @@ private:
         for (nr::Draw& d : frame.cl.draws)
             if (d.state.texture) d.state.texture = handles[d.state.texture.value - 1];
         uint32_t   rw = 0, rh = 0;
+        // N7c: a escala so no nativo (o modo comparar compara na resolucao do jogo)
+        const float    sc = mode == Mode::Native ? g_scale : 1.f;
+        const uint32_t ew = nr::scaled_size(w, sc), eh = nr::scaled_size(h, sc);
+        vk_->set_scale(sc);
+        std::shared_ptr<std::vector<uint32_t>> hi = sc == 1.f ? nullptr : hires_buffer();
+        if (sc == 1.f) hires_.clear();
         // testes: Device falha esta tentativa e a da recuperacao; DeviceOnce so esta
         const bool injected = g_fault == Fault::Device || g_fault == Fault::DeviceOnce || g_fault == Fault::DeviceAgain;
         if (g_fault == Fault::Device) g_fault = Fault::DeviceAgain;
         else if (injected) g_fault = Fault::None;
-        const bool ok = !injected && vk_->submit(frame.cl).ok() && vk_->read_frame(out, rw, rh).ok() && rw == w && rh == h;
+        const auto t0 = std::chrono::steady_clock::now();
+        const bool ok = !injected && vk_->submit(frame.cl).ok() && vk_->read_frame(hi ? *hi : out, rw, rh).ok() && rw == ew &&
+                        rh == eh;
         frame.cl.draws = saved;
+        if (ok && hi) {  // o framebuffer recebe a imagem reduzida; a maior fica para a apresentacao
+            nr::downsample(*hi, rw, rh, out, w, h);
+            Hires e;
+            e.down = out, e.image = std::move(hi), e.w = w, e.h = h, e.iw = rw, e.ih = rh;
+            hires_.push_front(std::move(e));
+            ++st.hires_renders, st.hires_w = rw, st.hires_h = rh;
+            st.hires_cpu_ms_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() -
+                                     (vk_->stats().gpu_ms_total - st.vk_gpu_ms_total);
+        }
         if (ok) {
             ++st.vk_frames;
             st.vk_fragment_retries = vk_->stats().fragment_retries, st.vk_negative_depth = vk_->stats().negative_depth_frames;
@@ -426,8 +502,8 @@ private:
         }
         *why = injected                           ? std::string("falha injetada")
                : !vk_->stats().last_error.empty() ? vk_->stats().last_error
-               : (rw != w || rh != h)             ? "tamanho " + std::to_string(rw) + "x" + std::to_string(rh) + " em vez de " +
-                                                        std::to_string(w) + "x" + std::to_string(h)
+               : (rw != ew || rh != eh)           ? "tamanho " + std::to_string(rw) + "x" + std::to_string(rh) + " em vez de " +
+                                                        std::to_string(ew) + "x" + std::to_string(eh)
                                                   : std::string("leitura do quadro");
         return false;
     }
@@ -723,6 +799,13 @@ bool content_id(const TextureKey& k, nr::TextureId& id) {
 
 void set_texture_replacements(nr::ITextureReplacements* provider) { g_replacements = provider; }
 
+void  set_scale(float s) { g_scale = s > 0 ? s : 1.f; }
+float scale() { return g_scale; }
+
+HiresImage hires_for(std::span<const uint32_t> shown, uint32_t width, uint32_t height) {
+    return g_cap ? g_cap->hires_for(shown, width, height) : HiresImage{};
+}
+
 namespace {
 constexpr char kDumpMagic[8] = {'B', 'S', 'I', 'R', '1', 0, 0, 0};
 template <class T> void put(std::ofstream& o, const T& v) { o.write(reinterpret_cast<const char*>(&v), sizeof v); }
@@ -842,6 +925,15 @@ std::string summary() {
                       s.vk_error.empty() ? "" : "; ",
                       s.vk_error.c_str());
         out += v;
+    }
+    if (s.hires_renders) {  // N7c: resolucao interna
+        char r[300];
+        std::snprintf(r, sizeof r,
+                      "[render-escala] alvo %ux%u: renders %llu; VBlanks com a imagem maior %llu, sem %llu; leitura de volta + "
+                      "reducao na CPU: media %.2f ms por render\n",
+                      s.hires_w, s.hires_h, (unsigned long long)s.hires_renders, (unsigned long long)s.hires_shown,
+                      (unsigned long long)s.hires_missed, s.hires_cpu_ms_total / double(s.hires_renders));
+        out += r;
     }
     return out;
 }

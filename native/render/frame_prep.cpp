@@ -17,11 +17,12 @@ PassMode mode_of(ListType l, bool autosort) {
 
 } // namespace
 
-void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact) {
+void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact, float scale) {
     out = {};
     const FrameParams& f = cl.frame;
     // amostra de cobertura no canto do pixel (HALF_OFFSET bit 0 = 0): o mesmo que deslocar a geometria meio pixel
     const float shift = f.sample_center ? 0.f : 0.5f;
+    const float tw = float(scaled_size(f.width, scale)), th = float(scaled_size(f.height, scale));  // alvo
     float       maxz  = std::isfinite(f.clear_depth) ? f.clear_depth : 0.f;
     float       minz  = std::isfinite(f.clear_depth) ? f.clear_depth : 0.f;
     uint32_t    seq   = 0;
@@ -76,7 +77,11 @@ void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact) {
                 }
                 for (int i = 0; i < 3; ++i) maxz = std::fmax(maxz, v[i]->inv_w), minz = std::fmin(minz, v[i]->inv_w);
                 if (exact) {
-                    const float qx0 = float(rx0), qx1 = float(rx1 + 1), qy0 = float(ry0), qy1 = float(ry1 + 1);
+                    float qx0 = float(rx0), qx1 = float(rx1 + 1), qy0 = float(ry0), qy1 = float(ry1 + 1);
+                    if (scale != 1.f) {  // os pixels do alvo que cobrem o retangulo (o shader decide a cobertura)
+                        qx0 = std::floor(qx0 * scale), qy0 = std::floor(qy0 * scale);
+                        qx1 = std::min(tw, std::ceil(qx1 * scale)), qy1 = std::min(th, std::ceil(qy1 * scale));
+                    }
                     const float q[6][2] = {{qx0, qy0}, {qx1, qy0}, {qx0, qy1}, {qx1, qy0}, {qx1, qy1}, {qx0, qy1}};
                     for (const auto& pq : q) {
                         GpuVertex g;
@@ -87,7 +92,8 @@ void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact) {
                 } else {
                     for (int i = 0; i < 3; ++i) {
                         GpuVertex g;
-                        g.x = v[i]->x + shift, g.y = v[i]->y + shift, g.z = v[i]->inv_w, g.u = v[i]->u, g.v = v[i]->v;
+                        g.x = (v[i]->x + shift) * scale, g.y = (v[i]->y + shift) * scale;
+                        g.z = v[i]->inv_w, g.u = v[i]->u, g.v = v[i]->v;
                         // sombreamento plano: a cor (e o deslocamento) do ultimo vertice nos tres
                         g.color  = d.state.gouraud ? v[i]->color : c.color;
                         g.offset = d.state.gouraud ? v[i]->offset : c.offset;
@@ -111,6 +117,28 @@ void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact) {
     if (minz < 0) out.depth_bias = minz;
     const float range = maxz - out.depth_bias;
     while (range * out.depth_scale > 1.f) out.depth_scale *= 0.5f;  // potencia de 2: exata
+}
+
+void downsample(std::span<const uint32_t> src, uint32_t sw, uint32_t sh, std::vector<uint32_t>& dst, uint32_t dw, uint32_t dh) {
+    dst.resize(size_t(dw) * dh);
+    if (!sw || !sh || !dw || !dh || src.size() < size_t(sw) * sh) return;
+    // limites inteiros: o destino x cobre as colunas de origem [xs[x], xs[x+1]) (nunca vazio com sw >= dw)
+    std::vector<uint32_t> xs(dw + 1), ys(dh + 1);
+    for (uint32_t x = 0; x <= dw; ++x) xs[x] = uint32_t((uint64_t(x) * sw + dw / 2) / dw);
+    for (uint32_t y = 0; y <= dh; ++y) ys[y] = uint32_t((uint64_t(y) * sh + dh / 2) / dh);
+    for (uint32_t y = 0; y < dh; ++y)
+        for (uint32_t x = 0; x < dw; ++x) {
+            const uint32_t x0 = xs[x], x1 = std::max(xs[x + 1], x0 + 1), y0 = ys[y], y1 = std::max(ys[y + 1], y0 + 1);
+            uint32_t       acc[4] = {}, n = 0;
+            for (uint32_t yy = y0; yy < y1 && yy < sh; ++yy)
+                for (uint32_t xx = x0; xx < x1 && xx < sw; ++xx, ++n) {
+                    const uint32_t c = src[size_t(yy) * sw + xx];
+                    acc[0] += c >> 24, acc[1] += (c >> 16) & 0xFF, acc[2] += (c >> 8) & 0xFF, acc[3] += c & 0xFF;
+                }
+            n = std::max(n, 1u);
+            dst[size_t(y) * dw + x] = ((acc[0] + n / 2) / n) << 24 | ((acc[1] + n / 2) / n) << 16 | ((acc[2] + n / 2) / n) << 8 |
+                                      ((acc[3] + n / 2) / n);
+        }
 }
 
 } // namespace bs::native::render

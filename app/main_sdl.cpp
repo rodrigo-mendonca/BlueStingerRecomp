@@ -88,6 +88,7 @@ struct Args {
     bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
     int render = -1;  // --render nativo|software (N7b; -1 = nao dado)
     bool renderExplicit = false;  // --render ou BS_RENDER dados (valem sobre o graficos.toml do menu)
+    uint32_t internalHeight = 0;  // --resolucao-interna <altura> (N7c; 0 = a do graficos.toml)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
     bs::AudioMusicProvider   audioMusic   = bs::AudioMusicProvider::Legacy;    // --audio-musica nativo|legado (N6 fase F)
@@ -163,6 +164,10 @@ bool parseArgs(Args& a) {
             else return false;
         }
         else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v)), a.subtitlesSet = true;
+        else if (s == L"--resolucao-interna" && (v = next())) {
+            a.internalHeight = uint32_t(std::wcstoul(v->c_str(), nullptr, 10));
+            if (a.internalHeight < 240 || a.internalHeight > 4320) return false;
+        }
         else if (s == L"--audio" && (v = next())) {
             if (*v == L"legado") a.audioAll = 0;
             else if (*v == L"nativo") a.audioAll = 1;
@@ -380,49 +385,48 @@ bool validateData(const fs::path& dir, bs::FilesProvider files, std::string& err
     }
 }
 
-int runHeadless(bs::GameHost& host, const Args& a) {
-    // diagnostico: quadros periodicos (--dump-every N --capture <dir>), sem afetar o jogo
-    if (a.dumpEvery && !a.capture.empty()) {
-        std::error_code ec;
-        fs::create_directories(a.capture, ec);
-        uint64_t      next = a.dumpEvery, seq = 0;
-        bs::GameFrame       f;
-        bs::SubtitleOverlay subs;  // N7c: a captura mostra a legenda como o jogador a ve
-        // testes das legendas: BS_CAPTURA_VBLANKS=a-b,c-d limita as capturas a essas faixas; BS_CAPTURA_CRUA=1 grava
-        // tambem o quadro sem a legenda (vNNNNNN_crua.bmp) quando ha legenda
-        std::vector<std::pair<uint64_t, uint64_t>> ranges;
-        if (const char* r = std::getenv("BS_CAPTURA_VBLANKS"))
-            for (const char* q = r; *q;) {
-                unsigned long long x = 0, y = 0;
-                int                n = 0;
-                if (std::sscanf(q, "%llu-%llu%n", &x, &y, &n) != 2) break;
-                ranges.push_back({x, y}), q += n;
-                if (*q == ',') ++q;
-            }
-        const bool raw = std::getenv("BS_CAPTURA_CRUA") != nullptr;
-        auto       wanted = [&](uint64_t v) {
-            if (ranges.empty()) return true;
-            for (const auto& [x, y] : ranges)
-                if (v >= x && v <= y) return true;
-            return false;
-        };
-        while (host.running()) {
-            if (host.vblanks() >= next && host.latestFrame(f, seq)) {
-                char           name[40];
-                const uint64_t v = f.vblank ? f.vblank : host.vblanks();
-                if (wanted(v)) {
-                    std::snprintf(name, sizeof name, "v%06llu.bmp", (unsigned long long)v);
-                    writeBmp(a.capture / name, subs.composed(f));
-                    if (raw && !f.subtitle.empty()) {
-                        std::snprintf(name, sizeof name, "v%06llu_crua.bmp", (unsigned long long)v);
-                        writeBmp(a.capture / name, f);
-                    }
-                }
-                next = host.vblanks() / a.dumpEvery * a.dumpEvery + a.dumpEvery;
-            }
-            Sleep(1);
+// Capturas do headless (--dump-every N --capture <dir>), na thread do jogo, nos VBlanks multiplos de N (exatos: a mesma
+// rota em duas execucoes captura os mesmos quadros). BS_CAPTURA_VBLANKS=a-b,c-d limita a essas faixas; BS_CAPTURA_CRUA=1
+// grava tambem o quadro sem a legenda (vNNNNNN_crua.bmp) quando ha legenda; com a resolucao interna, vNNNNNN_hd.bmp.
+std::function<void(const bs::GameFrame&)> headlessCapture(const Args& a) {
+    std::error_code ec;
+    fs::create_directories(a.capture, ec);
+    std::vector<std::pair<uint64_t, uint64_t>> ranges;
+    if (const char* r = std::getenv("BS_CAPTURA_VBLANKS"))
+        for (const char* q = r; *q;) {
+            unsigned long long x = 0, y = 0;
+            int                n = 0;
+            if (std::sscanf(q, "%llu-%llu%n", &x, &y, &n) != 2) break;
+            ranges.push_back({x, y}), q += n;
+            if (*q == ',') ++q;
         }
-    }
+    const bool raw  = std::getenv("BS_CAPTURA_CRUA") != nullptr;
+    auto       subs = std::make_shared<bs::SubtitleOverlay>();  // N7c: a captura mostra a legenda como o jogador a ve
+    return [dir = a.capture, ranges, raw, subs](const bs::GameFrame& f) {
+        const uint64_t v = f.vblank;
+        bool           want = ranges.empty();
+        for (const auto& [x, y] : ranges) want = want || (v >= x && v <= y);
+        if (!want || !f.width) return;
+        char name[40];
+        std::snprintf(name, sizeof name, "v%06llu.bmp", (unsigned long long)v);
+        writeBmp(dir / name, subs->composed(f));
+        if (raw && !f.subtitle.empty()) {
+            std::snprintf(name, sizeof name, "v%06llu_crua.bmp", (unsigned long long)v);
+            writeBmp(dir / name, f);
+        }
+        if (f.hires) {  // N7c: a imagem na resolucao interna (sem a legenda), as linhas exibidas
+            bs::GameFrame hd;
+            hd.argb.assign(f.hires->begin() + size_t(f.hiresY0) * f.hiresWidth,
+                           f.hires->begin() + size_t(f.hiresY0 + f.hiresRows) * f.hiresWidth);
+            hd.width = f.hiresWidth, hd.height = f.hiresRows;
+            std::snprintf(name, sizeof name, "v%06llu_hd.bmp", (unsigned long long)v);
+            writeBmp(dir / name, hd);
+        }
+    };
+}
+
+int runHeadless(bs::GameHost& host, const Args& a) {
+    // as capturas (--dump-every N --capture <dir>) sao feitas na thread do jogo (headlessCapture)
     host.join();
     bs::GameFrame f;
     uint64_t      seq = 0;
@@ -757,8 +761,11 @@ public:
         const auto& g = p.graphics;
         if (!start && g.vulkan != old.graphics.vulkan)
             host_.setRenderer(g.vulkan ? bs::RenderProvider::Native : bs::RenderProvider::Software);
+        // resolucao interna (so o Vulkan; o software desenha na do jogo): altura interna / 480
+        if (start || g.vulkan != old.graphics.vulkan || st::internal_height(g) != st::internal_height(old.graphics))
+            host_.setRenderScale(g.vulkan ? float(st::internal_height(g)) / 480.f : 1.f);
         if (start || g.vsync != old.graphics.vsync) SDL_SetRenderVSync(renderer_, g.vsync ? 1 : SDL_RENDERER_VSYNC_DISABLED);
-        if (start || !sameDisplay(g, old.graphics)) {
+        if (start || g.window != old.graphics.window || g.window_w != old.graphics.window_w || g.window_h != old.graphics.window_h) {
             if (!applyWindow(g)) {  // o SDL recusou: nunca fica sem imagem
                 std::fprintf(stderr, "[menu] modo de tela recusado (%s): ", SDL_GetError());
                 if (start) {  // o salvo nao serve: janela no tamanho padrao, e o arquivo fica como estava
@@ -788,6 +795,7 @@ public:
         d.audio           = applied_.audio;
         d.graphics        = applied_.graphics;
         d.graphics.window = confirmed_.window, d.graphics.window_w = confirmed_.window_w, d.graphics.window_h = confirmed_.window_h;
+        d.graphics.resolution = confirmed_.resolution, d.graphics.scale_pct = confirmed_.scale_pct;
         if (renderOverride_) d.graphics.vulkan = persisted_.graphics.vulkan;
         d.subtitles = applied_.subtitles;
         if (subtitleOverride_) d.subtitles.enabled = persisted_.subtitles.enabled, d.subtitles.language = persisted_.subtitles.language;
@@ -818,7 +826,8 @@ private:
     st::GraphicsSettings              confirmed_;  // a ultima tela aceita (a que vai para o arquivo)
 
     static bool sameDisplay(const st::GraphicsSettings& a, const st::GraphicsSettings& b) {
-        return a.window == b.window && a.window_w == b.window_w && a.window_h == b.window_h;
+        return a.window == b.window && a.window_w == b.window_w && a.window_h == b.window_h && a.resolution == b.resolution &&
+               a.scale_pct == b.scale_pct;
     }
     static bool log(const std::string& e) {
         std::fprintf(stderr, "[menu] %s\n", e.c_str());
@@ -914,6 +923,11 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
               SDL_Renderer* renderer, InGameMenu& menu) {
     SDL_Texture*  texture = nullptr;
     uint32_t      texW = 0, texH = 0;
+    // N7c: a imagem na resolucao interna (quando o quadro exibido e um render do Vulkan na escala), em textura propria
+    // com filtragem linear (a do jogo fica com a dele: alternar entre as duas nao recria texturas)
+    SDL_Texture*  hiTexture = nullptr;
+    uint32_t      hiW = 0, hiH = 0;
+    bool          useHi = false;
     // N7c: legendas das falas por cima do gameplay, na resolucao da janela (camada propria; o quadro nao e tocado)
     bs::SubtitleOverlay subs;
     bs::GameFrame frame;
@@ -980,7 +994,17 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
                     break;
                 }
             }
-            ok &= SDL_UpdateTexture(texture, nullptr, frame.argb.data(), int(frame.width * 4));
+            useHi = frame.hires && frame.hiresWidth && frame.hiresHeight;
+            if (useHi && (!hiTexture || hiW != frame.hiresWidth || hiH != frame.hiresHeight)) {
+                if (hiTexture) SDL_DestroyTexture(hiTexture);
+                hiTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                              int(frame.hiresWidth), int(frame.hiresHeight));
+                hiW = frame.hiresWidth, hiH = frame.hiresHeight;
+                if (hiTexture) SDL_SetTextureScaleMode(hiTexture, SDL_SCALEMODE_LINEAR);
+                useHi = hiTexture != nullptr;  // sem a textura maior, a do jogo (nunca sem imagem)
+            }
+            if (useHi) ok &= SDL_UpdateTexture(hiTexture, nullptr, frame.hires->data(), int(frame.hiresWidth * 4));
+            else ok &= SDL_UpdateTexture(texture, nullptr, frame.argb.data(), int(frame.width * 4));
         }
         if (g_recorder && g_recorder->pendingCheckpoint)  // F5: com o quadro desta iteracao
             g_recorder->pendingCheckpoint = false, g_recorder->checkpoint(g_spectator.step.load(), frame);
@@ -988,7 +1012,8 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
         ok &= SDL_RenderClear(renderer);
         if (texture) {  // o quadro na area 4:3 da saida (faixas pretas nas sobras)
             const SDL_FRect area = gameArea(renderer);
-            ok &= SDL_RenderTexture(renderer, texture, nullptr, &area);
+            const SDL_FRect src{0, float(frame.hiresY0), float(frame.hiresWidth), float(frame.hiresRows)};  // linhas exibidas
+            ok &= SDL_RenderTexture(renderer, useHi ? hiTexture : texture, useHi ? &src : nullptr, &area);
         }
         // N7c: legendas e menu por cima do quadro, em pixels de saida na area do jogo (nitidos, sem distorcer)
         menu.update();
@@ -1023,6 +1048,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
     if (!err.empty()) errorBox(window, "O jogo parou com erro:\n" + err);
     else if (!gfxError.empty()) errorBox(window, "Falha de video:\n" + gfxError);
     if (texture) SDL_DestroyTexture(texture);
+    if (hiTexture) SDL_DestroyTexture(hiTexture);
     return err.empty() && gfxError.empty() ? 0 : 1;
 }
 
@@ -1313,7 +1339,9 @@ int mainHeadless(Args& a) {
     opt.input           = input.get();
     if (assist) opt.vblankHook = [&assist](const bs::GameOptions::VblankView& v) { return assist->onVblank(v); };
     bs::GameHost host;
+    if (a.dumpEvery && !a.capture.empty()) opt.captureEvery = a.dumpEvery, opt.capture = headlessCapture(a);
     host.start(std::move(opt));
+    if (a.internalHeight) host.setRenderScale(float(a.internalHeight) / 480.f);
     const int rc = runHeadless(host, a);
     host.requestStop();
     host.join();
@@ -1488,6 +1516,8 @@ int mainWindow(Args& a) {
         if (!caps.vulkan) std::fprintf(stderr, "[menu] Vulkan indisponivel (%s): so o renderizador em software\n", vkErr.c_str());
     }
     caps.max_height = 480, caps.features.window_modes = true, caps.features.vsync = true;
+    // N7c: resolucao interna com o Vulkan; ate a apresentacao direta estabilizar, no maximo 1080 (1440 e 4K depois)
+    if (caps.vulkan) caps.features.scaling = true, caps.max_height = 1080;
     prefs.graphics = st::clamp_to(prefs.graphics, caps);
     if (!prefs.graphics.vulkan) a.render = 0;
     std::vector<std::string> languages;  // os idiomas dos pacotes de legendas encontrados
@@ -1513,6 +1543,7 @@ int mainWindow(Args& a) {
         InGameMenu menu(host, *input, window, renderer, prefsDir, prefs, persisted, renderOverride, subtitleOverride, caps, languages);
         if (g_spectator.on) menu.disable();
         menu.apply(prefs, true);
+        if (a.internalHeight) host.setRenderScale(float(a.internalHeight) / 480.f);  // so nesta execucao
         rc = runWindow(host, *input, a, window, renderer, menu);
         // a thread do jogo le a fonte de entrada: para e espera ANTES de destrui-la, em todos
         // os caminhos (revisao Codex 2026-10-14)

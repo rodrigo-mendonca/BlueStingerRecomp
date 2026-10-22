@@ -82,9 +82,17 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                          g.aspect = p.graphics.aspect, g.vsync = p.graphics.vsync;
                          p.graphics = g;
                      }});
-        e.push_back({"Resolu\u00e7\u00e3o interna", soon(f.scaling, res[size_t(g.resolution)]), f.scaling,
-                     [](Preferences& p, int d) { p.graphics.resolution = cycle(p.graphics.resolution, d, 5); }});
-        e.push_back({"Escala de renderiza\u00e7\u00e3o", soon(f.scaling, pct(g.scale_pct)), f.scaling,
+        // so as resolucoes que cabem no limite (caps.max_height) e so com o Vulkan (o software desenha na do jogo)
+        int resolutions = 1;
+        for (const uint32_t hh : {720u, 1080u, 1440u, 2160u}) resolutions += hh <= caps_.max_height;
+        const bool        scaling  = f.scaling && g.vulkan;
+        const std::string resValue = !f.scaling ? soon(false, res[size_t(g.resolution)])
+                                     : g.vulkan ? std::string(res[size_t(g.resolution)])
+                                                : std::string(res[size_t(g.resolution)]) + " (s\u00f3 com Vulkan)";
+        e.push_back({"Resolu\u00e7\u00e3o interna", resValue, scaling, [resolutions](Preferences& p, int d) {
+                         p.graphics.resolution = cycle(p.graphics.resolution, d, resolutions);
+                     }});
+        e.push_back({"Escala de renderiza\u00e7\u00e3o", soon(f.scaling, pct(g.scale_pct)), scaling,
                      [](Preferences& p, int d) { p.graphics.scale_pct = step(p.graphics.scale_pct, d, 50, 200, 25); }});
         e.push_back({"Propor\u00e7\u00e3o", soon(f.aspect_wide, asp[size_t(g.aspect)]), f.aspect_wide,
                      [](Preferences& p, int d) { p.graphics.aspect = cycle(p.graphics.aspect, d, 3); }});

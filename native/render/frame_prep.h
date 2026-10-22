@@ -12,6 +12,7 @@
 #include "render/render.h"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace bs::native::render {
@@ -57,6 +58,17 @@ struct PreparedFrame {
 // exact = modo fiel: cada triangulo vira o RETANGULO envolvente em pixels inteiros (o mesmo laco do software:
 // x de floor(min) a ceil(max), limitado ao quadro e ao recorte "dentro") e o shader decide a cobertura com as contas
 // do software, independente da rasterizacao da GPU. Sem exact: os proprios triangulos (melhorias do N7c).
-void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact = false);
+// scale (N7c, resolucao interna): o alvo tem round(largura x scale) x round(altura x scale) pixels; as posicoes dos
+// vertices enviados a GPU sao multiplicadas por scale (no modo fiel, o retangulo envolvente vira o retangulo dos
+// pixels do alvo que o cobrem) e o shader amostra as contas do software nos pontos do alvo levados de volta as
+// coordenadas do jogo. Os dados dos triangulos (tri_data) ficam nas coordenadas do jogo. scale = 1: o modo fiel.
+void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact = false, float scale = 1.f);
+
+// Tamanho do alvo para um quadro w x h na escala `scale` (o mesmo arredondamento do backend e de quem le a imagem).
+inline uint32_t scaled_size(uint32_t v, float scale) { return scale == 1.f ? v : uint32_t(float(v) * scale + 0.5f); }
+
+// Reducao de uma imagem na resolucao interna para a do jogo (o framebuffer emulado continua coerente): cada pixel de
+// destino e a media (ARGB, arredondada) das colunas e linhas de origem [x * sw / dw, (x + 1) * sw / dw).
+void downsample(std::span<const uint32_t> src, uint32_t sw, uint32_t sh, std::vector<uint32_t>& dst, uint32_t dw, uint32_t dh);
 
 } // namespace bs::native::render

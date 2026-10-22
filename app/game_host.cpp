@@ -294,6 +294,11 @@ void GameHost::setSubtitleLanguage(const std::string& language) {
     notifyRequest();
 }
 
+void GameHost::setRenderScale(float scale) {
+    scalePending_.store(scale > 0 ? scale : 1.f);
+    notifyRequest();
+}
+
 void GameHost::setRenderer(RenderProvider r) {
     rendererPending_.store(int(r));
     notifyRequest();
@@ -318,6 +323,10 @@ void GameHost::applyRequests() {
                                          language));
             std::fprintf(stderr, "[legenda] idioma: %s\n", language.empty() ? "desligadas" : language.c_str());
         }
+    }
+    if (const float s = scalePending_.exchange(0.f); s > 0 && s != transitional::render_capture::scale()) {
+        transitional::render_capture::set_scale(s);
+        std::fprintf(stderr, "[render] resolucao interna: escala %.3g (%ux%u)\n", s, unsigned(640 * s + 0.5f), unsigned(480 * s + 0.5f));
     }
     if (const int r = rendererPending_.exchange(-1); r >= 0 && !std::getenv("BS_RENDER_IR")) {
         transitional::render_capture::install(RenderProvider(r) == RenderProvider::Native ? transitional::render_capture::Mode::Native
@@ -402,7 +411,14 @@ void GameHost::vblank() {
     }
     pvr_video_frame(scratch_.argb, scratch_.width, scratch_.height);
     // N5: durante um filme nativo o quadro exibido e o dele (o PVR nao desenha o filme)
-    if (transitional::video::playing() && movie_.width) scratch_ = movie_;
+    const bool movie = transitional::video::playing() && movie_.width;
+    if (movie) scratch_ = movie_;
+    scratch_.hires.reset(), scratch_.hiresWidth = scratch_.hiresHeight = 0;
+    if (!movie && renderer_.load() == int(RenderProvider::Native)) {  // N7c: a imagem maior do render exibido
+        auto hi = transitional::render_capture::hires_for(scratch_.argb, scratch_.width, scratch_.height);
+        scratch_.hires = std::move(hi.argb), scratch_.hiresWidth = hi.width, scratch_.hiresHeight = hi.height;
+        scratch_.hiresY0 = hi.y0, scratch_.hiresRows = hi.rows;
+    }
     // Diagnostico (N2b-2): BS_FRAME_LOG=<arquivo> grava o hash do quadro exibido a cada VBlank
     // (compara a sequencia de quadros entre modos de tempo com linhas do tempo deslocadas)
     static FILE* frameLog = [] {
@@ -428,6 +444,7 @@ void GameHost::vblank() {
         ++frameSeq_;
     }
     ramWatchVblank(ram_, n);
+    if (opt_.captureEvery && opt_.capture && n % opt_.captureEvery == 0) opt_.capture(frame_);
     if (opt_.vblankHook &&
         !opt_.vblankHook({n, transitional::time::game_steps(), controllerReads(), frame_, ram_}))
         stop_.store(true);

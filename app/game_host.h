@@ -28,6 +28,11 @@ struct GameFrame {
     // N7c: legenda das falas ativa neste VBlank (SubtitleService do N6; vazia = nenhuma ou legendas desligadas).
     // Fica fora da imagem: quem apresenta a desenha por cima (app/subtitle_overlay.h).
     std::wstring          subtitle;
+    // N7c: resolucao interna. Quando o quadro exibido e um render do Vulkan na escala, a imagem maior dele (mesmo
+    // conteudo; `argb` continua a da VRAM, que as capturas e o hash dos quadros usam). Vazio = apresentar `argb`.
+    std::shared_ptr<const std::vector<uint32_t>> hires;
+    uint32_t                                     hiresWidth = 0, hiresHeight = 0;
+    uint32_t                                     hiresY0 = 0, hiresRows = 0;  // as linhas que correspondem a `argb`
 };
 
 // Desempenho medido na thread do jogo. "Trabalho" = tempo de host gasto emulando um campo
@@ -120,6 +125,10 @@ struct GameOptions {
         const uint8_t*   ram;
     };
     std::function<bool(const VblankView&)> vblankHook;
+    // Capturas exatas (headless --dump-every N --capture): chamado na thread do jogo com o quadro publicado nos VBlanks
+    // multiplos de captureEvery (o mesmo VBlank em execucoes diferentes da mesma rota, o que a comparacao precisa).
+    uint64_t                                captureEvery = 0;
+    std::function<void(const GameFrame&)>   capture;
 };
 
 class GameHost {
@@ -150,6 +159,7 @@ public:
     void           setVolumes(float music, float voices, float effects);  // 0..1, com o volume geral (audio nativo)
     void           setSubtitleLanguage(const std::string& language);      // falas e filmes; "" = desligadas
     void           setRenderer(RenderProvider r);
+    void           setRenderScale(float scale);  // N7c: resolucao interna do Vulkan (1 = fiel; altura interna / 480)
     RenderProvider renderer() const { return RenderProvider(renderer_.load()); }
 
 private:
@@ -195,6 +205,7 @@ private:
     std::atomic<int>                               rendererPending_{-1}, renderer_{0};
     bool                                           voicesNative_ = false;  // o servico de legendas das falas existe
     std::atomic<bool>                              requestsPending_{false};  // acorda a pausa para aplicar pedidos
+    std::atomic<float>                             scalePending_{0.f};         // 0 = nenhum pedido
     void                                           notifyRequest();
 };
 

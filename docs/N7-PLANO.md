@@ -907,3 +907,41 @@ interno"). Decisões tomadas na implementação:
 Critérios a cumprir antes de qualquer opção acender no menu:
 - a imagem no modo fiel continua idêntica ao software, na resolução original;
 - cada modo aprimorado tem um teste de imagem (PSNR ≥ 40 dB contra o fiel ampliado, medido).
+
+## 20. N7c: resoluções modernas (A → B)
+
+**Decisão do mantenedor (2026-10-22):** A primeiro, mínimo, para validar a renderização interna em 1080p com a
+infraestrutura existente; depois B, o caminho definitivo: apresentação direta pelo Vulkan.
+
+### Resolução interna no modo fiel (comum a A e B)
+
+- Escala `e = altura interna / 480`; o alvo do Vulkan é `round(640 e) × round(480 e)`.
+- O shader do modo fiel avalia as contas do software (cobertura com a regra de cima/esquerda, 1/w, atributos,
+  divisão exata) no ponto `(pixel do alvo + 0,5) / e` das coordenadas do jogo.
+- Na escala 1 o ponto é o mesmo de antes (×1,0 é exato): a igualdade bit a bit com o software se mantém.
+- O framebuffer emulado recebe a imagem reduzida pela média (`frame_prep: downsample`). O jogo, as capturas e o
+  hash dos quadros continuam coerentes.
+- A apresentação acha qual render está sendo exibido pelo conteúdo (os 3 últimos, tolerando a quantização do
+  framebuffer) e usa a imagem maior dele nas linhas exibidas (entrelaçado: 476 de 480).
+- Texturas: as originais, amostradas em mais pontos (bilinear no shader). HD continua no N9.
+
+### Caminho A (feito, 2026-10-22)
+
+A imagem maior volta inteira para a CPU e a janela SDL a mostra. Validado em 1080p: ver `STATUS.md`, "N7c:
+resolução interna, caminho A". Não é a arquitetura final: o custo da transferência (6,2 MB e 3,5 ms por render em
+1080p) cresce com a resolução.
+
+### Caminho B (definitivo)
+
+- Um dispositivo Vulkan por processo, compartilhado pelo renderizador (thread do jogo) e pela apresentação (thread
+  da janela), com a fila sob trava.
+- Depois de cada render na escala:
+  - cópia na GPU para um anel de slots apresentáveis;
+  - redução na GPU (compute, as mesmas contas inteiras da CPU);
+  - só a imagem na resolução do jogo volta para a CPU (1,2 MB, o mesmo tamanho que o modo fiel já lê).
+- Apresentação: swapchain própria na janela. A imagem do jogo (o slot, sem passar pela CPU, ou a imagem da CPU:
+  software, filmes) vai na área 4:3, e menu e legendas são camadas na resolução da janela (texto nítido).
+- O renderizador em software e a apresentação SDL continuam como recuo.
+- Resolução interna, resolução da janela e escala de renderização ficam separadas.
+- 1440p e 4K só depois da apresentação direta estabilizar, respeitando os limites da GPU.
+- 16:9 só com a projeção, a câmera e o HUD corrigidos (até lá, 4:3 com faixas).

@@ -41,6 +41,7 @@ layout(push_constant) uniform Batch {
     uint  blend;
     uint  clampMin, clampMax;
     float depthBias;   // subtraido de 1/w antes da escala (quadros com 1/w negativo)
+    float invScale;    // 1 / escala da resolucao interna: pixel do alvo -> coordenadas do jogo (1 no modo fiel)
 } pc;
 
 const uint F_TEXTURED = 1u, F_GOURAUD = 2u, F_OFFSET = 4u, F_USE_ALPHA = 8u, F_IGNORE_TEX_ALPHA = 16u;
@@ -108,7 +109,9 @@ bool exact(ivec2 pix, out float z, out vec4 col, out vec3 off, out vec2 uv) {
     precise float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
     const float fpuOff = (pc.flags & F_SAMPLE_CORNER) != 0u ? 0.0 : 0.5;
     const float tspOff = (pc.flags & F_ATTR_CORNER) != 0u ? 0.0 : 0.5;
-    const float px = float(pix.x) + fpuOff, py = float(pix.y) + fpuOff;
+    // o ponto de amostra nas coordenadas do jogo: com a resolucao interna maior, cada pixel do alvo amostra as
+    // mesmas contas num ponto entre os pixels do jogo (x 1.0 exato na resolucao original)
+    precise float px = (float(pix.x) + fpuOff) * pc.invScale, py = (float(pix.y) + fpuOff) * pc.invScale;
     precise float w0 = (b.x - px) * (c.y - py) - (c.x - px) * (b.y - py);
     precise float w1 = (c.x - px) * (a.y - py) - (a.x - px) * (c.y - py);
     precise float w2 = (a.x - px) * (b.y - py) - (b.x - px) * (a.y - py);
@@ -121,7 +124,7 @@ bool exact(ivec2 pix, out float z, out vec4 col, out vec3 off, out vec2 uv) {
     precise float zz = l0 * az + l1 * bz + l2 * cz;
     precise float m0 = l0, m1 = l1, m2 = l2;
     if (tspOff != fpuOff) {
-        const float qx = float(pix.x) + tspOff, qy = float(pix.y) + tspOff;
+        precise float qx = (float(pix.x) + tspOff) * pc.invScale, qy = (float(pix.y) + tspOff) * pc.invScale;
         m0 = ((b.x - qx) * (c.y - qy) - (c.x - qx) * (b.y - qy)) * inv;
         m1 = ((c.x - qx) * (a.y - qy) - (a.x - qx) * (c.y - qy)) * inv;
         m2 = 1.0 - m0 - m1;
@@ -171,7 +174,9 @@ void main() {
         off = (pc.flags & F_GOURAUD) != 0u ? offz / zv : fOff;
         uv  = uvz / zv;
     }
-    if ((pc.flags & F_CLIP_OUTSIDE) != 0u && p.x >= pc.clip.x && p.x <= pc.clip.z && p.y >= pc.clip.y && p.y <= pc.clip.w)
+    // recorte "fora": o pixel do jogo que contem o centro do pixel do alvo (o proprio pixel na resolucao original)
+    const ivec2 g = pc.invScale == 1.0 ? p : ivec2(floor((vec2(p) + 0.5) * pc.invScale));
+    if ((pc.flags & F_CLIP_OUTSIDE) != 0u && g.x >= pc.clip.x && g.x <= pc.clip.z && g.y >= pc.clip.y && g.y <= pc.clip.w)
         discard;
     if ((pc.flags & F_USE_ALPHA) == 0u) col.a = 1.0;
     precise vec4 o = col;

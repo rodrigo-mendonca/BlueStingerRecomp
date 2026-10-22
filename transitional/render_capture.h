@@ -29,6 +29,8 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -95,6 +97,10 @@ struct Stats {
     double      cmp_min_psnr = 0, cmp_psnr_sum = 0;  // PSNR (RGB) por quadro: minimo e soma (media = soma / quadros)
     uint64_t    cmp_below40 = 0;                     // quadros com PSNR < 40 dB (criterio do plano, secao 5)
     uint64_t distinct_texture_keys = 0, distinct_texture_ids = 0;  // chaves (TCW+tamanho) e ids de conteudo distintos
+    // N7c: resolucao interna (Mode::Native com escala != 1)
+    uint64_t hires_renders = 0, hires_shown = 0, hires_missed = 0;  // renders na escala; VBlanks com/sem a imagem maior
+    double   hires_cpu_ms_total = 0;                                // leitura de volta + reducao para o framebuffer
+    uint32_t hires_w = 0, hires_h = 0;                              // tamanho do ultimo render na escala
     std::string first_error;
 };
 
@@ -104,6 +110,26 @@ const Frame& last_frame();                         // a IR do ultimo render
 const Stats& stats();
 std::string  summary();
 void         set_compare_dump(const std::string& dir, uint32_t every);  // BMP das comparacoes (Mode::Compare)
+// N7c: resolucao interna do renderizador nativo (so Mode::Native; o modo comparar e a referencia continuam em 1). Com
+// escala != 1 o Vulkan desenha a geometria em round(w x escala) x round(h x escala) (vk_device.h) e:
+//   - o framebuffer emulado recebe essa imagem REDUZIDA para o tamanho do jogo (media dos pixels), entao o resto do
+//     caminho (VRAM, apresentacao, capturas, hash dos quadros) continua coerente e e o recuo;
+//   - a imagem maior fica guardada (os ultimos renders, por causa do buffer duplo) para quem apresenta.
+// 1 = o modo fiel. Vale a partir do proximo render; chamar na thread do jogo.
+void  set_scale(float scale);
+float scale();
+
+// A imagem maior do que esta sendo EXIBIDO: `shown` e o quadro que o video do PVR leu da VRAM (pvr_video_frame). Se
+// ele e um dos ultimos renders na escala (o conteudo confere com a imagem reduzida que foi para a VRAM, tolerando a
+// quantizacao do formato do framebuffer), devolve a imagem maior desse render; senao (filme, tela escrita pela CPU,
+// escala 1), vazio. Thread do jogo.
+struct HiresImage {
+    std::shared_ptr<const std::vector<uint32_t>> argb;  // ARGB8888, width x height
+    uint32_t                                     width = 0, height = 0;
+    uint32_t                                     y0 = 0, rows = 0;  // as linhas que correspondem ao exibido
+};
+HiresImage hires_for(std::span<const uint32_t> shown, uint32_t width, uint32_t height);
+
 // Ponto de extensao das texturas HD (contrato do N7a): com provedor, o backend Vulkan troca cada textura pela
 // substituicao do mesmo TextureId quando ela e compativel (replacement_compatible); senao, o original. nullptr =
 // so originais (o padrao ate o N9, que traz o carregador de mods). O provedor tem de viver enquanto instalado.
