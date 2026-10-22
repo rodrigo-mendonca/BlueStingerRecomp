@@ -44,6 +44,7 @@ inline uint32_t sh4_read32(Sh4Context* c, uint32_t a) {
 inline void sh4_write8(Sh4Context* c, uint32_t a, uint32_t v) {
 #if BS_WRITE_WATCH
     if (sh4_is_ram(a)) { const uint8_t b = uint8_t(v); ww_ram(c->ram + (a & kRamMask), a & kRamMask, &b, 1); }
+    if (sh4_is_ram(a) && (g_wwWriter.on || !g_wwWriter.init)) ww_writer(c, a & kRamMask, uint8_t(v), 1);
 #endif
     if (sh4_is_ram(a)) c->ram[a & kRamMask] = uint8_t(v);
     else sh4_write8_slow(c, a, uint8_t(v));
@@ -53,6 +54,7 @@ inline void sh4_write16(Sh4Context* c, uint32_t a, uint32_t v) {
         const uint16_t w = uint16_t(v);
 #if BS_WRITE_WATCH
         ww_ram(c->ram + (a & kRamMask), a & kRamMask, &w, 2);
+        if (g_wwWriter.on || !g_wwWriter.init) ww_writer(c, a & kRamMask, w, 2);
 #endif
         std::memcpy(c->ram + (a & kRamMask), &w, 2);
     } else {
@@ -63,6 +65,7 @@ inline void sh4_write32(Sh4Context* c, uint32_t a, uint32_t v) {
     if (sh4_is_ram(a) && !(a & 3)) {
 #if BS_WRITE_WATCH
         ww_ram(c->ram + (a & kRamMask), a & kRamMask, &v, 4);
+        if (g_wwWriter.on || !g_wwWriter.init) ww_writer(c, a & kRamMask, v, 4);
 #endif
         std::memcpy(c->ram + (a & kRamMask), &v, 4);
     } else {

@@ -84,6 +84,18 @@ inline void ww_ram(const uint8_t* dst, uint32_t off, const void* src, size_t n) 
 struct Sh4Context;
 void ww_poll_note(Sh4Context* c, uint32_t resume, bool callReturn);
 
+// N7c (investigacao da camera): BS_ESCRITOR=<lo>-<hi>:<arquivo> registra QUEM escreve na faixa de enderecos (RAM do
+// guest, inclusive): a funcao em execucao (c->cur_fn, a ultima entrada; depois de uma chamada ainda e a chamada) e o
+// PR (endereco de retorno: o chamador da funcao atual), com o valor. Agrega por (endereco, funcao, PR) e grava as
+// primeiras escritas uma a uma. So no build de investigacao (BS_WRITE_WATCH).
+struct WwWriter {
+    bool     on = false, init = false;
+    uint32_t lo = 0, hi = 0;  // deslocamentos na RAM
+};
+extern WwWriter g_wwWriter;
+void ww_writer_init();
+void ww_writer(const Sh4Context* c, uint32_t off, uint32_t value, int bytes);
+
 // Palavras cujo valor no fim do trecho difere do original (mudanca liquida).
 inline uint64_t ww_net_changes(const uint8_t* ram) {
     uint64_t n = 0;

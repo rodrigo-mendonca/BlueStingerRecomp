@@ -1,6 +1,8 @@
 // Caminho lento de memoria (tudo fora da RAM principal). M3: so registra o
 // acesso; M4 implementa o mapa de regioes (BIOS/flash HLE, registradores,
 // VRAM, AICA, store queues).
+#include <tuple>
+#include <map>
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 #include "aica/aica_regs.h"
@@ -28,6 +30,49 @@
 namespace bs {
 
 WriteWatch     g_ww;       // diagnostico N2b (cpu/write_watch.h)
+WwWriter       g_wwWriter;  // investigacao da camera (N7c, BS_ESCRITOR)
+
+#if BS_WRITE_WATCH  // so no build de investigacao: o executavel normal nao tem nada disto
+
+namespace {
+struct WriterLog {
+    FILE*                                                                f = nullptr;
+    uint64_t                                                             raw = 0;
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t>, std::pair<uint64_t, uint32_t>> agg;  // (end, fn, pr) -> (n, ultimo)
+    ~WriterLog() {
+        if (!f) return;
+        std::fprintf(f, "# agregado: endereco\tfuncao\tpr\tescritas\tultimo valor\n");
+        for (const auto& [k, v] : agg)
+            std::fprintf(f, "A\t%08X\t%08X\t%08X\t%llu\t%08X\n", 0x8C000000u | std::get<0>(k), std::get<1>(k), std::get<2>(k),
+                         static_cast<unsigned long long>(v.first), v.second);
+        std::fclose(f);
+    }
+} g_writerLog;
+} // namespace
+
+void ww_writer_init() {
+    g_wwWriter.init = true;
+    const char* v = std::getenv("BS_ESCRITOR");
+    if (!v || !*v) return;
+    unsigned lo = 0, hi = 0;
+    const char* colon = std::strchr(v, ':');
+    if (!colon || std::sscanf(v, "%x-%x", &lo, &hi) != 2) return;
+    g_writerLog.f = std::fopen(colon + 1, "w");
+    if (!g_writerLog.f) return;
+    std::fprintf(g_writerLog.f, "# BS_ESCRITOR: as primeiras escritas: ciclos\tendereco\tfuncao\tpr\tbytes\tvalor\n");
+    g_wwWriter.lo = lo & kRamMask, g_wwWriter.hi = hi & kRamMask, g_wwWriter.on = true;
+}
+
+void ww_writer(const Sh4Context* c, uint32_t off, uint32_t value, int bytes) {
+    if (!g_wwWriter.init) ww_writer_init();
+    if (!g_wwWriter.on || off < g_wwWriter.lo || off > g_wwWriter.hi) return;
+    auto& e = g_writerLog.agg[{off, c->cur_fn, c->pr}];
+    ++e.first, e.second = value;
+    if (g_writerLog.raw++ < 4000)
+        std::fprintf(g_writerLog.f, "W\t%llu\t%08X\t%08X\t%08X\t%d\t%08X\n", static_cast<unsigned long long>(c->cycles),
+                     0x8C000000u | off, c->cur_fn, c->pr, bytes, value);
+}
+#endif
 EffectCounters g_effects;  // N2b-2 (memory/effect_counters.h)
 
 // Diagnostico N2b (so chamado no build BS_WRITE_WATCH): voltas por PC de retomada e declaracao

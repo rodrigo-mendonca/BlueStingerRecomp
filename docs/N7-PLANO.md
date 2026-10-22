@@ -1048,7 +1048,8 @@ visual original.
    - shader inválido (SPIR-V corrompido, binding fora da interface, push constants grandes demais) desativado com o
      motivo, sem derrubar a imagem;
    - o preset Original continua sem nenhum passe.
-3. Depois, um efeito por vez: tonemapping, nitidez, bloom; SSAO por último, se a profundidade servir.
+3. Depois, um efeito por vez: tonemapping, nitidez, bloom (**feitos**, mais o CRT); SSAO por último, se a profundidade
+   servir. **Pendente:** a projeção ainda não foi localizada (seção 23), e o HUD 2D teria de ser separado da cena.
 4. Pacotes completos de mods gráficos e ferramentas de criação: N10.
 
 ## 22. N7c: o que falta e o roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
@@ -1075,3 +1076,119 @@ visual original.
    - o mapeamento do controle continua o do N3 (`controles.toml`).
 3. Validação com as camadas do Vulkan num terminal não elevado (pendência AMD e caminho B).
 4. Fechamento do N7 (nível 2): testes completos do subsistema e comparação com o legado.
+
+## 23. Câmera livre e segundo analógico: investigação e proposta (2026-10-22; aguarda a decisão do mantenedor)
+
+### Método
+
+Nada do jogo foi alterado para investigar.
+- **Estático:**
+  - `bs-disasm` sobre o `1ST_READ.BIN`;
+  - as constantes dos literal pools na região da câmera e as instruções que as carregam (o código gerado lê cada
+    literal da memória: `MOVL_PC`).
+- **Dinâmico, no build de investigação** (`-DBS_WRITE_WATCH=ON`, `build/n7-ww`):
+  - o registro novo `BS_ESCRITOR=<lo>-<hi>:<arquivo>` grava quem escreve numa faixa da RAM: a função em execução
+    (`c->cur_fn`), o PR (o chamador) e o valor, agregado por endereço;
+  - no executável normal nada disso existe (`#if BS_WRITE_WATCH`).
+- `BS_RAM_WATCH` (já existente) nas variáveis da câmera, ao longo da rota `passo_combate` (9000 VBlanks).
+
+### O que foi encontrado
+
+**Objeto câmera do SDK (Ninja), `0x8C24CC38`, ~0x78 bytes:**
+
+| Endereço | Conteúdo | Quem escreve (função; chamador) |
+|---|---|---|
+| `CC38–CC77` | matriz de visão 4×4 (float) | `8C1741EC` (monta a matriz a partir da câmera), com `8C170D34`, `8C170DC8`, `8C170E64` e `8C1713A4` |
+| `CC78–CC80` | posição da câmera (x, y, z) | `8C174308` (posição = vetor base + deslocamento em fr4–fr6) |
+| `CC84–CC8C` | vetor de visão | `8C1740DC` (inicia), `8C174148` (gira em X: y, z) e `8C174180` (gira em Y: x, z), com o ângulo em r5 (unidade Ninja: 0x10000 = 360°, `fsca`) |
+
+**Câmera do jogo (estado lógico), `0x8C24CD50`:**
+
+| Endereço | Conteúdo (medido na rota) |
+|---|---|
+| `CD50–CD58` | posição da câmera no mundo (segue o Eliot, a ~280 unidades no gameplay) |
+| `CD5C` | pitch (inteiro Ninja; somado a um valor da tabela de câmeras `0x8C137A74`, 104 bytes por entrada, índices `CD6A`/`CD6C`) |
+| `CD60` | yaw (inteiro Ninja) |
+| `CD68` | 0/1; vira 1 na cena de abertura (VBlank 2279) e nos momentos roteirizados (4656, 6968): muito provavelmente a câmera de evento (a confirmar) |
+
+`CD50` é lido por 45 funções do jogo: é estado de lógica, não só de imagem. O Eliot fica em `0x8C24D668` (x, y, z).
+
+**Montagem da câmera por passo de jogo, em `8C052240`** (a atualização principal do jogo; base `r14 = 0x8C24D2CC`):
+1. `8C05285C` `8C1740DC(cam)`: reinicia a câmera do SDK.
+2. `8C05288E` `8C174148(cam, pitch)`: pitch = `[CD5C]` + o da tabela.
+3. `8C052896` `8C174180(cam, [CD60])`: yaw.
+4. `8C0528A8` `8C174308(cam, [CD50], [CD54], [CD58])`: posição.
+5. `8C0528B0` `8C1741EC(cam)`: matriz de visão em `CC38`.
+6. Depois, um segundo objeto em `0x8C2D0CC0` recebe a posição NEGADA (`8C0528D6`; céu/fundo ou luz, a confirmar).
+
+Um segundo caminho, `8C078FC0` (`8C07964C`–`8C07966E`), faz a mesma montagem sem o giro em Y: provavelmente a câmera
+fixa ou de evento. Na rota:
+
+| Caminho | Passos |
+|---|---|
+| `8C052240` (gameplay) | 2634 |
+| `8C078FC0` | 672 |
+
+As chamadas ao SDK são **indiretas** (`jsr @r3`): passam pelo despachante, e `sh4_override` pode interceptá-las sem
+mexer no código gerado. O PR identifica o ponto de chamada.
+
+**Matrizes para efeitos (SSAO, iluminação):**
+- a matriz de visão por quadro está em `CC38` (escrita em `8C0528B0`);
+- a projeção não está nesse objeto (o PVR recebe vértices já projetados); falta achar os parâmetros de tela do SDK
+  (distância e centro). Com eles e o 1/w, a GPU reconstrói a posição no espaço da câmera.
+- O SSAO continua pendente até isso e até separar o HUD (2D) da cena.
+
+### Proposta (aguarda a decisão)
+
+**Ponto de integração: só a montagem da câmera para a imagem, nunca o estado do jogo.**
+- Substituições (`sh4_override`) de `8C174148`, `8C174180` e `8C174308`. Elas aplicam o deslocamento do jogador **só
+  quando o PR é o da montagem do gameplay** (`8C052892`, `8C05289A`, `8C0528AC`); qualquer outro chamador recebe a
+  função original sem mudança.
+- Com os deslocamentos `Δyaw` e `Δpitch` (do analógico direito, no relógio lógico):
+  - yaw' = yaw + Δyaw e pitch' = pitch + Δpitch (limitado);
+  - posição' = alvo + R(Δyaw, Δpitch) · (posição − alvo), uma órbita em volta do Eliot (`D668` mais a altura dos
+    olhos), com a distância do jogo e limites;
+  - o segundo objeto (`0x8C2D0CC0`, posição negada) recebe a mesma posição' (o mesmo PR, `8C0528DA`).
+- **Movimento:**
+  - o analógico esquerdo continua indo para o jogo;
+  - nos modos modernos, o vetor dele é girado por −Δyaw antes de o jogo o ler (`pad_adapter`). "Para cima" segue a
+    câmera que o jogador vê; o jogo continua movendo o Eliot relativo à câmera dele.
+- **Gravações e roteiros:** a gravação guarda o que o JOGO leu (depois do giro) e reproduz igual em qualquer modo de
+  câmera.
+- **Modos:**
+  - **Original Dreamcast:** nenhuma substituição instalada; o caminho é exatamente o de hoje (prova: rota 9000/9000
+    quadros idênticos);
+  - **Híbrida:** o analógico direito gira a câmera e ela volta sozinha à do jogo depois de N segundos sem
+    usá-lo (retorno automático);
+  - **Livre:** o deslocamento fica até o R3 recentralizar.
+  - Nas câmeras de evento (`CD68` = 1, a confirmar) e no caminho `8C078FC0` (fixa ou de evento), o deslocamento vai a 0
+    suavemente: cutscenes, diálogos e eventos roteirizados ficam com o enquadramento original.
+- **Opções** (menu Controles > Câmera, `controles.toml`):
+  - modo;
+  - sensibilidade horizontal e vertical;
+  - zona morta;
+  - inverter Y;
+  - suavização;
+  - limites de pitch;
+  - retorno automático (segundos);
+  - R3 recentraliza.
+  - A taxa é por passo de jogo (independente da taxa de quadros da janela).
+
+**Riscos e como validar:**
+- **Recorte (culling) pelo jogo:** o jogo pode descartar objetos pela posição ORIGINAL da câmera (`CD50`). Com Δ grande
+  podem sumir objetos nas bordas. Validar girando 360° em salas típicas; se acontecer, limitar o Δyaw por sala ou
+  usar o modo híbrido com retorno.
+- **Atravessar paredes:** o jogo não testa colisão da câmera orbitada. Mitigar com distância e pitch limitados;
+  tratamento de obstáculos é um passo posterior (raio contra a geometria de colisão, ainda não localizada).
+- **Leituras de `CC84–CC8C`** (vetor de visão) por outros sistemas (som 3D, mira): só a imagem muda, e o estado do
+  jogo continua o original.
+- **Confirmar antes de implementar:**
+  - quem lê `CD5C`/`CD60` e o vetor de visão para o movimento (registro de leituras no build de investigação,
+    como o de escritas);
+  - o significado de `CD68`.
+- **Critérios de aceitação:**
+  - Original idêntico (rota de combate, quadros e estado por passo iguais);
+  - gravações reproduzem iguais em qualquer modo;
+  - cutscenes e eventos com o enquadramento original;
+  - 360° no cais, no corredor e no heliporto sem quebrar o movimento relativo;
+  - nenhum custo mensurável com a câmera Original.

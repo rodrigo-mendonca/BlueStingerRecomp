@@ -2262,6 +2262,68 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
 
+### N7c: efeitos internos e investigação da câmera livre (2026-10-22; worktree n7-vulkan)
+
+**Efeitos de imagem novos** (Esc/Back > Gráficos > Efeitos de imagem; só a imagem do jogo, antes do menu e das
+legendas):
+- **tonemapping:** exposição em EV, compressão das altas luzes por um joelho suave, tom das sombras;
+- **nitidez:** adaptativa ao contraste, sem halos;
+- **bloom:** dois passes, limiar pelo canal mais forte para as luzes coloridas, raio relativo à altura;
+- **CRT:** linhas de varredura nas 480 linhas do jogo, máscara de abertura e vinheta; só com resolução interna de
+  1080p ou mais, decidido pela altura real da fonte. Abaixo disso o menu diz o motivo; filmes e telas da CPU ficam
+  sem ele.
+
+Cada efeito tem recurso próprio (`Features`), parâmetros persistidos em `graficos.toml` e liga e desliga na hora.
+O preset Original continua sem nenhum passe. A cadeia ganhou passes internos por nome, binding 1 com a entrada do
+passe anterior, três imagens em rodízio e timestamps de GPU por passe.
+
+**Testes:**
+- `bs_render_tests` 36 de 36:
+  - por efeito: neutro igual; a +2 EV os pixels cortados caem de 4732 para 665 de 8192; o degrau 80|160 vira
+    54|186 com as áreas lisas intactas; o bloom clareia em volta de um ponto (16 para 30) e não longe; no CRT, o
+    centro da linha fica em 120 e o vão em 13;
+  - a combinação dos seis passes;
+  - o wrap dos timestamps.
+- `bs_unit_tests` 289 de 289: faixas; `nan`/`inf` do TOML voltam ao padrão; o CRT desliga abaixo de 1080p com nota.
+- **Janela com o jogo real** (`n7_janela.py`): cada efeito sozinho (tonemapping +1 EV: luma +35 %; nitidez; bloom;
+  CRT em 1440p) e **todos juntos em 1080p, 1440p e 4K**: APROVADO, com as legendas idênticas (as mesmas amostras de
+  texto) em todas.
+
+| Passe (4K interno, RTX 5080, timestamps de GPU) | ms por quadro |
+|---|---|
+| correção de cor | 0,024 |
+| tonemapping | 0,036 |
+| nitidez | 0,037 |
+| bloom (dois passes) | 0,063 + 0,069 |
+| CRT | 0,024 |
+| **todos juntos** | **0,280** |
+
+Commits: `0ae1415` tonemapping, `875995c` nitidez, `898b087` bloom, `56fff7c` CRT, `2a4aea5` correções da revisão.
+
+**Revisão Codex** (`reviews/codex-20261022-102720.md`), 4 achados, aceitos:
+
+| Achado | Correção |
+|---|---|
+| [MÉDIA] CRT aplicado a fontes de 480 (filmes, telas da CPU) com a configuração em 1080p | decidido pela altura real da fonte ao gravar a cadeia |
+| [MÉDIA] timestamps sem `timestampValidBits` (wrap) | diferença módulo 2^bits (teste) |
+| [MÉDIA] `nan` do TOML atravessava o clamp até os shaders | não finitos voltam ao padrão, na leitura e no `clamp_to` (teste) |
+| [BAIXA] o teste de custo passava sem timestamps | exige um tempo por passe quando a fila mede tempo |
+
+**Câmera livre (investigação; proposta em `docs/N7-PLANO.md`, seção 23; aguarda a decisão do mantenedor):**
+- Objeto câmera do SDK em `0x8C24CC38`: matriz de visão em `CC38`, posição em `CC78`, vetor de visão em `CC84`.
+- Câmera do jogo em `0x8C24CD50`: posição `CD50`, pitch `CD5C`, yaw `CD60`, provável câmera de evento `CD68`.
+- Montada por passo de jogo em `8C052240`: `8C1740DC`, `8C174148`, `8C174180`, `8C174308`, `8C1741EC`. A câmera fixa
+  ou de evento vai por `8C078FC0`.
+- Métodos: literal pools com `bs-disasm`, o registro de escritores novo (`BS_ESCRITOR`, só no build
+  `-DBS_WRITE_WATCH=ON`) e o `BS_RAM_WATCH` na rota de combate.
+- **Nenhuma mudança na câmera foi feita.**
+
+**AMD:**
+- `tools/dev/n7_validar_jogo.ps1`: o jogo com as camadas de validação (A1 AMD no modo comparar passando do render 371,
+  N1 NVIDIA nativo, J1 janela com a apresentação direta).
+- Recusa rodar em terminal elevado (conferido aqui).
+- Pendência aberta: falta a execução pelo mantenedor num terminal normal.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2283,12 +2345,12 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
-| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta e efeitos de imagem; faltam tonemapping, nitidez, bloom, o segundo analógico/câmera livre (investigação) e a validação com as camadas do Vulkan | 75 |
+| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta e efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod); faltam a câmera livre (proposta pronta, aguarda decisão), a validação com as camadas do Vulkan e o fechamento | 80 |
 | N8 Sem legado | não iniciada | 0 |
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~65 % (onze etapas de peso igual).
+Progresso geral: ~66 % (onze etapas de peso igual).
 
 ### N7c: pós-processamento e shaders de mod (2026-10-22; worktree n7-vulkan)
 
