@@ -522,7 +522,16 @@ void uninstall(BoundaryRegistry& registry) {
 bool installed() { return g_installed; }
 
 void pause(bool on) {
-    if (g_installed && g->voice) g->voice->pause(on);
+    if (!g_installed) return;
+    if (g->voice) g->voice->pause(on);
+    if (g->out) g->out->pause(on);  // a fila ja enviada congela e continua na volta (revisao Codex 2026-10-22)
+}
+
+void set_bus_volumes(float music, float voices, float effects) {
+    if (!g_installed) return;
+    g->mixer.set_bus_volume(na::Bus::Music, music);
+    g->mixer.set_bus_volume(na::Bus::Voice, voices);
+    g->mixer.set_bus_volume(na::Bus::Effects, effects);
 }
 
 void scene_changed() {

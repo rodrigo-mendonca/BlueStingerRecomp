@@ -17,6 +17,7 @@
 #include "input/input.h"
 #include "time_adapter.h"
 #include "sound_adapter.h"
+#include "video_mw_core.h"
 #include "render_capture.h"
 #include "video_adapter.h"
 #include "audio/audio.h"
@@ -234,7 +235,13 @@ void GameHost::start(GameOptions opt) {
     thread_ = std::thread([this] { threadMain(); });
 }
 
-void GameHost::requestStop() { stop_.store(true); }
+void GameHost::requestStop() {
+    {
+        std::lock_guard<std::mutex> lock(pauseMutex_);
+        stop_.store(true);
+    }
+    pauseCv_.notify_all();  // um jogo pausado pelo menu tambem para
+}
 
 void GameHost::join() {
     if (thread_.joinable()) thread_.join();
@@ -255,11 +262,77 @@ bool GameHost::latestFrame(GameFrame& out, uint64_t& seq) {
 
 void GameHost::onVblank(void* self) { static_cast<GameHost*>(self)->vblank(); }
 
+void GameHost::setPaused(bool on) {
+    {
+        std::lock_guard<std::mutex> lock(pauseMutex_);
+        paused_.store(on);
+    }
+    pauseCv_.notify_all();
+}
+
+void GameHost::notifyRequest() {  // com o jogo pausado, a espera acorda e aplica na thread do jogo (revisao Codex)
+    {
+        std::lock_guard<std::mutex> lock(pauseMutex_);
+        requestsPending_.store(true);
+    }
+    pauseCv_.notify_all();
+}
+
+void GameHost::setVolumes(float music, float voices, float effects) {
+    {
+        std::lock_guard<std::mutex> lock(reqMutex_);
+        volumes_[0] = music, volumes_[1] = voices, volumes_[2] = effects, volumesPending_ = true;
+    }
+    notifyRequest();
+}
+
+void GameHost::setSubtitleLanguage(const std::string& language) {
+    {
+        std::lock_guard<std::mutex> lock(reqMutex_);
+        lang_ = language, langPending_ = true;
+    }
+    notifyRequest();
+}
+
+void GameHost::setRenderer(RenderProvider r) {
+    rendererPending_.store(int(r));
+    notifyRequest();
+}
+
+void GameHost::applyRequests() {
+    requestsPending_.store(false);
+    float       v[3];
+    bool        vol = false, lang = false;
+    std::string language;
+    {
+        std::lock_guard<std::mutex> lock(reqMutex_);
+        std::swap(vol, volumesPending_), std::swap(lang, langPending_);
+        std::copy(volumes_, volumes_ + 3, v);
+        language = lang_;
+    }
+    if (vol) transitional::sound::set_bus_volumes(v[0], v[1], v[2]);
+    if (lang) {
+        transitional::video::set_subtitle_preference(language);  // filmes
+        if (voicesNative_) {  // falas: o servico recomeca no idioma novo (a fala em curso perde a legenda ate a proxima)
+            dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path(), "T13001N V1.000"),
+                                         language));
+            std::fprintf(stderr, "[legenda] idioma: %s\n", language.empty() ? "desligadas" : language.c_str());
+        }
+    }
+    if (const int r = rendererPending_.exchange(-1); r >= 0 && !std::getenv("BS_RENDER_IR")) {
+        transitional::render_capture::install(RenderProvider(r) == RenderProvider::Native ? transitional::render_capture::Mode::Native
+                                                                                           : transitional::render_capture::Mode::Off);
+        renderer_.store(r);
+        std::fprintf(stderr, "[render] renderizador: %s\n", RenderProvider(r) == RenderProvider::Native ? "Vulkan" : "software");
+    }
+}
+
 // Na thread do jogo, no inicio de cada VBlank: publica o quadro exibido, segura o ritmo e
 // atende pedidos de parada.
 void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
     maple_vblank_in();  // N3-0: indice "vblank" dos roteiros e negativo do ponto de amostragem
+    applyRequests();  // N7c: pedidos do menu (volumes, idioma das legendas, renderizador)
     transitional::sound::vblank(n);  // N6: tempo logico do mixer nativo (nada se os provedores sao o legado)
     if (dialogue_) dialogueVblank(n);
     // Diagnostico: BS_RAM_DUMP=<vblank>[,<vblank>...]:<arquivo> grava os 16 MB da RAM do guest
@@ -361,6 +434,20 @@ void GameHost::vblank() {
     if (stop_.load() || (opt_.vblankLimit && n >= opt_.vblankLimit)) {
         if (traceOn()) std::fprintf(stderr, "[host] parada vista no VBlank %llu\n", (unsigned long long)n);
         throw StopRequest{};
+    }
+    if (paused_.load()) {  // N7c: menu aberto; o quadro ja foi publicado e o jogo fica aqui ate fechar
+        transitional::sound::pause(true);
+        for (;;) {
+            {
+                std::unique_lock<std::mutex> lock(pauseMutex_);
+                pauseCv_.wait(lock, [&] { return !paused_.load() || stop_.load() || requestsPending_.load(); });
+            }
+            if (requestsPending_.load()) applyRequests();  // volumes, legendas, renderizador: ja valem com o menu aberto
+            if (!paused_.load() || stop_.load()) break;
+        }
+        transitional::sound::pause(false);
+        epoch_ = std::chrono::steady_clock::now(), epochVblank_ = n;  // o ritmo recomeca: sem correr atras do tempo parado
+        if (stop_.load()) throw StopRequest{};
     }
     if (opt_.realtime) {
         const auto t      = std::chrono::steady_clock::now();
@@ -479,7 +566,8 @@ void GameHost::threadMain() {
             so.language  = opt_.dubbing;
             // o audio do jogo segue a saida padrao do Windows e sobrevive a fila cheia (N6-H; os filmes ficam como no N5)
             if (opt_.realtime) so.makeOutput = [] { return native::audio::make_xaudio2_output(200, true); };
-            if (so.voices && !opt_.subtitles.empty()) {  // legendas das falas (mods\<pacote>\legendas\falas.<idioma>.toml)
+            voicesNative_ = so.voices;
+            if (so.voices) {  // legendas das falas (mods\<pacote>\legendas\falas.<idioma>.toml); "" = desligadas
                 // a versao do jogo que o Builder valida (o jogo = ... dos pacotes; revisao Codex 2026-10-21)
                 dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path(), "T13001N V1.000"),
                                              opt_.subtitles));
@@ -546,6 +634,7 @@ void GameHost::threadMain() {
             transitional::render_capture::install(m == "conferir" ? RM::Check : (m == "comparar" ? RM::Compare : RM::Capture),
                                                   every);
         } else if (opt_.render == RenderProvider::Native) {
+            renderer_.store(int(RenderProvider::Native));
             transitional::render_capture::install(transitional::render_capture::Mode::Native);
         }
         sh4_set_fatal_handler(onFatal);

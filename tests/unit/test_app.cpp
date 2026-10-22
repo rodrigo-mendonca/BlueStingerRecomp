@@ -234,6 +234,45 @@ BS_TEST(game_host_stop_request_with_guest_thread) {
     BS_CHECK(h2.error().empty() && h2.vblanks() == 2);
 }
 
+// N7c: a pausa do menu segura o jogo entre VBlanks; pedidos feitos com o jogo pausado (renderizador, volumes, idioma)
+// valem na thread do jogo sem despausar; a parada pedida durante a pausa encerra (revisao Codex 2026-10-22).
+BS_TEST(game_host_pause_holds_vblanks_and_applies_requests) {
+    const auto waitFor = [](auto cond) {
+        const auto t0 = std::chrono::steady_clock::now();
+        while (!cond() && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(20))
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        return cond();
+    };
+    GameHost h;
+    h.start(fakeOptions(fakeEntry));
+    BS_CHECK(waitFor([&] { return h.vblanks() >= 3; }));
+    h.setPaused(true);
+    BS_CHECK(h.paused());
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // o VBlank em curso chega na espera
+    const uint64_t held = h.vblanks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    BS_CHECK(h.vblanks() == held && h.running());  // parado: nenhum VBlank novo
+    // pedidos durante a pausa: aplicados na thread do jogo, que continua parada (a captura Vulkan so cria o
+    // dispositivo no primeiro render, que nao acontece pausado)
+    BS_CHECK(h.renderer() == RenderProvider::Software);
+    h.setRenderer(RenderProvider::Native);
+    BS_CHECK(waitFor([&] { return h.renderer() == RenderProvider::Native; }));
+    h.setVolumes(0.5f, 0.5f, 0.5f);
+    h.setSubtitleLanguage("");
+    h.setRenderer(RenderProvider::Software);
+    BS_CHECK(waitFor([&] { return h.renderer() == RenderProvider::Software; }));
+    BS_CHECK(h.vblanks() == held && h.paused());
+    // despausa: o jogo anda de novo
+    h.setPaused(false);
+    BS_CHECK(waitFor([&] { return h.vblanks() >= held + 3; }));
+    // parada pedida com o jogo pausado: encerra sem erro
+    h.setPaused(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    h.requestStop();
+    h.join();
+    BS_CHECK(!h.running() && h.error().empty());
+}
+
 // Segunda sessao no mesmo processo: boot_prepare volta todo o hardware ao reset. Sem isso,
 // a VRAM suja ficava e o SPG, com o tempo da sessao anterior (ciclos muito altos), nao
 // gerava VBlank ate o novo contador passar dele (revisao Codex 2026-10-14).

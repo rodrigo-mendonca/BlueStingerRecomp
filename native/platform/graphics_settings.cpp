@@ -95,6 +95,7 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
         if (!same_quality(s, o)) note("sem Vulkan: so a imagem original (renderizador em software)");
         GraphicsSettings r = o;
         r.window = s.window, r.vsync = s.vsync, r.aspect = Aspect::Original4x3;
+        r.window_w = s.window_w, r.window_h = s.window_h;  // o tamanho da janela nao depende do renderizador
         return r;
     }
     // o que ainda nao existe no renderizador volta ao original (o menu o mostra indisponivel)
@@ -169,7 +170,8 @@ std::string to_toml(const GraphicsSettings& s) {
       << "largura = " << s.window_w << "\n"
       << "altura = " << s.window_h << "\n"
       << "proporcao = \"" << name(s.aspect) << "\"\n"
-      << "vsync = " << (s.vsync ? "true" : "false") << "\n";
+      << "vsync = " << (s.vsync ? "true" : "false") << "\n"
+      << "renderizador = \"" << (s.vulkan ? "vulkan" : "software") << "\"\n";
     return o.str();
 }
 
@@ -211,6 +213,11 @@ GraphicsSettings from_toml(const std::string& text, std::string* warning) {
     flt("efeitos", "saturacao", s.saturation);
     str("tela", "modo", s.window), str("tela", "proporcao", s.aspect), bln("tela", "vsync", s.vsync);
     num("tela", "largura", s.window_w), num("tela", "altura", s.window_h);
+    if (auto v = doc["tela"]["renderizador"].value<std::string>()) {
+        if (*v == "vulkan") s.vulkan = true;
+        else if (*v == "software") s.vulkan = false;
+        else bad += std::string(bad.empty() ? "" : ", ") + "tela.renderizador";
+    }
     if (!bad.empty() && warning) *warning = "graficos.toml: valor desconhecido em " + bad + " (padrao nesses campos)";
     // faixas: o que estiver fora volta para a faixa (a GPU decide o resto em clamp_to)
     Capabilities all;

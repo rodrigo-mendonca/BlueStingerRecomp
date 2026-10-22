@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real), modelos das configurações e do menu interno; ver "N7c: legendas no gameplay". N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". Próximo: resoluções modernas. N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2262,6 +2262,70 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
 
+### N7c: menu interno de configurações (2026-10-22; worktree n7-vulkan)
+
+**O que o jogador tem** (Esc no teclado ou Back no controle, em qualquer tela: título, menu principal, gameplay):
+- O menu abre por cima do jogo, que fica **pausado entre VBlanks** (`GameHost::setPaused`: a thread do jogo espera
+  numa variável de condição no início do VBlank, sem tocar a lógica do Dreamcast; áudio e a fila da saída XAudio2
+  pausados junto; o relógio de tempo real recomeça na volta, sem correr atrás).
+- **Navegação:** controle (direcional, analógico com repetição, A confirma, B volta, LB/RB mudam o valor), teclado
+  (setas, Enter, Esc/Backspace) e mouse (passar seleciona, clique nas setas muda, clique confirma, botão direito volta,
+  roda rola). Soltar teclas e botões continua indo para o jogo (nada fica "preso" ao fechar).
+- **Gráficos:** renderizador software ou Vulkan (troca na hora, entre quadros, na thread do jogo; só aparece ativo se
+  o Vulkan foi detectado), modo de tela (janela, sem bordas, tela cheia), tamanho da janela (640×480 a 1920×1440),
+  V-Sync, predefinição. Resolução interna, 16:9, filtragem, AA, shaders, sombras, iluminação e pós-processamento
+  aparecem como **"em breve"**.
+- **Áudio:** volumes geral, música, efeitos e vozes aplicados de verdade no mixer do N6 (`sound::set_bus_volumes`).
+  Com `--audio legado` os volumes não têm efeito (o legado não tem barramentos).
+- **Legendas:** ligar/desligar, idioma (dos pacotes em `mods`), tamanho, contorno e fundo; valem na hora para as
+  falas e para os filmes.
+- **Controles:** mostra o perfil e o arquivo `controles.toml` do N3; remapear pelo menu aparece como "em breve".
+- **Restaurar padrões** (com confirmação).
+
+**Persistência e segurança:**
+- `graficos.toml`, `audio.toml` e `legendas.toml` na pasta do usuário, escrita atômica (temporário + troca); valores
+  inválidos voltam ao padrão com aviso.
+- Mudança de tamanho ou modo de tela: aplicada na hora com a pergunta "Manter?" e **volta sozinha em 15 s**; só vai
+  para o arquivo depois de aceita. Se o SDL recusa o modo, a configuração anterior volta; se o modo salvo falha na
+  inicialização, o jogo abre em janela no tamanho padrão (nunca fica sem imagem).
+- Precedência: linha de comando > arquivos > `instalacao.toml` > padrões. `--render` e `--legendas` valem só na
+  execução e não sobrescrevem o arquivo, a não ser que o jogador mude esse item no menu.
+- A imagem do jogo não muda: o menu e as legendas são uma camada nativa por cima (Direct2D/DirectWrite, na
+  resolução da saída), igual no software e no Vulkan. A área do jogo é o maior retângulo 4:3 centrado na saída,
+  calculada a cada quadro (`gameArea`), com as camadas no mesmo espaço de pixels: nítidas em qualquer tamanho de
+  janela e em telas 16:9 ou 21:9 (faixas pretas).
+
+**Testes:**
+- Unitários: `bs_unit_tests` 287 de 287 (novos: `menu_overlay_draws_panel_and_hit_areas`, ordem das linhas, setas e
+  pergunta bloqueando cliques; `game_host_pause_holds_vblanks_and_applies_requests`, nenhum VBlank durante a pausa,
+  renderizador trocado com o jogo pausado sem despausar, parada pedida durante a pausa encerra sem erro;
+  `settings_menu_*` e `graphics_*` atualizados). `bs_render_tests` 24 de 24.
+- Janela real com o jogo e controle virtual do SDL (`BS_CONTROLE_VIRTUAL`, capturas da imagem apresentada com
+  `BS_MENU_CAPTURA`), RTX 5080, monitor 2560×1080:
+
+| Caso | Resultado |
+|---|---|
+| Abrir no título, legendas desligadas, volume geral 90, fechar | pausado do VBlank 525 ao 526 (~7 s), `legendas.toml` e `audio.toml` gravados, "[legenda] idioma: desligadas" aplicado |
+| Reiniciar | abre com as legendas desligadas (persistência) |
+| Vulkan pelo menu + sem bordas **sem** confirmar | troca para o Vulkan na hora (dispositivo criado no quadro seguinte); a tela volta sozinha; `graficos.toml` com `renderizador = "vulkan"` e `modo = "janela"` |
+| Vulkan + sem bordas confirmado | `modo = "sem_bordas"` gravado; captura 2560×1080 com o jogo 4:3 centrado e o menu nítido |
+| Reiniciar com `--render software` e mudar só as legendas | `graficos.toml` continua `vulkan` (a opção da linha de comando não contamina o arquivo) |
+| Rota de combate headless depois das mudanças do host | quadros idênticos à referência (237 s) |
+
+**Revisão Codex** (`reviews/codex-20261022-015523.md`), 5 achados, todos aceitos e corrigidos:
+
+| Achado | Correção |
+|---|---|
+| [ALTA] modo de tela gravado antes da confirmação; retornos do SDL ignorados | grava só a tela aceita (`confirmed_`); `applyWindow` confere `SDL_SetWindowFullscreen/Mode/Size` e `SDL_SyncWindow`; falha volta a anterior (`cancel_display`); falha na inicialização abre em janela |
+| [MÉDIA] pedidos do menu não aplicados com o jogo pausado | a espera da pausa acorda com os pedidos e os aplica na thread do jogo, sem despausar (teste unitário) |
+| [MÉDIA] a fila da saída de áudio (até 200 ms) continuava tocando na pausa | `sound::pause` pausa também a saída XAudio2 |
+| [MÉDIA] opções da linha de comando gravadas nos arquivos | preferências efetivas e persistidas separadas (teste em janela acima) |
+| [BAIXA] faltavam testes de integração | teste do `GameHost` (pausa, pedidos, parada) e os casos em janela acima |
+
+**Limites conhecidos:** não há uma opção "Configurações" desenhada no menu do título do jogo (exigiria reconhecer a
+tela; a tecla funciona em qualquer tela). Só a predefinição "Original Dreamcast" é real; as outras dependem das
+resoluções e efeitos. Volumes sem efeito com o áudio legado.
+
 ### N7c: legendas no gameplay, modelos das configurações e do menu (2026-10-22; worktree n7-vulkan)
 
 **Legendas das falas na imagem** (`docs/N7-PLANO.md`, seção 18):
@@ -2309,10 +2373,8 @@ legível.
 - `user_settings_*` (1);
 - `settings_menu_*` (4).
 
-**Pendente no N7c:**
-- desenhar o menu e a pausa entre VBlanks na janela;
-- aplicar `legendas.toml` e `audio.toml`;
-- resoluções e efeitos (as `Features` acendem conforme ficam prontos).
+**Pendente no N7c** (depois do menu, seção acima): resoluções modernas e efeitos (as `Features` acendem conforme
+ficam prontas).
 
 ### N7b: backend Vulkan (2026-10-22; worktree n7-vulkan)
 

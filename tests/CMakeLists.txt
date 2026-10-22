@@ -18,6 +18,7 @@ add_executable(bs_unit_tests
   unit/test_graphics_settings.cpp
   unit/test_subtitle_overlay.cpp
   unit/test_settings_menu.cpp
+  unit/test_menu_overlay.cpp
   unit/test_maple.cpp
   unit/test_longjmp.cpp
   unit/test_tmu.cpp

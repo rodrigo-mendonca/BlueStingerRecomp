@@ -91,4 +91,9 @@ private:
     MwCoreStats                                   stats_;
 };
 
+// N7c (menu interno): a preferencia do jogador sobre as legendas dos filmes, valida em qualquer thread. Sem chamada,
+// vale Options::subtitleLang. "" = desligadas (o filme em curso para de mostra-las na hora); outro idioma vale a partir
+// do proximo filme.
+void set_subtitle_preference(const std::string& language);
+
 } // namespace bs::transitional::video

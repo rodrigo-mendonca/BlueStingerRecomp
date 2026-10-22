@@ -875,10 +875,22 @@ funciona em qualquer tela.
 
 **Ordem de implementação:**
 1. modelos e testes (feito: `graphics_settings`, `user_settings`);
-2. a sobreposição do menu com navegação (controle, teclado, mouse) e a pausa entre VBlanks;
-3. as seções Legendas e Áudio (aplicáveis já: tamanho, contorno, fundo, idioma, volumes);
-4. a seção Gráficos (as opções acendem conforme as `Features` do N7c ficam prontas);
-5. Controles (abre o mapeamento do N3).
+2. a sobreposição do menu com navegação (controle, teclado, mouse) e a pausa entre VBlanks (**feito**,
+   2026-10-22: `app/menu_overlay`, `InGameMenu` em `app/main_sdl.cpp`, `GameHost::setPaused`);
+3. as seções Legendas e Áudio (**feito**: tamanho, contorno, fundo, idioma, volumes no mixer do N6);
+4. a seção Gráficos (**feito** o que já existe: renderizador software/Vulkan ao vivo, modo e tamanho da janela com
+   confirmação, V-Sync; o resto acende conforme as `Features` do N7c ficam prontas);
+5. Controles (mostra o perfil e o `controles.toml` do N3; remapear pelo menu fica "em breve").
+
+**Resultado (2026-10-22):** validado em janela com o jogo real e controle virtual (ver `STATUS.md`, "N7c: menu
+interno"). Decisões tomadas na implementação:
+- os pedidos do menu (volumes, idioma, renderizador) são aplicados **na thread do jogo**, no início do VBlank ou
+  durante a pausa, nunca da thread da janela;
+- a área do jogo é calculada a cada quadro em pixels de saída (`gameArea`), sem a apresentação lógica do SDL, para o
+  quadro, as legendas e o menu ficarem no mesmo espaço depois de trocar o modo de tela;
+- a tela só vai para o arquivo depois de aceita; opções da linha de comando não vão para o arquivo.
+- A opção "Configurações" desenhada no menu do título não foi feita (exige reconhecer a tela); a tecla dedicada
+  funciona em qualquer tela.
 
 ### Resoluções modernas (preparação)
 

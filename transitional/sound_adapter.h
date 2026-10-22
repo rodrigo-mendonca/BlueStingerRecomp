@@ -59,5 +59,8 @@ std::string summary();  // "[audio] efeitos nativos: ..." e "[audio] falas nativ
 // stop da fala; por isso nada do jogo chama estas funcoes (revisao Codex 2026-10-20: fonte no jogo nao comprovada).
 void pause(bool on);
 void scene_changed();
+// N7c (menu interno): volumes do jogador por barramento (0..1, ja com o volume geral), por cima do que o jogo manda.
+// Na thread do jogo (o GameHost aplica no VBlank).
+void set_bus_volumes(float music, float voices, float effects);
 
 } // namespace bs::transitional::sound

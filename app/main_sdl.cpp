@@ -18,6 +18,12 @@
 #include "funcs.h"
 #include "game_host.h"
 #include "subtitle_overlay.h"
+#include "menu_overlay.h"
+#include "settings_menu.h"
+#include "localization/mod_packages.h"
+#include "platform/graphics_settings.h"
+#include "platform/user_settings.h"
+#include "render/vulkan/vk_device.h"
 #include "gdfs_adapter.h"
 #include "input/input.h"
 #include "input_bridge.h"
@@ -28,7 +34,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -79,6 +87,7 @@ struct Args {
     fs::path savesDir;          // --saves-pasta <dir>
     bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
     int render = -1;  // --render nativo|software (N7b; -1 = nao dado)
+    bool renderExplicit = false;  // --render ou BS_RENDER dados (valem sobre o graficos.toml do menu)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
     bs::AudioMusicProvider   audioMusic   = bs::AudioMusicProvider::Legacy;    // --audio-musica nativo|legado (N6 fase F)
@@ -200,6 +209,7 @@ bool parseArgs(Args& a) {
         else if (std::strcmp(e, "software") == 0) vk = false;
         else return false;
     }
+    a.renderExplicit = a.render >= 0 || (std::getenv("BS_RENDER") && *std::getenv("BS_RENDER"));
     if (a.render < 0) a.render = vk ? 1 : 0;
     if (!a.effectsSet) a.audioEffects = native ? bs::AudioEffectsProvider::Native : bs::AudioEffectsProvider::Legacy;
     if (!a.voicesSet) a.audioVoices = native ? bs::AudioVoicesProvider::Native : bs::AudioVoicesProvider::Legacy;
@@ -554,15 +564,358 @@ struct Recorder {
 };
 std::unique_ptr<Recorder> g_recorder;
 
+namespace st = bs::native::settings;
+
+// A area do jogo na saida: o maior retangulo 4:3 centrado (faixas pretas nas sobras). Calculada a cada quadro a partir
+// do tamanho REAL da saida (janela, tela cheia, sem bordas), sem a apresentacao logica do SDL: o quadro, as legendas e
+// o menu usam o mesmo espaco de pixels (revisao 2026-10-22: a apresentacao logica ligada e desligada no meio do quadro
+// deslocava e esticava as camadas depois de uma troca de modo de tela).
+SDL_FRect gameArea(SDL_Renderer* renderer) {
+    int w = 0, h = 0;
+    SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
+    if (w <= 0 || h <= 0) return {0, 0, 640, 480};
+    const float sw = float(w), sh = float(h);
+    const float aw = (std::min)(sw, sh * 4.0f / 3.0f), ah = aw * 3.0f / 4.0f;
+    return {std::floor((sw - aw) / 2), std::floor((sh - ah) / 2), std::floor(aw), std::floor(ah)};
+}
+
+// N7c: o menu interno na janela (docs/N7-PLANO.md secao 19). O estado e a navegacao sao de app/settings_menu, o desenho
+// de app/menu_overlay; aqui so a ligacao com o SDL e com o jogo:
+//   - abre com ESC ou com o botao View/Back do controle (o jogo nao os usa no mapa padrao); fecha com eles ou com
+//     Voltar na pagina principal. Aberto, o jogo fica PAUSADO entre VBlanks (GameHost::setPaused) e a entrada vai so
+//     para o menu: teclas e botoes pressionados nao chegam ao jogo; os soltos, sim (nada fica preso ao voltar);
+//   - teclado (setas, Enter/Espaco, Esc/Backspace), controle (D-pad e analogico com repeticao, A, B, LB/RB) e mouse
+//     (passar por cima seleciona, clique na linha escolhe, nas setas muda, botao direito volta, roda rola);
+//   - cada mudanca vale na hora quando e segura (volumes, legendas, renderizador, V-Sync, modo e tamanho da janela,
+//     estes com a confirmacao de 15 s do modelo) e vai para graficos.toml, audio.toml e legendas.toml (gravacao
+//     atomica) na pasta do usuario.
+class InGameMenu {
+public:
+    // `prefs`: a configuracao efetiva (com as opcoes da linha de comando); `persisted`: a dos arquivos. Uma opcao da
+    // linha de comando (`renderOverride`, `subtitleOverride`) vale so nesta execucao e nunca vai para o arquivo, a nao
+    // ser que o jogador mude esse item no menu (revisao Codex 2026-10-22).
+    InGameMenu(bs::GameHost& host, ni::InputSystem& input, SDL_Window* window, SDL_Renderer* renderer, fs::path dir,
+               bs::Preferences prefs, bs::Preferences persisted, bool renderOverride, bool subtitleOverride,
+               st::Capabilities caps, std::vector<std::string> languages)
+        : host_(host), input_(input), window_(window), renderer_(renderer), dir_(std::move(dir)),
+          menu_(prefs, caps, std::move(languages)), applied_(prefs), persisted_(std::move(persisted)),
+          renderOverride_(renderOverride), subtitleOverride_(subtitleOverride), confirmed_(prefs.graphics) {
+        std::vector<bs::MenuItem> info;
+        for (const char* action : {"A", "B", "X", "Y", "START", "UP", "DOWN", "LEFT", "RIGHT", "LT", "RT"}) {
+            std::string keys, pads;
+            for (const auto& b : input.map().keyboard)
+                if (targetLabel(b.target) == action) keys += (keys.empty() ? "" : ", ") + b.control;
+            for (const auto& b : input.map().gamepad)
+                if (targetLabel(b.target) == action) pads += (pads.empty() ? "" : ", ") + b.control;
+            info.push_back({action, (keys.empty() ? "-" : keys) + "  /  " + (pads.empty() ? "-" : pads), true});
+        }
+        menu_.set_controls_info(std::move(info));
+    }
+
+    bool open() const { return menu_.is_open(); }
+    const bs::Preferences& prefs() const { return applied_; }
+
+    // true = o evento foi do menu (nao vai ao jogo)
+    bool event(const SDL_Event& e) {
+        if (!enabled_) return false;
+        const double now = SDL_GetTicks() / 1000.0;
+        const bool   down = e.type == SDL_EVENT_KEY_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+        // abrir/fechar
+        if ((e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE && !e.key.repeat && !menu_.is_open()) ||
+            (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK)) {
+            if (menu_.is_open()) close();
+            else openMenu();
+            return true;
+        }
+        if (!menu_.is_open()) return false;
+        switch (e.type) {
+        case SDL_EVENT_KEY_DOWN:
+            switch (e.key.key) {
+            case SDLK_UP: act(bs::MenuAction::Up, now); break;
+            case SDLK_DOWN: act(bs::MenuAction::Down, now); break;
+            case SDLK_LEFT: act(bs::MenuAction::Left, now); break;
+            case SDLK_RIGHT: act(bs::MenuAction::Right, now); break;
+            case SDLK_RETURN:
+            case SDLK_KP_ENTER:
+            case SDLK_SPACE: act(bs::MenuAction::Confirm, now); break;
+            case SDLK_ESCAPE:
+            case SDLK_BACKSPACE: act(bs::MenuAction::Back, now); break;
+            default: break;
+            }
+            return true;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            switch (e.gbutton.button) {
+            case SDL_GAMEPAD_BUTTON_DPAD_UP: act(bs::MenuAction::Up, now), hold(bs::MenuAction::Up, now); break;
+            case SDL_GAMEPAD_BUTTON_DPAD_DOWN: act(bs::MenuAction::Down, now), hold(bs::MenuAction::Down, now); break;
+            case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+            case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: act(bs::MenuAction::Left, now), hold(bs::MenuAction::Left, now); break;
+            case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+            case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: act(bs::MenuAction::Right, now), hold(bs::MenuAction::Right, now); break;
+            case SDL_GAMEPAD_BUTTON_SOUTH: act(bs::MenuAction::Confirm, now); break;
+            case SDL_GAMEPAD_BUTTON_EAST: act(bs::MenuAction::Back, now); break;
+            default: break;
+            }
+            return true;
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            held_ = -1;
+            return false;  // soltar sempre chega ao jogo (nada preso ao voltar)
+        case SDL_EVENT_KEY_UP: return false;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+            if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX || e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) {
+                const float v = float(e.gaxis.value) / 32767.0f;
+                const bool  y = e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY;
+                stick_[y ? 1 : 0] = v;
+                const int dir = std::fabs(v) > 0.6f ? (v > 0 ? 1 : -1) : 0;
+                const bs::MenuAction a = y ? (dir > 0 ? bs::MenuAction::Down : bs::MenuAction::Up)
+                                           : (dir > 0 ? bs::MenuAction::Right : bs::MenuAction::Left);
+                if (dir && held_ != int(a)) act(a, now), hold(a, now);
+                if (!dir && std::fabs(stick_[0]) < 0.6f && std::fabs(stick_[1]) < 0.6f) held_ = -1;
+            }
+            return false;  // o eixo vai ao jogo (pausado; ao voltar ele le o estado atual)
+        case SDL_EVENT_MOUSE_MOTION:
+            if (const auto h = overlay_.hit(px(e.motion.x), py(e.motion.y))) menu_.select(h->item);
+            return true;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (e.button.button == SDL_BUTTON_RIGHT) act(bs::MenuAction::Back, now);
+            else if (e.button.button == SDL_BUTTON_LEFT) {
+                if (!menu_.view().prompt.empty()) act(bs::MenuAction::Confirm, now);  // pergunta aberta: clique confirma
+                else if (const auto h = overlay_.hit(px(e.button.x), py(e.button.y))) {
+                    if (h->part == bs::MenuHit::Part::Decrease) menu_.adjust(h->item, -1, now);
+                    else if (h->part == bs::MenuHit::Part::Increase) menu_.adjust(h->item, +1, now);
+                    else menu_.select(h->item), act(bs::MenuAction::Confirm, now);
+                }
+            }
+            return true;
+        case SDL_EVENT_MOUSE_WHEEL:
+            act(e.wheel.y > 0 ? bs::MenuAction::Up : bs::MenuAction::Down, now);
+            return true;
+        default: return down;
+        }
+    }
+
+    // A cada volta do laco da janela: repeticao do controle, reversao da confirmacao, aplicacao e gravacao.
+    void update() {
+        const double now = SDL_GetTicks() / 1000.0;
+        if (menu_.is_open()) {
+            menu_.tick(now);
+            if (held_ >= 0 && now >= nextRepeat_) act(bs::MenuAction(held_), now), nextRepeat_ = now + 0.12;
+            if (!menu_.is_open()) close();  // "Voltar ao jogo" ou Voltar na pagina principal
+        }
+        bs::Preferences next;
+        if (menu_.take_changes(next)) apply(next, false);
+        // a tela so vai para o arquivo depois de aceita: sem confirmacao em curso, a aplicada e a confirmada
+        if (!menu_.display_pending() && !sameDisplay(confirmed_, applied_.graphics)) {
+            confirmed_ = applied_.graphics;
+            persist();
+        }
+    }
+
+    // As camadas nativas (legendas e menu) por cima do quadro: em pixels de saida, na area do jogo (o retangulo 4:3
+    // da apresentacao logica), sem a escala da area logica (texto nitido, sem distorcer).
+    void draw(bs::SubtitleOverlay& subs, const std::wstring& subtitle) {
+        int w = 0, h = 0;
+        SDL_GetCurrentRenderOutputSize(renderer_, &w, &h);
+        if (w <= 0 || h <= 0) return;
+        const SDL_FRect area = gameArea(renderer_);
+        if (styleDirty_) subs.set_style(style_), styleDirty_ = false;
+        if (const auto* l = subs.layer(subtitle, uint32_t(w), uint32_t(h), area.x, area.y, area.w, area.h)) blit(subTex_, *l, w, h);
+        if (menu_.is_open()) {
+            const bs::MenuView v = menu_.view();
+            blit(menuTex_, overlay_.layer(v, uint32_t(w), uint32_t(h), area.x, area.y, area.w, area.h), w, h);
+            // diagnostico: BS_MENU_CAPTURA=<pasta> grava a imagem APRESENTADA (jogo + legendas + menu) a cada mudanca do menu
+            static const char* capDir = std::getenv("BS_MENU_CAPTURA");
+            const std::string  k      = v.title + "|" + std::to_string(v.selected) + "|" + v.prompt +
+                                  (v.selected >= 0 && v.selected < int(v.items.size()) ? v.items[size_t(v.selected)].value : "");
+            if (capDir && *capDir && k != lastCapture_) {
+                lastCapture_ = k;
+                if (SDL_Surface* shot = SDL_RenderReadPixels(renderer_, nullptr)) {
+                    char name[48];
+                    std::snprintf(name, sizeof name, "menu_%03d.bmp", ++captures_);
+                    std::error_code ec;
+                    fs::create_directories(capDir, ec);
+                    SDL_SaveBMP(shot, (fs::path(capDir) / name).string().c_str());
+                    SDL_DestroySurface(shot);
+                }
+            }
+        }
+        outW_ = w, outH_ = h;
+    }
+
+    // As preferencias que ja valem na partida (no inicio e a cada mudanca do menu); `start` = so aplica, sem gravar.
+    void apply(const bs::Preferences& p, bool start) {
+        const bs::Preferences old = applied_;
+        applied_                  = p;
+        // legendas: estilo na camada; idioma (ou desligadas) no jogo (falas e filmes)
+        bs::native::video::OverlayStyle s;
+        s.scale = float(p.subtitles.size_pct) / 100.0f, s.outline = p.subtitles.outline, s.box = p.subtitles.box;
+        style_ = s, styleDirty_ = true;
+        if (start || p.subtitles.effective_language() != old.subtitles.effective_language())
+            host_.setSubtitleLanguage(p.subtitles.effective_language());
+        // audio (nativo): os tres barramentos com o volume geral
+        if (start || !(p.audio == old.audio)) host_.setVolumes(p.audio.gain_music(), p.audio.gain_voices(), p.audio.gain_effects());
+        // graficos que ja existem: renderizador, V-Sync, modo e tamanho da janela
+        const auto& g = p.graphics;
+        if (!start && g.vulkan != old.graphics.vulkan)
+            host_.setRenderer(g.vulkan ? bs::RenderProvider::Native : bs::RenderProvider::Software);
+        if (start || g.vsync != old.graphics.vsync) SDL_SetRenderVSync(renderer_, g.vsync ? 1 : SDL_RENDERER_VSYNC_DISABLED);
+        if (start || !sameDisplay(g, old.graphics)) {
+            if (!applyWindow(g)) {  // o SDL recusou: nunca fica sem imagem
+                std::fprintf(stderr, "[menu] modo de tela recusado (%s): ", SDL_GetError());
+                if (start) {  // o salvo nao serve: janela no tamanho padrao, e o arquivo fica como estava
+                    std::fprintf(stderr, "janela\n");
+                    applied_.graphics.window = st::WindowMode::Windowed, applied_.graphics.window_w = applied_.graphics.window_h = 0;
+                    confirmed_ = applied_.graphics;
+                    applyWindow(applied_.graphics);
+                } else {
+                    std::fprintf(stderr, "a configuracao anterior volta\n");
+                    menu_.cancel_display();  // o proximo update aplica a anterior
+                }
+            }
+        }
+        if (start) return;
+        // um item da linha de comando mudado no menu deixa de ser so desta execucao
+        if (g.vulkan != old.graphics.vulkan) renderOverride_ = false;
+        if (p.subtitles.enabled != old.subtitles.enabled || p.subtitles.language != old.subtitles.language) subtitleOverride_ = false;
+        persist();
+    }
+
+    const bs::native::video::OverlayStyle& subtitle_style() const { return style_; }
+
+    // O que vai para os arquivos: a configuracao aplicada, menos o que ainda nao e escolha do jogador (a tela sem
+    // confirmacao e as opcoes da linha de comando que ele nao mudou). So grava os grupos que mudaram (atomico).
+    void persist() {
+        bs::Preferences d = persisted_;
+        d.audio           = applied_.audio;
+        d.graphics        = applied_.graphics;
+        d.graphics.window = confirmed_.window, d.graphics.window_w = confirmed_.window_w, d.graphics.window_h = confirmed_.window_h;
+        if (renderOverride_) d.graphics.vulkan = persisted_.graphics.vulkan;
+        d.subtitles = applied_.subtitles;
+        if (subtitleOverride_) d.subtitles.enabled = persisted_.subtitles.enabled, d.subtitles.language = persisted_.subtitles.language;
+        std::string err;
+        bool        wrote = false;
+        if (!(d.graphics == persisted_.graphics)) wrote = true, st::write_graphics(dir_, d.graphics, &err) || log(err);
+        if (!(d.audio == persisted_.audio)) wrote = true, st::write_audio(dir_, d.audio, &err) || log(err);
+        if (!(d.subtitles == persisted_.subtitles)) wrote = true, st::write_subtitles(dir_, d.subtitles, &err) || log(err);
+        persisted_ = d;
+        if (wrote) std::fprintf(stderr, "[menu] preferencias gravadas em %s\n", utf8(dir_).c_str());
+    }
+
+    ~InGameMenu() {
+        if (subTex_) SDL_DestroyTexture(subTex_);
+        if (menuTex_) SDL_DestroyTexture(menuTex_);
+    }
+
+private:
+    bs::GameHost&                     host_;
+    ni::InputSystem&                  input_;
+    SDL_Window*                       window_;
+    SDL_Renderer*                     renderer_;
+    fs::path                          dir_;
+    bs::SettingsMenu                  menu_;
+    bs::MenuOverlay                   overlay_;
+    bs::Preferences                   applied_, persisted_;
+    bool                              renderOverride_ = false, subtitleOverride_ = false;
+    st::GraphicsSettings              confirmed_;  // a ultima tela aceita (a que vai para o arquivo)
+
+    static bool sameDisplay(const st::GraphicsSettings& a, const st::GraphicsSettings& b) {
+        return a.window == b.window && a.window_w == b.window_w && a.window_h == b.window_h;
+    }
+    static bool log(const std::string& e) {
+        std::fprintf(stderr, "[menu] %s\n", e.c_str());
+        return true;
+    }
+    bs::native::video::OverlayStyle   style_;
+    bool                              styleDirty_ = true;
+    bool                              enabled_    = true;
+
+public:
+    void disable() { enabled_ = false; }  // modo espectador: o roteiro controla, sem menu
+
+private:
+    SDL_Texture *                     subTex_ = nullptr, *menuTex_ = nullptr;
+    int                               texW_[2] = {}, texH_[2] = {}, outW_ = 0, outH_ = 0;
+    int                               held_ = -1, captures_ = 0;
+    std::string                       lastCapture_;
+    double                            nextRepeat_ = 0;
+    float                             stick_[2] = {};
+
+    static std::string targetLabel(const ni::Target& t) {
+        switch (t.kind) {
+        case ni::Target::Kind::Button: return ni::button_name(ni::Button(t.button));
+        case ni::Target::Kind::AxisDirection:
+            if (t.axis == ni::Axis::TriggerL) return "LT";
+            if (t.axis == ni::Axis::TriggerR) return "RT";
+            return "ANALOGICO";
+        default: return "ANALOGICO";
+        }
+    }
+
+    // posicao do mouse (coordenadas da janela) em pixels de saida
+    float px(float x) const {
+        int ww = 0, wh = 0;
+        SDL_GetWindowSize(window_, &ww, &wh);
+        return ww > 0 ? x * float(outW_) / float(ww) : x;
+    }
+    float py(float y) const {
+        int ww = 0, wh = 0;
+        SDL_GetWindowSize(window_, &ww, &wh);
+        return wh > 0 ? y * float(outH_) / float(wh) : y;
+    }
+
+    void act(bs::MenuAction a, double now) { menu_.input(a, now); }
+    void hold(bs::MenuAction a, double now) { held_ = int(a), nextRepeat_ = now + 0.4; }
+
+    void openMenu() {
+        input_.release_keyboard();  // teclas do jogo seguras ate aqui soltam (o jogo fica pausado)
+        menu_.open();
+        host_.setPaused(true);
+        std::fprintf(stderr, "[menu] aberto (jogo pausado no VBlank %llu)\n", static_cast<unsigned long long>(host_.vblanks()));
+    }
+    void close() {
+        if (menu_.is_open()) menu_.close();
+        bs::Preferences next;
+        if (menu_.take_changes(next)) apply(next, false);  // uma confirmacao de tela pendente voltou ao fechar
+        held_ = -1;
+        host_.setPaused(false);
+        std::fprintf(stderr, "[menu] fechado no VBlank %llu (jogo continua)\n", static_cast<unsigned long long>(host_.vblanks()));
+    }
+
+    // false = o SDL recusou alguma parte (quem chama desfaz); SDL_SyncWindow espera a mudanca assincrona terminar
+    bool applyWindow(const st::GraphicsSettings& g) {
+        bool ok = true;
+        if (g.window == st::WindowMode::Windowed) {
+            ok = SDL_SetWindowFullscreen(window_, false);
+            if (ok && g.window_w && g.window_h) ok = SDL_SetWindowSize(window_, int(g.window_w), int(g.window_h));
+        } else if (g.window == st::WindowMode::Borderless) {
+            ok = SDL_SetWindowFullscreenMode(window_, nullptr) && SDL_SetWindowFullscreen(window_, true);  // area de trabalho
+        } else {
+            const SDL_DisplayMode* dm = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window_));
+            ok = dm && SDL_SetWindowFullscreenMode(window_, dm) && SDL_SetWindowFullscreen(window_, true);  // exclusiva
+        }
+        if (ok) ok = SDL_SyncWindow(window_);
+        return ok;
+    }
+
+    void blit(SDL_Texture*& tex, const std::vector<uint32_t>& layer, int w, int h) {
+        const int k = &tex == &subTex_ ? 0 : 1;
+        if (!tex || texW_[k] != w || texH_[k] != h) {
+            if (tex) SDL_DestroyTexture(tex);
+            tex = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+            if (tex) SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
+            texW_[k] = w, texH_[k] = h;
+        }
+        if (!tex || layer.size() < size_t(w) * h) return;
+        SDL_UpdateTexture(tex, nullptr, layer.data(), w * 4);
+        SDL_RenderTexture(renderer_, tex, nullptr, nullptr);
+    }
+};
+
 int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Window* window,
-              SDL_Renderer* renderer) {
+              SDL_Renderer* renderer, InGameMenu& menu) {
     SDL_Texture*  texture = nullptr;
     uint32_t      texW = 0, texH = 0;
     // N7c: legendas das falas por cima do gameplay, na resolucao da janela (camada propria; o quadro nao e tocado)
     bs::SubtitleOverlay subs;
-    SDL_Texture*        subTex = nullptr;
-    uint32_t            subW = 0, subH = 0;
-    const std::vector<uint32_t>* subLayer = nullptr;
     bs::GameFrame frame;
     uint64_t      seq  = 0;
     bool          quit = false, fullscreen = false;
@@ -576,6 +929,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
         if (virtualPad && virtualPad->step()) quit = true;
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
+            if (e.type != SDL_EVENT_QUIT && menu.event(e)) continue;  // N7c: o menu interno (aberto, a entrada e dele)
             switch (e.type) {
             case SDL_EVENT_QUIT:
                 if (std::getenv("BS_APP_TRACE")) std::fprintf(stderr, "[janela] pedido de fechar\n");
@@ -632,24 +986,13 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             g_recorder->pendingCheckpoint = false, g_recorder->checkpoint(g_spectator.step.load(), frame);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         ok &= SDL_RenderClear(renderer);
-        if (texture) ok &= SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-        // a legenda ativa do quadro, na resolucao de saida (o quadro ocupa a saida inteira)
-        int outW = 0, outH = 0;
-        SDL_GetCurrentRenderOutputSize(renderer, &outW, &outH);
-        subLayer = outW > 0 && outH > 0 ? subs.layer(frame.subtitle, uint32_t(outW), uint32_t(outH), 0, 0, float(outW), float(outH))
-                                        : nullptr;
-        if (subLayer) {
-            if (!subTex || subW != uint32_t(outW) || subH != uint32_t(outH)) {
-                if (subTex) SDL_DestroyTexture(subTex);
-                subTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
-                if (subTex) SDL_SetTextureBlendMode(subTex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
-                subW = uint32_t(outW), subH = uint32_t(outH);
-            }
-            if (subTex) {
-                SDL_UpdateTexture(subTex, nullptr, subLayer->data(), outW * 4);
-                SDL_RenderTexture(renderer, subTex, nullptr, nullptr);
-            }
+        if (texture) {  // o quadro na area 4:3 da saida (faixas pretas nas sobras)
+            const SDL_FRect area = gameArea(renderer);
+            ok &= SDL_RenderTexture(renderer, texture, nullptr, &area);
         }
+        // N7c: legendas e menu por cima do quadro, em pixels de saida na area do jogo (nitidos, sem distorcer)
+        menu.update();
+        menu.draw(subs, frame.subtitle);
         ok &= SDL_RenderPresent(renderer);
         gfxFailures = ok ? 0 : gfxFailures + 1;
         if (gfxFailures >= 120) {
@@ -679,7 +1022,6 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
     const std::string err = host.error();
     if (!err.empty()) errorBox(window, "O jogo parou com erro:\n" + err);
     else if (!gfxError.empty()) errorBox(window, "Falha de video:\n" + gfxError);
-    if (subTex) SDL_DestroyTexture(subTex);
     if (texture) SDL_DestroyTexture(texture);
     return err.empty() && gfxError.empty() ? 0 : 1;
 }
@@ -1054,8 +1396,7 @@ int mainWindow(Args& a) {
         return 1;
     }
     SDL_SetRenderVSync(renderer, 1);  // a janela apresenta na frequencia do monitor
-    // 4:3 por padrao: area logica de 640x480 com faixas pretas ao redimensionar
-    SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    // 4:3 com faixas pretas ao redimensionar: a area do jogo e calculada a cada quadro (gameArea), em pixels de saida
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 
@@ -1113,6 +1454,48 @@ int mainWindow(Args& a) {
         input->set_filter([](const ni::SampleContext&, const ni::ControllerState& s) { return g_recorder->rec->filter(s); });
         std::printf("[gravacao] gravando em %s\n", utf8(rec).c_str());
     }
+    // N7c: preferencias do menu interno (pasta do usuario). Precedencia: linha de comando > estes arquivos >
+    // instalacao.toml > padroes (software; legendas en-US ligadas; volumes 100).
+    const fs::path  prefsDir = userDir();
+    bs::Preferences prefs, persisted;
+    bool            renderOverride = false, subtitleOverride = false;
+    {
+        std::string w1, w2, w3;
+        bool        legFile = false;
+        prefs.graphics  = st::read_graphics(prefsDir, &w1);
+        prefs.audio     = st::read_audio(prefsDir, &w2);
+        prefs.subtitles = st::read_subtitles(prefsDir, &w3, &legFile);
+        for (const std::string& w : {w1, w2, w3})
+            if (!w.empty()) std::fprintf(stderr, "[menu] %s\n", w.c_str());
+        persisted        = prefs;
+        renderOverride   = a.renderExplicit;
+        subtitleOverride = a.subtitlesSet || !legFile;  // sem legendas.toml, o idioma vem do instalacao.toml
+        if (a.renderExplicit) prefs.graphics.vulkan = a.render == 1;
+        else a.render = prefs.graphics.vulkan ? 1 : 0;
+        if (!a.subtitlesSet && legFile) {
+            a.subtitles    = prefs.subtitles.enabled ? prefs.subtitles.language : "nenhuma";
+            a.subtitlesSet = true;
+        } else {
+            const std::string lang    = subtitlesLanguage(a);
+            prefs.subtitles.enabled   = !lang.empty();
+            if (!lang.empty()) prefs.subtitles.language = lang;
+        }
+    }
+    st::Capabilities caps;  // o que o renderizador ja implementa (o resto: "em breve" no menu)
+    {
+        std::string vkErr;
+        caps.vulkan = bs::native::render::VulkanDevice::create(&vkErr) != nullptr;
+        if (!caps.vulkan) std::fprintf(stderr, "[menu] Vulkan indisponivel (%s): so o renderizador em software\n", vkErr.c_str());
+    }
+    caps.max_height = 480, caps.features.window_modes = true, caps.features.vsync = true;
+    prefs.graphics = st::clamp_to(prefs.graphics, caps);
+    if (!prefs.graphics.vulkan) a.render = 0;
+    std::vector<std::string> languages;  // os idiomas dos pacotes de legendas encontrados
+    for (const auto& pkg : bs::native::localization::ModPackages::discover(exeDir() / L"mods", "T13001N V1.000").packages())
+        for (const auto& l : pkg.languages)
+            if (std::find(languages.begin(), languages.end(), l) == languages.end()) languages.push_back(l);
+    if (std::find(languages.begin(), languages.end(), prefs.subtitles.language) == languages.end())
+        languages.insert(languages.begin(), prefs.subtitles.language);
     uint64_t endVblank = 0;
     {
         bs::GameHost host;
@@ -1127,7 +1510,10 @@ int mainWindow(Args& a) {
                 return true;
             };
         host.start(std::move(opt));
-        rc = runWindow(host, *input, a, window, renderer);
+        InGameMenu menu(host, *input, window, renderer, prefsDir, prefs, persisted, renderOverride, subtitleOverride, caps, languages);
+        if (g_spectator.on) menu.disable();
+        menu.apply(prefs, true);
+        rc = runWindow(host, *input, a, window, renderer, menu);
         // a thread do jogo le a fonte de entrada: para e espera ANTES de destrui-la, em todos
         // os caminhos (revisao Codex 2026-10-14)
         host.requestStop();

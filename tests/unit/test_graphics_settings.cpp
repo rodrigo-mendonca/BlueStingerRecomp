@@ -78,7 +78,7 @@ BS_TEST(graphics_confirmation_rule) {
 BS_TEST(graphics_toml_round_trip_and_invalid_values) {
     st::GraphicsSettings s = st::preset(st::Preset::High);
     s.window = st::WindowMode::Borderless, s.vsync = false, s.gamma = 1.25f, s.shader = "teste";
-    s.aspect = st::Aspect::Auto, s.window_w = 1280, s.window_h = 960;
+    s.aspect = st::Aspect::Auto, s.window_w = 1280, s.window_h = 960, s.vulkan = true;
     std::string warn;
     BS_CHECK(st::from_toml(st::to_toml(s), &warn) == s && warn.empty());
     // valor desconhecido: o padrao no campo, com aviso; fora da faixa: para a faixa

@@ -29,14 +29,14 @@ BS_TEST(settings_menu_navigation_and_unavailable_options) {
     m.open();
     BS_CHECK(m.is_open() && m.page() == bs::SettingsMenu::Page::Main);
     const auto main = m.view();
-    for (const char* l : {"Graficos", "Audio", "Legendas", "Controles", "Restaurar padroes", "Voltar ao jogo"})
+    for (const char* l : {"Gr\u00e1ficos", "\u00c1udio", "Legendas", "Controles", "Restaurar padr\u00f5es", "Voltar ao jogo"})
         BS_CHECK(find(main, l) >= 0);
-    go(m, "Graficos");
+    go(m, "Gr\u00e1ficos");
     m.input(MenuAction::Confirm, 0);
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Graphics);
     const auto g = m.view();
     // nada implementado alem do fiel: as opcoes de melhoria aparecem indisponiveis ("em breve") e nao mudam
-    for (const char* l : {"Predefinicao", "Resolucao interna", "Antialiasing (MSAA)", "Bloom", "Filtro CRT"}) {
+    for (const char* l : {"Predefini\u00e7\u00e3o", "Resolu\u00e7\u00e3o interna", "Antialiasing (MSAA)", "Bloom", "Filtro CRT"}) {
         const int i = find(g, l);
         BS_CHECK(i >= 0 && !g.items[size_t(i)].enabled && g.items[size_t(i)].value.find("em breve") != std::string::npos);
     }
@@ -54,9 +54,9 @@ BS_TEST(settings_menu_navigation_and_unavailable_options) {
 BS_TEST(settings_menu_audio_subtitles_and_changes) {
     bs::SettingsMenu m({}, {}, {"en-US", "pt-BR"});
     m.open();
-    go(m, "Audio");
+    go(m, "\u00c1udio");
     m.input(MenuAction::Confirm, 0);
-    go(m, "Musica");
+    go(m, "M\u00fasica");
     m.input(MenuAction::Left, 0), m.input(MenuAction::Left, 0);
     bs::Preferences out;
     BS_CHECK(m.take_changes(out) && out.audio.music == 90 && out.audio.master == 100);
@@ -85,7 +85,7 @@ BS_TEST(settings_menu_display_confirmation_and_revert) {
     caps.vulkan = true, caps.max_msaa = 8, caps.max_anisotropy = 16, caps.max_height = 2160, caps.features.window_modes = true;
     bs::SettingsMenu m({}, caps, {"en-US"});
     m.open();
-    go(m, "Graficos");
+    go(m, "Gr\u00e1ficos");
     m.input(MenuAction::Confirm, 0);
     go(m, "Modo de tela");
     m.input(MenuAction::Right, 1.0);  // tela cheia: aplica e pede confirmacao
@@ -111,8 +111,9 @@ BS_TEST(settings_menu_restore_defaults_and_controls) {
     bs::Preferences p;
     p.audio.master = 40, p.subtitles.enabled = false, p.subtitles.size_pct = 180;
     bs::SettingsMenu m(p, {}, {"en-US"});
+    m.set_controls_info({{"A", "Z / a"}, {"START", "ENTER / start"}});
     m.open();
-    go(m, "Restaurar padroes");
+    go(m, "Restaurar padr\u00f5es");
     m.input(MenuAction::Confirm, 0);
     BS_CHECK(!m.view().prompt.empty() && m.prefs().audio.master == 40);  // ainda pergunta
     m.input(MenuAction::Back, 0);
@@ -122,7 +123,7 @@ BS_TEST(settings_menu_restore_defaults_and_controls) {
     BS_CHECK(m.prefs() == bs::Preferences{});
     go(m, "Controles");
     m.input(MenuAction::Confirm, 0);
-    go(m, "Mapeamento de controles e teclado");
-    m.input(MenuAction::Confirm, 0);
-    BS_CHECK(m.take_controls_request() && !m.take_controls_request());
+    const auto c = m.view();  // o mapeamento atual do N3 e o remapeamento ainda indisponivel
+    BS_CHECK(find(c, "A") >= 0 && c.items[size_t(find(c, "A"))].value == "Z / a");
+    BS_CHECK(find(c, "Remapear pelo menu") >= 0 && !c.items[size_t(find(c, "Remapear pelo menu"))].enabled);
 }

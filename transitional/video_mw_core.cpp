@@ -1,6 +1,7 @@
 #include "video_mw_core.h"
 
 #include <algorithm>
+#include <mutex>
 
 namespace bs::transitional::video {
 
@@ -8,6 +9,13 @@ namespace nv = native::video;
 namespace na = native::audio;
 
 namespace {
+std::mutex  g_prefMutex;
+bool        g_prefSet = false;
+std::string g_prefLang;
+std::string pref_or(const std::string& fallback) {
+    std::lock_guard<std::mutex> lock(g_prefMutex);
+    return g_prefSet ? g_prefLang : fallback;
+}
 std::string baseName(std::string_view f) {
     const size_t p = f.find_last_of("\\/");
     return std::string(p == std::string_view::npos ? f : f.substr(p + 1));
@@ -59,8 +67,8 @@ int32_t MwPlayerCore::start(std::string_view fname, int64_t now) {
     // legendas do idioma pedido (opcionais): o idioma exato ("pt-br"), depois o idioma base ("pt");
     // nunca outro idioma por conta propria
     subs_.clear();
-    if (!o_.subtitleLang.empty()) {
-        std::string lang = o_.subtitleLang;
+    if (const std::string chosen = pref_or(o_.subtitleLang); !chosen.empty()) {
+        std::string lang = chosen;
         std::transform(lang.begin(), lang.end(), lang.begin(), [](char ch) { return char(std::tolower(static_cast<unsigned char>(ch))); });
         auto it = entry_->subtitles.find(lang);
         if (it == entry_->subtitles.end() && lang.find('-') != std::string::npos) it = entry_->subtitles.find(lang.substr(0, lang.find('-')));
@@ -165,11 +173,16 @@ bool MwPlayerCore::frame(nv::VideoFrame& out) {
         colorDirty_ = false;
     }
     color_.apply(out.argb);
-    if (!subs_.empty() && subRenderer_ && subRenderer_->ok()) {
+    if (!subs_.empty() && subRenderer_ && subRenderer_->ok() && !pref_or(o_.subtitleLang).empty()) {
         const std::wstring t = nv::subtitle_at(subs_, lastPos_);
         if (!t.empty()) subRenderer_->draw(out.argb, out.width, out.height, t);
     }
     return true;
+}
+
+void set_subtitle_preference(const std::string& language) {
+    std::lock_guard<std::mutex> lock(g_prefMutex);
+    g_prefSet = true, g_prefLang = language;
 }
 
 } // namespace bs::transitional::video

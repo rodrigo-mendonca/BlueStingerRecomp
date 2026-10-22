@@ -50,13 +50,21 @@ public:
 
     void input(MenuAction a, double now_seconds);
     void tick(double now_seconds);  // a reversao automatica da confirmacao
+    // mouse: leva a selecao a um item (sem efeito com uma pergunta aberta) e muda o valor dele (-1 / +1)
+    void select(int index);
+    void adjust(int index, int dir, double now_seconds);
 
     MenuView           view() const;
     const Preferences& prefs() const { return prefs_; }
     // O que mudou desde a ultima chamada (para aplicar e gravar); false se nada.
     bool take_changes(Preferences& out);
-    // O jogador pediu o mapeamento dos controles (N3): quem integra abre e limpa.
-    bool take_controls_request();
+    // A pagina Controles mostra o mapeamento atual do N3 (rotulo = acao, valor = teclas e botoes); remapear pelo menu
+    // ainda nao existe (aparece "em breve").
+    void set_controls_info(std::vector<MenuItem> info) { controlsInfo_ = std::move(info); }
+
+    // Confirmacao de tela em curso (a mudanca ja aplicada, ainda nao aceita) e o desfazer dela quando quem aplica falha.
+    bool display_pending() const { return pending_ == Pending::Display; }
+    void cancel_display();
 
     enum class Page : uint8_t { Main, Graphics, Audio, Subtitles, Controls };
     Page page() const { return page_; }
@@ -70,13 +78,14 @@ private:
     Preferences                      prefs_, defaults_;
     native::settings::Capabilities   caps_;
     std::vector<std::string>         languages_;
-    bool                             open_ = false, dirty_ = false, controls_ = false;
+    bool                             open_ = false, dirty_ = false;
+    std::vector<MenuItem>            controlsInfo_;
     Page                             page_ = Page::Main;
     int                              sel_  = 0;
     // confirmacao: de tamanho/modo de tela (reverte para `before_`) ou de restaurar padroes
     enum class Pending : uint8_t { None, Display, Restore } pending_ = Pending::None;
     Preferences                      before_;
-    double                           deadline_ = 0;
+    double                           deadline_ = 0, now_ = 0;  // now_: o ultimo instante visto (contagem)
 };
 
 } // namespace bs

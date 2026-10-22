@@ -47,7 +47,6 @@ bool SettingsMenu::take_changes(Preferences& out) {
     out = prefs_, dirty_ = false;
     return true;
 }
-bool SettingsMenu::take_controls_request() { return std::exchange(controls_, false); }
 
 std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
     std::vector<Entry> e;
@@ -55,11 +54,11 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
     auto page = [](Page p) { return [p](SettingsMenu& m) { m.page_ = p, m.sel_ = 0; }; };
     switch (page_) {
     case Page::Main:
-        e.push_back({"Graficos", "", true, nullptr, page(Page::Graphics)});
-        e.push_back({"Audio", "", true, nullptr, page(Page::Audio)});
+        e.push_back({"Gr\u00e1ficos", "", true, nullptr, page(Page::Graphics)});
+        e.push_back({"\u00c1udio", "", true, nullptr, page(Page::Audio)});
         e.push_back({"Legendas", "", true, nullptr, page(Page::Subtitles)});
         e.push_back({"Controles", "", true, nullptr, page(Page::Controls)});
-        e.push_back({"Restaurar padroes", "", true, nullptr, [](SettingsMenu& m) {
+        e.push_back({"Restaurar padr\u00f5es", "", true, nullptr, [](SettingsMenu& m) {
                          m.pending_ = Pending::Restore;
                      }});
         e.push_back({"Voltar ao jogo", "", true, nullptr, [](SettingsMenu& m) { m.close(); }});
@@ -67,13 +66,15 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
     case Page::Graphics: {
         const auto& g   = prefs_.graphics;
         const char* res[] = {"original (640x480)", "720p", "1080p", "1440p", "4K"};
-        const char* asp[] = {"4:3 (original)", "16:9", "automatico"};
+        const char* asp[] = {"4:3 (original)", "16:9", "autom\u00e1tico"};
         const char* win[] = {"janela", "tela cheia", "sem bordas"};
-        const char* flt[] = {"original", "bilinear", "anisotropica"};
+        const char* flt[] = {"original", "bilinear", "anisotr\u00f3pica"};
         const char* pre[] = {"Original Dreamcast", "Equilibrado", "Alta Qualidade", "Personalizado"};
         auto        soon  = [](bool have, std::string v) { return have ? v : v + " (em breve)"; };
+        e.push_back({"Renderizador", g.vulkan ? "Vulkan" : "software (original)", caps_.vulkan,
+                     [](Preferences& p, int) { p.graphics.vulkan = !p.graphics.vulkan; }});
         const bool presets = f.scaling || f.filtering || f.msaa;  // sem melhorias, so o Original existe
-        e.push_back({"Predefinicao", soon(presets, pre[size_t(st::classify(g))]), presets, [](Preferences& p, int d) {
+        e.push_back({"Predefini\u00e7\u00e3o", soon(presets, pre[size_t(st::classify(g))]), presets, [](Preferences& p, int d) {
                          const auto cur = st::classify(p.graphics);
                          const int  n   = (int(cur == st::Preset::Custom ? st::Preset::Original : cur) + d + 3) % 3;
                          st::GraphicsSettings g = st::preset(st::Preset(n));
@@ -81,14 +82,26 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                          g.aspect = p.graphics.aspect, g.vsync = p.graphics.vsync;
                          p.graphics = g;
                      }});
-        e.push_back({"Resolucao interna", soon(f.scaling, res[size_t(g.resolution)]), f.scaling,
+        e.push_back({"Resolu\u00e7\u00e3o interna", soon(f.scaling, res[size_t(g.resolution)]), f.scaling,
                      [](Preferences& p, int d) { p.graphics.resolution = cycle(p.graphics.resolution, d, 5); }});
-        e.push_back({"Escala de renderizacao", soon(f.scaling, pct(g.scale_pct)), f.scaling,
+        e.push_back({"Escala de renderiza\u00e7\u00e3o", soon(f.scaling, pct(g.scale_pct)), f.scaling,
                      [](Preferences& p, int d) { p.graphics.scale_pct = step(p.graphics.scale_pct, d, 50, 200, 25); }});
-        e.push_back({"Proporcao", soon(f.aspect_wide, asp[size_t(g.aspect)]), f.aspect_wide,
+        e.push_back({"Propor\u00e7\u00e3o", soon(f.aspect_wide, asp[size_t(g.aspect)]), f.aspect_wide,
                      [](Preferences& p, int d) { p.graphics.aspect = cycle(p.graphics.aspect, d, 3); }});
         e.push_back({"Modo de tela", soon(f.window_modes, win[size_t(g.window)]), f.window_modes,
                      [](Preferences& p, int d) { p.graphics.window = cycle(p.graphics.window, d, 3); }});
+        {
+            static constexpr uint32_t sizes[][2] = {{0, 0}, {640, 480}, {960, 720}, {1280, 960}, {1440, 1080}, {1920, 1440}};
+            const bool on = f.window_modes && g.window == st::WindowMode::Windowed;
+            const std::string v = g.window_w ? std::to_string(g.window_w) + "x" + std::to_string(g.window_h) : "padr\u00e3o";
+            e.push_back({"Tamanho da janela", f.window_modes ? v : v + " (em breve)", on, [](Preferences& p, int d) {
+                             int i = 0;
+                             for (int k = 0; k < 6; ++k)
+                                 if (sizes[k][0] == p.graphics.window_w && sizes[k][1] == p.graphics.window_h) i = k;
+                             i = (i + d + 6) % 6;
+                             p.graphics.window_w = sizes[i][0], p.graphics.window_h = sizes[i][1];
+                         }});
+        }
         e.push_back({"V-Sync", soon(f.vsync, onoff(g.vsync)), f.vsync, [](Preferences& p, int) { p.graphics.vsync = !p.graphics.vsync; }});
         e.push_back({"Filtragem de texturas", soon(f.filtering, flt[size_t(g.filter)]), f.filtering,
                      [](Preferences& p, int d) { p.graphics.filter = cycle(p.graphics.filter, d, 3); }});
@@ -100,7 +113,7 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                      }});
         e.push_back({"Sombras", soon(f.shadows, g.shadows == st::Shadows::Original ? "original" : "aprimoradas"), f.shadows,
                      [](Preferences& p, int d) { p.graphics.shadows = cycle(p.graphics.shadows, d, 2); }});
-        e.push_back({"Iluminacao aprimorada", soon(f.lighting, onoff(g.lighting)), f.lighting,
+        e.push_back({"Ilumina\u00e7\u00e3o aprimorada", soon(f.lighting, onoff(g.lighting)), f.lighting,
                      [](Preferences& p, int) { p.graphics.lighting = !p.graphics.lighting; }});
         e.push_back({"Texturas HD", soon(f.hd_textures, onoff(g.hd_textures)), f.hd_textures,
                      [](Preferences& p, int) { p.graphics.hd_textures = !p.graphics.hd_textures; }});
@@ -119,7 +132,7 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
             return [m](Preferences& p, int d) { p.audio.*m = step(p.audio.*m, d, 0, 100, 5); };
         };
         e.push_back({"Volume geral", pct(a.master), true, vol(&st::AudioSettings::master)});
-        e.push_back({"Musica", pct(a.music), true, vol(&st::AudioSettings::music)});
+        e.push_back({"M\u00fasica", pct(a.music), true, vol(&st::AudioSettings::music)});
         e.push_back({"Efeitos", pct(a.effects), true, vol(&st::AudioSettings::effects)});
         e.push_back({"Vozes", pct(a.voices), true, vol(&st::AudioSettings::voices)});
         e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
@@ -148,7 +161,8 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         break;
     }
     case Page::Controls:
-        e.push_back({"Mapeamento de controles e teclado", "", true, nullptr, [](SettingsMenu& m) { m.controls_ = true; }});
+        for (const MenuItem& i : controlsInfo_) e.push_back({i.label, i.value, true, nullptr, nullptr});
+        e.push_back({"Remapear pelo menu", "em breve (controles.toml)", false, nullptr, nullptr});
         e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
         break;
     }
@@ -210,19 +224,42 @@ void SettingsMenu::input(MenuAction a, double now) {
     }
 }
 
+void SettingsMenu::cancel_display() {
+    if (pending_ != Pending::Display) return;
+    prefs_ = before_, dirty_ = true, pending_ = Pending::None;
+}
+
+void SettingsMenu::select(int index) {
+    if (!open_ || pending_ != Pending::None) return;
+    const int n = int(entries().size());
+    if (index >= 0 && index < n) sel_ = index;
+}
+
+void SettingsMenu::adjust(int index, int dir, double now) {
+    now_ = now;
+    if (!open_ || pending_ != Pending::None) return;
+    select(index);
+    change(dir < 0 ? -1 : +1, now);
+}
+
 void SettingsMenu::tick(double now) {
+    now_ = now;
     if (pending_ == Pending::Display && now >= deadline_) prefs_ = before_, dirty_ = true, pending_ = Pending::None;
 }
 
 MenuView SettingsMenu::view() const {
     MenuView    v;
-    const char* titles[] = {"Configuracoes", "Configuracoes > Graficos", "Configuracoes > Audio", "Configuracoes > Legendas",
-                            "Configuracoes > Controles"};
+    const char* titles[] = {"Configura\u00e7\u00f5es", "Configura\u00e7\u00f5es > Gr\u00e1ficos", "Configura\u00e7\u00f5es > \u00c1udio", "Configura\u00e7\u00f5es > Legendas",
+                            "Configura\u00e7\u00f5es > Controles"};
     v.title = titles[size_t(page_)];
     for (const auto& e : entries()) v.items.push_back({e.label, e.value, e.enabled});
     v.selected = sel_;
-    if (pending_ == Pending::Display) v.prompt = "Manter esta configuracao de tela? (Confirmar = manter, Voltar = desfazer)";
-    if (pending_ == Pending::Restore) v.prompt = "Restaurar todas as configuracoes padrao? (Confirmar / Voltar)";
+    if (pending_ == Pending::Display) {
+        const int left = std::max(0, int(std::ceil(deadline_ - now_)));
+        v.prompt = "Manter esta configura\u00e7\u00e3o de tela? Volta sozinha em " + std::to_string(left) +
+                   " s. (Enter/A = manter, Esc/B = desfazer)";
+    }
+    if (pending_ == Pending::Restore) v.prompt = "Restaurar todas as configura\u00e7\u00f5es padr\u00e3o? (Enter/A = sim, Esc/B = n\u00e3o)";
     return v;
 }
 

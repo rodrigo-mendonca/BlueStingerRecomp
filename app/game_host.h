@@ -8,6 +8,7 @@
 #include "platform/saves.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -141,10 +142,21 @@ public:
     bool latestFrame(GameFrame& out, uint64_t& seq);
     GameStats stats() const;
 
+    // N7c (menu interno; chamadas da thread da janela). A pausa segura o jogo ENTRE VBlanks, depois do quadro
+    // publicado (a imagem fica, o audio nativo para junto, nada do jogo muda); os pedidos valem no proximo VBlank, na
+    // thread do jogo (o mixer, a captura do render e as legendas so sao tocados la).
+    void           setPaused(bool on);
+    bool           paused() const { return paused_.load(); }
+    void           setVolumes(float music, float voices, float effects);  // 0..1, com o volume geral (audio nativo)
+    void           setSubtitleLanguage(const std::string& language);      // falas e filmes; "" = desligadas
+    void           setRenderer(RenderProvider r);
+    RenderProvider renderer() const { return RenderProvider(renderer_.load()); }
+
 private:
     static void onVblank(void* self);
     void        vblank();
     void        threadMain();
+    void        applyRequests();  // na thread do jogo, no inicio do VBlank
 
     GameOptions           opt_;
     std::thread           thread_;
@@ -172,6 +184,18 @@ private:
     };
     std::unique_ptr<Dialogue, DialogueDelete>      dialogue_;
     void                                           dialogueVblank(uint64_t n);
+    // N7c: pausa e pedidos do menu
+    std::atomic<bool>                              paused_{false};
+    std::mutex                                     pauseMutex_;
+    std::condition_variable                        pauseCv_;
+    std::mutex                                     reqMutex_;
+    bool                                           volumesPending_ = false, langPending_ = false;
+    float                                          volumes_[3]     = {1, 1, 1};
+    std::string                                    lang_;
+    std::atomic<int>                               rendererPending_{-1}, renderer_{0};
+    bool                                           voicesNative_ = false;  // o servico de legendas das falas existe
+    std::atomic<bool>                              requestsPending_{false};  // acorda a pausa para aplicar pedidos
+    void                                           notifyRequest();
 };
 
 } // namespace bs
