@@ -1,0 +1,32 @@
+# Exemplo de pacote de shader de pos-processamento (docs/N7-PLANO.md secao 21). Copiar a pasta para
+# mods\shaders\ ao lado do jogo, com o shader.spv compilado (glslangValidator -V --target-env vulkan1.1 shader.frag
+# -o shader.spv, ou tools/dev/n7_shader_exemplo.py).
+formato = 1
+nome = "cor-quente"
+descricao = "Temperatura de cor, matiz e vinheta (exemplo)"
+posicao = "depois"   # "antes" ou "depois" dos efeitos internos
+shader = "shader.spv"
+
+[[parametros]]
+nome = "temperatura"
+rotulo = "Temperatura"
+minimo = -1.0
+maximo = 1.0
+padrao = 0.5
+passo = 0.1
+
+[[parametros]]
+nome = "matiz"
+rotulo = "Matiz"
+minimo = -1.0
+maximo = 1.0
+padrao = 0.0
+passo = 0.1
+
+[[parametros]]
+nome = "vinheta"
+rotulo = "Vinheta"
+minimo = 0.0
+maximo = 1.0
+padrao = 0.3
+passo = 0.1

@@ -123,3 +123,23 @@ BS_TEST(user_settings_audio_and_subtitles) {
     BS_CHECK(st::read_subtitles(dir, nullptr, &present) == s && present && st::read_audio(dir) == a);
     fs::remove_all(dir);
 }
+
+// N7c (secao 21): efeitos de imagem. O Original nao tem nenhum; os aprimorados ligam a correcao de cor; brilho,
+// contraste e os parametros do shader de mod vao e voltam pelo arquivo; sem o recurso no renderizador, tudo volta ao
+// neutro (e os parametros do shader somem).
+BS_TEST(graphics_post_effects) {
+    const st::GraphicsSettings o = st::preset(st::Preset::Original);
+    BS_CHECK(!o.color && o.shader.empty() && o.brightness == 0 && o.contrast == 1.0f && o.gamma == 1.0f && o.saturation == 1.0f);
+    BS_CHECK(st::preset(st::Preset::Balanced).color && st::preset(st::Preset::High).color);
+    st::GraphicsSettings s;
+    s.color = true, s.brightness = 0.1f, s.contrast = 1.2f, s.saturation = 0.5f, s.shader = "cor-quente";
+    s.shader_params = {{"temperatura", 0.75f}, {"vinheta", 0.25f}};
+    BS_CHECK(st::from_toml(st::to_toml(s)) == s);
+    BS_CHECK(st::classify(s) == st::Preset::Custom);
+    st::Capabilities none;
+    none.vulkan = true;  // sem Features: os efeitos nao existem
+    const st::GraphicsSettings c = st::clamp_to(s, none);
+    BS_CHECK(!c.color && c.brightness == 0 && c.contrast == 1.0f && c.saturation == 1.0f && c.shader_params.empty());
+    // faixas
+    BS_CHECK(st::from_toml("[efeitos]\ncor = true\nbrilho = 9.0\ncontraste = 0.1\n").brightness == 0.5f);
+}

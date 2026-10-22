@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 
 namespace bs::native::render {
@@ -214,10 +215,25 @@ struct VkBase {
 struct SlotSource {
     virtual bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait) = 0;
     virtual void unpin(int idx) = 0;
+    virtual class PostChain* post_chain() = 0;  // a cadeia de pos-processamento do dispositivo (nullptr = indisponivel)
 
 protected:
     ~SlotSource() = default;
 };
+
+// N7c (secao 21): a cadeia de pos-processamento (vk_post.cpp). record grava os passes em `cmd` sobre a imagem `src`
+// (w x h, no layout dado) e devolve a vista da ultima imagem (SHADER_READ_ONLY_OPTIMAL), ou VK_NULL_HANDLE se nenhum
+// passe rodou. Quem grava garante que o quadro anterior terminou (as imagens e os conjuntos sao reaproveitados).
+class PostChain {
+public:
+    virtual ~PostChain()                                                  = default;
+    virtual int         load(std::span<const uint32_t> spirv, std::string* error) = 0;
+    virtual int         builtin_color() const                                     = 0;
+    virtual VkImageView record(VkCommandBuffer cmd, VkImageView src, VkImageLayout srcLayout, uint32_t w, uint32_t h,
+                               std::span<const PostPass> passes)                  = 0;
+    virtual VkImage     image_of(VkImageView view) const                          = 0;
+};
+std::unique_ptr<PostChain> make_post_chain(VkBase& base, std::string* error);
 
 // A apresentacao direta (vk_present.cpp), no mesmo dispositivo do renderizador.
 class PresenterImpl {

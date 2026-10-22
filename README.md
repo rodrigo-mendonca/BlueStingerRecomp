@@ -10,7 +10,7 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 
 ## Status (2026-10-22)
 
-**Progresso geral: ~72,5 %** do roteiro do port nativo (N0–N9; cada etapa pesa 10 %, e uma etapa parcial conta pela
+**Progresso geral: ~73 %** do roteiro do port nativo (N0–N9; cada etapa pesa 10 %, e uma etapa parcial conta pela
 fração concluída). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 ativadas por padrão (pacote de mod; as legendas geradas por IA são provisórias e não acompanham o repositório). O desenho
@@ -26,7 +26,7 @@ ainda passa pela simulação do PowerVR2 (o renderizador Vulkan é o N7).
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |
 | N6 | Áudio nativo (efeitos, falas, música Manatee, DSP da AICA) | concluída com promoção **condicional**: nativo é o padrão (`--audio legado` é o fallback até o N8); validação contra o original (Flycast) e gravações reais de gameplay; H1–H8 aprovados; **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** | 95 |
-| N7 | Renderização Vulkan | em andamento: N7a e N7b validadas (o Vulkan desenha o jogo **bit a bit igual** ao renderizador atual em gameplay, 3× mais rápido; o software segue padrão até a aprovação); N7c em andamento: **legendas das falas aparecem no gameplay** (inglês por padrão) e **menu de configurações dentro do jogo** (Esc ou Back do controle: renderizador, modo e tamanho da janela, V-Sync, volumes, legendas; o jogo pausa enquanto ele está aberto); **resolução interna de 720p a 4K com o Vulkan**, desenhada de verdade na resolução maior e apresentada direto pela GPU (o modo original continua idêntico); próximo: pós-processamento e shaders personalizados (correção de cor, tonemapping, nitidez, bloom) | 70 |
+| N7 | Renderização Vulkan | em andamento: N7a e N7b validadas (o Vulkan desenha o jogo **bit a bit igual** ao renderizador atual em gameplay, 3× mais rápido; o software segue padrão até a aprovação); N7c em andamento: **legendas das falas aparecem no gameplay** (inglês por padrão) e **menu de configurações dentro do jogo** (Esc ou Back do controle: renderizador, modo e tamanho da janela, V-Sync, volumes, legendas; o jogo pausa enquanto ele está aberto); **resolução interna de 720p a 4K com o Vulkan**, desenhada de verdade na resolução maior e apresentada direto pela GPU (o modo original continua idêntico); **efeitos de imagem** no menu (correção de cor e shaders de mod validados, sobre a imagem do jogo, sem tocar o menu e as legendas; o Original continua sem nenhum); próximo: tonemapping, nitidez e bloom | 75 |
 | N8 | Remoção da camada legada (simulação do console) | não iniciada | 0 |
 | N9 | Revisão final e distribuição | não iniciada | 0 |
 

@@ -126,7 +126,8 @@ public:
             if (!stage(layer_[i], l.argb, l.width, l.height, l.version)) return resync("camada");
             layerOn[i] = true;
         }
-        const bool capture = r.capture && canCapture_;  // sem TRANSFER_SRC na swapchain: captura indisponivel
+        const bool capture = r.capture && canCapture_;
+        const uint32_t srcW = pinned_ >= 0 ? w : game_.w, srcH = pinned_ >= 0 ? h : game_.h;  // a imagem do jogo  // sem TRANSFER_SRC na swapchain: captura indisponivel
         if (r.capture) r.capture->clear();
         if (capture && !ensureHost(capture_, VkDeviceSize(sw_) * sh_ * 4)) return resync("captura");
 
@@ -146,6 +147,11 @@ public:
                             VK_ACCESS_SHADER_READ_BIT);
             t->ready = true;
         }
+        // pos-processamento (secao 21): so a imagem do jogo, antes do passe da swapchain (as camadas vem depois, nitidas)
+        if (gameView && r.post && r.post_count)
+            if (PostChain* pc = slots_.post_chain())
+                if (VkImageView v = pc->record(cmd_, gameView, gameLayout, srcW, srcH, {r.post, r.post_count}))
+                    gameView = v, gameLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, ++st_.post_frames;
         VkClearValue          clear{};
         VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         rb.renderPass = pass_, rb.framebuffer = fbs_[idx], rb.renderArea = {{0, 0}, {sw_, sh_}};

@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". **Resolução interna até 4K com a apresentação direta pelo Vulkan (caminho B)** validada (modo original idêntico; a imagem maior não passa pela CPU; ver "N7c: apresentação direta pelo Vulkan, caminho B"). Próximo: cadeia de pós-processamento e shaders personalizados (seção 21 do plano). N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". **Resolução interna até 4K com a apresentação direta pelo Vulkan (caminho B)** validada (modo original idêntico; a imagem maior não passa pela CPU; ver "N7c: apresentação direta pelo Vulkan, caminho B"). **Pós-processamento com shaders de mod validados** (correção de cor interna e o exemplo externo pelo menu; ver "N7c: pós-processamento e shaders de mod"). Próximo: tonemapping, nitidez e bloom. N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2261,6 +2261,76 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
 - Testes: `bs_ui_tests` 25/25 (`ui_install_config_subtitles`), `bs_localization_tests` 9/9
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
+
+### N7c: pós-processamento e shaders de mod (2026-10-22; worktree n7-vulkan)
+
+**O que o jogador tem** (Esc/Back > Gráficos > **Efeitos de imagem**; só com a apresentação Vulkan):
+- **Correção de cor:** liga e desliga, com brilho, contraste, gamma e saturação. Vale na hora (no quadro seguinte,
+  inclusive com o jogo pausado no menu).
+- **Shader de mod:** escolhe um pacote de `mods\shaders`, com os parâmetros do manifesto no menu.
+- Tonemapping, nitidez, bloom, SSAO e CRT aparecem "em breve".
+- **Os efeitos tocam só a imagem do jogo:** menu e legendas são compostos depois, nítidos.
+- **Presets:**
+  - Original Dreamcast: nenhum passe; o caminho é exatamente o de antes;
+  - Equilibrado e Alta Qualidade (os "aprimorados"): ligam a correção de cor;
+  - Personalizado: guarda tudo em `graficos.toml` (`[efeitos] cor/brilho/contraste`, `[imagem] shader`,
+    `[shader_parametros]`).
+- Formato dos pacotes, interface e validação: `docs/MODS-SHADERS.md`. Exemplo em `mods-exemplos/shaders/cor-quente`
+  (fonte e manifesto; o SPIR-V é gerado, `tools/dev/n7_shader_exemplo.py` o instala sem o SDK).
+
+**Arquitetura** (`docs/N7-PLANO.md`, seção 21):
+- `native/render/post_shader`: o validador próprio de SPIR-V e o manifesto (portáveis, testados sem GPU).
+- `native/render/vulkan/vk_post.cpp`: a cadeia, com passes de tela cheia alternando duas imagens RGBA8 na
+  resolução da fonte. O passe interno de correção de cor usa a mesma interface dos externos.
+- `vk_present.cpp` grava a cadeia antes do passe da swapchain.
+- `app/window_present` carrega os shaders por dispositivo (de novo depois de uma perda).
+- O menu desativa e grava um shader que o driver recusar ou que estiver ativo numa perda do dispositivo.
+
+**Testes:**
+- `bs_render_tests` 29 de 29:
+  - `post_shader_validator`: o interno e o exemplo passam; recusados com o motivo:
+    - magia errada, SPIR-V truncado, instrução com operandos de menos;
+    - estágio de vértice;
+    - buffer de armazenamento, push constants de 144 bytes, laço, `sampler3D`;
+  - `post_shader_manifest`: pacote válido; caminho com `..`, link simbólico para fora do pacote, parâmetro com faixa
+    invertida, sem o `.spv`, SPIR-V proibido;
+  - `post_chain_gpu`: sem passes a imagem é idêntica; correção neutra com diferença máxima 0; saturação 0 dá cinza;
+    brilho +0,2 sobe a média (117,5 para 166,2); o exemplo externo esquenta (vermelho 126 para 137,5, azul 110 para
+    99); dois passes encadeados; 0 objetos Vulkan vivos no fim.
+- `bs_unit_tests` 289 de 289 (`graphics_post_effects`, `settings_menu_effects_page`).
+- **Janela com o jogo real e o controle virtual** (correção de cor, brilho +0,20 e o shader `cor-quente` pelo menu),
+  média RGB da área do jogo nas capturas da imagem apresentada:
+
+| Execução | VBlank 300 (antes do menu) | VBlank 600 | VBlank 900 | Quadros com pós-processamento |
+|---|---|---|---|---|
+| sem efeitos | 5,6 / 7,2 / 11,4 | 6,5 / 6,5 / 6,5 | 1,4 / 1,1 / 2,2 | 0 |
+| efeitos pelo menu | 5,6 / 7,2 / 11,4 (igual) | **53,5 / 51,2 / 48,6** | 49,6 / 46,9 / 45,6 | 1591 |
+| reinício (gravado) | 52,9 / 52,1 / 53,4 | 53,5 / 51,2 / 48,6 (igual) | 49,6 / 46,9 / 45,6 (igual) | 2382 |
+
+- **Pacotes inválidos** instalados (`teste-buffer`, `teste-corrompido`, `teste-manifesto`):
+  - os três foram recusados com o motivo no log;
+  - o menu mostra "Shaders inválidos: 3";
+  - o jogo segue normal.
+- Com 1080p interno, as duas coisas juntas: 2340 quadros direto da GPU, 1591 com pós-processamento.
+- Gameplay real na janela (`n7_janela.py`, efeitos desligados) continua APROVADO.
+
+**Revisão Codex** (`reviews/codex-20261022-093953.md`), 7 achados, aceitos:
+
+| Achado | Correção |
+|---|---|
+| [ALTA] leituras fora do SPIR-V com instruções curtas | mínimo de operandos por opcode e strings terminadas dentro da instrução (teste) |
+| [ALTA] shader com execução ilimitada passava | laços recusados (teste); uma perda do dispositivo com o shader ativo o desativa; laços com orçamento no N9 |
+| [ALTA] semáforo do slot podia ser sinalizado de novo sem espera | só com duas filas, e um semáforo novo a cada escrita do slot |
+| [MÉDIA] `sampler2D` e o limite de 80 bytes não eram conferidos de fato | `OpTypeImage` 2D simples exigido; push constants só com layout explícito (teste com `sampler3D`) |
+| [MÉDIA] escape por link simbólico ou junção | caminhos canônicos dentro do pacote (teste com link real) |
+| [MÉDIA] falha ao recarregar depois de uma perda não desativava | `take_post_error`: o menu desativa e grava |
+| [BAIXA] o teste da GPU não cobre a sincronização da apresentação | parcial: coberta pelas janelas com gameplay real; camadas de validação pendentes |
+
+**Pendente nesta frente:**
+- tonemapping, nitidez e bloom (internos, um por vez);
+- SSAO, só se a profundidade servir;
+- iluminação e sombras: interface reservada, sem dados inventados;
+- várias passadas, LUTs e ferramentas: N9.
 
 ### N7c: apresentação direta pelo Vulkan, caminho B (2026-10-22; worktree n7-vulkan)
 

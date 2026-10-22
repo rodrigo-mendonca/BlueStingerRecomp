@@ -736,6 +736,13 @@ public:
         }
         outW_ = w, outH_ = h;
     }
+    // o shader de mod escolhido falhou depois de aplicado (perda do dispositivo, recarga recusada): desativado e gravado
+    void shader_failed(const std::string& why) {
+        const std::string name = applied_.graphics.shader;
+        std::fprintf(stderr, "[menu] shader %s desativado: %s\n", name.empty() ? "?" : name.c_str(), why.c_str());
+        if (!name.empty()) menu_.mark_shader_invalid(name, why);
+    }
+
     void captured(const std::vector<uint32_t>& img, int w, int h) {
         static const char* capDir = std::getenv("BS_MENU_CAPTURA");
         if (!capDir || !*capDir || w <= 0 || h <= 0 || img.size() < size_t(w) * h) return;
@@ -764,6 +771,26 @@ public:
         const auto& g = p.graphics;
         if (!start && g.vulkan != old.graphics.vulkan)
             host_.setRenderer(g.vulkan ? bs::RenderProvider::Native : bs::RenderProvider::Software);
+        // N7c (secao 21): efeitos de imagem na apresentacao (so a imagem do jogo; desligados = nenhum passe)
+        if (pres_.p) {
+            bs::PostSpec ps;
+            ps.color = g.color, ps.brightness = g.brightness, ps.contrast = g.contrast, ps.gamma = g.gamma, ps.saturation = g.saturation;
+            for (const auto& pkg : shaders_)
+                if (pkg.error.empty() && pkg.name == g.shader) {
+                    ps.shader = &pkg;
+                    for (const auto& q : pkg.params) {
+                        const auto it = g.shader_params.find(q.name);
+                        ps.shaderParams.push_back(it != g.shader_params.end() ? it->second : q.def);
+                    }
+                }
+            if (start || !(ps == post_)) {
+                post_ = ps;
+                if (const std::string why = pres_.p->set_post(ps); !why.empty()) {
+                    std::fprintf(stderr, "[menu] shader %s desativado: %s\n", g.shader.c_str(), why.c_str());
+                    menu_.mark_shader_invalid(g.shader, why);  // o proximo update aplica e grava sem ele
+                }
+            }
+        }
         // resolucao interna (so o Vulkan; o software desenha na do jogo): altura interna / 480
         if (start || g.vulkan != old.graphics.vulkan || st::internal_height(g) != st::internal_height(old.graphics))
             host_.setRenderScale(g.vulkan ? float(st::internal_height(g)) / 480.f : 1.f);
@@ -817,6 +844,23 @@ private:
     SDL_Window*                       window_;
     PresenterRef&                     pres_;
     fs::path                          dir_;
+    std::vector<bs::native::render::PostShaderPackage> shaders_;  // mods\shaders (validos e invalidos)
+    bs::PostSpec                      post_;
+
+public:
+    void set_shaders(std::vector<bs::native::render::PostShaderPackage> pkgs) {
+        shaders_ = std::move(pkgs);
+        std::vector<bs::ShaderChoice> choices;
+        for (const auto& p : shaders_) {
+            bs::ShaderChoice c;
+            c.name = p.name, c.description = p.description, c.error = p.error;
+            for (const auto& q : p.params) c.params.push_back({q.name, q.label, q.min, q.max, q.def, q.step});
+            choices.push_back(std::move(c));
+        }
+        menu_.set_shaders(std::move(choices));
+    }
+
+private:
     bs::SettingsMenu                  menu_;
     bs::MenuOverlay                   overlay_;
     bs::Preferences                   applied_, persisted_;
@@ -1000,6 +1044,7 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
         std::vector<uint32_t> image;
         ok &= pres.p->present(frame, seq, area, layers, shot || winShot ? &image : nullptr);
         if (shot && !image.empty()) menu.captured(image, ow, oh);
+        if (const std::string why = pres.p->take_post_error(); !why.empty()) menu.shader_failed(why);
         if (winShot && !image.empty() && image.size() >= size_t(ow) * oh) {
             lastWinShot = frame.vblank / winEvery;
             bs::GameFrame f;
@@ -1541,8 +1586,14 @@ int mainWindow(Args& a) {
     caps.max_height = 480, caps.features.window_modes = true, caps.features.vsync = true;
     // N7c: resolucao interna com o Vulkan e a apresentacao direta (pela do SDL a imagem maior nao chega a janela): ate 4K
     // (2160), no maximo o que a GPU comporta (o lado das imagens e a memoria local; VulkanStats::max_internal_height)
-    if (caps.vulkan && std::strcmp(pres.p->name(), "Vulkan") == 0)
+    if (caps.vulkan && std::strcmp(pres.p->name(), "Vulkan") == 0) {
         caps.features.scaling = true, caps.max_height = (std::min)(2160u, gpuMaxHeight);
+        caps.features.color = caps.features.shaders = true;  // N7c (secao 21): pos-processamento na apresentacao direta
+    }
+    // shaders de pos-processamento de mods (mods\shaders\<nome>): validados aqui; os invalidos ficam com o motivo
+    auto postShaders = bs::native::render::discover_post_shaders(exeDir() / L"mods" / L"shaders");
+    for (const auto& p : postShaders)
+        std::fprintf(stderr, "[pos] shader de mod %s: %s\n", p.name.c_str(), p.error.empty() ? "valido" : ("INVALIDO: " + p.error).c_str());
     if (caps.vulkan) std::fprintf(stderr, "[menu] resolucao interna: ate %u (GPU: ate %u)\n", caps.max_height, gpuMaxHeight);
     prefs.graphics = st::clamp_to(prefs.graphics, caps);
     if (!prefs.graphics.vulkan) a.render = 0;
@@ -1568,6 +1619,7 @@ int mainWindow(Args& a) {
         host.start(std::move(opt));
         InGameMenu menu(host, *input, window, pres, prefsDir, prefs, persisted, renderOverride, subtitleOverride, caps, languages);
         if (g_spectator.on) menu.disable();
+        menu.set_shaders(std::move(postShaders));
         menu.apply(prefs, true);
         if (a.internalHeight) host.setRenderScale(float(a.internalHeight) / 480.f);  // so nesta execucao
         rc = runWindow(host, *input, a, window, pres, renderer, menu);

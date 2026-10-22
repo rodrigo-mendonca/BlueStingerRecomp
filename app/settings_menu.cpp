@@ -125,13 +125,67 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                      [](Preferences& p, int) { p.graphics.lighting = !p.graphics.lighting; }});
         e.push_back({"Texturas HD", soon(f.hd_textures, onoff(g.hd_textures)), f.hd_textures,
                      [](Preferences& p, int) { p.graphics.hd_textures = !p.graphics.hd_textures; }});
-        e.push_back({"Bloom", soon(f.post, onoff(g.bloom)), f.post, [](Preferences& p, int) { p.graphics.bloom = !p.graphics.bloom; }});
-        e.push_back({"SSAO", soon(f.post, onoff(g.ssao)), f.post, [](Preferences& p, int) { p.graphics.ssao = !p.graphics.ssao; }});
+        {  // N7c (secao 21): os efeitos de imagem numa pagina propria
+            const bool any = f.color || f.post || f.shaders;
+            const bool on  = g.color || !g.shader.empty() || g.bloom || g.tonemap || g.sharpen != 0;
+            e.push_back({"Efeitos de imagem", any ? (on ? "ligados" : "desligados") : "(em breve)", any, nullptr, page(Page::Effects)});
+        }
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
+        break;
+    }
+    case Page::Effects: {
+        // so a imagem do jogo; menu e legendas ficam por cima, sem efeito. Original Dreamcast = tudo desligado.
+        const auto& g = prefs_.graphics;
+        auto        soon = [](bool have, std::string v) { return have ? v : v + " (em breve)"; };
+        auto        num  = [](float v, int places) {
+            char b[24];
+            std::snprintf(b, sizeof b, "%.*f", places, double(v));
+            return std::string(b);
+        };
+        auto fstep = [](float* (*field)(Preferences&), float by, float lo, float hi) {
+            return [=](Preferences& p, int d) {
+                float& v = *field(p);
+                v        = std::clamp(std::round((v + by * float(d)) / by) * by, lo, hi);
+            };
+        };
+        e.push_back({"Corre\u00e7\u00e3o de cor", soon(f.color, onoff(g.color)), f.color,
+                     [](Preferences& p, int) { p.graphics.color = !p.graphics.color; }});
+        const bool cc = f.color && g.color;
+        e.push_back({"Brilho", num(g.brightness, 2), cc, fstep([](Preferences& p) { return &p.graphics.brightness; }, 0.05f, -0.5f, 0.5f)});
+        e.push_back({"Contraste", num(g.contrast, 2), cc, fstep([](Preferences& p) { return &p.graphics.contrast; }, 0.05f, 0.5f, 1.5f)});
+        e.push_back({"Gamma", num(g.gamma, 2), cc, fstep([](Preferences& p) { return &p.graphics.gamma; }, 0.05f, 0.5f, 2.5f)});
+        e.push_back({"Satura\u00e7\u00e3o", num(g.saturation, 2), cc, fstep([](Preferences& p) { return &p.graphics.saturation; }, 0.05f, 0.f, 2.f)});
+        e.push_back({"Tonemapping", soon(f.post, onoff(g.tonemap)), f.post, [](Preferences& p, int) { p.graphics.tonemap = !p.graphics.tonemap; }});
         e.push_back({"Nitidez", soon(f.post, pct(uint32_t(std::lround(g.sharpen * 100)))), f.post, [](Preferences& p, int d) {
                          p.graphics.sharpen = std::clamp(p.graphics.sharpen + 0.25f * float(d), 0.f, 1.f);
                      }});
+        e.push_back({"Bloom", soon(f.post, onoff(g.bloom)), f.post, [](Preferences& p, int) { p.graphics.bloom = !p.graphics.bloom; }});
+        e.push_back({"SSAO", soon(false, onoff(g.ssao)), false, nullptr});
         e.push_back({"Filtro CRT", soon(f.post, onoff(g.crt)), f.post, [](Preferences& p, int) { p.graphics.crt = !p.graphics.crt; }});
-        e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
+        // shader de mod: "nenhum" ou um dos validos (os invalidos aparecem numa linha so, com o motivo no log)
+        std::vector<const ShaderChoice*> valid;
+        int                              invalid = 0;
+        for (const auto& s : shaders_) s.error.empty() ? valid.push_back(&s) : void(++invalid);
+        e.push_back({"Shader de mod", soon(f.shaders, g.shader.empty() ? "nenhum" : g.shader), f.shaders && !valid.empty(),
+                     [valid](Preferences& p, int d) {
+                         int i = -1;  // -1 = nenhum
+                         for (int k = 0; k < int(valid.size()); ++k)
+                             if (valid[size_t(k)]->name == p.graphics.shader) i = k;
+                         const int n = int(valid.size()) + 1;
+                         i           = ((i + 1 + d) % n + n) % n - 1;
+                         p.graphics.shader = i < 0 ? std::string() : valid[size_t(i)]->name;
+                     }});
+        for (const ShaderChoice* s : valid)
+            if (s->name == g.shader)
+                for (const auto& q : s->params) {
+                    const auto  it = g.shader_params.find(q.name);
+                    const float v  = it != g.shader_params.end() ? it->second : q.def;
+                    e.push_back({"  " + q.label, num(v, 2), f.shaders, [q, v](Preferences& p, int d) {
+                                     p.graphics.shader_params[q.name] = std::clamp(v + q.step * float(d), q.min, q.max);
+                                 }});
+                }
+        if (invalid) e.push_back({"Shaders inv\u00e1lidos", std::to_string(invalid) + " (desativados; ver o log)", false, nullptr});
+        e.push_back({"Voltar", "", true, nullptr, page(Page::Graphics)});
         break;
     }
     case Page::Audio: {
@@ -227,9 +281,15 @@ void SettingsMenu::input(MenuAction a, double now) {
         break;
     case MenuAction::Back:
         if (page_ == Page::Main) close();
-        else page_ = Page::Main, sel_ = 0;
+        else page_ = page_ == Page::Effects ? Page::Graphics : Page::Main, sel_ = 0;  // Efeitos volta para Graficos
         break;
     }
+}
+
+void SettingsMenu::mark_shader_invalid(const std::string& name, const std::string& why) {
+    for (auto& s : shaders_)
+        if (s.name == name) s.error = why;
+    if (prefs_.graphics.shader == name) prefs_.graphics.shader.clear(), dirty_ = true;  // desativado
 }
 
 void SettingsMenu::cancel_display() {
@@ -258,7 +318,7 @@ void SettingsMenu::tick(double now) {
 MenuView SettingsMenu::view() const {
     MenuView    v;
     const char* titles[] = {"Configura\u00e7\u00f5es", "Configura\u00e7\u00f5es > Gr\u00e1ficos", "Configura\u00e7\u00f5es > \u00c1udio", "Configura\u00e7\u00f5es > Legendas",
-                            "Configura\u00e7\u00f5es > Controles"};
+                            "Configura\u00e7\u00f5es > Controles", "Configura\u00e7\u00f5es > Gr\u00e1ficos > Efeitos de imagem"};
     v.title = titles[size_t(page_)];
     for (const auto& e : entries()) v.items.push_back({e.label, e.value, e.enabled});
     v.selected = sel_;

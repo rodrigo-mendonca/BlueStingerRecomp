@@ -33,6 +33,17 @@ struct MenuItem {
     bool        enabled = true;  // false: indisponivel (mostrado, nao alteravel)
 };
 
+// N7c (secao 21): um shader de pos-processamento de mod encontrado (mods\shaders), com os parametros do manifesto;
+// error nao vazio = invalido (o menu o mostra, mas nao deixa escolher).
+struct ShaderChoice {
+    struct Param {
+        std::string name, label;
+        float       min = 0, max = 1, def = 0, step = 0.05f;
+    };
+    std::string        name, description, error;
+    std::vector<Param> params;
+};
+
 struct MenuView {
     std::string           title;
     std::vector<MenuItem> items;
@@ -61,12 +72,16 @@ public:
     // A pagina Controles mostra o mapeamento atual do N3 (rotulo = acao, valor = teclas e botoes); remapear pelo menu
     // ainda nao existe (aparece "em breve").
     void set_controls_info(std::vector<MenuItem> info) { controlsInfo_ = std::move(info); }
+    // Os shaders de mod encontrados (pagina Efeitos); mark_shader_invalid: um que falhou ao carregar na GPU.
+    void set_shaders(std::vector<ShaderChoice> s) { shaders_ = std::move(s); }
+    void mark_shader_invalid(const std::string& name, const std::string& why);
+    const std::vector<ShaderChoice>& shaders() const { return shaders_; }
 
     // Confirmacao de tela em curso (a mudanca ja aplicada, ainda nao aceita) e o desfazer dela quando quem aplica falha.
     bool display_pending() const { return pending_ == Pending::Display; }
     void cancel_display();
 
-    enum class Page : uint8_t { Main, Graphics, Audio, Subtitles, Controls };
+    enum class Page : uint8_t { Main, Graphics, Audio, Subtitles, Controls, Effects };
     Page page() const { return page_; }
 
 private:
@@ -80,6 +95,7 @@ private:
     std::vector<std::string>         languages_;
     bool                             open_ = false, dirty_ = false;
     std::vector<MenuItem>            controlsInfo_;
+    std::vector<ShaderChoice>        shaders_;
     Page                             page_ = Page::Main;
     int                              sel_  = 0;
     // confirmacao: de tamanho/modo de tela (reverte para `before_`) ou de restaurar padroes

@@ -8,6 +8,7 @@
 // Os dois desenham o mesmo: fundo preto, a imagem do jogo na area 4:3 (game_area) e as camadas por cima, em pixels da
 // saida (texto nitido em qualquer tamanho).
 #include "game_host.h"
+#include "render/post_shader.h"
 
 #include <SDL3/SDL.h>
 
@@ -27,6 +28,16 @@ struct WindowLayer {
     uint64_t                     version = 0;  // muda quando o conteudo muda
 };
 
+// N7c (secao 21): os efeitos de imagem pedidos (so a imagem do jogo, antes das camadas). Tudo desligado e sem shader =
+// nenhum passe (o caminho de sempre: Original Dreamcast).
+struct PostSpec {
+    bool  color = false;
+    float brightness = 0, contrast = 1, gamma = 1, saturation = 1;
+    const native::render::PostShaderPackage* shader = nullptr;  // shader de mod (ja validado) ou nenhum
+    std::vector<float>                       shaderParams;      // na ordem dos parametros do manifesto
+    bool operator==(const PostSpec&) const = default;
+};
+
 // A area do jogo na saida w x h: o maior retangulo 4:3 centrado (faixas pretas nas sobras).
 SDL_FRect game_area(int w, int h);
 
@@ -41,6 +52,12 @@ public:
     virtual bool present(const GameFrame& f, uint64_t frameSeq, const SDL_FRect& area, std::span<const WindowLayer> layers,
                          std::vector<uint32_t>* capture) = 0;
     virtual std::string stats() const { return {}; }  // resumo do custo (log no fim)
+    // Os efeitos (so a apresentacao Vulkan os aplica). Devolve vazio, ou o motivo de o shader de mod nao poder ser usado
+    // (o driver recusou o modulo ou o pipeline): quem chama o desativa.
+    virtual std::string set_post(const PostSpec&) { return {}; }
+    // Um shader de mod que deixou de poder ser usado depois de set_post (recarga num dispositivo novo recusada, ou perda
+    // do dispositivo com ele ativo): o motivo, uma vez; vazio = nada. Quem chama o desativa como em set_post.
+    virtual std::string take_post_error() { return {}; }
 };
 
 std::unique_ptr<WindowPresenter> make_sdl_presenter(SDL_Window* window, SDL_Renderer* renderer);

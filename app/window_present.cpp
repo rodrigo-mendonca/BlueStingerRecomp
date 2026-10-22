@@ -8,6 +8,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <utility>
 
 namespace bs {
 
@@ -109,6 +111,8 @@ public:
             return false;
         }
         if (!dev_->present_attach(reinterpret_cast<uint64_t>(surface_), error)) return false;
+        loaded_.clear();  // os shaders sao do dispositivo: num dispositivo novo, carregados de novo
+        if (std::string e = build(); !e.empty()) postError_ = e;  // o menu o desativa (take_post_error)
         std::fprintf(stderr, "[apresentacao] Vulkan direta: %s\n", dev_->stats().device.c_str());
         return true;
     }
@@ -132,6 +136,7 @@ public:
         r.area[0] = area.x, r.area[1] = area.y, r.area[2] = area.w, r.area[3] = area.h;
         r.slot_seq = f.hiresSeq, r.slot_y0 = f.hiresY0, r.slot_rows = f.hiresRows;
         if (f.width && f.height) r.argb = f.argb.data(), r.width = f.width, r.height = f.height, r.argb_version = frameSeq;
+        r.post = passes_.data(), r.post_count = uint32_t(passes_.size());
         // indice fixo por camada (0 legendas, 1 menu): a versao de uma nunca e confundida com a da outra
         r.layer_count = 2;
         for (size_t i = 0; i < layers.size() && i < 2; ++i) {
@@ -141,11 +146,19 @@ public:
         r.capture = capture;
         const auto res = dev_->present(r);
         if (!res && res.error() == native::Error::Io) {  // dispositivo perdido: o compartilhado e descartado e refeito
+            // com um shader de mod ativo, ele e o primeiro suspeito (um passe que prende a GPU): sai antes de refazer
+            if (spec_.shader) postError_ = "perda do dispositivo com o shader ativo", spec_.shader = nullptr, spec_.shaderParams.clear();
             nr::vulkan_shared_lost(dev_.get());
             reattach();
         }
         return bool(res);
     }
+
+    std::string set_post(const PostSpec& s) override {
+        spec_ = s;
+        return build();
+    }
+    std::string take_post_error() override { return std::exchange(postError_, std::string()); }
 
     std::string stats() const override {
         if (!dev_) return {};
@@ -154,10 +167,11 @@ public:
         std::snprintf(b, sizeof b,
                       "[apresentacao] Vulkan: %llu quadros (da GPU, resolucao interna: %llu; imagem da CPU: %llu), swapchain criada "
                       "%llu vez(es); trabalho da CPU por quadro: media %.2f ms, pior %.1f ms (esperas, V-Sync incluso: media %.2f ms); "
-                      "enviado %.1f MB\n",
+                      "enviado %.1f MB; com pos-processamento: %llu\n",
                       (unsigned long long)s.frames, (unsigned long long)s.slot_frames, (unsigned long long)s.cpu_frames,
                       (unsigned long long)s.recreated, s.frames ? s.cpu_ms_total / double(s.frames) : 0.0, s.cpu_ms_max,
-                      s.frames ? s.wait_ms_total / double(s.frames) : 0.0, double(s.upload_bytes) / 1048576.0);
+                      s.frames ? s.wait_ms_total / double(s.frames) : 0.0, double(s.upload_bytes) / 1048576.0,
+                      (unsigned long long)s.post_frames);
         return b;
     }
 
@@ -168,6 +182,39 @@ private:
     VkSurfaceKHR                      surface_  = {};
     uint64_t                          generation_ = 0;
     bool                              vsync_ = true;
+    PostSpec                          spec_;
+    std::vector<nr::PostPass>         passes_;
+    std::map<std::string, int>        loaded_;  // shader de mod -> id no dispositivo atual
+    std::string                       postError_;
+
+    // os passes do pedido: o shader de mod "antes" dos internos, a correcao de cor, o shader de mod "depois"
+    std::string build() {
+        passes_.clear();
+        if (!dev_) return {};
+        std::string err;
+        int         mod = -1;
+        if (spec_.shader) {
+            auto it = loaded_.find(spec_.shader->name);
+            if (it == loaded_.end()) it = loaded_.emplace(spec_.shader->name, dev_->post_load(spec_.shader->spirv, &err)).first;
+            mod = it->second;
+            if (mod < 0) {
+                if (err.empty()) err = "o dispositivo recusou o shader";
+                std::fprintf(stderr, "[pos] shader %s desativado: %s\n", spec_.shader->name.c_str(), err.c_str());
+            }
+        }
+        nr::PostPass m;
+        m.shader = mod;
+        for (size_t i = 0; i < spec_.shaderParams.size() && i < nr::kPostParams; ++i) m.params[i] = spec_.shaderParams[i];
+        if (mod >= 0 && spec_.shader->before_builtin) passes_.push_back(m);
+        if (spec_.color) {
+            nr::PostPass c;
+            c.shader = dev_->post_builtin_color();
+            c.params[0] = spec_.brightness, c.params[1] = spec_.contrast, c.params[2] = spec_.gamma, c.params[3] = spec_.saturation;
+            if (c.shader >= 0) passes_.push_back(c);
+        }
+        if (mod >= 0 && !spec_.shader->before_builtin) passes_.push_back(m);
+        return mod < 0 && spec_.shader ? err : std::string();
+    }
 
     void release() {
         if (dev_) dev_->present_detach();

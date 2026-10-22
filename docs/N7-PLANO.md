@@ -1022,10 +1022,27 @@ visual original.
   - os efeitos de iluminação desta etapa são de imagem (bloom, tonemapping, cor), que não fingem dados que o jogo não
     fornece.
 
+### Estado (2026-10-22)
+
+- **Feito:**
+  - a cadeia;
+  - a correção de cor interna;
+  - o validador e o manifesto;
+  - o exemplo externo (`mods-exemplos/shaders/cor-quente`);
+  - a página "Efeitos de imagem" do menu, a persistência e a desativação com diagnóstico (`STATUS.md`, "N7c:
+    pós-processamento e shaders de mod").
+- **Formato dos mods:** `docs/MODS-SHADERS.md`.
+- **Decisões tomadas na implementação:**
+  - **laços recusados no SPIR-V:** um passe tem de terminar. Laços com orçamento de execução, junto com vários
+    passes e LUTs, no N9;
+  - uma perda do dispositivo com um shader de mod ativo o desativa;
+  - os passes rodam na resolução da fonte (a interna, se houver), e o último vai para a área 4:3.
+
 ### Ordem e critérios de aceitação
 
-1. Cadeia mínima (correção de cor interna) e o **shader externo de demonstração** (correção de cor) pelo menu.
-2. Testes:
+1. Cadeia mínima (correção de cor interna) e o **shader externo de demonstração** (correção de cor) pelo menu:
+   **feito**.
+2. Testes (**aprovados**):
    - liga e desliga em tempo real (a imagem muda; desligado, volta igual pixel a pixel à de antes);
    - persistência depois de reiniciar;
    - shader inválido (SPIR-V corrompido, binding fora da interface, push constants grandes demais) desativado com o

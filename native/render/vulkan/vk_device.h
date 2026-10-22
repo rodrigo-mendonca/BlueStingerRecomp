@@ -13,6 +13,7 @@
 //   - present_*: o MESMO dispositivo desenha na janela (swapchain propria): a imagem do jogo (um slot, sem passar pela
 //     CPU, ou uma imagem da CPU: software, filmes) na area 4:3 e as camadas nativas (menu, legendas) na resolucao da
 //     janela. O renderizador roda na thread do jogo e a apresentacao na da janela: a fila e compartilhada com trava.
+#include "render/post_shader.h"
 #include "render/render.h"
 
 #include <cstdint>
@@ -47,6 +48,13 @@ struct PresentLayer {
     uint64_t        version = 0;  // muda quando o conteudo muda: so entao a camada vai para a GPU
 };
 
+// N7c (secao 21): um passe da cadeia de pos-processamento: o shader (post_builtin_color ou um carregado por post_load)
+// e os 16 parametros dele (o bloco `Post` dos shaders de passe).
+struct PostPass {
+    int   shader = -1;
+    float params[kPostParams] = {};
+};
+
 struct PresentRequest {
     uint32_t        out_w = 0, out_h = 0;  // tamanho da janela em pixels
     bool            vsync = true;
@@ -58,6 +66,9 @@ struct PresentRequest {
     uint32_t        width = 0, height = 0;
     uint64_t        argb_version = 0;            // muda a cada quadro novo
     bool            linear = true;               // filtragem ao ampliar (a imagem da CPU na resolucao do jogo)
+    // pos-processamento: so na imagem do jogo, antes das camadas (texto nitido); vazio = a imagem como esta
+    const PostPass* post = nullptr;
+    uint32_t        post_count = 0;
     PresentLayer    layers[2];
     uint32_t        layer_count = 0;
     std::vector<uint32_t>* capture = nullptr;    // != nullptr: a imagem apresentada (ARGB, out_w x out_h)
@@ -65,6 +76,7 @@ struct PresentRequest {
 
 struct PresentStats {
     uint64_t frames = 0, slot_frames = 0, cpu_frames = 0, recreated = 0;  // quadros; com slot; com imagem da CPU
+    uint64_t post_frames = 0;                                             // quadros com pos-processamento
     uint64_t upload_bytes = 0;                                            // imagens da CPU e camadas enviadas
     double   cpu_ms_total = 0, cpu_ms_max = 0;  // trabalho da CPU por quadro: gravar, enviar, submeter (sem as esperas)
     double   wait_ms_total = 0;                 // esperas: quadro anterior, imagem da swapchain e vkQueuePresentKHR (V-Sync)
@@ -92,6 +104,15 @@ public:
     virtual void         present_detach() = 0;  // antes de destruir a superficie
     virtual Result<void> present(const PresentRequest& r) = 0;
     virtual const PresentStats& present_stats() const = 0;
+
+    // Pos-processamento (secao 21). post_load cria o modulo e o pipeline de um shader de passe JA validado
+    // (validate_post_spirv); -1 com o motivo se o driver o recusar. post_builtin_color: o passe interno de correcao de
+    // cor (p[0] = brilho, contraste, gamma, saturacao); -1 sem a cadeia. post_run: a cadeia sobre uma imagem da CPU,
+    // fora da janela (testes); sem passes, a propria imagem.
+    virtual int          post_load(std::span<const uint32_t> spirv, std::string* error) = 0;
+    virtual int          post_builtin_color() = 0;
+    virtual Result<void> post_run(std::span<const uint32_t> argb, uint32_t width, uint32_t height, std::span<const PostPass> passes,
+                                  std::vector<uint32_t>& out) = 0;
 };
 
 int vulkan_live_objects();  // objetos Vulkan criados e nao destruidos (0 depois de destruir o dispositivo)

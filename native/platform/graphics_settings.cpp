@@ -46,7 +46,8 @@ bool same_quality(const GraphicsSettings& a, const GraphicsSettings& b) {
            (a.filter != Filter::Anisotropic || a.anisotropy == b.anisotropy) && a.msaa == b.msaa &&
            a.hd_textures == b.hd_textures && a.lighting == b.lighting && a.shadows == b.shadows && a.shader == b.shader &&
            a.bloom == b.bloom && a.ssao == b.ssao && a.tonemap == b.tonemap && a.crt == b.crt && a.sharpen == b.sharpen &&
-           a.gamma == b.gamma && a.saturation == b.saturation;
+           a.gamma == b.gamma && a.saturation == b.saturation && a.color == b.color && a.brightness == b.brightness &&
+           a.contrast == b.contrast && a.shader_params == b.shader_params;
 }
 
 } // namespace
@@ -56,10 +57,12 @@ GraphicsSettings preset(Preset p) {
     switch (p) {
     case Preset::Balanced:
         s.resolution = Resolution::P1080, s.filter = Filter::Bilinear, s.msaa = 2, s.hd_textures = true;
+        s.color = true, s.contrast = 1.05f, s.saturation = 1.10f;  // aprimorado: um pouco mais de contraste e cor
         break;
     case Preset::High:
         s.resolution = Resolution::P1440, s.filter = Filter::Anisotropic, s.anisotropy = 16, s.msaa = 4;
         s.hd_textures = true, s.shadows = Shadows::Enhanced, s.sharpen = 0.25f;
+        s.color = true, s.contrast = 1.10f, s.saturation = 1.15f;
         break;
     default: break;
     }
@@ -87,6 +90,8 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
     s.sharpen          = std::clamp(s.sharpen, 0.f, 1.f);
     s.gamma            = std::clamp(s.gamma, 0.5f, 2.5f);
     s.saturation       = std::clamp(s.saturation, 0.f, 2.f);
+    s.brightness       = std::clamp(s.brightness, -0.5f, 0.5f);
+    s.contrast         = std::clamp(s.contrast, 0.5f, 1.5f);
     if (s.msaa != 1 && s.msaa != 2 && s.msaa != 4 && s.msaa != 8) s.msaa = 1;
     s.window_w = s.window_w ? std::clamp<uint32_t>(s.window_w, 320, 16384) : 0;
     s.window_h = s.window_h ? std::clamp<uint32_t>(s.window_h, 240, 16384) : 0;
@@ -115,9 +120,11 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
     off(f.lighting, s.lighting, [&] { s.lighting = false; }, "iluminacao");
     off(f.shadows, s.shadows != Shadows::Original, [&] { s.shadows = Shadows::Original; }, "sombras");
     off(f.shaders, !s.shader.empty(), [&] { s.shader.clear(); }, "shaders");
-    off(f.post, s.bloom || s.ssao || s.tonemap || s.crt || s.sharpen != 0 || s.gamma != 1.0f || s.saturation != 1.0f,
-        [&] { s.bloom = s.ssao = s.tonemap = s.crt = false, s.sharpen = 0, s.gamma = 1.0f, s.saturation = 1.0f; },
-        "pos-processamento");
+    off(f.color, s.color || s.brightness != 0 || s.contrast != 1.0f || s.gamma != 1.0f || s.saturation != 1.0f,
+        [&] { s.color = false, s.brightness = 0, s.contrast = 1.0f, s.gamma = 1.0f, s.saturation = 1.0f; }, "correcao de cor");
+    off(f.post, s.bloom || s.ssao || s.tonemap || s.crt || s.sharpen != 0,
+        [&] { s.bloom = s.ssao = s.tonemap = s.crt = false, s.sharpen = 0; }, "pos-processamento");
+    if (!f.shaders) s.shader_params.clear();
     while (internal_height(s) > caps.max_height && (s.resolution != Resolution::Original || s.scale_pct > 100)) {
         if (s.scale_pct > 100) s.scale_pct = 100;
         else s.resolution = Resolution(uint8_t(s.resolution) - 1);
@@ -165,13 +172,20 @@ std::string to_toml(const GraphicsSettings& s) {
       << "crt = " << (s.crt ? "true" : "false") << "\n"
       << "nitidez = " << s.sharpen << "\n"
       << "gamma = " << s.gamma << "\n"
-      << "saturacao = " << s.saturation << "\n\n[tela]\n"
+      << "saturacao = " << s.saturation << "\n"
+      << "cor = " << (s.color ? "true" : "false") << "\n"
+      << "brilho = " << s.brightness << "\n"
+      << "contraste = " << s.contrast << "\n\n[tela]\n"
       << "modo = \"" << name(s.window) << "\"\n"
       << "largura = " << s.window_w << "\n"
       << "altura = " << s.window_h << "\n"
       << "proporcao = \"" << name(s.aspect) << "\"\n"
       << "vsync = " << (s.vsync ? "true" : "false") << "\n"
       << "renderizador = \"" << (s.vulkan ? "vulkan" : "software") << "\"\n";
+    if (!s.shader_params.empty()) {
+        o << "\n[shader_parametros]\n";
+        for (const auto& [k, v] : s.shader_params) o << "\"" << k << "\" = " << v << "\n";
+    }
     return o.str();
 }
 
@@ -210,7 +224,11 @@ GraphicsSettings from_toml(const std::string& text, std::string* warning) {
     if (auto v = doc["imagem"]["shader"].value<std::string>()) s.shader = *v;
     bln("efeitos", "bloom", s.bloom), bln("efeitos", "ssao", s.ssao), bln("efeitos", "tonemap", s.tonemap);
     bln("efeitos", "crt", s.crt), flt("efeitos", "nitidez", s.sharpen), flt("efeitos", "gamma", s.gamma);
-    flt("efeitos", "saturacao", s.saturation);
+    flt("efeitos", "saturacao", s.saturation), bln("efeitos", "cor", s.color), flt("efeitos", "brilho", s.brightness);
+    flt("efeitos", "contraste", s.contrast);
+    if (const auto* t = doc["shader_parametros"].as_table())
+        for (const auto& [k, v] : *t)
+            if (auto d = v.value<double>()) s.shader_params[std::string(k.str())] = float(*d);
     str("tela", "modo", s.window), str("tela", "proporcao", s.aspect), bln("tela", "vsync", s.vsync);
     num("tela", "largura", s.window_w), num("tela", "altura", s.window_h);
     if (auto v = doc["tela"]["renderizador"].value<std::string>()) {

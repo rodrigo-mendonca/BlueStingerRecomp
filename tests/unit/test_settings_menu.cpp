@@ -4,6 +4,7 @@
 
 #include "settings_menu.h"
 
+#include <cmath>
 #include <string>
 
 namespace st = bs::native::settings;
@@ -36,13 +37,13 @@ BS_TEST(settings_menu_navigation_and_unavailable_options) {
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Graphics);
     const auto g = m.view();
     // nada implementado alem do fiel: as opcoes de melhoria aparecem indisponiveis ("em breve") e nao mudam
-    for (const char* l : {"Predefini\u00e7\u00e3o", "Resolu\u00e7\u00e3o interna", "Antialiasing (MSAA)", "Bloom", "Filtro CRT"}) {
+    for (const char* l : {"Predefini\u00e7\u00e3o", "Resolu\u00e7\u00e3o interna", "Antialiasing (MSAA)", "Efeitos de imagem"}) {
         const int i = find(g, l);
         BS_CHECK(i >= 0 && !g.items[size_t(i)].enabled && g.items[size_t(i)].value.find("em breve") != std::string::npos);
     }
-    go(m, "Bloom");
+    go(m, "Antialiasing (MSAA)");
     m.input(MenuAction::Right, 0);
-    BS_CHECK(!m.prefs().graphics.bloom);
+    BS_CHECK(m.prefs().graphics.msaa == 1);
     bs::Preferences out;
     BS_CHECK(!m.take_changes(out));
     m.input(MenuAction::Back, 0);
@@ -126,4 +127,45 @@ BS_TEST(settings_menu_restore_defaults_and_controls) {
     const auto c = m.view();  // o mapeamento atual do N3 e o remapeamento ainda indisponivel
     BS_CHECK(find(c, "A") >= 0 && c.items[size_t(find(c, "A"))].value == "Z / a");
     BS_CHECK(find(c, "Remapear pelo menu") >= 0 && !c.items[size_t(find(c, "Remapear pelo menu"))].enabled);
+}
+
+// N7c (secao 21): a pagina Efeitos de imagem. Liga a correcao de cor (os ajustes so valem com ela), escolhe o shader de
+// mod valido (o invalido nao entra no ciclo) e muda um parametro dele dentro da faixa do manifesto.
+BS_TEST(settings_menu_effects_page) {
+    st::Capabilities caps;
+    caps.vulkan = true, caps.max_height = 2160;
+    caps.features.color = caps.features.shaders = true;
+    bs::SettingsMenu m({}, caps, {"en-US"});
+    bs::ShaderChoice ok, bad;
+    ok.name = "cor-quente", ok.params = {{"temperatura", "Temperatura", -1, 1, 0.5f, 0.1f}};
+    bad.name = "quebrado", bad.error = "shader invalido";
+    m.set_shaders({ok, bad});
+    m.open();
+    go(m, "Gr\u00e1ficos"), m.input(MenuAction::Confirm, 0);
+    go(m, "Efeitos de imagem"), m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Effects);
+    bs::MenuView v = m.view();
+    BS_CHECK(!v.items[size_t(find(v, "Brilho"))].enabled);  // so com a correcao ligada
+    BS_CHECK(find(v, "Shaders inv\u00e1lidos") >= 0);
+    go(m, "Corre\u00e7\u00e3o de cor"), m.input(MenuAction::Confirm, 0);
+    bs::Preferences p;
+    BS_CHECK(m.take_changes(p) && p.graphics.color);
+    go(m, "Brilho"), m.input(MenuAction::Right, 0), m.input(MenuAction::Right, 0);
+    BS_CHECK(m.take_changes(p) && std::abs(p.graphics.brightness - 0.10f) < 1e-4f);
+    go(m, "Shader de mod"), m.input(MenuAction::Right, 0);
+    BS_CHECK(m.take_changes(p) && p.graphics.shader == "cor-quente");
+    m.input(MenuAction::Right, 0);  // o invalido nao entra: volta para nenhum
+    BS_CHECK(m.take_changes(p) && p.graphics.shader.empty());
+    m.input(MenuAction::Right, 0);
+    BS_CHECK(m.take_changes(p) && p.graphics.shader == "cor-quente");
+    v = m.view();
+    BS_CHECK(find(v, "  Temperatura") >= 0);
+    go(m, "  Temperatura");
+    for (int i = 0; i < 20; ++i) m.input(MenuAction::Right, 0);
+    BS_CHECK(m.take_changes(p) && p.graphics.shader_params["temperatura"] == 1.0f);  // limitado ao maximo
+    // o driver recusou: desativado, o shader sai das preferencias
+    m.mark_shader_invalid("cor-quente", "pipeline recusado");
+    BS_CHECK(m.take_changes(p) && p.graphics.shader.empty());
+    m.input(MenuAction::Back, 0);
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Graphics);
 }

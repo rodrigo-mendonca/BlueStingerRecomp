@@ -32,7 +32,16 @@ $jobs = @(
     # N7c: apresentacao direta e reducao da resolucao interna
     @("present_vert.h", "present.vert", "kPresentVert", @()),
     @("present_frag.h", "present.frag", "kPresentFrag", @()),
-    @("downsample_comp.h", "downsample.comp", "kDownsampleComp", @())
+    @("downsample_comp.h", "downsample.comp", "kDownsampleComp", @()),
+    # N7c secao 21: pos-processamento (o passe interno e o exemplo de mod, para os testes do validador)
+    @("post_vert.h", "post.vert", "kPostVert", @()),
+    @("post_color_frag.h", "post_color.frag", "kPostColorFrag", @()),
+    @("post_exemplo_frag.h", "..\..\..\..\mods-exemplos\shaders\cor-quente\shader.frag", "kPostExemploFrag", @()),
+    # testes do validador: um passe que escreve num buffer e um com push constants grandes demais
+    @("post_teste_buffer_frag.h", "teste\post_buffer.frag", "kPostTesteBufferFrag", @()),
+    @("post_teste_push_frag.h", "teste\post_push.frag", "kPostTestePushFrag", @()),
+    @("post_teste_laco_frag.h", "teste\post_laco.frag", "kPostTesteLacoFrag", @()),
+    @("post_teste_3d_frag.h", "teste\post_3d.frag", "kPostTeste3dFrag", @())
 )
 $fail = 0
 foreach ($j in $jobs) {

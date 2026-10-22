@@ -216,14 +216,17 @@ public:
             if (writeSlot_ >= 0) {
                 Slot& sl = slots_[writeSlot_];
                 sl.seq   = 0;  // em escrita: nao pode ser fixado pela apresentacao
-                if (sl.readyPending || !sl.ready) remakeReady(writeSlot_);  // sinal anterior nunca esperado: o semaforo e refeito
+                // com duas filas, um semaforo novo a cada escrita: o uso anterior (sinal e, se houve, a espera da
+                // apresentacao) ja terminou, porque o slot so e reaproveitado sem fixacao (revisao Codex 2026-10-22).
+                // Com uma fila so, nenhum semaforo: a ordem de submissao da a dependencia.
+                if (presentQueue_ != queue_ && !remakeReady(writeSlot_)) writeSlot_ = -1;
                 if (sl.w != w_ || sl.h != h_) {
                     freeImage(sl.image);
                     sl.image = makeImage(w_, h_, VK_FORMAT_R8G8B8A8_UNORM,
                                          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                          VK_IMAGE_ASPECT_COLOR_BIT);
                     sl.w = sl.image.img ? w_ : 0, sl.h = sl.image.img ? h_ : 0, sl.shaderRead = false, ++sl.version;
-                    if (!sl.image.img || !sl.ready) writeSlot_ = -1;
+                    if (!sl.image.img) writeSlot_ = -1;
                 }
             }
             if (writeSlot_ < 0) ++st_.slots_skipped;
@@ -238,7 +241,7 @@ public:
             // a lista do pixel nao coube: cresce e refaz o MESMO quadro (sem perder fragmentos); o semaforo do slot ja foi
             // sinalizado pela tentativa anterior (concluida: cerca) e e refeito para a nova sinalizar
             ++st_.fragment_retries;
-            if (writeSlot_ >= 0 && !remakeReady(writeSlot_)) writeSlot_ = -1;
+            if (writeSlot_ >= 0 && presentQueue_ != queue_ && !remakeReady(writeSlot_)) writeSlot_ = -1;
             if (!fragments(used + used / 2 + 1024)) return fail("listas por pixel (memoria)");
         }
         st_.frames++, st_.triangles += prep_.triangles, st_.culled += prep_.culled;
@@ -249,7 +252,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(slotMutex_);
             lastSlot_ = 0;
-            if (writeSlot_ >= 0) slots_[writeSlot_].seq = lastSlot_ = ++slotSeq_, slots_[writeSlot_].readyPending = true, ++st_.slots_written;
+            if (writeSlot_ >= 0) slots_[writeSlot_].seq = lastSlot_ = ++slotSeq_, slots_[writeSlot_].readyPending = presentQueue_ != queue_, ++st_.slots_written;
         }
         return {};
     }
@@ -339,6 +342,84 @@ public:
         return presenter_ ? presenter_->stats() : none;
     }
 
+    // ---- pos-processamento (vk_post.cpp) ----
+    PostChain* post_chain() override {
+        std::lock_guard<std::mutex> lock(postMutex_);
+        if (!post_ && !postFailed_) {
+            std::string err;
+            post_ = make_post_chain(*this, &err);
+            if (!post_) postFailed_ = true, std::fprintf(stderr, "[pos] cadeia indisponivel: %s\n", err.c_str());
+        }
+        return post_.get();
+    }
+    int post_load(std::span<const uint32_t> spirv, std::string* error) override {
+        PostChain* c = post_chain();
+        if (!c) {
+            if (error) *error = "cadeia de pos-processamento indisponivel";
+            return -1;
+        }
+        return c->load(spirv, error);
+    }
+    int post_builtin_color() override {
+        PostChain* c = post_chain();
+        return c ? c->builtin_color() : -1;
+    }
+    // testes: a cadeia fora da janela, com o buffer de comandos do renderizador (a mesma thread dele)
+    Result<void> post_run(std::span<const uint32_t> argb, uint32_t w, uint32_t h, std::span<const PostPass> passes,
+                          std::vector<uint32_t>& out) override {
+        PostChain* c = post_chain();
+        if (!c || argb.size() < size_t(w) * h) return Error::Unsupported;
+        Image  src = makeImage(w, h, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                               VK_IMAGE_ASPECT_COLOR_BIT);
+        Buffer up = makeBuffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+        Buffer rd = makeBuffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true);
+        bool   ok = src.img && up.map && rd.map;
+        if (ok) {
+            std::memcpy(up.map, argb.data(), size_t(w) * h * 4);
+            f_.vkResetCommandBuffer(cmd_, 0);
+            VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            f_.vkBeginCommandBuffer(cmd_, &bi);
+            barrier(f_, cmd_, src.img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                    0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+            VkBufferImageCopy c1{};
+            c1.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, c1.imageExtent = {w, h, 1};
+            f_.vkCmdCopyBufferToImage(cmd_, up.buf, src.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c1);
+            barrier(f_, cmd_, src.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_SHADER_READ_BIT);
+            const VkImageView v   = c->record(cmd_, src.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, w, h, passes);
+            const VkImage     res = v ? c->image_of(v) : src.img;
+            barrier(f_, cmd_, res, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_TRANSFER_READ_BIT);
+            f_.vkCmdCopyImageToBuffer(cmd_, res, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rd.buf, 1, &c1);
+            VkMemoryBarrier hb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            hb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, hb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+            f_.vkCmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &hb, 0, nullptr, 0, nullptr);
+            f_.vkEndCommandBuffer(cmd_);
+            VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+            si.commandBufferCount = 1, si.pCommandBuffers = &cmd_;
+            f_.vkResetFences(dev_, 1, &fence_);
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                ok = f_.vkQueueSubmit(queue_, 1, &si, fence_) == VK_SUCCESS;
+            }
+            ok = ok && f_.vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) == VK_SUCCESS;
+            if (ok) {
+                out.resize(size_t(w) * h);
+                const uint8_t* p = static_cast<const uint8_t*>(rd.map);
+                if (!v) std::memcpy(out.data(), p, out.size() * 4);  // a propria imagem (B8G8R8A8 = ARGB)
+                else
+                    for (size_t i = 0; i < out.size(); ++i, p += 4)  // RGBA -> ARGB
+                        out[i] = (uint32_t(p[3]) << 24) | (uint32_t(p[0]) << 16) | (uint32_t(p[1]) << 8) | p[2];
+            }
+        }
+        freeImage(src), freeBuffer(up), freeBuffer(rd);
+        return ok ? Result<void>() : Result<void>(Error::Io);
+    }
+
     // SlotSource: a apresentacao fixa o slot enquanto o desenha (o renderizador nao o reaproveita)
     bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait) override {
         bool consume = true;
@@ -399,6 +480,9 @@ private:
     float            scale_ = 1.f;  // resolucao interna (N7c)
     bool             surfaceExt_ = false, swapchainExt_ = false;  // apresentacao direta possivel (N7c)
     std::unique_ptr<PresenterImpl> presenter_;
+    std::unique_ptr<PostChain>     post_;
+    std::mutex                     postMutex_;
+    bool                           postFailed_ = false;
 
     // N7c: imagens na resolucao interna para a apresentacao (anel; a apresentacao fixa a que esta desenhando)
     struct Slot {
@@ -1062,7 +1146,8 @@ private:
         f_.vkEndCommandBuffer(cmd_);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.commandBufferCount = 1, si.pCommandBuffers = &cmd_;
-        if (writeSlot_ >= 0 && w_ != downW_) {  // a apresentacao (outra fila) espera a escrita do slot por este semaforo
+        if (writeSlot_ >= 0 && w_ != downW_ && presentQueue_ != queue_ && slots_[writeSlot_].ready) {
+            // a apresentacao (outra fila) espera a escrita do slot por este semaforo
             si.signalSemaphoreCount = 1, si.pSignalSemaphores = &slots_[writeSlot_].ready;
         }
         f_.vkResetFences(dev_, 1, &fence_);
@@ -1093,7 +1178,8 @@ private:
     }
 
     void destroy() {
-        presenter_.reset();  // a apresentacao primeiro (usa o dispositivo)
+        presenter_.reset();  // a apresentacao primeiro (usa o dispositivo e a cadeia)
+        post_.reset();
         if (dev_) {
             f_.vkDeviceWaitIdle(dev_);
             for (Slot& sl : slots_) {
