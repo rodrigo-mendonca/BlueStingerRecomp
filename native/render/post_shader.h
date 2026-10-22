@@ -18,6 +18,7 @@ namespace bs::native::render {
 inline constexpr uint32_t kPostParams     = 16;  // parametros por passe
 inline constexpr uint32_t kPostPushBytes  = 80;  // vec4 tamanho + 4 vec4 de parametros
 inline constexpr int      kPostFormat     = 1;   // versao do formato do manifesto
+inline constexpr uint32_t kCrtMinSourceHeight = 1080;  // o CRT so roda sobre uma imagem de pelo menos 1080 linhas
 
 struct PostParam {
     std::string name, label;

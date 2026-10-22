@@ -236,7 +236,8 @@ BS_TEST(post_cost_4k) {
             for (int i = 0; i < 12; ++i) BS_CHECK(d->post_run(img, w, h, {&p, 1}, out).ok());
         }
         const auto t = d->post_timings();
-        if (t.empty()) std::fprintf(stderr, "  (sem timestamps neste dispositivo)\n");
+        if (!d->stats().timestamps) std::fprintf(stderr, "  (a fila nao mede tempo de GPU neste dispositivo)\n");
+        else BS_CHECK(t.size() == size_t(nr::PostBuiltin::Count));  // um tempo para cada passe interno (revisao Codex)
         for (const auto& x : t) {
             int b = 0;
             while (b < int(nr::PostBuiltin::Count) && d->post_builtin(nr::PostBuiltin(b)) != x.shader) ++b;
@@ -333,6 +334,44 @@ BS_TEST(post_crt_gpu) {
         const int center = int(out[size_t(541) * w + w / 2] & 0xFF), gap = int(out[size_t(542) * w + w / 2] & 0xFF);
         std::fprintf(stderr, "  linha do jogo: centro %d, vao %d (cinza 128)\n", center, gap);
         BS_CHECK(center > gap + 20);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// diferenca de timestamps com o contador voltando a zero em 2^bits (revisao Codex 2026-10-22)
+BS_TEST(post_timestamp_wrap) {
+    BS_CHECK(nr::timestamp_delta(100, 250, 64) == 150);
+    BS_CHECK(nr::timestamp_delta((uint64_t(1) << 36) - 10, 5, 36) == 15);  // passou do fim do contador de 36 bits
+    BS_CHECK(nr::timestamp_delta(~uint64_t(0) - 1, 3, 64) == 5);
+}
+
+// Todos os efeitos juntos em 4K (a cadeia que a apresentacao monta: bloom H e V, tonemapping, cor, nitidez, CRT): o
+// custo de GPU por quadro (soma dos passes) e a imagem continua valida (nem preta nem saturada por inteiro).
+BS_TEST(post_all_effects_4k) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const uint32_t w = 2880, h = 2160;
+        const auto     img = ramp(w, h);
+        std::vector<uint32_t> out;
+        nr::PostPass bh, bv, tm, cc, sh, crt;
+        bh.shader = d->post_builtin(nr::PostBuiltin::BloomBlurH), bh.params[0] = 0.7f, bh.params[1] = 0.02f;
+        bv.shader = d->post_builtin(nr::PostBuiltin::BloomBlurV), bv.params[1] = 0.02f, bv.params[2] = 0.6f, bv.original = 0;
+        tm.shader = d->post_builtin(nr::PostBuiltin::Tonemap), tm.params[0] = 0.5f, tm.params[1] = 0.5f;
+        cc.shader = d->post_builtin_color(), cc.params[0] = 0, cc.params[1] = 1.05f, cc.params[2] = 1, cc.params[3] = 1.1f;
+        sh.shader = d->post_builtin(nr::PostBuiltin::Sharpen), sh.params[0] = 0.5f;
+        crt.shader = d->post_builtin(nr::PostBuiltin::Crt), crt.params[0] = 0.6f, crt.params[1] = 0.3f, crt.params[2] = 0.3f;
+        const nr::PostPass chain[6] = {bh, bv, tm, cc, sh, crt};
+        const int          runs = 12;
+        for (int i = 0; i < runs; ++i) BS_CHECK(d->post_run(img, w, h, chain, out).ok());
+        double total = 0;
+        for (const auto& t : d->post_timings()) total += t.ms_total;
+        std::fprintf(stderr, "  todos os efeitos em 4K: %.3f ms de GPU por quadro (%d quadros)\n", total / runs, runs);
+        if (d->stats().timestamps) BS_CHECK(total / runs < 4.0);
+        const double l = mean_luma(out);
+        std::fprintf(stderr, "  luma media %.1f (entrada %.1f)\n", l, mean_luma(img));
+        BS_CHECK(l > 10 && l < 245);
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
 }

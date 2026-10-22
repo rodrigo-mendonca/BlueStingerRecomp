@@ -606,6 +606,8 @@ private:
                     if ((qs[q].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (qs[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                         phys_ = d, qfam_ = q, queueCount_ = qs[q].queueCount, st_.device = p.deviceName;
                         tsPeriod_ = qs[q].timestampValidBits ? p.limits.timestampPeriod : 0.f;
+                        tsBits_   = qs[q].timestampValidBits;
+                        st_.timestamps = tsPeriod_ > 0;
                         break;
                     }
                 if (phys_) break;

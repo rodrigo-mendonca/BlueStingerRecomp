@@ -36,6 +36,7 @@ struct VulkanStats {
     uint64_t    max_layers = 0;                    // maior lista de fragmentos translucidos num pixel
     uint64_t    readback_bytes = 0;                // bytes lidos de volta pela CPU (todos os quadros)
     uint64_t    slots_written = 0, slots_skipped = 0;  // imagens maiores guardadas / sem slot livre
+    bool        timestamps = false;                    // a fila mede tempo de GPU (post_timings)
     // N7c: a maior altura interna (4:3) que o dispositivo comporta: o lado maximo das imagens e ~1/4 da maior memoria
     // local da GPU para os alvos (cor, profundidade, listas por pixel, slots: ~96 bytes por pixel do alvo)
     uint32_t    max_internal_height = 480;
@@ -60,6 +61,12 @@ struct PostPass {
 
 // Passes internos (secao 21), na interface dos de mods. Os ainda nao implementados devolvem -1 em post_builtin.
 enum class PostBuiltin : uint8_t { Color, Tonemap, Sharpen, BloomBlurH, BloomBlurV, Crt, Count };
+
+// a diferenca entre dois timestamps com `bits` validos (o contador volta a zero em 2^bits)
+inline uint64_t timestamp_delta(uint64_t start, uint64_t end, uint32_t bits) {
+    const uint64_t d = end - start;
+    return bits >= 64 ? d : d & ((uint64_t(1) << bits) - 1);
+}
 
 struct PostTiming {  // tempo de GPU de um shader da cadeia (consultas de timestamp)
     int      shader = -1;

@@ -149,9 +149,15 @@ public:
         }
         // pos-processamento (secao 21): so a imagem do jogo, antes do passe da swapchain (as camadas vem depois, nitidas)
         if (gameView && r.post && r.post_count)
-            if (PostChain* pc = slots_.post_chain())
-                if (VkImageView v = pc->record(cmd_, gameView, gameLayout, srcW, srcH, {r.post, r.post_count}))
+            if (PostChain* pc = slots_.post_chain()) {
+                // o CRT desenha as 480 linhas do jogo: so com uma fonte de verdade alta (o slot na resolucao interna); a
+                // imagem da CPU (filmes, telas escritas pela CPU) chega em 480 e fica sem ele (revisao Codex 2026-10-22)
+                post_.assign(r.post, r.post + r.post_count);
+                if (srcH < kCrtMinSourceHeight)
+                    std::erase_if(post_, [&](const PostPass& p) { return p.shader == pc->builtin(PostBuiltin::Crt); });
+                if (VkImageView v = pc->record(cmd_, gameView, gameLayout, srcW, srcH, post_))
                     gameView = v, gameLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, ++st_.post_frames;
+            }
         VkClearValue          clear{};
         VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         rb.renderPass = pass_, rb.framebuffer = fbs_[idx], rb.renderArea = {{0, 0}, {sw_, sh_}};
@@ -255,6 +261,7 @@ private:
     Buffer                staging_, capture_;
     std::vector<std::pair<Tex*, VkDeviceSize>> uploads_;
     VkDeviceSize          staged_ = 0;
+    std::vector<PostPass> post_;  // os passes deste quadro (sem os que a fonte nao comporta)
     int                   pinned_ = -1;
     // swapchain
     VkSwapchainKHR             swap_ = VK_NULL_HANDLE;

@@ -90,6 +90,7 @@ struct VkBase {
     std::mutex       presentMutex_;
     uint32_t         queueCount_ = 1;  // filas da familia
     float            tsPeriod_ = 0;    // ns por tique de timestamp (0 = sem timestamps na fila)
+    uint32_t         tsBits_ = 0;      // bits validos dos timestamps (36 a 64): a diferenca e modulo 2^bits
     std::mutex&      presentLock() { return presentQueue_ == queue_ ? queueMutex_ : presentMutex_; }
     void             waitIdle() {  // vkDeviceWaitIdle exige todas as filas sincronizadas
         std::scoped_lock lock(queueMutex_, presentMutex_);

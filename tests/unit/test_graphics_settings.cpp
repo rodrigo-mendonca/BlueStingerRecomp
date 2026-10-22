@@ -2,6 +2,8 @@
 // classificacao, capacidades da GPU (recuo seguro), confirmacao com reversao, persistencia.
 #include "test.h"
 
+#include <cmath>
+
 #include "platform/graphics_settings.h"
 #include "platform/user_settings.h"
 
@@ -153,4 +155,14 @@ BS_TEST(graphics_post_effects) {
     BS_CHECK(!st::clamp_to(crt, all, &notes).crt && !notes.empty() && notes.back().find("CRT") != std::string::npos);
     crt.resolution = st::Resolution::P1080;
     BS_CHECK(st::clamp_to(crt, all).crt);
+    // nan e inf (validos no TOML) nao chegam aos shaders: o padrao do campo (revisao Codex 2026-10-22)
+    const st::GraphicsSettings n = st::from_toml(
+        "[efeitos]\nexposicao = nan\nbrilho = inf\nbloom_raio = -nan\ncrt_mascara = nan\n[shader_parametros]\nx = nan\ny = 0.5\n");
+    const st::GraphicsSettings def;
+    BS_CHECK(n.exposure == def.exposure && n.brightness == def.brightness && n.bloom_radius == def.bloom_radius &&
+             n.crt_mask == def.crt_mask && !n.shader_params.count("x") && n.shader_params.at("y") == 0.5f);
+    st::GraphicsSettings m;
+    m.gamma = std::nanf(""), m.bloom_strength = INFINITY;
+    const st::GraphicsSettings mc = st::clamp_to(m, all);
+    BS_CHECK(mc.gamma == def.gamma && mc.bloom_strength == def.bloom_strength);
 }

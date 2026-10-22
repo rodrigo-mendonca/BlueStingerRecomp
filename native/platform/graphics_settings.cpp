@@ -3,6 +3,7 @@
 #include <toml++/toml.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cerrno>
 #include <cstdio>
 #include <fstream>
@@ -88,6 +89,19 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
         if (notes) notes->push_back(m);
     };
     GraphicsSettings s = in;
+    {  // nao finitos (std::clamp nao os corrige: NaN compara falso) voltam ao padrao (revisao Codex 2026-10-22)
+        const GraphicsSettings d;
+        auto fix = [](float& v, float def) {
+            if (!std::isfinite(v)) v = def;
+        };
+        fix(s.sharpen, d.sharpen), fix(s.gamma, d.gamma), fix(s.saturation, d.saturation), fix(s.brightness, d.brightness);
+        fix(s.contrast, d.contrast), fix(s.exposure, d.exposure), fix(s.highlights, d.highlights);
+        fix(s.tone_shadows, d.tone_shadows), fix(s.bloom_threshold, d.bloom_threshold), fix(s.bloom_radius, d.bloom_radius);
+        fix(s.bloom_strength, d.bloom_strength), fix(s.crt_scanlines, d.crt_scanlines), fix(s.crt_mask, d.crt_mask);
+        fix(s.crt_vignette, d.crt_vignette);
+        for (auto it = s.shader_params.begin(); it != s.shader_params.end();)
+            it = std::isfinite(it->second) ? std::next(it) : s.shader_params.erase(it);
+    }
     s.scale_pct        = std::clamp<uint32_t>(s.scale_pct, 50, 200);
     s.anisotropy       = std::clamp<uint32_t>(s.anisotropy, 2, 16);
     s.sharpen          = std::clamp(s.sharpen, 0.f, 1.f);
@@ -237,8 +251,8 @@ GraphicsSettings from_toml(const std::string& text, std::string* warning) {
     auto num = [&](const char* sec, const char* key, uint32_t& field) {
         if (auto v = doc[sec][key].value<int64_t>()) field = uint32_t(std::max<int64_t>(0, *v));
     };
-    auto flt = [&](const char* sec, const char* key, float& field) {
-        if (auto v = doc[sec][key].value<double>()) field = float(*v);
+    auto flt = [&](const char* sec, const char* key, float& field) {  // nan/inf (validos no TOML) ficam com o padrao
+        if (auto v = doc[sec][key].value<double>(); v && std::isfinite(*v)) field = float(*v);
     };
     auto bln = [&](const char* sec, const char* key, bool& field) {
         if (auto v = doc[sec][key].value<bool>()) field = *v;
@@ -262,7 +276,7 @@ GraphicsSettings from_toml(const std::string& text, std::string* warning) {
     flt("efeitos", "crt_mascara", s.crt_mask), flt("efeitos", "crt_vinheta", s.crt_vignette);
     if (const auto* t = doc["shader_parametros"].as_table())
         for (const auto& [k, v] : *t)
-            if (auto d = v.value<double>()) s.shader_params[std::string(k.str())] = float(*d);
+            if (auto d = v.value<double>(); d && std::isfinite(*d)) s.shader_params[std::string(k.str())] = float(*d);
     str("tela", "modo", s.window), str("tela", "proporcao", s.aspect), bln("tela", "vsync", s.vsync);
     num("tela", "largura", s.window_w), num("tela", "altura", s.window_h);
     if (auto v = doc["tela"]["renderizador"].value<std::string>()) {

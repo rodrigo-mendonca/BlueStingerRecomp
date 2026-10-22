@@ -229,7 +229,7 @@ private:
             VK_SUCCESS)
             for (size_t i = 0; i < recorded_.size(); ++i) {
                 auto& t = timing_[recorded_[i]];
-                ++t.first, t.second += double(ts[2 * i + 1] - ts[2 * i]) * b_.tsPeriod_ / 1e6;
+                ++t.first, t.second += double(timestamp_delta(ts[2 * i], ts[2 * i + 1], b_.tsBits_)) * b_.tsPeriod_ / 1e6;
             }
         recorded_.clear();
     }
