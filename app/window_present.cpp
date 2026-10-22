@@ -219,6 +219,11 @@ private:
             c.params[0] = spec_.brightness, c.params[1] = spec_.contrast, c.params[2] = spec_.gamma, c.params[3] = spec_.saturation;
             if (c.shader >= 0) passes_.push_back(c);
         }
+        if (spec_.sharpen > 0) {  // por ultimo entre os de cor: realca a imagem ja corrigida
+            nr::PostPass n;
+            n.shader = dev_->post_builtin(nr::PostBuiltin::Sharpen), n.params[0] = spec_.sharpen;
+            if (n.shader >= 0) passes_.push_back(n);
+        }
         if (mod >= 0 && !spec_.shader->before_builtin) passes_.push_back(m);
         return mod < 0 && spec_.shader ? err : std::string();
     }

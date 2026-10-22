@@ -126,7 +126,7 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         e.push_back({"Texturas HD", soon(f.hd_textures, onoff(g.hd_textures)), f.hd_textures,
                      [](Preferences& p, int) { p.graphics.hd_textures = !p.graphics.hd_textures; }});
         {  // N7c (secao 21): os efeitos de imagem numa pagina propria
-            const bool any = f.color || f.tonemap || f.post || f.shaders;
+            const bool any = f.color || f.tonemap || f.sharpen || f.post || f.shaders;
             const bool on  = g.color || !g.shader.empty() || g.bloom || g.tonemap || g.sharpen != 0 || g.crt;
             e.push_back({"Efeitos de imagem", any ? (on ? "ligados" : "desligados") : "(em breve)", any, nullptr, page(Page::Effects)});
         }
@@ -161,9 +161,8 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         e.push_back({"  Exposi\u00e7\u00e3o (EV)", num(g.exposure, 2), tm, fstep([](Preferences& p) { return &p.graphics.exposure; }, 0.1f, -2.f, 2.f)});
         e.push_back({"  Altas luzes", num(g.highlights, 2), tm, fstep([](Preferences& p) { return &p.graphics.highlights; }, 0.1f, 0.f, 1.f)});
         e.push_back({"  Sombras", num(g.tone_shadows, 2), tm, fstep([](Preferences& p) { return &p.graphics.tone_shadows; }, 0.05f, -0.5f, 0.5f)});
-        e.push_back({"Nitidez", soon(f.post, pct(uint32_t(std::lround(g.sharpen * 100)))), f.post, [](Preferences& p, int d) {
-                         p.graphics.sharpen = std::clamp(p.graphics.sharpen + 0.25f * float(d), 0.f, 1.f);
-                     }});
+        e.push_back({"Nitidez", soon(f.sharpen, g.sharpen == 0 ? "desligada" : pct(uint32_t(std::lround(g.sharpen * 100)))), f.sharpen,
+                     fstep([](Preferences& p) { return &p.graphics.sharpen; }, 0.1f, 0.f, 1.f)});
         e.push_back({"Bloom", soon(f.post, onoff(g.bloom)), f.post, [](Preferences& p, int) { p.graphics.bloom = !p.graphics.bloom; }});
         e.push_back({"SSAO", soon(false, onoff(g.ssao)), false, nullptr});
         e.push_back({"Filtro CRT", soon(f.post, onoff(g.crt)), f.post, [](Preferences& p, int) { p.graphics.crt = !p.graphics.crt; }});

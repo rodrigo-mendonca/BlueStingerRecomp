@@ -66,9 +66,10 @@ struct Features {
     bool hd_textures = false, lighting = false, shadows = false, shaders = false, post = false;
     bool color = false;    // N7c: correcao de cor (pos-processamento)
     bool tonemap = false;  // N7c: tonemapping; `post` = os efeitos de imagem ainda sem recurso proprio
+    bool sharpen = false;  // N7c: nitidez
     static Features all() {
         Features f{true, true, true, true, true, true, true, true, true, true, true};
-        f.color = f.tonemap = true;
+        f.color = f.tonemap = f.sharpen = true;
         return f;
     }
 };

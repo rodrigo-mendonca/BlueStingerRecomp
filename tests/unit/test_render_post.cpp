@@ -247,3 +247,30 @@ BS_TEST(post_cost_4k) {
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
 }
+
+// N7c: nitidez. Intensidade 0 = a mesma imagem; numa borda (degrau de cinza) aumenta o contraste dos dois lados sem
+// estourar (a adaptacao ao contraste limita o realce); numa area lisa nada muda.
+BS_TEST(post_sharpen_gpu) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const uint32_t        w = 64, h = 16;
+        std::vector<uint32_t> img(size_t(w) * h), out;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) img[size_t(y) * w + x] = x < w / 2 ? 0xFF505050u : 0xFFA0A0A0u;  // degrau 80 -> 160
+        nr::PostPass s;
+        s.shader = d->post_builtin(nr::PostBuiltin::Sharpen);
+        BS_CHECK(s.shader >= 0);
+        s.params[0] = 0;
+        BS_CHECK(d->post_run(img, w, h, {&s, 1}, out).ok() && out == img);
+        s.params[0] = 1;
+        BS_CHECK(d->post_run(img, w, h, {&s, 1}, out).ok());
+        const int left = int(out[size_t(8) * w + w / 2 - 1] & 0xFF), right = int(out[size_t(8) * w + w / 2] & 0xFF);
+        const int flatL = int(out[size_t(8) * w + 4] & 0xFF), flatR = int(out[size_t(8) * w + w - 4] & 0xFF);
+        std::fprintf(stderr, "  borda 80|160 -> %d|%d; areas lisas %d e %d\n", left, right, flatL, flatR);
+        BS_CHECK(left < 80 && right > 160 && left > 40 && right < 220);  // realce sem estourar
+        BS_CHECK(flatL == 80 && flatR == 160);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}

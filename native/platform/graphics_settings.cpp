@@ -128,8 +128,8 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
         [&] { s.color = false, s.brightness = 0, s.contrast = 1.0f, s.gamma = 1.0f, s.saturation = 1.0f; }, "correcao de cor");
     off(f.tonemap, s.tonemap || s.exposure != 0 || s.highlights != 0.5f || s.tone_shadows != 0,
         [&] { s.tonemap = false, s.exposure = 0, s.highlights = 0.5f, s.tone_shadows = 0; }, "tonemapping");
-    off(f.post, s.bloom || s.ssao || s.crt || s.sharpen != 0, [&] { s.bloom = s.ssao = s.crt = false, s.sharpen = 0; },
-        "pos-processamento");
+    off(f.sharpen, s.sharpen != 0, [&] { s.sharpen = 0; }, "nitidez");
+    off(f.post, s.bloom || s.ssao || s.crt, [&] { s.bloom = s.ssao = s.crt = false; }, "pos-processamento");
     if (!f.shaders) s.shader_params.clear();
     while (internal_height(s) > caps.max_height && (s.resolution != Resolution::Original || s.scale_pct > 100)) {
         if (s.scale_pct > 100) s.scale_pct = 100;
