@@ -7,7 +7,7 @@
 //             (e os modificadores translucidos); dentro de cada lista, a ordem de submissao. Sem
 //             ordenacao por profundidade aqui: o jogo liga o autosort (ISP_FEED_CFG = 0x00800408, STATUS.md)
 //             e o backend fiel o resolve POR PIXEL (fragmentos por 1/w, sem z-write), como
-//             runtime/pvr/pvr_render.cpp; ordenar por triangulo nao e equivalente (docs/N7-PLANO.md, secao 6).
+//             o pvr_render.cpp do legado; ordenar por triangulo nao e equivalente (docs/N7-PLANO.md, secao 6).
 #include "render/render.h"
 
 #include <string>

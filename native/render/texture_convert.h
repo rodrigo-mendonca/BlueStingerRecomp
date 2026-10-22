@@ -1,7 +1,7 @@
 #pragma once
 // N7 (preparacao): conversao das texturas do PowerVR2 para RGBA8 linear, o que o renderer Vulkan carrega.
 // Portavel, sem o runtime legado (native/ nao depende dele): as mesmas regras do rasterizador de
-// referencia em software (runtime/pvr/pvr_texture.cpp), que os testes de integracao comparam bit a bit.
+// referencia em software (pvr_texture.cpp do runtime legado), que os testes de integracao comparam bit a bit.
 //   16 bits: ARGB1555, RGB565, ARGB4444 (expansao repetindo os bits altos); ARGB8888 da paleta.
 //   Enderecamento twiddled (Morton: bit de y no par, de x no impar; blocos quadrados lado a lado na
 //   dimensao maior).

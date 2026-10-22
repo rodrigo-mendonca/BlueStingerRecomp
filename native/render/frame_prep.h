@@ -1,6 +1,6 @@
 #pragma once
 // N7b: preparacao portavel de um quadro da IR para um backend de GPU (sem API grafica). O que o rasterizador de
-// referencia (runtime/pvr/pvr_render.cpp, Raster::draw) decide por triangulo fica aqui, na CPU, com as mesmas
+// referencia (pvr_render.cpp do runtime legado, Raster::draw) decide por triangulo fica aqui, na CPU, com as mesmas
 // contas: area com sinal, culling (pequeno, anti-horario, horario), descarte de area nula ou nao finita, recorte
 // "dentro" (retangulo de tesoura) e "fora" (o shader descarta), cor do ultimo vertice no sombreamento plano.
 // Os strips viram triangulos na ordem do decodificador do TA (k impar: os dois primeiros trocados).

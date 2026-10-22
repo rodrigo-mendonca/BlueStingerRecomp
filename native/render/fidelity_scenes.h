@@ -1,7 +1,7 @@
 #pragma once
 // N7 (preparacao): cenas sinteticas de fidelidade visual na IR (render.h), com pontos de prova e o valor
 // esperado de cada um, para o backend Vulkan (e qualquer outro) provar as regras do PVR2 sem o jogo.
-// As regras e os valores seguem a referencia em software (runtime/pvr/pvr_render.cpp) e os testes dela
+// As regras e os valores seguem a referencia em software (pvr_render.cpp do runtime legado) e os testes dela
 // (tests/unit/test_render_formats.cpp): autosort por pixel com >= forcado, punch-through com alfa >= ref e
 // ordem da frente para tras, profundidade 1/w com >=, mistura SrcAlpha/InvSrcAlpha e One/One, cor base
 // modulada + offset, HUD translucido, quadro de video pronto.
