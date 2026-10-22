@@ -1192,3 +1192,65 @@ mexer no código gerado. O PR identifica o ponto de chamada.
   - cutscenes e eventos com o enquadramento original;
   - 360° no cais, no corredor e no heliporto sem quebrar o movimento relativo;
   - nenhum custo mensurável com a câmera Original.
+
+### 23.1 Verificações exigidas na aprovação (2026-10-22)
+
+A proposta foi aprovada (interceptação filtrada pelo ponto de chamada, sem escrever em `0x8C24CD50`). Antes de
+instalar qualquer substituição, foram feitas as verificações pedidas. O registro de leituras é novo, `BS_LEITOR`,
+o par do `BS_ESCRITOR`, só no build de investigação. Rota `passo_combate`, 9000 VBlanks.
+
+**Quem lê o quê:**
+
+| Variável | Leitores (função; chamador; leituras) | Conclusão |
+|---|---|---|
+| vetor de visão `CC84–CC8C` | só o SDK da câmera: `8C1741EC`, `8C174148`, `8C174180` | nenhum sistema do jogo o usa |
+| matriz `CC38–CC77` | só o SDK: a montagem (`8C1713A4`, `8C170D34`, `8C170DC8`, `8C170E64`) e `8C17083C` (211 mil, transformação de desenho) | nenhum código do jogo lê a matriz: mudar a montagem muda só a imagem |
+| pitch `CD5C` / yaw `CD60` | `8C059BE0` (lógica da câmera, 3408); `8C052240` (montagem); `8C08AC60` (desenho de uma lista de sprites orientados pela câmera, 2632); `8C05D1C0` (ângulo de um objeto relativo à câmera, 1440) | estado do jogo: não é escrito (aprovação) |
+| posição `CD50` | `8C05D15C` (distância objeto–câmera, 176 mil: o chamador `8C058050` trata objetos a menos de 100 unidades da câmera ORIGINAL); `8C08AC60` (os sprites, 50 mil) | com a câmera orbitada, esses objetos e os sprites seguem a câmera do jogo (risco visual, abaixo) |
+
+**`0x8C24CD68`:**
+- escrito com 1 por `8C062BFE` (chamado de `8C035AEE`, `8C036F56`, `8C03711A`) e com 0 por `8C058720`, `8C05E7E0`
+  e `8C062DDC`;
+- lido pela lógica da câmera, pela montagem e por `8C058720`;
+- nas capturas, coincide com as cenas roteirizadas nos três intervalos da rota:
+
+| VBlanks | CD68 | Na tela |
+|---|---|---|
+| 2279–4491 | 1 | cinemática de abertura (sem HUD) |
+| 4656–5346 | 1 | cinemática da Kimra/holograma (sem HUD) |
+| 5346–6968 | 0 | gameplay com a barra do ELIOT |
+| 6968–8708 | 1 | "Press the START button" e o diálogo por rádio |
+| 8708 em diante | 0 | gameplay com HUD |
+
+- Conclusão: `CD68` = 1 nas câmeras roteirizadas (cinemáticas, eventos, diálogos com câmera própria).
+- Limitação: comprovado na rota de combate. O tratamento é conservador: com CD68 = 1, ou fora do caminho de gameplay,
+  o deslocamento volta a zero.
+
+**Pontos de chamada da câmera de gameplay**, todos dentro de `8C052240`, com PR exato e chamadas indiretas
+(`sh4_override` as intercepta). As funções do SDK são compartilhadas (`8C1713A4` tem 52 pontos de chamada, `8C170DC8`
+33): o filtro pelo PR é obrigatório e qualquer outro chamador recebe a função original.
+
+| Matriz | Chamada | PR | O que muda |
+|---|---|---|---|
+| objeto câmera (`CC38`) | `8C174148` pitch | `8C052892` | + Δpitch |
+| | `8C174180` yaw | `8C05289A` | + Δyaw |
+| | `8C174308` posição | `8C0528AC` | posição orbitada |
+| transformação de desenho (`0x8C2D0CC0`) | `8C1713A4` translação por −posição | `8C0528DA` | −posição orbitada |
+| | `8C170DC8` giro em Y por `~yaw` | `8C0528E4` | `~(yaw + Δyaw)` |
+| | `8C170D34` giro em X por pitch | `8C05290C` | + Δpitch |
+
+O caminho `8C078FC0` (câmera fixa/de evento) não é interceptado.
+
+**Movimento:**
+- nenhum leitor do pitch e do yaw é código de controle do personagem;
+- o movimento continua relativo à câmera do jogo, que não muda: com a câmera livre girada, "para cima" segue a câmera
+  original, não a vista;
+- o analógico esquerdo não é girado (exigência da aprovação). Uma opção de movimento relativo à câmera vista fica para
+  depois das validações pedidas.
+
+**Riscos visuais confirmados:**
+- objetos a menos de 100 unidades da câmera original, e os sprites orientados por ela (`8C08AC60`), seguem a câmera
+  do jogo;
+- com deslocamento grande, um objeto perto da vista nova pode tapar a imagem, e sprites podem aparecer de lado.
+
+Mitigação: limites de yaw e pitch e o retorno do modo híbrido.

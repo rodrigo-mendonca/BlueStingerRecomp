@@ -21,12 +21,18 @@ constexpr uint32_t kRamMask = 0x00FFFFFF;
 inline bool sh4_is_ram(uint32_t a) { return (a & 0x1C000000) == 0x0C000000 && a < 0xE0000000; }
 
 inline uint8_t sh4_read8(Sh4Context* c, uint32_t a) {
+#if BS_WRITE_WATCH
+    if (sh4_is_ram(a) && (g_wwReader.on || !g_wwReader.init)) ww_reader(c, a & kRamMask, 1);
+#endif
     if (sh4_is_ram(a)) return c->ram[a & kRamMask];
     return sh4_read8_slow(c, a);
 }
 // Word/longword desalinhado sai do caminho rapido; o caminho lento acusa address error.
 inline uint16_t sh4_read16(Sh4Context* c, uint32_t a) {
     if (sh4_is_ram(a) && !(a & 1)) {
+#if BS_WRITE_WATCH
+        if (g_wwReader.on || !g_wwReader.init) ww_reader(c, a & kRamMask, 2);
+#endif
         uint16_t v;
         std::memcpy(&v, c->ram + (a & kRamMask), 2);
         return v;
@@ -35,6 +41,9 @@ inline uint16_t sh4_read16(Sh4Context* c, uint32_t a) {
 }
 inline uint32_t sh4_read32(Sh4Context* c, uint32_t a) {
     if (sh4_is_ram(a) && !(a & 3)) {
+#if BS_WRITE_WATCH
+        if (g_wwReader.on || !g_wwReader.init) ww_reader(c, a & kRamMask, 4);
+#endif
         uint32_t v;
         std::memcpy(&v, c->ram + (a & kRamMask), 4);
         return v;

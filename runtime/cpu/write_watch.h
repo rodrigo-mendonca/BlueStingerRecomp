@@ -95,6 +95,9 @@ struct WwWriter {
 extern WwWriter g_wwWriter;
 void ww_writer_init();
 void ww_writer(const Sh4Context* c, uint32_t off, uint32_t value, int bytes);
+// O mesmo para LEITURAS: BS_LEITOR=<lo>-<hi>:<arquivo> (quem le a faixa; agregado por endereco, funcao e PR).
+extern WwWriter g_wwReader;
+void ww_reader(const Sh4Context* c, uint32_t off, int bytes);
 
 // Palavras cujo valor no fim do trecho difere do original (mudanca liquida).
 inline uint64_t ww_net_changes(const uint8_t* ram) {

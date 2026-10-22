@@ -31,6 +31,7 @@ namespace bs {
 
 WriteWatch     g_ww;       // diagnostico N2b (cpu/write_watch.h)
 WwWriter       g_wwWriter;  // investigacao da camera (N7c, BS_ESCRITOR)
+WwWriter       g_wwReader;  // investigacao da camera (N7c, BS_LEITOR)
 
 #if BS_WRITE_WATCH  // so no build de investigacao: o executavel normal nao tem nada disto
 
@@ -71,6 +72,34 @@ void ww_writer(const Sh4Context* c, uint32_t off, uint32_t value, int bytes) {
     if (g_writerLog.raw++ < 4000)
         std::fprintf(g_writerLog.f, "W\t%llu\t%08X\t%08X\t%08X\t%d\t%08X\n", static_cast<unsigned long long>(c->cycles),
                      0x8C000000u | off, c->cur_fn, c->pr, bytes, value);
+}
+
+namespace {
+struct ReaderLog {
+    FILE*                                                       f = nullptr;
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t>, uint64_t> agg;  // (end, fn, pr) -> leituras
+    ~ReaderLog() {
+        if (!f) return;
+        std::fprintf(f, "# BS_LEITOR agregado: endereco\tfuncao\tpr\tleituras\n");
+        for (const auto& [k, n] : agg)
+            std::fprintf(f, "L\t%08X\t%08X\t%08X\t%llu\n", 0x8C000000u | std::get<0>(k), std::get<1>(k), std::get<2>(k),
+                         static_cast<unsigned long long>(n));
+        std::fclose(f);
+    }
+} g_readerLog;
+} // namespace
+
+void ww_reader(const Sh4Context* c, uint32_t off, int) {
+    if (!g_wwReader.init) {
+        g_wwReader.init = true;
+        const char* v   = std::getenv("BS_LEITOR");
+        unsigned    lo = 0, hi = 0;
+        const char* colon = v ? std::strchr(v, ':') : nullptr;
+        if (colon && std::sscanf(v, "%x-%x", &lo, &hi) == 2 && (g_readerLog.f = std::fopen(colon + 1, "w")))
+            g_wwReader.lo = lo & kRamMask, g_wwReader.hi = hi & kRamMask, g_wwReader.on = true;
+    }
+    if (!g_wwReader.on || off < g_wwReader.lo || off > g_wwReader.hi) return;
+    ++g_readerLog.agg[{off, c->cur_fn, c->pr}];
 }
 #endif
 EffectCounters g_effects;  // N2b-2 (memory/effect_counters.h)
