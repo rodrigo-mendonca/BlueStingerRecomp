@@ -10,7 +10,7 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 
 ## Status (2026-10-21)
 
-**Progresso geral: ~67 %** do roteiro do port nativo (N0–N9; cada etapa pesa 10 %, e uma etapa parcial conta pela
+**Progresso geral: ~69 %** do roteiro do port nativo (N0–N9; cada etapa pesa 10 %, e uma etapa parcial conta pela
 fração concluída). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 ativadas por padrão (pacote de mod; as legendas geradas por IA são provisórias e não acompanham o repositório). O desenho
@@ -26,7 +26,7 @@ ainda passa pela simulação do PowerVR2 (o renderizador Vulkan é o N7).
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |
 | N6 | Áudio nativo (efeitos, falas, música Manatee, DSP da AICA) | concluída com promoção **condicional**: nativo é o padrão (`--audio legado` é o fallback até o N8); validação contra o original (Flycast) e gravações reais de gameplay; H1–H8 aprovados; **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** | 95 |
-| N7 | Renderização Vulkan | em andamento: N7a concluída (os comandos do jogo capturados numa lista de desenho própria, provada idêntica ao renderizador atual em gameplay); próximo: o backend Vulkan | 20 |
+| N7 | Renderização Vulkan | em andamento: N7a e N7b validadas (o Vulkan desenha o jogo **bit a bit igual** ao renderizador atual em gameplay, 3× mais rápido; o software segue padrão até a aprovação); próximo: N7c (legendas no gameplay, menu de configurações, resoluções modernas) | 45 |
 | N8 | Remoção da camada legada (simulação do console) | não iniciada | 0 |
 | N9 | Revisão final e distribuição | não iniciada | 0 |
 

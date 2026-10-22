@@ -74,6 +74,10 @@ enum class AudioVoicesProvider { Legacy, Native };
 // Provedor da musica (N6 fase F, docs/N6-PLANO.md secao 18): legado (padrao ate a prova) = o SDK de som e o driver
 // Manatee originais na AICA emulada; nativo = o sequenciador e o sintetizador Manatee em C++ (native/audio/manatee_*).
 enum class AudioMusicProvider { Legacy, Native };
+// Renderizador (N7b, docs/N7-PLANO.md secao 14): software (padrao ate a aprovacao do Vulkan) = o rasterizador de
+// referencia; nativo = a IR do TA desenhada no Vulkan (transitional/render_capture + native/render/vulkan), com
+// recuo automatico para o software se nao houver Vulkan.
+enum class RenderProvider { Software, Native };
 
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
@@ -91,6 +95,7 @@ struct GameOptions {
     AudioEffectsProvider  audioEffects = AudioEffectsProvider::Legacy;
     AudioVoicesProvider   audioVoices  = AudioVoicesProvider::Legacy;
     AudioMusicProvider    audioMusic   = AudioMusicProvider::Legacy;
+    RenderProvider        render       = RenderProvider::Software;
     std::filesystem::path modAudio;  // mods de audio (modsudio): dublagens por idioma, opcional
     std::string           dubbing;   // idioma da dublagem ("" = vozes originais)
     // Amostras do jogador 1 no modo nativo dos controles (o chamador mantem vivo ate o join).

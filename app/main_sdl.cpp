@@ -59,6 +59,9 @@ const char* kTitle = "Blue Stinger (recompilado)";
 // (docs/N6-PLANO.md secao 20.5; H1-H8 aprovados, H9 bloqueado pelo desempenho do N2). O legado continua como fallback ate
 // o N8: --audio legado ou BS_AUDIO=legado; --audio-efeitos/-falas/-musica valem sobre os dois.
 constexpr bool kAudioNativeDefault = true;
+// N7b: o renderizador padrao continua o SOFTWARE ate a aprovacao do Vulkan (docs/N7-PLANO.md secao 14):
+// --render nativo ou BS_RENDER=nativo liga o Vulkan; a opcao vale sobre a variavel.
+constexpr bool kRenderNativeDefault = false;
 
 struct Args {
     fs::path gameData, flash, map, dump, capture;
@@ -74,6 +77,7 @@ struct Args {
     bs::SavesProvider saves = bs::SavesProvider::Native;  // --saves nativo|legado (N4; legado = fallback)
     fs::path savesDir;          // --saves-pasta <dir>
     bs::VideoProvider video = bs::VideoProvider::Native;  // --video nativo|legado (N5; legado = fallback)
+    int render = -1;  // --render nativo|software (N7b; -1 = nao dado)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
     bs::AudioMusicProvider   audioMusic   = bs::AudioMusicProvider::Legacy;    // --audio-musica nativo|legado (N6 fase F)
@@ -143,6 +147,11 @@ bool parseArgs(Args& a) {
             else if (*v == L"nativo") a.video = bs::VideoProvider::Native;
             else return false;
         }
+        else if (s == L"--render" && (v = next())) {
+            if (*v == L"software") a.render = 0;
+            else if (*v == L"nativo") a.render = 1;
+            else return false;
+        }
         else if (s == L"--legendas" && (v = next())) a.subtitles = utf8(fs::path(*v)), a.subtitlesSet = true;
         else if (s == L"--audio" && (v = next())) {
             if (*v == L"legado") a.audioAll = 0;
@@ -184,6 +193,13 @@ bool parseArgs(Args& a) {
         else return false;
     }
     if (a.audioAll >= 0) native = a.audioAll == 1;
+    bool vk = kRenderNativeDefault;
+    if (const char* e = std::getenv("BS_RENDER"); e && *e) {
+        if (std::strcmp(e, "nativo") == 0) vk = true;
+        else if (std::strcmp(e, "software") == 0) vk = false;
+        else return false;
+    }
+    if (a.render < 0) a.render = vk ? 1 : 0;
     if (!a.effectsSet) a.audioEffects = native ? bs::AudioEffectsProvider::Native : bs::AudioEffectsProvider::Legacy;
     if (!a.voicesSet) a.audioVoices = native ? bs::AudioVoicesProvider::Native : bs::AudioVoicesProvider::Legacy;
     if (!a.musicSet) a.audioMusic = native ? bs::AudioMusicProvider::Native : bs::AudioMusicProvider::Legacy;
@@ -835,6 +851,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.saves             = a.saves;
     if (a.saves == bs::SavesProvider::Native) opt.savesRoot = savesRoot(a);
     opt.video             = a.video;
+    opt.render            = a.render == 1 ? bs::RenderProvider::Native : bs::RenderProvider::Software;
     opt.audioEffects      = a.audioEffects;
     opt.audioVoices       = a.audioVoices;
     opt.audioMusic        = a.audioMusic;
@@ -865,6 +882,8 @@ const char* kUsage =
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
     "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
     "       legado = Sofdec original, fallback temporario)\n"
+    "     --render software|nativo: renderizador (padrao: software = rasterizador de referencia; nativo = Vulkan, com\n"
+    "       recuo para o software sem Vulkan; BS_RENDER=nativo muda o padrao)\n"
     "     --legendas <idioma>|nenhuma: legendas de mods nos filmes e nas falas (padrao: en-US, ou legendas.idioma do\n"
     "       instalacao.toml; en-US recua para en; sem legendas no idioma, nada aparece)\n"
     "     --audio nativo|legado: os tres provedores de audio de uma vez (padrao: nativo; legado = SDK de som e driver\n"

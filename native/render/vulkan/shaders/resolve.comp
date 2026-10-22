@@ -1,0 +1,95 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// N7b: autosort dos translucidos POR PIXEL (manual do Dreamcast 3.4.2; runtime/pvr/pvr_render.cpp, resolveSorted):
+// os fragmentos do pixel sao misturados do mais distante (menor 1/w) para o mais proximo; empate: o primeiro
+// submetido e o mais distante. A ordem (z, seq) e total (um triangulo nao gera dois fragmentos no mesmo pixel).
+// Ate 128 camadas, uma ordenacao por insercao num vetor local (n^2 / 2 comparacoes em registradores, nao n^2 leituras
+// da memoria); acima, a selecao repetida (correta para qualquer n).
+// Cada mistura usa os fatores do proprio fragmento e e quantizada para 8 bits, como o software.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+struct Frag {
+    vec4  c;
+    float z;
+    uint  seq, blend, next;
+};
+layout(std430, set = 0, binding = 0) readonly buffer Frags { Frag frags[]; };
+layout(std430, set = 0, binding = 1) buffer Heads { uint count, capacity, overflow, width, maxList, pad0, pad1, pad2; uint head[]; };
+layout(set = 0, binding = 2, rgba8) uniform image2D color;
+
+layout(push_constant) uniform Size { uvec2 size; } pc;
+
+#include "exact.glsl"
+
+float factor(uint f, bool src, vec4 s, vec4 d, int ch) {
+    const float sc = s[ch], dc = d[ch];
+    if (f == 0u) return 0.0;
+    if (f == 1u) return 1.0;
+    if (f == 2u) return src ? dc : sc;  // a "outra" cor
+    if (f == 3u) return 1.0 - (src ? dc : sc);
+    if (f == 4u) return s.a;
+    if (f == 5u) return 1.0 - s.a;
+    if (f == 6u) return d.a;
+    return 1.0 - d.a;
+}
+
+bool before(float za, uint sa, float zb, uint sb) { return za != zb ? za < zb : sa < sb; }
+
+// a mistura de um fragmento sobre o destino, com os fatores dele, quantizada como o software
+vec4 mix_one(Frag f, vec4 d) {
+    const vec4 s  = f.c;
+    const uint sf = (f.blend >> 3) & 7u, df = f.blend & 7u;
+    // canais em ARGB como o software (o alfa e o canal 0 la; aqui a ordem e RGBA, os fatores sao por canal)
+    precise vec4 o;
+    for (int ch = 0; ch < 4; ++ch) o[ch] = s[ch] * factor(sf, true, s, d, ch) + d[ch] * factor(df, false, s, d, ch);
+    return quant(o);
+}
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.size.x || p.y >= pc.size.y) return;
+    const uint first = head[p.y * width + p.x];
+    if (first == 0xFFFFFFFFu) return;
+    const uvec4 db = min(uvec4(floor(imageLoad(color, ivec2(p)) * 255.0 + 0.5)), uvec4(255u));  // RGBA; o byte / 255 do software
+    vec4        d  = vec4(k255[db.r], k255[db.g], k255[db.b], k255[db.a]);
+    uint len = 0u;  // diagnostico: o maior numero de camadas num pixel do quadro
+    for (uint i = first; i != 0xFFFFFFFFu; i = frags[i].next) ++len;
+    atomicMax(maxList, len);
+    // ate K camadas (o caso normal): uma passada junta todas por insercao num vetor local, em ordem; acima disso, a
+    // selecao repetida do proximo (O(n^2), so para pixels extremos). As duas validadas contra o software na NVIDIA e
+    // na AMD; varias passadas de K em K davam resultado errado na AMD integrada (2026-10-22) e nao sao usadas.
+    const uint K = 128u;
+    if (len <= K) {
+        uint  idx[128];
+        float zs[128];
+        uint  ss[128];
+        uint  n = 0u;
+        for (uint i = first; i != 0xFFFFFFFFu; i = frags[i].next) {
+            const float z = frags[i].z;
+            const uint  s = frags[i].seq;
+            uint        j = n++;
+            while (j > 0u && before(z, s, zs[j - 1u], ss[j - 1u])) {
+                idx[j] = idx[j - 1u], zs[j] = zs[j - 1u], ss[j] = ss[j - 1u];
+                --j;
+            }
+            idx[j] = i, zs[j] = z, ss[j] = s;
+        }
+        for (uint k = 0u; k < n; ++k) d = mix_one(frags[idx[k]], d);
+    } else {
+        bool  have  = false;
+        float lastZ = 0.0;
+        uint  lastS = 0u;
+        for (;;) {
+            uint best = 0xFFFFFFFFu;
+            for (uint i = first; i != 0xFFFFFFFFu; i = frags[i].next) {
+                if (have && !before(lastZ, lastS, frags[i].z, frags[i].seq)) continue;  // ja misturado
+                if (best == 0xFFFFFFFFu || before(frags[i].z, frags[i].seq, frags[best].z, frags[best].seq)) best = i;
+            }
+            if (best == 0xFFFFFFFFu) break;
+            d     = mix_one(frags[best], d);
+            have  = true;
+            lastZ = frags[best].z, lastS = frags[best].seq;
+        }
+    }
+    imageStore(color, ivec2(p), d);
+}

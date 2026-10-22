@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. Próximo: backend Vulkan por `--render nativo` (software segue padrão). N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. N2 retoma depois do N7. |
 
 ## Versão suportada
 
@@ -2262,6 +2262,66 @@ de teste (não no `dist/`). Detalhes em `docs/LEGENDAS-EN-PLANO.md` seção 14.
   (`loc_mod_provisional_and_en_us_default`). Jogo: sem opção, o filme NEWGAME mostra a 1ª legenda aos 143,2 s; com
   `nenhuma`, o mesmo quadro sem texto; estado por passo idêntico nas duas execuções (1 039 passos).
 
+### N7b: backend Vulkan (2026-10-22; worktree n7-vulkan)
+
+**O que foi feito** (detalhes em `docs/N7-PLANO.md`, seção 14):
+- **Dispositivo:** `native/render/vulkan/vk_device` implementa o `IRenderDevice` (offscreen). O Vulkan
+  é carregado em tempo de execução, sem SDK. Os cabeçalhos Khronos 1.3.282 ficam em
+  `third_party/vulkan`, que entrou no kit do Builder.
+- **Shaders:** em GLSL, com o SPIR-V versionado (`tools/dev/gera_spirv.ps1 [-Conferir]`).
+- **Preparação do quadro:** na CPU (`native/render/frame_prep`).
+- **Integração:**
+  - `--render nativo|software` (ou `BS_RENDER`); o software continua padrão;
+  - `BS_RENDER_IR=comparar` (com `BS_RENDER_IR_BMP` e `_DIFF`);
+  - `BS_VULKAN_GPU=<nome>`;
+  - recuperação da perda do dispositivo (até 3 por sessão), com recuo para o software.
+- **Modo fiel** (resolução original): as contas do `Raster::draw` no shader:
+  - candidatos pelo retângulo envolvente, como o laço do software;
+  - cobertura com a regra de cima/esquerda;
+  - 1/w e atributos com a divisão **inteira** corretamente arredondada e a tabela exata de `c/255`;
+  - profundidade crua (`VK_EXT_depth_range_unrestricted`);
+  - autosort por pixel com ordenação local de até 128 camadas e seleção acima disso;
+  - variantes de shader com arredondamento ao par e subnormais preservados conforme a GPU.
+- **Texturas:** cache pelos bytes da VRAM; o decodificador do legado entra quando falta conversão
+  nativa (contado, nunca descartado); substituição HD por `TextureId` (contrato do N7a).
+
+**Método.** Rota `passo_combate` (9000 VBlanks, `--video legado`, `BS_RELOGIO_FIXO=1700000000`);
+`BS_FRAME_LOG` comparado com a linha de base do software.
+
+| Medida | NVIDIA RTX 5080 | AMD Radeon integrada |
+|---|---|---|
+| Garantias do modo fiel | arredondamento ao par, profundidade crua; subnormais no padrão do dispositivo | arredondamento ao par, subnormais preservados, profundidade crua |
+| `comparar` (todo render) | **4487/4487 idênticos** (0 pixels diferentes) | 4486/4487 idênticos; 1 recriação do dispositivo (ver a pendência) |
+| `--render nativo` | quadros **idênticos ao software** nos 9000 VBlanks; 69 s | quadros idênticos; 102 s; 0 falhas (2 rotas) |
+| Software (referência) | 224 s | — |
+| GPU por quadro | média 1,48 ms, pior 12,7 ms | média 8,6 ms, pior 28 ms |
+| Camadas translúcidas por pixel | até 78 | até 78 |
+
+**Testes:**
+- `bs_render_tests`: 24 de 24, nas duas GPUs.
+- `bs_unit_tests`: 285 de 285 nas duas GPUs. Entre eles, a imagem inteira Vulkan × software em 12
+  cenas, todas **idênticas**:
+  - gouraud, fatias finas, sprite, recorte, textura bilinear com espelho;
+  - `HALF_OFFSET` 1 e 3, 1/w negativo e o contraexemplo de -16777216;
+  - autosort com 6, 70 e 140 camadas;
+  - mais: falhas injetadas (textura; dispositivo transitório e permanente), substituição HD e
+    reprodução de um render gravado (`BS_RENDER_IR_GUARDAR` / `BS_RENDER_IR_REPRODUZIR`).
+
+**Desempenho.** A leitura de volta passou a usar memória `HOST_CACHED`; sem cache da CPU a rota
+levava 514 s.
+
+**Pendência de estabilidade (AMD integrada, modo `comparar`).** A perda do dispositivo
+(`VK_ERROR_DEVICE_LOST`) acontece no envio do render 371 em quase todas as rotas de comparação.
+- O render 370 sai com a imagem anterior, mesmo com a cerca e a fila ociosa acusando sucesso.
+- O mesmo render, gravado e reproduzido sozinho, dá na AMD a **mesma imagem da NVIDIA** (50
+  repetições, sem falha).
+- Não aparece no modo nativo (2 rotas completas), com atraso entre quadros nem com o software
+  sequencial, e não há reset (TDR) no log do sistema.
+
+Hipótese: falha do driver dependente do histórico da sessão. A recuperação recria o dispositivo e a
+rota termina com 1 quadro errado. Fica aberta até identificar a causa (próximo passo: as Validation
+Layers num terminal não elevado).
+
 ### N7a: captura do TA na IR de render (2026-10-21; worktree n7-vulkan)
 
 **O que foi feito** (detalhes em `docs/N7-PLANO.md` seção 13):
@@ -2562,6 +2622,32 @@ Detalhes em `docs/LEGENDAS-EN-PLANO.md`.
 - **Testes:** `test_legendas.py` 11/11; `bs_audio_tests` 41/41; `bs_localization_tests` 8/8; `bs_video_tests` 42/42.
 
 ## Revisões independentes (Codex)
+
+### 2026-10-22: N7b, segunda rodada. Relatório em `reviews/codex-20261022-000105.md` (5 achados)
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Falha de pipeline omitia o lote e o quadro era aceito | **Aceito** | `pipeline()` nulo devolve erro e o render vai para o software ou para a recuperação |
+| [ALTA] Ambiente de ponto flutuante não fixado; `crdiv` dependia de FMA fundida | **Aceito, e além do sugerido** | Divisão corretamente arredondada por aritmética **inteira** das mantissas; tabela exata de `c/255`. Variantes SPIR-V com `RoundingModeRTE` e com `RoundingModeRTE` + `DenormPreserve`, escolhidas pelas propriedades reais da GPU; o log informa as garantias |
+| [MÉDIA] Sem rasterização conservadora o shader exato perdia pixels | **Aceito, com outra solução** | Candidatos pelo **retângulo envolvente** do software (independente do raster da GPU); a extensão saiu |
+| [MÉDIA] O deslocamento das profundidades negativas não é injetivo | **Aceito** | Profundidade crua com `VK_EXT_depth_range_unrestricted` (NVIDIA e AMD); sem a extensão, o deslocamento com o limite informado. O contraexemplo do relatório virou cena de teste, idêntica nas duas GPUs |
+| [MÉDIA] O teste de imagem aceitava PSNR em vez de igualdade | **Aceito** | Todas as cenas do modo fiel exigem 0 pixels diferentes |
+
+Também nesta rodada:
+- **`resolve.comp`:** ordenação local até 128 camadas e seleção acima. Passadas de 64 em 64 davam
+  imagem errada na AMD, então não são usadas.
+- **Robustez:** `robustBufferAccess` e índices protegidos contra NaN.
+
+### 2026-10-21: N7b, primeira rodada. Relatório em `reviews/codex-20261021-231515.md` (6 achados)
+
+| Achado | Decisão | Evidência / ação |
+|---|---|---|
+| [ALTA] Falha de textura gerava quadro errado em vez do software | **Aceito** | Textura não enviada deixa o render no software |
+| [ALTA] Resultados de alocação e mapeamento ignorados | **Aceito** | Todos conferidos; buffer sem mapeamento é falha |
+| [MÉDIA] `--render nativo` ignorado com `--tempo legado` | **Aceito** | A instalação da captura saiu do bloco do tempo |
+| [MÉDIA] `HALF_OFFSET` bit 1 não chegava ao Vulkan | **Aceito** | O modo fiel usa os pesos na amostra dos atributos, como o software |
+| [MÉDIA] 1/w negativo era cortado pelo clamp | **Aceito** | Ver a segunda rodada (profundidade crua) |
+| [MÉDIA] Testes não comparavam a imagem inteira | **Aceito** | Imagem inteira contra o software; falhas injetadas |
 
 ### 2026-10-21: N7a (captura do TA na IR, contrato das texturas HD). Relatório em `reviews/codex-20261021-220352.md` (7 achados)
 

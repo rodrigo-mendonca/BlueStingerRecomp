@@ -499,15 +499,6 @@ void GameHost::threadMain() {
             if (const char* v = std::getenv("BS_PROGRESSO_LIMITE")) to.stall_units = std::strtoull(v, nullptr, 10);
             else to.stall_units = transitional::time::kDefaultStallUnits;
             transitional::time::install(to);
-            // N7a: IR de render capturada do decodificador do TA (BS_RENDER_IR=capturar|conferir; BS_RENDER_IR_CADA=N
-            // confere 1 render a cada N). O rasterizador em software continua o mesmo e e a referencia.
-            if (const char* ir = std::getenv("BS_RENDER_IR"); ir && *ir) {
-                const char*    cada  = std::getenv("BS_RENDER_IR_CADA");
-                const uint32_t every = cada ? uint32_t(std::strtoul(cada, nullptr, 10)) : 1u;
-                transitional::render_capture::install(std::string(ir) == "conferir" ? transitional::render_capture::Mode::Check
-                                                                                     : transitional::render_capture::Mode::Capture,
-                                                      every);
-            }
             input_set_step_counter([] { return transitional::time::game_steps(); });  // roteiros por passo
             // Diagnostico (gameplay assistido): BS_STATE_PASSO=<arquivo> grava a cada BS_STATE_PASSO_CADA
             // passos de jogo (padrao 10), no inicio do passo, o hash da regiao de variaveis do jogo
@@ -531,6 +522,25 @@ void GameHost::threadMain() {
             g_stepLog.ram  = c.ram;
             g_stepLog.host = this;
             if (g_stepLog.f || g_padTrace) transitional::time::set_step_observer(&stepLogWrite, nullptr);
+        }
+        // N7a: IR de render capturada do decodificador do TA (BS_RENDER_IR=capturar|conferir; BS_RENDER_IR_CADA=N
+        // confere 1 render a cada N). O rasterizador em software continua o mesmo e e a referencia.
+        // N7b: --render nativo (Vulkan) instala a captura no modo nativo; BS_RENDER_IR=comparar mantem o software e
+        // compara o Vulkan (BS_RENDER_IR_BMP=<pasta> grava as comparacoes, 1 a cada BS_RENDER_IR_BMP_CADA renders).
+        // Independe do provedor de tempo (revisao Codex 2026-10-21).
+        if (const char* dir = std::getenv("BS_RENDER_IR_BMP"); dir && *dir) {
+            const char* cada = std::getenv("BS_RENDER_IR_BMP_CADA");
+            transitional::render_capture::set_compare_dump(dir, cada ? uint32_t(std::strtoul(cada, nullptr, 10)) : 300u);
+        }
+        if (const char* ir = std::getenv("BS_RENDER_IR"); ir && *ir) {
+            const char*       cada  = std::getenv("BS_RENDER_IR_CADA");
+            const uint32_t    every = cada ? uint32_t(std::strtoul(cada, nullptr, 10)) : 1u;
+            const std::string m     = ir;
+            using RM                = transitional::render_capture::Mode;
+            transitional::render_capture::install(m == "conferir" ? RM::Check : (m == "comparar" ? RM::Compare : RM::Capture),
+                                                  every);
+        } else if (opt_.render == RenderProvider::Native) {
+            transitional::render_capture::install(transitional::render_capture::Mode::Native);
         }
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);

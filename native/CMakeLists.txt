@@ -61,8 +61,15 @@ target_link_libraries(bs_native_localization PUBLIC bs_native_api bs_native_audi
 # N7 (preparacao): regras portaveis do renderer nativo (texturas do PVR para RGBA8, validacao e ordem
 # da IR de render); sem API grafica - o backend Vulkan fica fora do jogo ate a integracao
 add_library(bs_native_render STATIC render/texture_convert.cpp render/render_ir.cpp render/fidelity_scenes.cpp
-            render/texture_replacement.cpp)  # contrato das texturas HD futuras (sem carregamento no N7)
+            render/texture_replacement.cpp  # contrato das texturas HD futuras (sem carregamento no N7)
+            render/frame_prep.cpp)          # N7b: o que o rasterizador decide por triangulo, para a GPU
 target_link_libraries(bs_native_render PUBLIC bs_native_api)
+
+# N7b: backend Vulkan (offscreen; o Vulkan e carregado em tempo de execucao, sem SDK; cabecalhos Khronos em
+# third_party/vulkan, Apache-2.0; SPIR-V versionado em render/vulkan/spirv, gerado por tools/dev/gera_spirv.ps1)
+add_library(bs_native_render_vk STATIC render/vulkan/vk_device.cpp)
+target_include_directories(bs_native_render_vk PRIVATE ${PROJECT_SOURCE_DIR}/third_party/vulkan)
+target_link_libraries(bs_native_render_vk PUBLIC bs_native_render PRIVATE ${CMAKE_DL_LIBS})
 
 add_library(bs_native_audio STATIC audio/audio_output.cpp)
 target_link_libraries(bs_native_audio PUBLIC bs_native_api PRIVATE xaudio2 ole32)

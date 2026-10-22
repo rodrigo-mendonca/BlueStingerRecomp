@@ -335,7 +335,9 @@ public:
         // linhas sao resolvidas em paralelo, com o mesmo resultado da ordem sequencial
         std::vector<int> rows(static_cast<size_t>(h));
         for (int y = 0; y < h; ++y) rows[size_t(y)] = y;
-        std::for_each(std::execution::par, rows.begin(), rows.end(), [&](int y) {
+        // diagnostico: BS_RENDER_SEQ=1 resolve as linhas em sequencia (mesmo resultado; isola efeitos das threads)
+        static const bool seqOnly = std::getenv("BS_RENDER_SEQ") != nullptr;
+        auto              body    = [&](int y) {
             const RenderFpEnv fpEnv;  // MXCSR do worker e indefinido (revisao Codex 2026-10-14)
             if ((_mm_getcsr() & ~0x3Fu) != 0x1F80) g_fpViolation.store(true);  // ver pvr_render_take_fp_violation
             for (size_t p = size_t(y) * w, end = p + size_t(w); p < end; ++p) {
@@ -344,7 +346,9 @@ public:
                 if (e - b > 1) std::sort(sorted_.begin() + b, sorted_.begin() + e, less);
                 fn(&sorted_[b], size_t(e - b));
             }
-        });
+        };
+        if (seqOnly) std::for_each(rows.begin(), rows.end(), body);
+        else std::for_each(std::execution::par, rows.begin(), rows.end(), body);
     }
     std::vector<Frag> sorted_;
 
@@ -753,7 +757,8 @@ RenderStats pvr_render(Sh4Context*) {
         tp = n;
     };
     lap(0);
-    const size_t nfrags = drawLists(parser.prims, r, lap);
+    const bool   replaced = g_sink && g_sink->render(fr, st.width, st.height, r.color);  // N7b: --render nativo
+    const size_t nfrags   = replaced ? 0 : drawLists(parser.prims, r, lap);
     if (g_sink) g_sink->end(fr, parser.prims, r.color, st.width, st.height);
     writeBack(r);
     if (prof)

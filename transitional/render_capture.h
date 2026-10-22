@@ -15,6 +15,14 @@
 //   - cada textura usada, convertida pelas conversoes nativas (native/render/texture_convert) a partir dos bytes da
 //     VRAM, e igual texel a texel ao decodificador do legado (pvr_texel).
 // BS_RENDER_IR=capturar so monta a IR (para o backend). Resumo no fim: render_capture::summary().
+//
+// N7b (backend Vulkan, native/render/vulkan): Mode::Native (--render nativo) desenha a IR no Vulkan e a imagem
+// substitui a do software (o resto do caminho, gravacao no framebuffer e apresentacao, nao muda); sem Vulkan,
+// fica no software com o motivo no resumo. Mode::Compare (BS_RENDER_IR=comparar) mantem o software como saida e
+// compara a imagem do Vulkan pixel a pixel (BS_RENDER_IR_BMP=<pasta>: software | Vulkan | diferenca x8).
+// Texturas: as conversoes nativas; sem conversao nativa (paleta de 8 bits, YUV, bump), o decodificador do legado
+// texel a texel (contadas, nunca descartadas). O cache do backend refaz uma textura quando os bytes dela na VRAM
+// (ou a paleta) mudam.
 #include "pvr/pvr_render.h"
 #include "render/render.h"
 #include "render/texture_replacement.h"
@@ -73,14 +81,51 @@ struct Stats {
     uint64_t textures_checked = 0, texture_mismatch = 0, textures_without_native = 0;
     uint64_t modifier_params = 0, modifier_volumes = 0, modifier_unclosed = 0, skipped_params = 0;
     uint64_t frame_mismatch = 0;  // FrameParams que nao reproduzem os registradores usados (tem de ficar em 0)
+    // N7b (Vulkan)
+    std::string vk_device, vk_error;
+    uint64_t    vk_frames = 0, vk_failures = 0, tex_uploads = 0, tex_legacy = 0, tex_evicted = 0;
+    uint64_t    tex_replaced = 0, tex_replace_rejected = 0;  // substituicoes HD usadas / incompativeis (original)
+    uint64_t    vk_fragment_retries = 0, vk_negative_depth = 0;  // listas por pixel refeitas; quadros com 1/w negativo
+    uint64_t    vk_recoveries = 0;                                 // dispositivo recriado depois de uma perda
+    double      vk_gpu_ms_total = 0, vk_gpu_ms_max = 0;           // tempo de GPU por quadro (total e o pior)
+    uint64_t    vk_max_layers = 0;                                 // maior numero de camadas translucidas num pixel
+    uint64_t    cmp_frames = 0, cmp_pixels = 0, cmp_diff = 0, cmp_diff8 = 0, cmp_worst_render = 0;
+    uint32_t    cmp_max = 0;
+    double      cmp_worst_fraction = 0;
+    double      cmp_min_psnr = 0, cmp_psnr_sum = 0;  // PSNR (RGB) por quadro: minimo e soma (media = soma / quadros)
+    uint64_t    cmp_below40 = 0;                     // quadros com PSNR < 40 dB (criterio do plano, secao 5)
     uint64_t distinct_texture_keys = 0, distinct_texture_ids = 0;  // chaves (TCW+tamanho) e ids de conteudo distintos
     std::string first_error;
 };
 
-enum class Mode : uint8_t { Off, Capture, Check };
-void         install(Mode m, uint32_t every = 1);  // instala no pvr_render e zera as estatisticas (Off desinstala)
+enum class Mode : uint8_t { Off, Capture, Check, Native, Compare };
+void         install(Mode m, uint32_t every = 1);  // instala no pvr_render e zera as estatisticas (Off desinstala e descarta)
 const Frame& last_frame();                         // a IR do ultimo render
 const Stats& stats();
 std::string  summary();
+void         set_compare_dump(const std::string& dir, uint32_t every);  // BMP das comparacoes (Mode::Compare)
+// Ponto de extensao das texturas HD (contrato do N7a): com provedor, o backend Vulkan troca cada textura pela
+// substituicao do mesmo TextureId quando ela e compativel (replacement_compatible); senao, o original. nullptr =
+// so originais (o padrao ate o N9, que traz o carregador de mods). O provedor tem de viver enquanto instalado.
+void         set_texture_replacements(nr::ITextureReplacements* provider);
+// Testes do recuo para o software: a proxima textura (Texture) ou o proximo quadro (Device) falha no Vulkan.
+enum class Fault : uint8_t { None, Texture, Device, DeviceOnce, DeviceAgain };  // Device: falha permanente; DeviceOnce: transitoria
+void         inject_fault(Fault f);
+
+// Diagnostico (BS_RENDER_IR_GUARDAR=<render>:<arquivo>): a IR inteira de um render (parametros, vertices, desenhos,
+// volumes e as texturas ja convertidas, na ordem dos handles do quadro) num arquivo binario, gravada ANTES de ir ao
+// dispositivo (sobrevive a uma perda do dispositivo nesse render); load_frame_dump a le de volta para reproduzir o
+// render fora do jogo (tests/unit/test_render_vulkan.cpp, BS_RENDER_IR_REPRODUZIR).
+struct DumpTexture {
+    nr::TextureDesc       desc;
+    std::vector<uint32_t> argb;
+};
+bool save_frame_dump(const std::string& path, const Frame& f);
+bool load_frame_dump(const std::string& path, nr::CommandList& cl, std::vector<DumpTexture>& textures);
+
+// Texels de uma textura com o fallback: as conversoes nativas ou, sem elas, o decodificador do legado.
+bool texture_argb(const TextureKey& k, std::vector<uint32_t>& argb, bool& legacy);
+// Os bytes que definem a textura na VRAM e a paleta usada (para o cache do backend saber se ela mudou).
+void texture_source(const TextureKey& k, std::vector<uint8_t>& raw);
 
 } // namespace bs::transitional::render_capture

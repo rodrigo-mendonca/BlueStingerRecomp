@@ -64,7 +64,8 @@ $kit = Join-Path $stage "kit"
 # allowlist: so arquivos que o git versiona ou versionaria (rastreados + novos nao ignorados).
 # O que o .gitignore exclui (game-data, generated, ISO, ...) nunca entra (revisao Codex).
 $kitEntries = @("CMakeLists.txt", "LICENSE", "app", "runtime", "tools/extractor", "tools/dist/LEIA-ME.txt", "config",
-                "tools/dcmap", "native", "legacy", "transitional", "tools/build", "third_party/dr_libs", "third_party/xiph")
+                "tools/dcmap", "native", "legacy", "transitional", "tools/build", "third_party/dr_libs", "third_party/xiph",
+                "third_party/vulkan")
 $kitList = @(git -C $repo -c core.quotepath=off ls-files --cached --others --exclude-standard -- @kitEntries)
 if ($LASTEXITCODE -ne 0 -or $kitList.Count -lt 20) { Fail "git ls-files falhou ou listou poucos arquivos ($($kitList.Count))" }
 foreach ($rel in $kitList) {
@@ -102,6 +103,7 @@ Copy-Item -LiteralPath (Join-Path $repo "third_party\pl_mpeg\LICENSE") -Destinat
 Copy-Item -LiteralPath (Join-Path $repo "third_party\dr_libs\LICENSE") -Destination "$stage\licencas\dr_flac-MIT0.txt"  # N6: FLAC de mods
 Copy-Item -LiteralPath (Join-Path $repo "third_party\xiph\libogg\COPYING") -Destination "$stage\licencas\libogg-BSD.txt"  # N6: OGG de mods
 Copy-Item -LiteralPath (Join-Path $repo "third_party\xiph\libvorbis\COPYING") -Destination "$stage\licencas\libvorbis-BSD.txt"
+Copy-Item -LiteralPath (Join-Path $repo "third_party\vulkan\Apache-2.0.txt") -Destination "$stage\licencas\Vulkan-Headers-Apache-2.0.txt"  # N7b
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "LEIA-ME-BUILDER.txt") -Destination "$stage\LEIA-ME.txt"
 
 # dependencias dos executaveis

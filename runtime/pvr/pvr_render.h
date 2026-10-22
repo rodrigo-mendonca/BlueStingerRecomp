@@ -80,6 +80,9 @@ public:
     virtual void skipped(const TaParam& p)                                                                   = 0;
     virtual void end(const PvrFrame& frame, std::span<const PvrTri> drawn, std::span<const uint32_t> image, uint32_t w,
                      uint32_t h)                                                                             = 0;
+    // N7b: depois da decodificacao, antes do rasterizador em software. true = `image` (w x h ARGB8888, ja com o
+    // tamanho certo) foi preenchida por outro renderizador e o software nao roda neste render.
+    virtual bool render(const PvrFrame&, uint32_t, uint32_t, std::vector<uint32_t>&) { return false; }
 };
 void pvr_render_set_capture(PvrCaptureSink* sink);  // nullptr desliga
 uint32_t pvr_background_color();                     // cor do plano de fundo do render atual (ISP_BACKGND_T), RGB

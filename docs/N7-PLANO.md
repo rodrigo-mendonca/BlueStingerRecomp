@@ -510,3 +510,256 @@ carregamento, upscale nem pacotes. As ferramentas, o carregador de mods e os pac
 - **KTX2:** mipmaps prontos e compressão de GPU (BC7/BC1, ASTC via Basis).
 - O consumo de VRAM será medido, com orçamento e despejo no cache.
 - HUD e interface entram pelo mesmo id (as texturas de HUD são texturas comuns da IR).
+
+## 14. N7b: backend Vulkan (2026-10-21)
+
+### Protótipo revisado antes de reutilizar
+
+`tools/vk_prototipo` foi revisto e validado onde a máquina permite:
+- **V1:** os shaders compilam e passam no `spirv-val`.
+- **Execução funcional (RTX 5080):** 120 quadros com 3 recriações da swapchain; captura idêntica em
+  duas execuções (SHA-256 `E737856E…`); 0 objetos Vulkan vivos no fim.
+- **V2/V3 (Validation Layers):** **pendentes.** O terminal desta sessão é elevado (integridade alta) e
+  o carregador ignora as camadas por variável. A tentativa de rebaixar o token para integridade
+  média foi bloqueada pela política de segurança da sessão.
+  - `validar.ps1` passou a testar a integridade do processo (a regra do carregador), não o grupo de
+    administradores.
+  - Basta rodá-lo num terminal comum (não elevado).
+
+**O que foi reaproveitado:** o ciclo de vida (instância → dispositivo → recursos → destruição contada)
+e a leitura de volta. **O que não foi:** os shaders do protótipo, que cobriam pouco do estado do PVR.
+
+### Desenho
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| Preparação do quadro | `native/render/frame_prep` (portável, sem GPU) | Faz na CPU o que o rasterizador de referência decide por triângulo, com as mesmas contas: strips → triângulos na ordem do TA, culling (pequeno, anti-horário, horário), área nula ou não finita, 1/w não finito, recorte "dentro" vazio, cor do último vértice no plano, fases (opaca, punch-through, translúcida) e lotes por estado. A profundidade é o próprio 1/w vezes uma **potência de 2** do quadro (exata: a igualdade continua igual) |
+| Dispositivo | `native/render/vulkan/vk_device` (`VulkanDevice : IRenderDevice`) | Offscreen na resolução do quadro. Cor RGBA8, profundidade D32 com *depthClamp* (o PVR não recorta por z), pipelines por estado fixo (modo, comparação e escrita de z, fatores de mistura), texturas BGRA8 com a amostragem feita no shader, leitura de volta. O Vulkan é aberto em tempo de execução (`vulkan-1.dll`/`libvulkan.so.1`): sem SDK nem biblioteca de importação. Sem GPU ou recurso exigido, `create()` falha com o motivo |
+| Shaders | `native/render/vulkan/shaders` (GLSL); SPIR-V versionado em `spirv/` (`tools/dev/gera_spirv.ps1 [-Conferir]`) | O Builder e o usuário não compilam shader |
+| Integração | `transitional/render_capture` | Ganchos `PvrCaptureSink::render` e `--render nativo`; detalhes abaixo |
+
+**Shaders**, mesmas regras do `Raster::draw`:
+- `pvr.vert`: atributos sem perspectiva do hardware, multiplicados por 1/w e divididos no fragmento.
+  É a correção de perspectiva do software.
+- `pvr.frag`: amostragem manual (`texelFetch`) com wrap, clamp e flip, ponto ou bilinear e meio
+  texel; sombreamento (decal, modulate, decal alpha, modulate alpha); deslocamento; *use alpha*;
+  *ignore texture alpha*; *color clamp*; limiar do punch-through (alfa quantizado); recorte "fora".
+  A cor é quantizada como o `pack` do software.
+- Variante `AUTOSORT` de `pvr.frag`: *early fragment tests* com >= contra as opacas; o fragmento vai
+  para a lista do pixel.
+- `resolve.comp`: mistura cada pixel do mais distante para o mais próximo, com empate pela ordem de
+  submissão. Usa os fatores de cada fragmento, quantiza a cada passo e não tem limite de camadas
+  (seleção repetida do próximo). Se a lista não couber, o mesmo quadro é refeito com mais espaço;
+  nunca se perde fragmento.
+
+**Integração:**
+- `--render nativo` (ou `BS_RENDER=nativo`): a imagem do Vulkan substitui a do software. A gravação
+  no framebuffer, os filmes, a apresentação e as capturas não mudam.
+- `BS_RENDER_IR=comparar`: o software continua como saída e o Vulkan é comparado pixel a pixel. Com
+  `BS_RENDER_IR_BMP=<pasta>`, grava software | Vulkan | diferença ×8.
+- **Recuo:** sem Vulkan, o jogo fica no software, com o motivo no log e no resumo.
+- **Texturas:** cache pelos bytes de origem na VRAM e pela paleta (refeita só quando mudam). Sem
+  conversão nativa (paleta de 8 bits, YUV, bump), passa pelo decodificador do legado texel a texel,
+  contada e **nunca descartada**. Texturas sem uso há 600 renders saem da GPU.
+
+**Volumes modificadores:** continuam na IR, contados, sem efeito na imagem, como no software. A
+aplicação (stencil por volume, inclusão e exclusão por lista) entra na seção 16, comparada com o
+Flycast.
+
+**Padrão:** o software continua o padrão (`kRenderNativeDefault = false`) até a aprovação do
+mantenedor.
+
+### Testes dirigidos
+
+- `bs_render_tests`:
+  - `frame_prep_*` (4 casos): ordem dos strips, culling, fases, sombreamento plano, escala exata,
+    recorte e amostra no canto.
+  - `render_vulkan_fidelity_scenes`: as **8 cenas fiéis** de `fidelity_scenes` (17 provas) no
+    Vulkan, todas dentro da tolerância, cada uma duas vezes com a mesma imagem, e 0 objetos vivos no
+    fim. Sem Vulkan: [skip]; com `BS_EXIGIR_DADOS=1`, falha.
+
+### Modo fiel: as contas do software na GPU
+
+A primeira versão usava a interpolação e a rasterização da GPU. Ela ficava visualmente igual, mas não
+bit a bit:
+- 1,04 % dos pixels diferentes;
+- PSNR médio de 64 dB;
+- 144 quadros abaixo de 40 dB, todos com fatias finas ou texels na fronteira, porque a GPU encaixa
+  os vértices em 1/256 de pixel e interpola com a sua própria aritmética.
+
+O **modo fiel** (resolução original) refaz no shader, por pixel, as contas do `Raster::draw` a partir
+dos dados de cada triângulo (`frame_prep`: posições originais, 1/w, UV, cores e `1/area` calculado na
+CPU como o software):
+- funções de aresta no ponto de amostra e a regra de cima/esquerda;
+- pesos e 1/w;
+- pesos na amostra dos atributos (`HALF_OFFSET` bit 1);
+- correção de perspectiva com **divisão corretamente arredondada** (`crdiv`, um passo de FMA);
+- o mesmo `c/255` dos bytes;
+- as mesmas somas na mesma ordem.
+
+Soma e produto são corretamente arredondados no Vulkan, e `precise` impede fusão e reassociação.
+
+Para cobertura e profundidade:
+- a **rasterização conservadora** (`VK_EXT_conservative_rasterization`, quando existe) entrega todos
+  os pixels candidatos e a cobertura final é a do shader;
+- a profundidade é o 1/w do software (`gl_FragDepth`);
+- o autosort usa um **segundo subpasso** que lê a profundidade como anexo de entrada e faz o `>=` com
+  o 1/w do software.
+
+Sem `F_EXACT` (as resoluções maiores do N7c), vale a interpolação da GPU.
+
+### Resultados (rota `passo_combate`, 9000 VBlanks, relógio fixo; 2026-10-22, versão final do N7b)
+
+| Medida | NVIDIA RTX 5080 | AMD Radeon integrada |
+|---|---|---|
+| Garantias do modo fiel (escolhidas pela GPU) | arredondamento ao par, profundidade crua; subnormais no padrão do dispositivo | arredondamento ao par, subnormais preservados, profundidade crua |
+| `comparar` (software como saída; Vulkan comparado em todo render) | **4487/4487 bit a bit iguais** | 4486/4487; 1 recriação do dispositivo (pendência abaixo) |
+| `--render nativo` (o Vulkan como saída) | `BS_FRAME_LOG` **idêntico ao do software** nos 9000 VBlanks; lógica do jogo idêntica; determinístico | idêntico; 0 falhas em 2 rotas completas |
+| Tempo da rota (headless; software: 224 s) | **69 s** | 102 s |
+| GPU por quadro | média 1,48 ms, pior 12,7 ms | média 8,6 ms, pior 28 ms |
+| Camadas translúcidas por pixel no jogo | até 78 | até 78 |
+| Texturas | 281 envios; 12 pelo decodificador do legado; 181 descartadas do cache por desuso | igual |
+
+**Desempenho.** A leitura de volta em memória do host sem cache (combinada para escrita) custava
+cerca de 65 ms por quadro: a rota levou 514 s, contra 66 s com `HOST_CACHED`.
+
+**Autosort (`resolve.comp`).**
+- **Até 128 camadas** (o jogo chega a 78): ordenação por inserção num vetor local.
+- **Acima de 128:** seleção repetida do próximo.
+- Passadas de 64 em 64 davam imagem errada na AMD integrada, então foram abandonadas.
+- Testes de 70 e 140 camadas, idênticos nas duas GPUs.
+
+**Pendência de estabilidade (AMD integrada, só no modo `comparar`):**
+- **Sintoma:** `VK_ERROR_DEVICE_LOST` no envio do render 371 em quase todas as rotas. O render 370
+  sai com a imagem anterior, embora a cerca e a fila ociosa acusem sucesso.
+- **Isolamento:**
+  - o render gravado (`BS_RENDER_IR_GUARDAR`) e reproduzido sozinho dá na AMD a mesma imagem da
+    NVIDIA (50 repetições);
+  - não aparece no modo nativo, com atraso entre quadros nem com o software sequencial;
+  - não há TDR no log do sistema.
+- **Mitigação:** recuperação (dispositivo recriado; o render é refeito; até 3 por sessão), e a rota
+  completa com 1 quadro errado.
+- **Próximo passo:** as Validation Layers num terminal não elevado.
+
+**Testes dirigidos** (nas duas GPUs):
+- `bs_render_tests`, 24 testes: `frame_prep` (5) e as 8 cenas fiéis no Vulkan, determinísticas, com 0
+  objetos vivos.
+- `bs_unit_tests`, 285 testes:
+  - `render_capture_vulkan_full_image_matches_software`: imagem inteira Vulkan × software em 12
+    cenas, todas **idênticas**:
+    - gouraud, fatias finas, sprite, recorte, textura bilinear com espelho;
+    - `HALF_OFFSET` 1 e 3, 1/w negativo, o contraexemplo de profundidade da revisão;
+    - autosort com 6, 70 e 140 camadas.
+  - Falhas injetadas: textura, dispositivo transitório (recuperado) e permanente (software).
+  - Substituição HD.
+  - Reprodução de um render gravado (diagnóstico).
+
+**Critério de equivalência (seção 5), corrigido.** "Diferença ≤ 2 nas bordas" não fazia sentido: uma
+borda coberta por triângulos diferentes difere pela cor inteira. O critério passa a ser:
+- no modo fiel, **imagem idêntica** ao software, o que a rota de combate cumpre na NVIDIA;
+- nos modos de melhoria (N7c), PSNR ≥ 40 dB, medido.
+
+### Revisões do Codex
+
+- **1ª rodada** (`reviews/codex-20261021-231515.md`): 6 achados, todos aceitos; ver STATUS.md.
+- **2ª rodada** (`reviews/codex-20261022-000105.md`): 5 achados, todos aceitos (a divisão inteira, as
+  variantes de ambiente FP, o retângulo envolvente, a profundidade crua, os testes de igualdade); ver
+  STATUS.md.
+
+### Pendências do N7b
+
+- **Validation Layers (V2/V3)** num terminal não elevado (`tools/vk_prototipo/validar.ps1` e o
+  backend, com `VK_INSTANCE_LAYERS`).
+- **Rotas além da de combate**, por exemplo as do `test_assistido`.
+- **Comparação com o Flycast**, no oráculo gráfico.
+- **Fog e volumes modificadores** (seção 16), que o software não aplica: a referência para eles é o
+  Flycast.
+- **Apresentação direta pelo Vulkan** (swapchain própria, sem passar pelo framebuffer emulado):
+  pré-requisito das resoluções maiores do N7c.
+- **Aprovação do mantenedor** para o Vulkan virar padrão.
+
+## 15. N7c: configurações gráficas modernas (depois da equivalência do N7b)
+
+Ordem obrigatória: só depois de o Vulkan estar aprovado na resolução original. Cada opção tem o
+"Original" (Dreamcast) como referência, e nenhuma muda o ritmo do jogo. O FPS não depende da
+resolução: o ritmo continua o do relógio lógico. 60 FPS fixos ou FPS ilimitado dependem do N2.
+
+| Grupo | Opções | Notas de implementação |
+|---|---|---|
+| Resolução interna | original (640×480), 720p, 1080p, 1440p, 4K; escala configurável | o alvo offscreen em escala × 640×480; vértices × escala; recortes e tesoura × escala; o 1/w não muda |
+| Apresentação | janela, tela cheia, janela sem bordas; V-Sync | swapchain própria do Vulkan (FIFO com V-Sync; MAILBOX/IMMEDIATE sem), separada do ritmo do jogo |
+| Proporção | 4:3 (original), 16:9 opcional | 16:9 com correção do HUD (desenhos 2D por faixa de profundidade e posição) e da projeção só onde viável; sem dados confiáveis, barras laterais |
+| Filtragem | original (a do jogo por desenho), bilinear, anisotrópica | o "original" é a amostragem manual atual; bilinear e anisotrópica pelo amostrador do hardware, com mipmaps gerados |
+| Antialiasing | MSAA (2×, 4×, 8×, conforme a GPU) | o autosort por pixel passa a guardar a máscara de amostras; antes disso, MSAA só com translúcidas na ordem |
+| Pós-processamento | nitidez, CRT, ajustes de cor | passes depois do quadro, desligados no "Original" |
+| Presets | Original Dreamcast, Equilibrado, Alta Qualidade, Personalizado | o "Original" é exatamente a configuração de equivalência (1×, 4:3, amostragem original, sem efeitos) |
+| Capacidades | detecção (MSAA máximo, anisotropia, formatos, memória) | opção sem suporte: desligada com aviso; falha do Vulkan: recuo para o software |
+| Persistência | arquivo externo (`graficos.toml` ao lado de `controles.toml`) | lido na inicialização, gravado pelo menu (seção 17) |
+
+## 16. Shaders originais e melhorias opcionais de iluminação (complemento do mantenedor, 2026-10-21)
+
+**1. Fidelidade primeiro (parte do N7b, antes de qualquer melhoria):**
+- os estados do PVR2 em shader (já feitos: seção 14);
+- **fog** por tabela (128 entradas de 16 bits, `FOG_DENSITY`) e por vértice, com `FOG_COL_RAM` e
+  `FOG_COL_VERT`. Os dados já estão em `FrameParams`, mas o software não aplica fog; a comparação é
+  com o Flycast;
+- transparências, mistura e iluminação por vértice (as cores que o jogo calcula: já vêm na IR);
+- **volumes modificadores e sombras:** stencil por volume (inclusão ou exclusão do último polígono),
+  com a lista 1 sobre opacos e punch-through e a lista 3 sobre translúcidos. Os desenhos marcados
+  usam o segundo conjunto de parâmetros (cor ou textura alternativa), que precisa entrar na IR (o
+  TA hoje marca "dois volumes" como não suportado e o jogo não os usou na rota). Comparação com o
+  Flycast nas cenas com sombra.
+
+**2. Melhorias opcionais**, cada uma desligável sozinha e **todas desligadas no preset Original**:
+- iluminação aprimorada só onde os dados do jogo permitem (as cores por vértice já vêm calculadas; não
+  há normais na IR). Nada de luzes dinâmicas inventadas nem de materiais alterados sem dados
+  confiáveis;
+- SSAO (a partir do 1/w), bloom, correção de cor, gamma e tonemapping;
+- sombras melhores: só se os volumes modificadores do jogo permitirem mais resolução ou suavização
+  sem mudar onde a sombra cai;
+- shaders configuráveis, preparados para mods (os mods de shader e as ferramentas ficam no N9).
+
+**3. Ordem:**
+1. equivalência do Vulkan na resolução original (N7b);
+2. resolução HD/4K, filtragem e antialiasing (N7c);
+3. iluminação e pós-processamento opcionais, conforme a viabilidade.
+
+## 17. Menu interno de configurações gráficas (requisito obrigatório, mantenedor, 2026-10-21)
+
+Todas as opções gráficas ficam acessíveis **dentro do jogo**, sem parâmetros de linha de comando nem
+edição de arquivos. As opções de linha de comando continuam, para automação e desenvolvimento.
+
+**Arquitetura (preparada agora; o menu funcional vem depois de o backend Vulkan estabilizar):**
+- **Configurações** (`native/platform/settings`): modelo e persistência (TOML), separados da
+  interface e do renderizador. É o mesmo sistema de configuração dos controles, com seções futuras
+  para áudio, controles e acessibilidade.
+- **Capacidades do renderizador:** o backend informa o que suporta; a interface só oferece o que
+  existe.
+- **Aplicação:** o renderizador recebe a configuração nova entre quadros. Uma mudança segura
+  (filtragem, efeitos) vale na hora. Uma mudança de resolução ou de modo de tela recria a swapchain
+  e os alvos, sem tocar no estado do jogo.
+- **Interface:** sobreposição desenhada pelo próprio backend, com navegação por controle Xbox,
+  teclado e mouse e visual coerente com o jogo. Abre pelo menu principal (Configurações → Gráficos)
+  e pelo menu de pausa quando possível: uma tecla ou botão dedicado pausa o jogo **sem mexer na
+  lógica dele**.
+
+**Critérios de aceitação:**
+1. Configurações → Gráficos aparece no menu principal e, quando possível, na pausa.
+2. Estão no menu: resolução, escala, proporção 4:3/16:9, tela cheia, V-Sync, antialiasing,
+   filtragem, texturas (original ou HD, quando houver), iluminação, sombras, shaders e
+   pós-processamento.
+3. Presets Original Dreamcast, Equilibrado, Alta Qualidade e Personalizado. Mudar uma opção
+   isolada leva ao Personalizado.
+4. Mudanças aplicadas durante o jogo, quando seguro, sem perder progresso (a partida continua do
+   mesmo ponto).
+5. As preferências são salvas automaticamente e carregadas na inicialização seguinte.
+6. "Restaurar padrões". Uma mudança de resolução ou modo de tela pede confirmação e volta sozinha
+   à configuração anterior em 15 s sem resposta.
+7. Navegação completa por controle Xbox, teclado e mouse.
+8. O jogo é jogável e configurável sem nenhum parâmetro de inicialização.
+
+**Testes previstos:**
+- unitários do modelo (presets, persistência, valores inválidos, reversão);
+- roteiro que abre o menu, muda e confirma com controle virtual (`BS_CONTROLE_VIRTUAL`);
+- reversão automática sem confirmação;
+- o estado do jogo por passo é igual com e sem o menu aberto.
