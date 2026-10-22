@@ -39,8 +39,11 @@ $fail = 0
 function Run($id, [string[]]$a, [hashtable]$extra) {
     $log = Join-Path $out "$id.txt"
     foreach ($k in $extra.Keys) { Set-Item "env:$k" $extra[$k] }
-    & $Exe @a *> $log
-    $rc = $LASTEXITCODE
+    # O jogo e um executavel GUI: "& $Exe *> log" nao espera nem captura a saida no PowerShell 5.1.
+    $argStr = ($a | ForEach-Object { "`"$_`"" }) -join " "
+    $proc = Start-Process -FilePath "cmd.exe" -PassThru -Wait -NoNewWindow `
+        -ArgumentList "/c `"`"$Exe`" $argStr > `"$log`" 2>&1`""
+    $rc = $proc.ExitCode
     foreach ($k in $extra.Keys) { Remove-Item "env:$k" -ErrorAction SilentlyContinue }
     $t = Get-Content $log -Raw
     if (-not $t) { $t = "" }

@@ -825,11 +825,15 @@ private:
         dep[2].srcSubpass = 0, dep[2].dstSubpass = 1, dep[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         dep[2].srcStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        dep[2].dstStageMask  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // o store da profundidade no fim do subpasso 1 (mesmo DONT_CARE) e escrita em LATE_FRAGMENT_TESTS: entra no
+        // destino para ficar ordenado depois da transicao de layout desta dependencia (SYNC-HAZARD-WRITE-AFTER-WRITE)
+        dep[2].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         dep[2].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                                VK_ACCESS_SHADER_WRITE_BIT;
         dep[2].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         dep[1].srcSubpass = 1, dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
         dep[1].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         dep[1].dstStageMask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;

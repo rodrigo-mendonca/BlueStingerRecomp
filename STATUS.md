@@ -2322,7 +2322,25 @@ Commits: `0ae1415` tonemapping, `875995c` nitidez, `898b087` bloom, `56fff7c` CR
 - `tools/dev/n7_validar_jogo.ps1`: o jogo com as camadas de validação (A1 AMD no modo comparar passando do render 371,
   N1 NVIDIA nativo, J1 janela com a apresentação direta).
 - Recusa rodar em terminal elevado (conferido aqui).
-- Pendência aberta: falta a execução pelo mantenedor num terminal normal.
+
+**Validação com as camadas do Vulkan (2026-10-22; mantenedor, terminal não elevado; SDK 1.4.363.0, validação completa
++ sincronização, `report_flags` error,warn):**
+- 1ª execução: logs vazios. O jogo é executável GUI e `& $Exe *> log` do PowerShell 5.1 não espera nem captura a
+  saída. Corrigido no script: `cmd /c ... > log 2>&1` com `Start-Process -Wait`, como nas outras suítes.
+- 2ª execução: camada ativa nos três casos e um único erro, `SYNC-HAZARD-WRITE-AFTER-WRITE` em `vkCmdEndRenderPass`
+  (10 por caso, o teto da camada). O store da profundidade no fim do subpasso 1 (mesmo `DONT_CARE`, escrita em
+  `LATE_FRAGMENT_TESTS`) não ficava ordenado depois da transição de layout da dependência 0→1. Correção em
+  `native/render/vulkan/vk_device.cpp`: `LATE_FRAGMENT_TESTS` e `DEPTH_STENCIL_ATTACHMENT_WRITE` no destino da
+  dependência (continua `BY_REGION`).
+- 3ª execução, com a correção: **APROVADO**, 0 mensagens nos três casos.
+  - A1, AMD Radeon integrada no modo comparar: 586 renders, 0 pixels diferentes, 0 recriações.
+  - N1, NVIDIA nativo: 586 quadros, 0 falhas.
+  - J1, janela 1440x1080 com a apresentação direta: 729 quadros, 0 falhas.
+- Sem camadas, o modo comparar na NVIDIA continua com 0 pixels diferentes em 586 renders.
+- **Pendência AMD continua aberta.** Com a correção e sem camadas, a rota de comparação na AMD passou 2 vezes e na
+  3ª perdeu o dispositivo no render 371 (`vkQueueSubmit` -4, 1 recriação, diferença máxima 5). Com as camadas, nenhuma
+  perda em 2 rotas. As camadas não acusam nenhum uso incorreto da API nessa rota, o que reforça a hipótese de falha
+  do driver dependente do histórico da sessão. A correção da sincronização não é a causa nem a solução.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
@@ -2345,7 +2363,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
-| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta, efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod) e câmera livre no analógico direito (Original, Híbrida, Livre); faltam o SSAO, a validação com as camadas do Vulkan e o fechamento | 85 |
+| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta, efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod) e câmera livre no analógico direito (Original, Híbrida, Livre); validação com as camadas do Vulkan aprovada (2026-10-22); faltam o SSAO e o fechamento | 85 |
 | N8 Sem legado | não iniciada | 0 |
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
@@ -2473,7 +2491,7 @@ Pontos que o Codex conferiu sem problema:
 | [MÉDIA] `sampler2D` e o limite de 80 bytes não eram conferidos de fato | `OpTypeImage` 2D simples exigido; push constants só com layout explícito (teste com `sampler3D`) |
 | [MÉDIA] escape por link simbólico ou junção | caminhos canônicos dentro do pacote (teste com link real) |
 | [MÉDIA] falha ao recarregar depois de uma perda não desativava | `take_post_error`: o menu desativa e grava |
-| [BAIXA] o teste da GPU não cobre a sincronização da apresentação | parcial: coberta pelas janelas com gameplay real; camadas de validação pendentes |
+| [BAIXA] o teste da GPU não cobre a sincronização da apresentação | coberta pelas janelas com gameplay real e pelo J1 com as camadas de validação (2026-10-22, 0 mensagens) |
 
 **Pendente nesta frente:**
 - tonemapping, nitidez e bloom (internos, um por vez);
@@ -2556,11 +2574,10 @@ Pontos que o Codex conferiu sem problema:
 | [MÉDIA] versões de menu e legenda no mesmo índice de camada | índices fixos (0 legendas, 1 menu) |
 | [MÉDIA] perda do dispositivo vista pela apresentação não invalidava o compartilhado | `vulkan_shared_lost` antes de refazer |
 | [MÉDIA] swapchain parcial marcada como completa | construída em temporários, publicada só completa |
-| [BAIXA] testes não exercitam o caminho concorrente | parcial: as janelas com gameplay real o exercitam; validação com as camadas do Vulkan pendente (terminal não elevado, como a do AMD) |
+| [BAIXA] testes não exercitam o caminho concorrente | as janelas com gameplay real o exercitam; J1 com as camadas de validação (2026-10-22): 0 mensagens |
 
 **Limites conhecidos:**
 - 16:9 de verdade (projeção, câmera, HUD) não foi feito: em telas largas o jogo fica 4:3 com faixas.
-- Validação com as camadas do Vulkan pendente.
 - A perda do dispositivo vista pela apresentação foi tratada pelo código, mas não provocada em teste.
 - Na GPU AMD integrada a apresentação direta não foi testada (a pendência do N7b continua aberta).
 
@@ -2790,8 +2807,8 @@ levava 514 s.
   sequencial, e não há reset (TDR) no log do sistema.
 
 Hipótese: falha do driver dependente do histórico da sessão. A recuperação recria o dispositivo e a
-rota termina com 1 quadro errado. Fica aberta até identificar a causa (próximo passo: as Validation
-Layers num terminal não elevado).
+rota termina com 1 quadro errado. Fica aberta até identificar a causa. As Validation Layers rodaram em 2026-10-22: depois
+de corrigido um hazard de sincronização sem relação com a falha, não há erros, e a perda continua (ver "N7c" → "AMD").
 
 ### N7a: captura do TA na IR de render (2026-10-21; worktree n7-vulkan)
 
