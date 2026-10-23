@@ -203,6 +203,29 @@ public:
     }
 
     Result<void> submit(const CommandList& cl) override {
+        // diagnostico BS_VK_LENTOS=<ms>: cada render mais lento que isso, com o que ele fez (o tempo de GPU, se foi refeito
+        // por falta de espaco nas listas por pixel, pipelines criados, textura enfileirada para este render) - os picos dos
+        // campos (N2, 2026-10-23). Desligado, so chama submitFrame.
+        static const double lentos = [] {
+            const char* v = std::getenv("BS_VK_LENTOS");
+            return v ? std::atof(v) : 0.0;
+        }();
+        if (lentos <= 0) return submitFrame(cl);
+        const auto     t0   = std::chrono::steady_clock::now();
+        const uint64_t ret0 = st_.fragment_retries, pip0 = pipelinesCreated_;
+        const double   gpu0 = st_.gpu_ms_total;
+        const size_t   up0  = uploadBytes_.size();
+        auto           r    = submitFrame(cl);
+        const double   ms   = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        if (ms >= lentos)
+            std::fprintf(stderr, "[render-vk] render lento %llu: %.1f ms (GPU %.1f ms; refeito %llu; pipelines novos %llu; textura %zu bytes; %ux%u)\n",
+                         static_cast<unsigned long long>(st_.frames), ms, st_.gpu_ms_total - gpu0,
+                         static_cast<unsigned long long>(st_.fragment_retries - ret0),
+                         static_cast<unsigned long long>(pipelinesCreated_ - pip0), up0, w_, h_);
+        return r;
+    }
+
+    Result<void> submitFrame(const CommandList& cl) {
         prepare_frame(cl, prep_, true, scale_);  // modo fiel: retangulos envolventes, a cobertura e a do shader
         if (!target(scaled_size(cl.frame.width, scale_), scaled_size(cl.frame.height, scale_), cl.frame.width, cl.frame.height))
             return fail("alvo do quadro (imagens/passe)");
@@ -483,6 +506,7 @@ private:
     VkCommandPool    pool_ = VK_NULL_HANDLE;
     VkCommandBuffer  cmd_ = VK_NULL_HANDLE;
     VkFence          fence_ = VK_NULL_HANDLE;
+    uint64_t         pipelinesCreated_ = 0;  // diagnostico BS_VK_LENTOS
     VulkanStats      st_;
     bool             floatControls_ = false, denormPreserve_ = false, rawDepth_ = false;
     float            scale_ = 1.f;  // resolucao interna (N7c)
@@ -952,6 +976,7 @@ private:
         gp.subpass = mode == PassMode::TranslucentAutosort ? 1 : 0;
         VkPipeline p = VK_NULL_HANDLE;
         if (f_.vkCreateGraphicsPipelines(dev_, VK_NULL_HANDLE, 1, &gp, nullptr, &p) != VK_SUCCESS) return VK_NULL_HANDLE;
+        ++pipelinesCreated_;
         ++g_live, ++st_.pipelines;
         pipes_[key] = p;
         return p;
