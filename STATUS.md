@@ -2535,6 +2535,25 @@ Detalhes, método e tabelas: `docs/N7-PLANO.md` 23.4.
 - **Correção:** vista sempre ancorada no Livre; toque acaba abaixo de 0,05; linha de base invalidada depois de cena, suspensão e troca de modo (revisão do Codex, 2 achados aceitos). Modo Híbrido retirado (`hibrida` → Livre).
 - **Validação:** 7 áreas (aberta, corredores, sala fechada, combate em corredor, sala após o externo, transição interno → externo), 8 direções × 5 ângulos: orientação certa em todos os segmentos em que o Eliot anda; Original idêntico ao executável anterior; combate idêntico ao Original; Vulkan = software; gravação × reprodução iguais. Câmera originalmente fixa: nenhuma zona nas rotas disponíveis (pendente).
 
+### Legendas das falas: sincronia e separação (2026-10-23)
+
+Detalhes, causas e medições: `docs/N7-PLANO.md` 18.6; pendências e direitos: `docs/LEGENDAS-PENDENCIAS.md`.
+- **Causas comprovadas:** tempos do ASR esticados sobre o silêncio (72 linhas > 0,5 s antes da voz, até 12 s na
+  reprodução); linhas nunca divididas nas pausas (48 cobriam duas falas); no jogo, o tempo do mixer em vez do audível
+  (fila da saída XAudio2 de 133–216 ms) e o tempo negativo arredondado para 0.
+- **Correções:** pacotes en 0.3.0 e pt-BR 0.2.0 ressincronizados pela voz audível, com partes nas pausas, sem mudar
+  texto nem chaves (locais, fora do Git); no jogo, legenda pelo quadro que sai do dispositivo, ciclo próprio por
+  ocorrência e parte, troca de idioma no meio da fala, `BS_LEGENDA_LOG`, opção "Identificação do personagem"
+  (indisponível: nenhum pacote diz quem fala).
+- **Medições:** sessão gravada, entrada − início audível de −7 065…+103 ms (12/17 antecipadas) para −49…0 ms (0);
+  na janela, a legenda entra 150 ms depois do início no mixer, com a fila medida de 133–150 ms; 0 quadros com falas
+  diferentes juntas.
+- **Testes:** unitários 304/0, áudio 80/0, localização 10/0; `n7_legendas` APROVADO em software e Vulkan (com o
+  executável novo e com o da `dist`); filme NEWGAME pt-BR/en/nenhuma sem problemas; troca de idioma e pausa na janela.
+- **Revisão do Codex:** 2 achados aceitos (descartes de bloco na fila; log e numeração na troca de idioma).
+- **Dist:** Preview e Builder `8b73b3a` com os pacotes novos (Preview `mods\`, kit `mods-padrao\`); o LEIA-ME do jogo
+  com o texto novo das legendas entra na próxima montagem.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo

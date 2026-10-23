@@ -1,7 +1,8 @@
 # Legendas: revisões pendentes e direitos de redistribuição
 
-Situação em 2026-10-23. Pacotes locais (gerados do disco do usuário, fora do Git): `legendas-en` **0.2.0** e
-`legendas-pt-br` **0.1.0**, 734 linhas cada (691 falas do gameplay e 43 dos filmes). O Builder os instala em toda
+Situação em 2026-10-23. Pacotes locais (gerados do disco do usuário, fora do Git): `legendas-en` **0.3.0** e
+`legendas-pt-br` **0.2.0**, as mesmas 734 linhas (691 falas do gameplay e 43 dos filmes) do 0.2.0/0.1.0, com os tempos
+ressincronizados pela voz audível e 23 linhas divididas em partes (seção "Sincronia"). O Builder os instala em toda
 instalação quando o kit os leva (`make_builder.ps1 -LegendasLocais`); o jogo escolhe pt-BR, depois en-US, depois
 desligadas (`--legendas auto`, padrão).
 
@@ -101,6 +102,34 @@ As 24 estão todas entre as 72 inglesas a revisar: revisar o inglês no áudio p
    caso, nunca alegando revisão humana) e regenerar com `gerar_mod.py`.
 3. Para o pt-BR, regenerar a tradução e marcar a decisão em `aplicar_revisao.py`.
 4. Subir a versão do pacote no `mod.toml` e registrar no `STATUS.md`.
+
+## Sincronia (en 0.3.0 / pt-BR 0.2.0, 2026-10-23)
+
+Problemas relatados pelo jogador: legendas segundos antes da fala e duas falas seguidas numa legenda só. Causa nos
+pacotes (medida contra a energia do próprio áudio de cada fala): o ASR esticava a primeira palavra sobre o silêncio
+anterior (72 linhas começavam > 0,5 s antes da voz, até 7,08 s; na reprodução, até 12 s quando a linha começava na
+sobra da fala anterior) e só dividia as linhas por tamanho, nunca nas pausas (48 linhas cobriam duas falas separadas
+por silêncio). Correção sem mudar texto nem chaves (`tools/dev/legendas/ressincronizar.py`, `sincronia.py`):
+início e fim pela voz que a linha cobre; partes nas pausas, na fronteira de frase ou na palavra exata.
+
+| Medida | 0.2.0 | 0.3.0 |
+|---|---|---|
+| linhas que começam > 0,5 s antes da voz | 72 (máx. 7,08 s) | 3 (máx. 0,61 s) |
+| > 1 s antes | 5 | 0 |
+| linhas divididas em partes | — | 23 (26 partes a mais) |
+
+Pendências que ficam (só as chaves):
+- **sem corte seguro** (a pausa cai no meio de uma frase de uma mesma pessoa, ou o texto não alinha às palavras do ASR;
+  ficam inteiras): `voz/e026 0`, `voz/e080 3`, `voz/e105 0`, `voz/e089b_a 0` a `voz/e089b_d 0`, `voz/e089b_f 0`,
+  `filme/e193 0`; sem trecho audível que a linha cubra (tempos mantidos): `voz/e022b 13`;
+- **pt-BR sem divisão** (o número de frases da tradução não bate com o do inglês; a linha pt-BR aparece inteira do
+  início da primeira parte ao fim da última): `voz/e003 5`, `voz/e003 9`, `voz/e006a 3`, `voz/e080 13`, `voz/e096 5`,
+  `voz/e017c 5` (`fontes/partes-sem-divisao.pt-BR.tsv`);
+- **tradução incompleta:** em `voz/e080 13` o pt-BR não traduz a última frase do inglês (achado na sincronia; não
+  corrigido: depende de revisão);
+- **identificação do personagem:** nenhum pacote traz o campo `personagem`; o jogo e o catálogo não têm metadado
+  confiável de quem fala em cada linha. A opção do menu fica indisponível até haver essa informação (nada por
+  suposição).
 
 ## Direitos de redistribuição (verificação de 2026-10-23)
 

@@ -1614,3 +1614,58 @@ disponíveis (todas as salas medidas usam câmera de perseguição; os cortes ca
 | Gravação na janela (vista girada pelo rig, 359 amostras giradas) × reprodução headless sem câmera | iguais em 5 683 passos |
 | Save/Load | LOAD do save g1 nas baterias B2 (3/3) |
 | Unitários | 304/0 (Híbrido migrando para Livre, ancoragem que não para no zero, menu com dois modos) |
+
+### 18.6 Correção definitiva das legendas das falas (2026-10-23)
+
+Relato do jogador: (1) legendas vários segundos antes da fala, sumindo mais ou menos na hora certa; (2) duas falas
+seguidas, de personagens diferentes, numa legenda só; (3) pedido de exibir cada fala sozinha e identificar quem fala
+quando houver evidência.
+
+**Causas comprovadas.**
+1. *Antecipação, nos pacotes:* o ASR (faster-whisper) estica a primeira palavra de um segmento sobre o silêncio
+   anterior. Contra a energia do próprio áudio de cada fala, 72 linhas do 0.2.0 começavam > 0,5 s antes da voz (até
+   7,08 s); na reprodução, até 12 s quando a linha começava na sobra da fala anterior (`voz/e083`: nenhum som entre 17,6
+   e 29,5 s, e a linha estava em 17,57 s). Na sessão gravada do mantenedor, 12 de 17 legendas entravam > 100 ms antes
+   da voz (a pior, 7,07 s).
+2. *Antecipação, no jogo:* o tempo da legenda era o do mixer, e o som sai do dispositivo depois da fila da saída (na
+   janela, XAudio2: 133–216 ms); além disso, o tempo decorrido negativo virava 0, então a linha que começa em 0 aparecia
+   no VBlank do `Started`, antes do som.
+3. *Falas misturadas, nos pacotes:* as linhas só eram divididas por tamanho (2×42), nunca nas pausas: 48 linhas cobriam
+   duas falas separadas por silêncio (até 11,9 s). O jogo não junta ocorrências diferentes: o MW WAV do jogo tem um
+   handle só, e o `VoicePlayer` corta a fala e a cauda anteriores a cada `start`. Nas execuções medidas, 0 quadros com
+   falas diferentes na tela ao mesmo tempo.
+4. *Identificação:* nem o jogo nem o catálogo têm um metadado confiável de quem fala em cada linha.
+
+**Correções.**
+- Pacotes (en 0.3.0, pt-BR 0.2.0, locais): `tools/dev/legendas/ressincronizar.py` e `sincronia.py` refazem os tempos
+  pela voz que cada linha cobre e dividem em partes nas pausas, sem mudar texto, revisões nem chaves
+  (`docs/LEGENDAS-PENDENCIAS.md`, seção "Sincronia").
+- Jogo: a legenda segue o quadro do mixer que está **saindo do dispositivo** (blocos aceitos pela saída + fila atual;
+  descartes não contam; a reserva de silêncio fica antes do primeiro bloco), sem deslocamento fixo; tempo negativo =
+  nada na tela; cada legenda (ocorrência + linha/parte) entra e sai sozinha; a troca de idioma no meio da fala continua
+  a fala no idioma novo; evento `Requested` e o diagnóstico `BS_LEGENDA_LOG`; campo opcional `personagem` e a opção
+  "Identificação do personagem" (indisponível enquanto nenhum pacote disser quem fala).
+- Revisão do Codex (`reviews/codex-20261023-160518.md`): [MÉDIA] o cálculo "misturado − fila" erra com blocos
+  descartados → **aceito**, trocado pelo mapa dos blocos aceitos; [BAIXA] a troca de idioma deixava o log incompleto e
+  reiniciava as ocorrências → **aceito**, corrigido.
+
+**Medições.**
+
+| Medida | Antes | Depois |
+|---|---|---|
+| Pacote en: linhas > 0,5 s antes da voz / > 1 s | 72 / 5 | 3 (máx. 0,61 s) / 0 |
+| Sessão gravada (17 legendas), entrada − início audível | −7 065 a +103 ms; 12 antecipadas > 100 ms | −49 a 0 ms; 0 antecipadas |
+| Janela (XAudio2): entrada depois do início no mixer | 0 ms (antes do som) | 150 ms, com a fila medida de 133–150 ms |
+| Falas diferentes ao mesmo tempo na tela | — | 0 quadros |
+
+O −41 ms típico é a folga de 50 ms antes da voz (`FOLGA_INI`), dentro de um VBlank de resolução. A saída fica até
+~300 ms depois do fim da voz (`FOLGA_FIM`); quando duas falas não têm silêncio entre si, a anterior sai no instante em
+que a seguinte entra.
+
+**Testes em gameplay real** (sessão `sessao-20261021-145006`, falas `e025a`, `e025b`, `e005b`, durante a música):
+fala isolada; falas seguidas de personagens diferentes e da mesma pessoa, com e sem silêncio entre elas (uma de cada
+vez); fala com silêncio inicial longo (`e005b`, a linha que entrava 7 s antes); fala interrompida (`e005`, `e005env`:
+nada sobra); pausa e retomada pelo menu na janela; troca pt-BR → Desativadas → English no meio da fala; inglês e
+pt-BR com o mesmo tempo; `n7_legendas.py` APROVADO em software e Vulkan (763 quadros com fala, 442 sem nada na
+tela); filme NEWGAME com pt-BR, inglês e nenhuma (legenda só na faixa de baixo; pt-BR diferente do inglês). Os mesmos
+testes no executável da `dist`. Duas vozes realmente simultâneas não acontecem no jogo (handle único).
