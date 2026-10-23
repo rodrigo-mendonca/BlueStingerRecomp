@@ -126,6 +126,22 @@ BS_TEST(settings_menu_display_confirmation_and_revert) {
     BS_CHECK(m.prefs().graphics.window == st::WindowMode::Fullscreen);
 }
 
+// Fechamento do N7: o Vulkan e o padrao do menu e trocar a predefinicao nao troca o renderizador escolhido
+BS_TEST(settings_menu_renderer_default_and_preset) {
+    st::Capabilities caps;
+    caps.vulkan = true, caps.max_msaa = 8, caps.max_anisotropy = 16, caps.max_height = 2160;
+    caps.features.scaling = caps.features.filtering = caps.features.msaa = true;
+    bs::SettingsMenu m({}, caps, {"en-US"});
+    BS_CHECK(m.prefs().graphics.vulkan);
+    m.open();
+    go(m, "Gráficos"), m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.view().items[size_t(find(m.view(), "Renderizador"))].value == "Vulkan");
+    go(m, "Renderizador"), m.input(MenuAction::Confirm, 0);
+    BS_CHECK(!m.prefs().graphics.vulkan);
+    go(m, "Predefinição"), m.input(MenuAction::Right, 0);
+    BS_CHECK(m.prefs().graphics.resolution == st::Resolution::P1080 && !m.prefs().graphics.vulkan);
+}
+
 BS_TEST(settings_menu_restore_defaults_and_controls) {
     bs::Preferences p;
     p.audio.master = 40, p.subtitles.enabled = false, p.subtitles.size_pct = 180;
@@ -139,7 +155,9 @@ BS_TEST(settings_menu_restore_defaults_and_controls) {
     BS_CHECK(m.prefs().audio.master == 40 && m.view().prompt.empty());  // cancelado
     m.input(MenuAction::Confirm, 0);
     m.input(MenuAction::Confirm, 0);
-    BS_CHECK(m.prefs() == bs::Preferences{});
+    bs::Preferences def;
+    def.graphics.vulkan = false;  // sem Vulkan (caps vazias) o padrao recua para o software
+    BS_CHECK(m.prefs() == def);
     go(m, "Controles");
     m.input(MenuAction::Confirm, 0);
     const auto c = m.view();  // o mapeamento atual do N3 e o remapeamento ainda indisponivel

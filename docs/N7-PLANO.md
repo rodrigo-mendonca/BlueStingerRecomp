@@ -1441,7 +1441,7 @@ subsistema e comparação com o legado, sem a regressão integral.
 | Câmera livre (seção 23) | **concluída** | Original sem nada instalado (quadros idênticos); Híbrida e Livre com o estado do jogo por passo idêntico ao Original |
 | Recuo sem Vulkan | **concluído** | sem dispositivo, o jogo segue no software com o motivo no log |
 | GPU AMD integrada | **condicional** | perda intermitente do dispositivo no modo `comparar` (render 371, 1 em 3 rotas sem as camadas; nenhuma com as camadas). As camadas não acusam uso incorreto da API. A causa **não** foi identificada; a hipótese de driver não está comprovada. A recuperação recria o dispositivo. A apresentação direta não foi testada na AMD |
-| Vulkan como padrão | **pendente da decisão do mantenedor** | o software continua padrão (`kRenderNativeDefault = false`) |
+| Vulkan como padrão | **concluído (seção 25)** | decisão do mantenedor de 2026-10-23: Vulkan padrão na janela, recuo para o software; o `--headless` continua no software |
 | Rotas além da de combate (Vulkan × software) | **parcial** | combate (todo render) e janelas com gameplay real; as rotas do `test_assistido` não foram comparadas render a render |
 | Fog e volumes modificadores (seção 16) | **pendente de fidelidade** | o software de referência também não os aplica: o Vulkan é igual a ele, não ao console. A referência é o Flycast (oráculo gráfico, ainda não comparado) |
 | MSAA, filtragem bilinear/anisotrópica, presets Equilibrado e Alta Qualidade | **não feitos** | o menu os mostra "em breve"; só o preset Original é real |
@@ -1481,3 +1481,66 @@ dele. O menu continua mostrando "SSAO (em breve)" e o Original não muda.
    - o Vulkan vira padrão, com recuo automático para o software?
    - aceita a transferência do item 3?
 5. Depois: retomar o N2 (U5–U8, promoção do tempo experimental, N2c), sem antecipar N8, N9 ou N10.
+
+## 25. Fechamento do N7 (2026-10-23)
+
+Decisão do mantenedor (2026-10-23): "configure Vulkan como preferencial com fallback seguro para software. Mantenha a
+pendência AMD documentada e transfira SSAO, widescreen real e MSAA para N9". O N7 fecha com **promoção condicional**,
+como o N6.
+
+### 25.1 Vulkan como padrão
+
+- `kRenderNativeDefault = true` (`app/main_sdl.cpp`) e `GraphicsSettings::vulkan = true`: sem `graficos.toml`, a janela
+  abre no Vulkan. O `graficos.toml` (escolha do jogador no menu), `--render software|nativo` e `BS_RENDER` continuam
+  valendo sobre o padrão.
+- O `--headless` (diagnóstico, baterias, oráculos) continua no software, que é a referência das comparações; o
+  Vulkan nele continua com `--render nativo`.
+- Recuo seguro, em três camadas:
+  1. **na partida, sem dispositivo:** `clamp_to` sem Vulkan devolve o preset Original **com `vulkan = false`** (antes
+     herdava o padrão da estrutura); o menu mostra o renderizador em software e o motivo vai para o log;
+  2. **na apresentação:** a apresentação direta que falha recua para o SDL (`fallbackToSdl`, já existente);
+  3. **no jogo, perda do dispositivo:** até 3 recriações por sessão e depois o software até o fim dela
+     (`render_capture`, já existente; unitário `render_capture_vulkan_failures_fall_back_to_software`).
+- Defeito corrigido junto: trocar a **predefinição** no menu trocava o renderizador para o padrão da estrutura (o preset
+  é uma `GraphicsSettings` nova). Agora a predefinição preserva o renderizador, como já preservava janela e V-Sync.
+- Observação para quem já jogou versões anteriores: o `graficos.toml` gravado por elas tem `renderizador = "software"`
+  (o padrão de antes) e continua valendo; o Vulkan se escolhe em Gráficos > Renderizador.
+
+Validação (2026-10-23, build Release, RTX 5080, pasta de teste com os mods da Preview):
+
+| Caso | Resultado |
+|---|---|
+| F1 janela sem opções | Vulkan: 428 quadros, 0 falhas, 0 recriações |
+| F2 janela com `BS_VULKAN_GPU=GPU_INEXISTENTE` | "Vulkan indisponível": apresentação SDL e renderizador em software, rc 0 |
+| F3 `graficos.toml` com `renderizador = "software"` | software (sem `[render-vk]`), 59,9 campos/s |
+| F4 `--render software` | software |
+| F5 `--headless 1200` sem opções | software (referência) |
+| F6 `BS_RENDER_IR=comparar`, rota de combate | 586 renders comparados, 0,0000% de pixels diferentes |
+| Unitários | 304/0; novos: padrão e recuo em `graphics_clamp_to_capabilities`, `settings_menu_renderer_default_and_preset` |
+
+Revisão do Codex (2026-10-23, inline, `reviews/codex-20261023-093452.md`): 1 achado, **rejeitado**. [MÉDIA] "o
+`--headless` não garante o software com `--render nativo` ou `BS_RENDER=nativo`": é intencional (o Vulkan headless é o
+caso C2 das baterias e o modo `comparar`); só o **padrão** do headless é o software. O texto da ajuda foi reescrito para
+dizer isso. Pontos verificados sem problema: precedência, `graficos.toml` com software, recuo sem dispositivo,
+predefinição preservando o renderizador, testes.
+
+### 25.2 Transferidas para o N9 (Remasterização)
+
+Decisão do mantenedor: **SSAO**, **widescreen real (16:9)** e **MSAA** passam para o N9. Ficam com elas os itens que
+dependem dos mesmos pré-requisitos: texturas HD, filtragem bilinear/anisotrópica, iluminação e sombras aprimoradas e os
+presets Equilibrado e Alta Qualidade. O menu continua mostrando "em breve" e o preset Original não muda. Pré-requisitos
+registrados para o início do N9: projeção do SDK (`njSetScreen` ou equivalente), marca cena/HUD por desenho na IR,
+profundidade guardada depois do render pass (SSAO); projeção e HUD (16:9); alvo multiamostrado e resolve (MSAA).
+Nada disso foi antecipado.
+
+### 25.3 Pendências que ficam abertas
+
+- **GPU AMD integrada:** perda intermitente do dispositivo (`VK_ERROR_DEVICE_LOST`) no modo `comparar`, sem causa
+  identificada; a hipótese de driver **não** está comprovada. Com o Vulkan padrão, a recuperação (recriação e depois o
+  software) protege o jogador; a apresentação direta não foi testada na AMD.
+- Fog e volumes modificadores contra o Flycast (antes do N8, que remove o software de referência).
+- Rotas além da de combate render a render.
+
+### 25.4 Próximo passo
+
+Retomar o **N2**: temporização, desempenho e os underruns de áudio que bloqueiam o H9 do N6 (`docs/N2-PLANO.md`).

@@ -71,9 +71,11 @@ const char* kTitle = "Blue Stinger (recompilado)";
 // (docs/N6-PLANO.md secao 20.5; H1-H8 aprovados, H9 bloqueado pelo desempenho do N2). O legado continua como fallback ate
 // o N8: --audio legado ou BS_AUDIO=legado; --audio-efeitos/-falas/-musica valem sobre os dois.
 constexpr bool kAudioNativeDefault = true;
-// N7b: o renderizador padrao continua o SOFTWARE ate a aprovacao do Vulkan (docs/N7-PLANO.md secao 14):
-// --render nativo ou BS_RENDER=nativo liga o Vulkan; a opcao vale sobre a variavel.
-constexpr bool kRenderNativeDefault = false;
+// N7 (fechamento, docs/N7-PLANO.md secao 25): o renderizador padrao da janela e o VULKAN, com recuo seguro para o
+// software (sem dispositivo na partida: o menu fica no software; perda do dispositivo no jogo: ate 3 recriacoes e
+// depois o software ate o fim da sessao). O --headless (diagnostico e baterias) continua no software, a referencia.
+// --render software|nativo ou BS_RENDER valem sobre o padrao; a opcao vale sobre a variavel.
+constexpr bool kRenderNativeDefault = true;
 
 struct Args {
     fs::path gameData, flash, map, dump, capture;
@@ -224,7 +226,7 @@ bool parseArgs(Args& a) {
         else return false;
     }
     if (a.audioAll >= 0) native = a.audioAll == 1;
-    bool vk = kRenderNativeDefault;
+    bool vk = kRenderNativeDefault && !a.headless;
     if (const char* e = std::getenv("BS_RENDER"); e && *e) {
         if (std::strcmp(e, "nativo") == 0) vk = true;
         else if (std::strcmp(e, "software") == 0) vk = false;
@@ -1369,8 +1371,10 @@ const char* kUsage =
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
     "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
     "       legado = Sofdec original, fallback temporario)\n"
-    "     --render software|nativo: renderizador (padrao: software = rasterizador de referencia; nativo = Vulkan, com\n"
-    "       recuo para o software sem Vulkan; BS_RENDER=nativo muda o padrao)\n"
+    "     --render nativo|software: renderizador (padrao na janela: nativo = Vulkan, com recuo para o software sem\n"
+    "       Vulkan ou se o dispositivo falhar; padrao no --headless: software = rasterizador de referencia, e --render\n"
+    "       nativo o troca pelo Vulkan nas baterias; BS_RENDER muda o padrao;\n"
+    "       o graficos.toml do menu vale sobre o padrao da janela)\n"
     "     --apresentacao vulkan|sdl: janela (padrao: vulkan = apresentacao direta pelo dispositivo do renderizador, a\n"
     "       resolucao interna sem passar pela CPU; sdl = SDL_Renderer, recuo; BS_APRESENTACAO=sdl muda o padrao)\n"
     "     --resolucao-interna <altura>: resolucao interna do Vulkan so nesta execucao (480 = original; 720, 1080)\n"

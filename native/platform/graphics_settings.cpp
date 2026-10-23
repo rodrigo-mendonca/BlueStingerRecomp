@@ -125,6 +125,7 @@ GraphicsSettings clamp_to(const GraphicsSettings& in, const Capabilities& caps, 
         const GraphicsSettings o = preset(Preset::Original);
         if (!same_quality(s, o)) note("sem Vulkan: so a imagem original (renderizador em software)");
         GraphicsSettings r = o;
+        r.vulkan = false;  // recuo seguro: sem dispositivo, o software
         r.window = s.window, r.vsync = s.vsync, r.aspect = Aspect::Original4x3;
         r.window_w = s.window_w, r.window_h = s.window_h;  // o tamanho da janela nao depende do renderizador
         return r;

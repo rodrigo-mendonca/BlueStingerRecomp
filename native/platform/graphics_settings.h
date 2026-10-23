@@ -62,7 +62,7 @@ struct GraphicsSettings {
     uint32_t   window_w = 0, window_h = 0;  // tamanho da janela (0 = o padrao); tela cheia usa a do monitor
     Aspect     aspect = Aspect::Original4x3;
     bool       vsync  = true;
-    bool       vulkan = false;  // renderizador: Vulkan (true) ou o rasterizador em software (padrao ate a aprovacao)
+    bool       vulkan = true;  // renderizador: Vulkan (padrao desde o fechamento do N7) ou o rasterizador em software
     bool       operator==(const GraphicsSettings&) const = default;
 };
 

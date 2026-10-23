@@ -90,6 +90,7 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                          st::GraphicsSettings g = st::preset(st::Preset(n));
                          g.window = p.graphics.window, g.window_w = p.graphics.window_w, g.window_h = p.graphics.window_h;
                          g.aspect = p.graphics.aspect, g.vsync = p.graphics.vsync;
+                         g.vulkan = p.graphics.vulkan;  // a predefinicao nao troca o renderizador
                          p.graphics = g;
                      }});
         // so as resolucoes que cabem no limite (caps.max_height) e so com o Vulkan (o software desenha na do jogo)

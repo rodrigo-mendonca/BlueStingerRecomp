@@ -37,6 +37,9 @@ BS_TEST(graphics_clamp_to_capabilities) {
     st::Capabilities none;  // sem Vulkan: so o original
     st::GraphicsSettings r = st::clamp_to(s, none, &notes);
     BS_CHECK(st::classify(r) == st::Preset::Original && r.aspect == st::Aspect::Original4x3 && !notes.empty());
+    // fechamento do N7: Vulkan e o padrao; sem dispositivo, o recuo e o software
+    BS_CHECK(st::GraphicsSettings{}.vulkan && !r.vulkan && !st::clamp_to(st::GraphicsSettings{}, none).vulkan);
+    BS_CHECK(st::from_toml("[tela]\nrenderizador = \"software\"\n").vulkan == false && st::from_toml("").vulkan);
     st::Capabilities gpu;
     gpu.vulkan = true, gpu.max_msaa = 2, gpu.max_anisotropy = 8, gpu.max_height = 1080, gpu.features = st::Features::all();
     notes.clear();

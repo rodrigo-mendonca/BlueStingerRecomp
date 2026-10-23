@@ -62,8 +62,10 @@ Controles, mais Restaurar padroes. Mudancas de tela pedem confirmacao (voltam so
 confirmadas). O que for salvo fica em
 graficos.toml, audio.toml e legendas.toml (na mesma pasta do bluestinger.log) e na secao [camera]
 do controles.toml.
-- Renderizador: Software (padrao, o rasterizador de referencia) ou Vulkan (GPU). Sem Vulkan
-  disponivel, o jogo volta sozinho para o software. Opcao: --render software|nativo.
+- Renderizador: Vulkan (GPU, o padrao) ou Software (o rasterizador de referencia). Sem Vulkan
+  disponivel, ou se o dispositivo falhar no jogo, ele volta sozinho para o software.
+  Opcao: --render nativo|software. Quem ja tinha um graficos.toml de uma versao anterior
+  continua no software ate escolher Vulkan em Graficos > Renderizador.
 - Resolucao interna (so com Vulkan): Original (640x480), 720p, 1080p, 1440p ou 2160p (4K, limitada
   pelo que a GPU aceita). A imagem continua 4:3; em telas largas ha faixas nas laterais.
   Opcao: --resolucao-interna <altura>.
@@ -98,7 +100,7 @@ Limitacoes conhecidas
   nao tem esse limite).
 - GPUs AMD integradas: perda intermitente do dispositivo Vulkan num modo de diagnostico; o jogo
   recria o dispositivo sozinho. Se acontecer no jogo normal, use --render software e informe.
-- Widescreen 16:9 de verdade e SSAO ainda nao existem.
+- Widescreen 16:9 de verdade, MSAA e SSAO ainda nao existem (planejados para a remasterizacao, N9).
 - Controles fisicos (Xbox, PlayStation) ainda sem teste manual; teclado testado.
 - Diferencas visuais pequenas em relacao ao hardware (sem dither; bordas de texto).
 - A partida (NEW GAME) esta em validacao; veja STATUS.md do projeto.
