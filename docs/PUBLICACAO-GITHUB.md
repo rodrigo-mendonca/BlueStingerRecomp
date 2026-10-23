@@ -1,9 +1,11 @@
 # Publicação no GitHub: verificação e pendências
 
-Situação em 2026-10-23. `master` está **25 commits à frente** de `origin/master` (aef3c0e). Nenhum push foi feito; o
+Situação em 2026-10-23. `master` está **33 commits à frente** de `origin/master` (aef3c0e); a verificação abaixo foi feita
+sobre os 25 primeiros e os 8 seguintes (Vulkan padrão, N2, câmera, legendas) só acrescentam código, ferramentas e
+documentação, sem dados do jogo (as legendas continuam fora do Git). Nenhum push foi feito; o
 push depende da autorização do mantenedor.
 
-## O que foi verificado nos 25 commits
+## O que foi verificado nos commits locais
 
 | Verificação | Resultado |
 |---|---|
@@ -22,7 +24,11 @@ push depende da autorização do mantenedor.
 continuam no histórico: um push os publicaria. Os direitos de redistribuição **não existem** para esse texto
 (`docs/LEGENDAS-PENDENCIAS.md`, seção "Direitos de redistribuição").
 
-Também há trechos de uma linha já publicados em `origin/master` (`docs/LEGENDAS-EN-PLANO.md`, exemplos do erro de ASR)
+Também ficaram trechos curtos de fala em commits locais posteriores, já trocados no `HEAD`: duas frases de uma fala
+num unitário (`tests/unit/test_localization.cpp`, commit `7c9d9f7`) e um fragmento num comentário de
+`tools/dev/legendas/sincronia.py` (commit `8b73b3a`). Entram na mesma limpeza do histórico, se o mantenedor autorizar.
+
+Há ainda trechos de uma linha já publicados em `origin/master` (`docs/LEGENDAS-EN-PLANO.md`, exemplos do erro de ASR)
 e um no unitário `test_subtitle_overlay.cpp` do commit `b1934df` (trocado no `HEAD`). São citações curtas de exemplo,
 não o pacote; ficam para a decisão do mantenedor.
 

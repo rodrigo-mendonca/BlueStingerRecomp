@@ -189,15 +189,15 @@ BS_TEST(loc_subtitles_parts_speaker_instances) {
     Dir d;
     pkg(d.p, "leg", 1, "idiomas = [\"en-US\", \"pt-BR\"]\n");
     put(d.p / "leg" / "legendas" / "falas.en-US.toml",
-        "[[fala]]\nvoz = \"voz/e013\"\ninicio = 0.0\nfim = 1.78\ntexto = \"Primeira frase do teste.\"\npersonagem = \"Locutor A\"\n"
-        "[[fala]]\nvoz = \"voz/e013\"\ninicio = 2.07\nfim = 4.04\ntexto = \"Segunda frase, depois do silencio.\"\n"
-        "[[fala]]\nvoz = \"voz/e014\"\ninicio = 0.0\nfim = 1.0\ntexto = \"Sem silencio\"\n"
-        "[[fala]]\nvoz = \"voz/e014\"\ninicio = 1.0\nfim = 2.0\ntexto = \"Logo depois\"\n");
+        "[[fala]]\nvoz = \"voz/teste1\"\ninicio = 0.0\nfim = 1.78\ntexto = \"Primeira frase do teste.\"\npersonagem = \"Locutor A\"\n"
+        "[[fala]]\nvoz = \"voz/teste1\"\ninicio = 2.07\nfim = 4.04\ntexto = \"Segunda frase, depois do silencio.\"\n"
+        "[[fala]]\nvoz = \"voz/teste2\"\ninicio = 0.0\nfim = 1.0\ntexto = \"Sem silencio\"\n"
+        "[[fala]]\nvoz = \"voz/teste2\"\ninicio = 1.0\nfim = 2.0\ntexto = \"Logo depois\"\n");
     const auto m = nl::ModPackages::discover(d.p);
     nl::SubtitleService s(m, "en-US");
     BS_CHECK(s.problems().empty() && s.has_speakers());
     const int64_t t0 = 10 * S;
-    s.dialogue_started("voz/e013", "", t0);
+    s.dialogue_started("voz/teste1", "", t0);
     s.logical_time(t0 - S / 6);  // o audivel ainda antes do inicio (a fila da saida): nem a linha que comeca em 0
     BS_CHECK(s.active().empty());
     s.logical_time(t0 + S);
@@ -209,15 +209,15 @@ BS_TEST(loc_subtitles_parts_speaker_instances) {
     s.logical_time(t0 + 3 * S);
     a = s.active();
     BS_CHECK(a.size() == 1 && a[0].line == 1 && a[0].speaker.empty() && a[0].instance == inst);  // sem personagem: desconhecido
-    s.dialogue_started("voz/e014", "", t0 + 5 * S);  // a fala seguinte (o player corta a anterior)
-    s.dialogue_interrupted("voz/e013");
+    s.dialogue_started("voz/teste2", "", t0 + 5 * S);  // a fala seguinte (o player corta a anterior)
+    s.dialogue_interrupted("voz/teste1");
     s.logical_time(t0 + 5 * S + S / 2);
     a = s.active();
     BS_CHECK(a.size() == 1 && a[0].text == L"Sem silencio" && a[0].instance != inst);
     s.logical_time(t0 + 6 * S);  // sem intervalo: a primeira sai no mesmo instante em que a segunda entra
     a = s.active();
     BS_CHECK(a.size() == 1 && a[0].text == L"Logo depois");
-    s.dialogue_started("voz/e014", "", t0 + 7 * S);  // a mesma voz de novo: ocorrencia nova
+    s.dialogue_started("voz/teste2", "", t0 + 7 * S);  // a mesma voz de novo: ocorrencia nova
     s.logical_time(t0 + 7 * S + S / 2);
     BS_CHECK(s.active().size() == 1 && s.active()[0].instance > a[0].instance);
     nl::SubtitleService sem(m, "pt-BR");
