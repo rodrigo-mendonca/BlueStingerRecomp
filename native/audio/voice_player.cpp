@@ -32,6 +32,7 @@ int32_t VoicePlayer::start(std::string_view gameName) {
     id_           = s.id.empty() ? name_ : s.id;
     logicalSeen_ = physicalSeen_ = false;
     endLeft_     = -1;
+    emit(DialogueKind::Requested);
     if (!s.data) {
         ++stats_.missing;
         state_ = o_.missingStat;

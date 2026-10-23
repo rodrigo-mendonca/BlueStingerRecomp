@@ -22,6 +22,7 @@
 #include "window_present.h"
 #include "settings_menu.h"
 #include "localization/mod_packages.h"
+#include "localization/subtitle_service.h"
 #include "platform/camera_settings.h"
 #include "platform/graphics_settings.h"
 #include "platform/user_settings.h"
@@ -775,6 +776,7 @@ public:
         style_ = s, styleDirty_ = true;
         if (start || p.subtitles.effective_language() != old.subtitles.effective_language())
             host_.setSubtitleLanguage(p.subtitles.effective_language());
+        host_.setSubtitleSpeaker(p.subtitles.speaker);  // "Nome: texto" quando o pacote diz quem fala
         // audio (nativo): os tres barramentos com o volume geral
         if (start || !(p.audio == old.audio)) host_.setVolumes(p.audio.gain_music(), p.audio.gain_voices(), p.audio.gain_effects());
         // graficos que ja existem: renderizador, V-Sync, modo e tamanho da janela
@@ -869,6 +871,7 @@ private:
     bs::PostSpec                      post_;
 
 public:
+    void set_speakers_available(bool on) { menu_.set_speakers_available(on); }
     void set_shaders(std::vector<bs::native::render::PostShaderPackage> pkgs) {
         shaders_ = std::move(pkgs);
         std::vector<bs::ShaderChoice> choices;
@@ -1658,6 +1661,8 @@ int mainWindow(Args& a) {
         for (const auto& x : languages) l += (l.empty() ? "" : ", ") + x;
         std::fprintf(stderr, "[menu] idiomas das legendas: %s (atual: %s)\n", l.c_str(), prefs.subtitles.language.c_str());
     }
+    bool speakers = false;  // algum pacote diz quem fala (campo "personagem"): so entao o menu oferece a identificacao
+    for (const auto& l : languages) speakers = speakers || bs::native::localization::SubtitleService(modPackages, l).has_speakers();
     uint64_t endVblank = 0;
     {
         bs::GameHost host;
@@ -1677,6 +1682,7 @@ int mainWindow(Args& a) {
                         languages);
         if (g_spectator.on) menu.disable();
         menu.set_shaders(std::move(postShaders));
+        menu.set_speakers_available(speakers);
         menu.apply(prefs, true);
         if (a.internalHeight) host.setRenderScale(float(a.internalHeight) / 480.f);  // so nesta execucao
         rc = runWindow(host, *input, a, window, pres, renderer, menu);

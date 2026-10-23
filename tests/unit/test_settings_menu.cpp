@@ -74,6 +74,14 @@ BS_TEST(settings_menu_audio_subtitles_and_changes) {
     go(m, "Tamanho do texto");
     m.input(MenuAction::Right, 0);
     BS_CHECK(m.prefs().subtitles.size_pct == 110);
+    // identificacao do personagem: indisponivel sem pacote que diga quem fala; com ele, liga e desliga
+    BS_CHECK(!m.view().items[size_t(find(m.view(), "Identifica\u00e7\u00e3o do personagem"))].enabled);
+    m.set_speakers_available(true);
+    go(m, "Identifica\u00e7\u00e3o do personagem");
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.prefs().subtitles.speaker);
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(!m.prefs().subtitles.speaker);
     go(m, "Contorno");
     m.input(MenuAction::Confirm, 0);  // sem contorno: o fundo liga (um dos dois sempre)
     BS_CHECK(!m.prefs().subtitles.outline && m.prefs().subtitles.box);

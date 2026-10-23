@@ -46,6 +46,7 @@ enum class DialogueKind : uint8_t {
     Missing,      // start sem recurso: o jogo recebe o estado de erro (4)
     Paused,
     Resumed,
+    Requested,    // o jogo pediu a fala (start); o audio so comeca no Started, depois do preparo (diagnostico das legendas)
 };
 struct DialogueEvent {
     DialogueKind kind;

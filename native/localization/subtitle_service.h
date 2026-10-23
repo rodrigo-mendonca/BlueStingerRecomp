@@ -14,6 +14,7 @@
 //     inicio = 0.0             # segundos desde o inicio da fala
 //     fim    = 2.5             # segundos; omitido = ate o fim da fala
 //     texto  = "..."
+//     personagem = "Eliot"   # opcional: quem fala, so com fonte confiavel (o menu pode mostrar; nunca por suposicao)
 // Portavel (o parser SRT/WebVTT e o do N5, native/video/subtitles.h).
 #include "localization/mod_packages.h"
 
@@ -28,12 +29,16 @@ namespace bs::native::localization {
 struct TimedLine {
     int64_t      start100ns = 0, end100ns = -1;  // -1: ate o fim (da fala ou do filme)
     std::wstring text;
+    std::wstring speaker;  // "personagem" (opcional; vazio = desconhecido)
 };
 
 struct ActiveSubtitle {
     enum class Source : uint8_t { Movie, Dialogue } source;
     std::string  id;    // o filme (nome original) ou a voz
     std::wstring text;
+    std::wstring speaker;        // quem fala, quando o pacote diz (vazio = desconhecido)
+    uint64_t     instance = 0;   // a ocorrencia da fala (cada dialogue_started e uma nova); 0 nos filmes
+    size_t       line     = 0;   // a linha (ou parte) dentro da fala
 };
 
 class SubtitleService {
@@ -58,12 +63,17 @@ public:
 
     std::vector<ActiveSubtitle> active() const;
     const std::vector<std::string>& problems() const { return problems_; }
+    bool has_speakers() const { return speakers_; }  // alguma fala do idioma diz quem fala
+    // a numeracao das ocorrencias continua num servico novo (troca de idioma)
+    uint64_t instances() const { return instances_; }
+    void     set_instances(uint64_t n) { instances_ = n; }
 
 private:
     struct Dialogue {
         std::string            voice;
         const std::vector<TimedLine>* lines = nullptr;
         int64_t                started = 0, pausedAt = -1, pausedTotal = 0;
+        uint64_t               instance = 0;
     };
     int64_t elapsed(const Dialogue& d) const;
 
@@ -76,6 +86,8 @@ private:
     bool                                                 movieOn_ = false;
     std::vector<Dialogue>                                dialogues_;
     int64_t                                              now_ = 0;
+    uint64_t                                             instances_ = 0;
+    bool                                                 speakers_  = false;
     std::vector<std::string>                             problems_;
 };
 

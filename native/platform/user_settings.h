@@ -31,6 +31,7 @@ struct SubtitleSettings {
     uint32_t    size_pct = 100;      // 50 a 200
     bool        outline  = true;     // contorno escuro
     bool        box      = false;    // fundo escuro translucido
+    bool        speaker  = false;    // identificacao do personagem ("Nome: texto"), so nas falas em que o pacote diz quem fala
     bool        operator==(const SubtitleSettings&) const = default;
     // o idioma efetivo ("" = desligadas)
     std::string effective_language() const { return enabled ? language : std::string(); }

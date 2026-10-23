@@ -65,7 +65,8 @@ std::string to_toml(const SubtitleSettings& s) {
     std::ostringstream o;
     o << "# Blue Stinger Native PC: legendas (gravadas pelo menu do jogo)\n"
       << "ligadas = " << (s.enabled ? "true" : "false") << "\nidioma = \"" << s.language << "\"\ntamanho = " << s.size_pct
-      << "\ncontorno = " << (s.outline ? "true" : "false") << "\nfundo = " << (s.box ? "true" : "false") << "\n";
+      << "\ncontorno = " << (s.outline ? "true" : "false") << "\nfundo = " << (s.box ? "true" : "false")
+      << "\npersonagem = " << (s.speaker ? "true" : "false") << "   # identificacao de quem fala, quando o pacote diz\n";
     return o.str();
 }
 
@@ -81,6 +82,7 @@ SubtitleSettings subtitles_from_toml(const std::string& text, std::string* warni
     s.size_pct = pct(doc, "tamanho", 100, 50, 200);
     if (auto v = doc["contorno"].value<bool>()) s.outline = *v;
     if (auto v = doc["fundo"].value<bool>()) s.box = *v;
+    if (auto v = doc["personagem"].value<bool>()) s.speaker = *v;
     if (!s.outline && !s.box) s.outline = true;  // sem nenhum dos dois o texto branco some em cenas claras
     return s;
 }

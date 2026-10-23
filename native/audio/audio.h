@@ -70,6 +70,9 @@ public:
     virtual void     pause(bool paused) = 0;
     virtual void     flush() = 0;
     virtual uint64_t played_frames() const = 0;
+    // quadros escritos que ainda nao tocaram (a fila do dispositivo, com a resolucao de um bloco): o atraso entre o que foi
+    // misturado e o que se ouve agora. As legendas das falas seguem o audivel (2026-10-23). A saida nula nao tem fila.
+    virtual uint64_t queued_frames() const { return 0; }
     // false depois de perder o dispositivo: quem toca troca para a saida nula (com log).
     virtual bool healthy() const = 0;
     // N6-H (tempo real sem estalos): blocos enviados, faltas de dados (um bloco chegou com a fila do dispositivo ja

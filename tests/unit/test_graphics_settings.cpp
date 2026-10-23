@@ -115,10 +115,11 @@ BS_TEST(user_settings_audio_and_subtitles) {
     BS_CHECK(b.master == 100 && b.music == 0 && b.effects == 100);
     st::SubtitleSettings s;
     BS_CHECK(s.enabled && s.language == "en-US" && s.effective_language() == "en-US");  // ingles por padrao
-    s.enabled = false, s.language = "pt-BR", s.size_pct = 150, s.box = true;
+    s.enabled = false, s.language = "pt-BR", s.size_pct = 150, s.box = true, s.speaker = true;
     BS_CHECK(st::subtitles_from_toml(st::to_toml(s), &warn) == s && warn.empty() && s.effective_language().empty());
     const st::SubtitleSettings r = st::subtitles_from_toml("idioma = \"../x\"\ntamanho = 999\ncontorno = false\n", &warn);
     BS_CHECK(r.language == "en-US" && r.size_pct == 200 && r.outline && !warn.empty());  // sem contorno nem fundo: contorno
+    BS_CHECK(!r.speaker && !st::SubtitleSettings{}.speaker);  // identificacao do personagem: desligada por padrao
     const fs::path dir = fs::temp_directory_path() / "bs_prefs_teste";
     fs::remove_all(dir);
     fs::create_directories(dir);

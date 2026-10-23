@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -84,6 +85,9 @@ struct State {
     size_t                                  maxVoices = 0;  // maior numero de vozes no mixer num trecho
     na::IAudioOutput::Stats                 lostOut;        // estatisticas da saida perdida (antes da troca pela nula)
     std::vector<int16_t>                    outBuf;         // a mistura do VBlank, enviada de uma vez
+    // os blocos que a saida ACEITOU (descartados com a fila cheia nao entram): o quadro do mixer em que cada um termina e o
+    // tamanho. Com a fila atual do dispositivo, dizem que quadro do mixer se ouve agora (legendas; revisao Codex 2026-10-23)
+    std::deque<std::pair<uint64_t, uint64_t>> sent;
     uint64_t                                outSwaps = 0;
     // Diagnostico BS_EFEITOS_LOG=<arquivo>: as chamadas do jogo, os fins de canal e os eventos das falas por passo de
     // jogo, no vocabulario do oraculo O6 (tools/dev/n6_oraculo.py) para a comparacao com o Flycast.
@@ -312,6 +316,7 @@ const char* dialogueName(na::DialogueKind k) {
     case na::DialogueKind::Missing: return "ausente";
     case na::DialogueKind::Paused: return "pausa";
     case na::DialogueKind::Resumed: return "retomada";
+    case na::DialogueKind::Requested: return "pedido";
     }
     return "?";
 }
@@ -487,7 +492,8 @@ void install(BoundaryRegistry& registry, Options o) {
         na::VoicePlayerOptions vo;
         vo.tail    = o.cutLongerDubs ? na::TailPolicy::Cut : na::TailPolicy::PlayOut;
         vo.onEvent = [st](const na::DialogueEvent& e) {
-            logf("fala", "%s %s", dialogueName(e.kind), e.id.c_str());
+            // o pedido fica fora do log do oraculo (o vocabulario do O6 nao o tem): so vai para quem escuta (legendas)
+            if (e.kind != na::DialogueKind::Requested) logf("fala", "%s %s", dialogueName(e.kind), e.id.c_str());
             if (st->onDialogue) st->onDialogue(e);
         };
         g->voice = std::make_unique<na::VoicePlayer>(g->mixer, [st](std::string_view n) { return resolveVoice(*st, n); }, std::move(vo));
@@ -600,7 +606,12 @@ void vblank(uint64_t n) {
     // com o jogo atrasado ela enchia e o envio falhava). A saida do jogo segue a saida padrao e se reabre sozinha; so
     // quando nem o motor abre (healthy() false) ela vira a nula, com log (revisao Codex 2026-10-21).
     if (!g->outBuf.empty()) {
-        const bool wrote = static_cast<bool>(g->out->write(g->outBuf));
+        const uint64_t dropped0 = g->out->stats().dropped, frames = g->outBuf.size() / 2;
+        const bool     wrote    = static_cast<bool>(g->out->write(g->outBuf));
+        if (wrote && g->out->stats().dropped == dropped0) {
+            g->sent.emplace_back(upTo, frames);
+            while (g->sent.size() > 128) g->sent.pop_front();  // bem mais que o teto da fila (200 ms = 12 blocos)
+        }
         g->outBuf.clear();
         if (!wrote && !g->out->healthy()) {
             g->lostOut = g->out->stats();
@@ -620,6 +631,20 @@ void vblank(uint64_t n) {
     if (g->log)  // fim do canal (o key-off que o oraculo ve na AICA)
         for (uint8_t p = 0; p < 8; ++p)
             if (g->busy[p] && !g->sd->busy(p)) g->busy[p] = false, logf("fim", "porta=%u id=%u", p, g->sd->tag(p));
+}
+
+uint64_t audible_frame(uint64_t mixed) {
+    if (!g_installed || !g || !g->out) return mixed;
+    uint64_t rem = g->out->queued_frames();
+    if (!rem) return mixed;
+    // da ponta da fila (o bloco mais novo) para tras: o bloco em que a fila comeca e o que toca agora
+    for (auto it = g->sent.rbegin(); it != g->sent.rend(); ++it) {
+        if (rem <= it->second) return it->first - rem;
+        rem -= it->second;
+    }
+    // a fila tem mais que os blocos conhecidos: o resto e a reserva de silencio antes deles (nada novo soa ainda)
+    const uint64_t primeiro = g->sent.empty() ? mixed : g->sent.front().first - g->sent.front().second;
+    return primeiro > rem ? primeiro - rem : 0;
 }
 
 std::string summary() {

@@ -76,6 +76,8 @@ public:
     void set_controls_info(std::vector<MenuItem> info) { controlsInfo_ = std::move(info); }
     // Os shaders de mod encontrados (pagina Efeitos); mark_shader_invalid: um que falhou ao carregar na GPU.
     void set_shaders(std::vector<ShaderChoice> s) { shaders_ = std::move(s); }
+    // algum pacote de legendas instalado diz quem fala (campo "personagem"): a opcao de identificacao fica disponivel
+    void set_speakers_available(bool on) { speakers_ = on; }
     void mark_shader_invalid(const std::string& name, const std::string& why);
     const std::vector<ShaderChoice>& shaders() const { return shaders_; }
 
@@ -95,6 +97,7 @@ private:
     Preferences                      prefs_, defaults_;
     native::settings::Capabilities   caps_;
     std::vector<std::string>         languages_;
+    bool                             speakers_ = false;
     bool                             open_ = false, dirty_ = false;
     std::vector<MenuItem>            controlsInfo_;
     std::vector<ShaderChoice>        shaders_;

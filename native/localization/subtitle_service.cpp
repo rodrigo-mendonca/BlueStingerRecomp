@@ -48,7 +48,7 @@ SubtitleService::SubtitleService(const ModPackages& mods, std::string language) 
             const auto* e = n.as_table();
             if (!e) continue;
             const std::string voz = (*e)["voz"].value_or(std::string()), cena = (*e)["cena"].value_or(std::string()),
-                              texto = (*e)["texto"].value_or(std::string());
+                              texto = (*e)["texto"].value_or(std::string()), quem = (*e)["personagem"].value_or(std::string());
             const double ini = (*e)["inicio"].value_or(0.0), fim = (*e)["fim"].value_or(-1.0);
             if (!valid_resource_id(voz) || (!cena.empty() && !valid_resource_id(cena))) {
                 problems_.push_back(f->package->id + ": fala com voz/cena invalida '" + voz + "'");
@@ -58,7 +58,12 @@ SubtitleService::SubtitleService(const ModPackages& mods, std::string language) 
                 problems_.push_back(f->package->id + ": fala de '" + voz + "' com texto ou tempos invalidos");
                 continue;
             }
-            byVoiceScene_[voz + "|" + cena].push_back({seconds(ini), fim < 0 ? -1 : seconds(fim), widen_utf8(texto)});
+            if (!valid_utf8(quem)) {
+                problems_.push_back(f->package->id + ": fala de '" + voz + "' com personagem invalido");
+                continue;
+            }
+            speakers_ = speakers_ || !quem.empty();
+            byVoiceScene_[voz + "|" + cena].push_back({seconds(ini), fim < 0 ? -1 : seconds(fim), widen_utf8(texto), widen_utf8(quem)});
         }
     }
     for (auto& [k, v] : byVoiceScene_) std::stable_sort(v.begin(), v.end(), [](const TimedLine& a, const TimedLine& b) { return a.start100ns < b.start100ns; });
@@ -92,7 +97,7 @@ void SubtitleService::dialogue_started(const std::string& voice, const std::stri
     auto it = byVoiceScene_.find(voice + "|" + scene);
     if (it == byVoiceScene_.end()) it = byVoiceScene_.find(voice + "|");
     if (it == byVoiceScene_.end()) return;  // sem legenda para esta fala: nada (original)
-    dialogues_.push_back({voice, &it->second, t, -1, 0});
+    dialogues_.push_back({voice, &it->second, t, -1, 0, ++instances_});
 }
 void SubtitleService::dialogue_ended(const std::string& voice) {
     dialogues_.erase(std::remove_if(dialogues_.begin(), dialogues_.end(), [&](const Dialogue& d) { return d.voice == voice; }), dialogues_.end());
@@ -110,18 +115,26 @@ void SubtitleService::scene_changed(const std::string&) { dialogues_.clear(); }
 
 int64_t SubtitleService::elapsed(const Dialogue& d) const {
     const int64_t until = d.pausedAt >= 0 ? d.pausedAt : now_;
-    return std::max<int64_t>(0, until - d.started - d.pausedTotal);
+    // negativo = a fala ainda nao chegou ao alto-falante (o tempo audivel vem antes do inicio do audio enquanto a fila da
+    // saida toca o que veio antes): nenhuma linha, nem a que comeca em 0 (2026-10-23)
+    return until - d.started - d.pausedTotal;
 }
 
 std::vector<ActiveSubtitle> SubtitleService::active() const {
     std::vector<ActiveSubtitle> out;
     if (movieOn_)
-        for (const auto& l : movieLines_)
-            if (movieTime_ >= l.start100ns && (l.end100ns < 0 || movieTime_ < l.end100ns)) out.push_back({ActiveSubtitle::Source::Movie, movie_, l.text});
+        for (size_t i = 0; i < movieLines_.size(); ++i) {
+            const auto& l = movieLines_[i];
+            if (movieTime_ >= l.start100ns && (l.end100ns < 0 || movieTime_ < l.end100ns))
+                out.push_back({ActiveSubtitle::Source::Movie, movie_, l.text, l.speaker, 0, i});
+        }
     for (const auto& d : dialogues_) {
         const int64_t e = elapsed(d);
-        for (const auto& l : *d.lines)
-            if (e >= l.start100ns && (l.end100ns < 0 || e < l.end100ns)) out.push_back({ActiveSubtitle::Source::Dialogue, d.voice, l.text});
+        for (size_t i = 0; i < d.lines->size(); ++i) {
+            const auto& l = (*d.lines)[i];
+            if (e >= l.start100ns && (l.end100ns < 0 || e < l.end100ns))
+                out.push_back({ActiveSubtitle::Source::Dialogue, d.voice, l.text, l.speaker, d.instance, i});
+        }
     }
     return out;
 }

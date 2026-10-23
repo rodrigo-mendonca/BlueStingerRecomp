@@ -187,6 +187,7 @@ public:
     }
 
     uint64_t played_frames() const override { return playedBase_ + currentPlayed(); }
+    uint64_t queued_frames() const override { return queuedFrames_; }
 
     // seguindo a saida padrao, a saida nunca desiste: sem dispositivo agora, tenta de novo a cada segundo
     bool healthy() const override { return follow_ || (voice_ && !lost_); }

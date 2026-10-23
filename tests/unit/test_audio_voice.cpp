@@ -39,7 +39,10 @@ struct Fixture {
     na::VoicePlayerOptions with(na::VoicePlayerOptions o) {
         o.prepSteps = 1;  // um passo de preparo nos ciclos abaixo; os padroes medidos tem teste proprio
         o.endSteps  = 0;  // o 3 no fim do audio (o atraso medido de 2 passos tem teste proprio)
-        o.onEvent = [this](const na::DialogueEvent& e) { ev.push_back(e); };
+        o.onEvent = [this](const na::DialogueEvent& e) {  // o pedido (diagnostico das legendas) e contado a parte
+            if (e.kind == na::DialogueKind::Requested) ++requested, requestFrame = e.frame;
+            else ev.push_back(e);
+        };
         return o;
     }
     // o tempo logico anda n quadros (o que o host faz por VBlank) e os eventos chegam ao player
@@ -48,6 +51,8 @@ struct Fixture {
         mixer.render(out);
         for (const auto& e : mixer.take_events(mixer.now())) vp.on_mixer_event(e);
     }
+    int      requested    = 0;
+    uint64_t requestFrame = 0;
     std::vector<na::DialogueKind> kinds() const {
         std::vector<na::DialogueKind> k;
         for (const auto& e : ev) k.push_back(e.kind);
@@ -64,6 +69,7 @@ BS_TEST(audio_voice_original_cycle) {
     BS_CHECK(f.vp.start("E001A.WAV") == na::kVoiceStop && f.vp.current() == "voz/E001A");
     f.advance(300);
     BS_CHECK(f.vp.status() == na::kVoicePrep && f.ev.empty() && f.mixer.active() == 1);  // preparando: nada soou
+    BS_CHECK(f.requested == 1 && f.requestFrame == 0);  // o pedido chega no start, antes do preparo
     f.vp.game_step();
     BS_CHECK(f.vp.status() == na::kVoicePlaying && f.kinds() == std::vector<K>{K::Started});
     const uint64_t t0 = f.mixer.now();
@@ -186,7 +192,9 @@ BS_TEST(audio_voice_default_end_steps) {
     na::AudioMixer                 mixer(44100, 4);
     std::vector<na::DialogueKind>  ev;
     na::VoicePlayerOptions         o;
-    o.onEvent = [&](const na::DialogueEvent& e) { ev.push_back(e.kind); };
+    o.onEvent = [&](const na::DialogueEvent& e) {
+        if (e.kind != na::DialogueKind::Requested) ev.push_back(e.kind);
+    };
     na::VoicePlayer vp(mixer, [](std::string_view) {
         na::VoiceSource s;
         auto            d = std::make_shared<na::SoundData>();

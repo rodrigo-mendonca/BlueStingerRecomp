@@ -183,6 +183,47 @@ BS_TEST(loc_subtitles_dialogue_events) {
     BS_CHECK(s.active().empty());
 }
 
+// 2026-10-23: partes consecutivas da mesma fala (falas separadas por silencio) nunca aparecem juntas nem deixam resto; o
+// personagem e opcional e vem so do pacote; cada dialogue_started e uma ocorrencia nova (a mesma voz de novo tambem)
+BS_TEST(loc_subtitles_parts_speaker_instances) {
+    Dir d;
+    pkg(d.p, "leg", 1, "idiomas = [\"en-US\", \"pt-BR\"]\n");
+    put(d.p / "leg" / "legendas" / "falas.en-US.toml",
+        "[[fala]]\nvoz = \"voz/e013\"\ninicio = 0.0\nfim = 1.78\ntexto = \"Primeira frase do teste.\"\npersonagem = \"Locutor A\"\n"
+        "[[fala]]\nvoz = \"voz/e013\"\ninicio = 2.07\nfim = 4.04\ntexto = \"Segunda frase, depois do silencio.\"\n"
+        "[[fala]]\nvoz = \"voz/e014\"\ninicio = 0.0\nfim = 1.0\ntexto = \"Sem silencio\"\n"
+        "[[fala]]\nvoz = \"voz/e014\"\ninicio = 1.0\nfim = 2.0\ntexto = \"Logo depois\"\n");
+    const auto m = nl::ModPackages::discover(d.p);
+    nl::SubtitleService s(m, "en-US");
+    BS_CHECK(s.problems().empty() && s.has_speakers());
+    const int64_t t0 = 10 * S;
+    s.dialogue_started("voz/e013", "", t0);
+    s.logical_time(t0 - S / 6);  // o audivel ainda antes do inicio (a fila da saida): nem a linha que comeca em 0
+    BS_CHECK(s.active().empty());
+    s.logical_time(t0 + S);
+    auto a = s.active();
+    BS_CHECK(a.size() == 1 && a[0].text == L"Primeira frase do teste." && a[0].speaker == L"Locutor A" && a[0].line == 0);
+    const uint64_t inst = a[0].instance;
+    s.logical_time(t0 + 19 * S / 10);  // o silencio entre as partes: nada na tela
+    BS_CHECK(s.active().empty());
+    s.logical_time(t0 + 3 * S);
+    a = s.active();
+    BS_CHECK(a.size() == 1 && a[0].line == 1 && a[0].speaker.empty() && a[0].instance == inst);  // sem personagem: desconhecido
+    s.dialogue_started("voz/e014", "", t0 + 5 * S);  // a fala seguinte (o player corta a anterior)
+    s.dialogue_interrupted("voz/e013");
+    s.logical_time(t0 + 5 * S + S / 2);
+    a = s.active();
+    BS_CHECK(a.size() == 1 && a[0].text == L"Sem silencio" && a[0].instance != inst);
+    s.logical_time(t0 + 6 * S);  // sem intervalo: a primeira sai no mesmo instante em que a segunda entra
+    a = s.active();
+    BS_CHECK(a.size() == 1 && a[0].text == L"Logo depois");
+    s.dialogue_started("voz/e014", "", t0 + 7 * S);  // a mesma voz de novo: ocorrencia nova
+    s.logical_time(t0 + 7 * S + S / 2);
+    BS_CHECK(s.active().size() == 1 && s.active()[0].instance > a[0].instance);
+    nl::SubtitleService sem(m, "pt-BR");
+    BS_CHECK(!sem.has_speakers());
+}
+
 namespace {
 struct FakeMeasure final : nl::ITextMeasurer {
     float width(std::u32string_view t, float px) override { return float(t.size()) * px * 0.5f; }

@@ -208,27 +208,84 @@ struct GameHost::Dialogue {
     native::localization::DialogueBridge  bridge;
     std::string                           last;
     std::wstring                          text;  // as falas ativas, uma por linha (o que aparece na tela)
+    // 2026-10-23: cada legenda (ocorrencia + linha/parte) entra e sai sozinha; o diagnostico BS_LEGENDA_LOG=<arquivo>
+    // registra, por ocorrencia, o pedido, o inicio do audio, a entrada e a saida de cada legenda e o fim ou a interrupcao,
+    // com o VBlank e o atraso da saida de audio (o que foi misturado e ainda esta na fila do dispositivo)
+    std::vector<std::pair<uint64_t, size_t>> shown;
+    FILE*                                    log = legendLog();  // um arquivo por processo (a troca de idioma recria isto)
+    uint64_t occurrences = 0, simultaneous = 0, latencyFrames = 0, latencyMax = 0, latencySamples = 0;
     Dialogue(native::localization::ModPackages m, const std::string& lang)
-        : mods(std::move(m)), subs(mods, lang), bridge(subs, 44100) {}
+        : mods(std::move(m)), subs(mods, lang), bridge(subs, 44100) {
+        if (log) std::fprintf(log, "-\tidioma\t%s\t-\t-\t-\t\n", lang.empty() ? "desligadas" : lang.c_str()), std::fflush(log);
+    }
+    static FILE* legendLog() {
+        static FILE* f = [] {
+            const char* v = std::getenv("BS_LEGENDA_LOG");
+            FILE*       o = v && *v ? std::fopen(v, "w") : nullptr;
+            if (o) std::fprintf(o, "vblank\tevento\tid\tocorrencia\tlinha\tatraso_saida_ms\ttexto\n");
+            return o;
+        }();
+        return f;
+    }
 };
 
 void GameHost::DialogueDelete::operator()(Dialogue* d) const { delete d; }
 
-void GameHost::dialogueVblank(uint64_t n) {
-    dialogue_->bridge.logical_frame(n * 44100ull * 1001 / 60000);  // o mesmo relogio do mixer (sound_adapter.cpp)
-    std::string now;
-    dialogue_->text.clear();
-    for (const auto& a : dialogue_->subs.active())
-        if (a.source == native::localization::ActiveSubtitle::Source::Dialogue) {
-            now += (now.empty() ? "" : ", ") + a.id + " (" + std::to_string(a.text.size()) + " caracteres)";
-            dialogue_->text += (dialogue_->text.empty() ? L"" : L"\n") + a.text;
-        }
-    if (now != dialogue_->last) {
-        std::fprintf(stderr, "[legenda] VBlank %llu: %s\n", static_cast<unsigned long long>(n), now.empty() ? "nenhuma" : now.c_str());
-        dialogue_->last = std::move(now);
+// Os eventos das falas (VoicePlayer) para as legendas: contagem, diagnostico e a fala que esta soando. `replay`: o inicio da
+// fala em curso reapresentado ao servico novo depois de uma troca de idioma (mesma ocorrencia, nao conta de novo).
+void GameHost::dialogueEvent(const native::audio::DialogueEvent& e, bool replay) {
+    using K     = native::audio::DialogueKind;
+    Dialogue& d = *dialogue_;
+    d.occurrences += e.kind == K::Started && !replay;
+    if (d.log) {
+        static const char* const kNomes[] = {"inicio", "fim-logico", "fim-fisico", "interrompida", "ausente", "pausa", "retomada", "pedido"};
+        std::fprintf(d.log, "%llu\tfala-%s\t%s\t-\t-\t-\tquadro do mixer %llu\n", static_cast<unsigned long long>(vblanks_.load()),
+                     replay ? "reapresentada" : kNomes[size_t(e.kind)], e.id.c_str(), static_cast<unsigned long long>(e.frame));
     }
+    // a fala que esta soando (a troca de idioma no meio dela a reapresenta ao servico novo, no tempo original)
+    if (e.kind == K::Started && !replay) soundingId_ = e.id, soundingName_ = e.name, soundingFrame_ = e.frame;
+    else if ((e.kind == K::PhysicalEnd || e.kind == K::Interrupted) && e.id == soundingId_) soundingId_.clear();
+    d.bridge.on_event(e);
 }
 
+void GameHost::dialogueVblank(uint64_t n) {
+    Dialogue&      d      = *dialogue_;
+    const uint64_t mixed  = n * 44100ull * 1001 / 60000;  // o mesmo relogio do mixer (sound_adapter.cpp)
+    // a legenda segue o que se OUVE: o quadro do mixer que esta saindo do dispositivo agora (sem deslocamento fixo; headless:
+    // o proprio tempo misturado)
+    const uint64_t audible = transitional::sound::audible_frame(mixed), queued = mixed > audible ? mixed - audible : 0;
+    d.bridge.logical_frame(audible);
+    d.latencyFrames += queued, d.latencyMax = std::max(d.latencyMax, queued), ++d.latencySamples;
+    std::string                              now;
+    std::vector<std::pair<uint64_t, size_t>> shown;
+    std::vector<uint64_t>                    instances;
+    d.text.clear();
+    const bool speaker = subtitleSpeaker_.load();
+    for (const auto& a : d.subs.active())
+        if (a.source == native::localization::ActiveSubtitle::Source::Dialogue) {
+            now += (now.empty() ? "" : ", ") + a.id + " (" + std::to_string(a.text.size()) + " caracteres)";
+            d.text += (d.text.empty() ? L"" : L"\n") + (speaker && !a.speaker.empty() ? a.speaker + L": " : L"") + a.text;
+            shown.emplace_back(a.instance, a.line);
+            if (std::find(instances.begin(), instances.end(), a.instance) == instances.end()) instances.push_back(a.instance);
+            if (d.log && std::find(d.shown.begin(), d.shown.end(), shown.back()) == d.shown.end()) {
+                std::string utf8;  // so para o log (ASCII basta para conferir; acentos viram '?')
+                for (wchar_t ch : a.text) utf8 += ch == L'\n' ? ' ' : ch < 128 ? char(ch) : '?';
+                std::fprintf(d.log, "%llu\tlegenda-entra\t%s\t%llu\t%zu\t%.1f\t%s\n", static_cast<unsigned long long>(n), a.id.c_str(),
+                             static_cast<unsigned long long>(a.instance), a.line, queued * 1000.0 / 44100, utf8.c_str());
+            }
+        }
+    if (instances.size() > 1) ++d.simultaneous;  // falas diferentes na tela ao mesmo tempo
+    if (d.log)
+        for (const auto& s : d.shown)
+            if (std::find(shown.begin(), shown.end(), s) == shown.end())
+                std::fprintf(d.log, "%llu\tlegenda-sai\t-\t%llu\t%zu\t%.1f\t\n", static_cast<unsigned long long>(n),
+                             static_cast<unsigned long long>(s.first), s.second, queued * 1000.0 / 44100);
+    d.shown = std::move(shown);
+    if (now != d.last) {
+        std::fprintf(stderr, "[legenda] VBlank %llu: %s\n", static_cast<unsigned long long>(n), now.empty() ? "nenhuma" : now.c_str());
+        d.last = std::move(now);
+    }
+}
 GameHost::~GameHost() {
     requestStop();
     join();
@@ -338,9 +395,22 @@ void GameHost::applyRequests() {
     if (vol) transitional::sound::set_bus_volumes(v[0], v[1], v[2]);
     if (lang) {
         transitional::video::set_subtitle_preference(language);  // filmes
-        if (voicesNative_) {  // falas: o servico recomeca no idioma novo (a fala em curso perde a legenda ate a proxima)
+        if (voicesNative_) {  // falas: o servico recomeca no idioma novo; a fala em curso continua nele, no ponto em que esta
+            Dialogue* prev = dialogue_.get();
+            if (prev && prev->log)  // as legendas que estavam na tela saem com o idioma antigo
+                for (const auto& s : prev->shown)
+                    std::fprintf(prev->log, "%llu\tlegenda-sai\t-\t%llu\t%zu\t-\ttroca de idioma\n", static_cast<unsigned long long>(vblanks_.load()),
+                                 static_cast<unsigned long long>(s.first), s.second);
+            const uint64_t inst = prev ? prev->subs.instances() : 0;
+            const uint64_t occ = prev ? prev->occurrences : 0, sim = prev ? prev->simultaneous : 0, lf = prev ? prev->latencyFrames : 0,
+                           lm = prev ? prev->latencyMax : 0, ls = prev ? prev->latencySamples : 0;
             dialogue_.reset(new Dialogue(native::localization::ModPackages::discover(opt_.modAudio.parent_path(), "T13001N V1.000"),
                                          language));
+            dialogue_->occurrences = occ, dialogue_->simultaneous = sim, dialogue_->latencyFrames = lf, dialogue_->latencyMax = lm;
+            dialogue_->latencySamples = ls;  // os contadores do diagnostico continuam
+            dialogue_->subs.set_instances(inst);  // e a numeracao das ocorrencias
+            if (!soundingId_.empty())
+                dialogueEvent({native::audio::DialogueKind::Started, soundingId_, soundingName_, soundingFrame_}, true);
             std::fprintf(stderr, "[legenda] idioma: %s\n", language.empty() ? "desligadas" : language.c_str());
         }
     }
@@ -648,7 +718,7 @@ void GameHost::threadMain() {
                 for (const auto& p : dialogue_->mods.packages())
                     if (p.provisional)
                         std::fprintf(stderr, "[legenda] pacote %s %s: provisorio (nao revisado)\n", p.id.c_str(), p.version.c_str());
-                so.onDialogue = [this](const native::audio::DialogueEvent& e) { dialogue_->bridge.on_event(e); };
+                so.onDialogue = [this](const native::audio::DialogueEvent& e) { dialogueEvent(e, false); };
             }
             const std::string dirText = disc::pathText(so.voiceDir);  // antes do move
             const bool        fx = so.effects, vz = so.voices, mu = so.music;
@@ -787,7 +857,13 @@ void GameHost::threadMain() {
     if (transitional::sound::installed()) {
         std::fputs(transitional::sound::summary().c_str(), stderr);
         transitional::sound::uninstall(transitional::boundary_registry());
-        dialogue_.reset();
+        if (dialogue_ && (dialogue_->occurrences || dialogue_->log))
+            std::fprintf(stderr, "[legenda] falas: ocorrencias %llu; quadros com falas diferentes na tela ao mesmo tempo %llu; atraso da "
+                                 "saida de audio: medio %.1f ms, maximo %.1f ms\n",
+                         static_cast<unsigned long long>(dialogue_->occurrences), static_cast<unsigned long long>(dialogue_->simultaneous),
+                         dialogue_->latencySamples ? dialogue_->latencyFrames * 1000.0 / 44100 / double(dialogue_->latencySamples) : 0.0,
+                         dialogue_->latencyMax * 1000.0 / 44100);
+    dialogue_.reset();
     }
     if (transitional::video::installed()) {
         std::fputs(transitional::video::summary().c_str(), stderr);

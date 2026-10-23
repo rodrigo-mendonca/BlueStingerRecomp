@@ -53,6 +53,10 @@ bool installed();
 // A cada VBlank (thread do jogo): o tempo logico do mixer avanca 1/59,94 s, as consultas do jogo passam a ver os
 // fins ate aqui e a saida recebe o mesmo trecho.
 void vblank(uint64_t n);
+// O quadro do mixer que se OUVE agora (legendas das falas, 2026-10-23): pelos blocos que a saida aceitou e pela fila atual do
+// dispositivo (blocos descartados com a fila cheia nao contam; a reserva de silencio fica antes do primeiro bloco). mixed:
+// o quadro misturado ate aqui, devolvido como esta sem saida de verdade (headless) ou sem fila.
+uint64_t audible_frame(uint64_t mixed);
 std::string summary();  // "[audio] efeitos nativos: ..." e "[audio] falas nativas: ..."
 // Pausa do HOST (janela, foco; N7) e troca de cena do host: param ou cortam a fala nativa e a cauda de uma dublagem.
 // O jogo original nunca pausa a fala (o metodo +0x28 do MW WAV nao tem chamador) e a troca de cena dele chega como o

@@ -251,6 +251,9 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
                          p.subtitles.box = !p.subtitles.box;
                          if (!p.subtitles.outline && !p.subtitles.box) p.subtitles.outline = true;
                      }});
+        // so quando algum pacote instalado diz quem fala (nunca por suposicao); senao fica indisponivel
+        e.push_back({"Identifica\u00e7\u00e3o do personagem", speakers_ ? onoff(s.speaker) : "indispon\u00edvel (pacotes sem personagem)",
+                     s.enabled && speakers_, [](Preferences& p, int) { p.subtitles.speaker = !p.subtitles.speaker; }});
         e.push_back({"Voltar", "", true, nullptr, page(Page::Main)});
         break;
     }

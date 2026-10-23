@@ -12,7 +12,8 @@ void DialogueBridge::on_event(const audio::DialogueEvent& e) {
     case K::Paused: subs_.paused(true, t); break;
     case K::Resumed: subs_.paused(false, t); break;
     case K::LogicalEnd:
-    case K::Missing: break;
+    case K::Missing:
+    case K::Requested: break;
     }
 }
 

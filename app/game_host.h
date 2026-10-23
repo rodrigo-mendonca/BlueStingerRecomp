@@ -22,6 +22,10 @@
 
 namespace bs {
 
+namespace native::audio {
+struct DialogueEvent;
+}
+
 struct GameFrame {
     std::vector<uint32_t> argb;  // ARGB8888
     uint32_t              width = 0, height = 0;
@@ -163,6 +167,7 @@ public:
     bool           paused() const { return paused_.load(); }
     void           setVolumes(float music, float voices, float effects);  // 0..1, com o volume geral (audio nativo)
     void           setSubtitleLanguage(const std::string& language);      // falas e filmes; "" = desligadas
+    void           setSubtitleSpeaker(bool on) { subtitleSpeaker_.store(on); }  // "Nome: texto" quando o pacote diz quem fala
     void           setRenderer(RenderProvider r);
     void           setRenderScale(float scale);  // N7c: resolucao interna do Vulkan (1 = fiel; altura interna / 480)
     void           setCamera(const native::settings::CameraSettings& s);  // N7c: camera livre (modo e opcoes)
@@ -200,6 +205,10 @@ private:
     };
     std::unique_ptr<Dialogue, DialogueDelete>      dialogue_;
     void                                           dialogueVblank(uint64_t n);
+    void dialogueEvent(const native::audio::DialogueEvent& e, bool replay);
+    std::atomic<bool>                              subtitleSpeaker_{false};
+    std::string                                    soundingId_, soundingName_;  // a fala que esta soando (legendas)
+    uint64_t                                       soundingFrame_ = 0;
     // N7c: pausa e pedidos do menu
     std::atomic<bool>                              paused_{false};
     std::mutex                                     pauseMutex_;
