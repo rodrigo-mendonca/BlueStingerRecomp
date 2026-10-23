@@ -2498,6 +2498,28 @@ registrada; SSAO, widescreen real e MSAA passam para o N9. Detalhes: `docs/N7-PL
 - **Publicação:** `docs/PUBLICACAO-GITHUB.md` com a verificação dos 25 commits locais e o procedimento proposto (não
   executado) para tirar o pacote do commit `2969913` antes de um push.
 
+### N2 retomado: desempenho e H9 (2026-10-23)
+
+Método: rota LOAD (save g1), Preview `465b2ed`, RTX 5080; headless 6 000 VBlanks em duas rodadas alternadas e a janela
+pelo `n6_h.ps1 -Casos H9` (150 s). Detalhes: `docs/N2-PLANO.md` seção 12 e `docs/N6-PLANO.md` 20.6.
+
+| Medida | Resultado |
+|---|---|
+| Trabalho por campo, headless (software / Vulkan, tempo estável) | 22,98 / 7,48 ms |
+| Idem, tempo experimental | 20,4 / 3,8–4,6 ms |
+| H9 na janela, Vulkan padrão (3 rodadas) | **0 faltas** em ~8 977 blocos; 7,14–7,22 ms por campo |
+| H9 na janela, software (mesmo executável) | 287 faltas; 17,11 ms por campo |
+| H9 a 4K com bloom e tonemapping | 1 falta; 9,68 ms por campo (espera síncrona da GPU, 5,4–5,8 ms por render) |
+| H9 com tempo experimental e Vulkan | 1 falta; 5,45 ms por campo (cargas num campo só, pico de 63 ms) |
+
+- **Causa das faltas do H9:** o rasterizador em software (~15 ms por campo), não o áudio nem o modelo de tempo. Com o
+  Vulkan padrão o H9 passa e o **N6 fica concluído**.
+- **Tentativa revertida:** trocar o `vkQueueWaitIdle` depois da cerca por um carimbo do quadro (para a thread do jogo
+  não esperar a apresentação) não melhorou (480p: 8,22 ms por campo; 4K: igual, com um pico de 2 s). Código voltou ao
+  anterior; unitários e render passaram nas duas versões (304/0, 36/0).
+- **Pendências:** espera síncrona da GPU (leitura assíncrona: decisão de arquitetura); recuo para o software abaixo do
+  tempo real; 11.1 (download da música); promoção do experimental (U5–U8).
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2514,17 +2536,17 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 |---|---|---|
 | N0 Fundação | concluída | 100 |
 | N1 Arquivos | concluída | 100 |
-| N2 Tempo e eventos | **pausada** (N2a e N2b-0/1 feitos, experimental disponível; U5–U8 e N2c retomam depois do N7) | 50 |
+| N2 Tempo e eventos | **em andamento** (retomado em 2026-10-23): desempenho do gameplay medido e resolvido com o Vulkan padrão (11.2); falta 11.1, U5–U8, a promoção do experimental e o N2c | 55 |
 | N3 Controles | concluída | 100 |
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
-| N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
+| N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **concluída com promoção condicional** (2026-10-23): Vulkan padrão da janela com recuo para o software; N7a, N7b e N7c validadas; pendências abertas: AMD integrada (sem causa identificada), fog e volumes contra o Flycast; SSAO, 16:9 real e MSAA transferidos para o N9 (`docs/N7-PLANO.md` seção 25) | 95 |
 | N8 Sem legado | não iniciada | 0 |
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~67 % (onze etapas de peso igual).
+Progresso geral: ~68 % (onze etapas de peso igual).
 
 ### N7c: câmera livre e segundo analógico (2026-10-22; worktree n7-vulkan)
 

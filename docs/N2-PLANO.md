@@ -360,3 +360,45 @@ saída esvazia e o dispositivo toca silêncio (faltas de dados). A saída do jog
 lento que o tempo real na média. **O critério H9 do N6 (0 faltas de dados) fica bloqueado por este item**: só passa com o
 desempenho do gameplay dentro do tempo real (o provedor experimental, −12 a −14 %, ou outra melhoria do modelo de tempo),
 retomado depois do N7 e antes do N8, junto com o 11.1. O limite do H9 não foi afrouxado.
+
+## 12. Retomada do N2 (2026-10-23, depois do fechamento do N7)
+
+Prioridade do mantenedor: temporização, desempenho e as faltas de áudio que bloqueavam o H9 do N6.
+
+### 12.1 Onde estava o tempo do gameplay
+
+Rota LOAD (save g1, `passo_load_slot1.txt`), headless, 6 000 VBlanks, áudio nativo, Preview `465b2ed`, RTX 5080, duas
+rodadas alternadas (`perf4.ps1`):
+
+| Renderizador e tempo | Trabalho por campo | Tempo total |
+|---|---|---|
+| software, estável | 22,99 / 22,97 ms | 141 s |
+| Vulkan, estável | 7,47 / 7,49 ms | 48 s |
+| software, experimental | 20,32 / 20,51 ms | 125–126 s |
+| Vulkan, experimental | 4,63 / 3,84 ms | 26–31 s |
+
+- O **rasterizador em software custa ~15 ms por campo** no gameplay: era ele que deixava o jogo abaixo do tempo real
+  (11.2), e não o modelo de tempo nem o áudio.
+- O **tempo experimental** tira mais 2,8–3,6 ms (a thread 3 deixa de girar sem efeito), mas não resolve o software.
+
+### 12.2 H9 (11.2) resolvido pelo Vulkan padrão
+
+Na janela, com o Vulkan padrão, o H9 passou 3 vezes seguidas (0 faltas; 7,14–7,22 ms por campo); com o software, no
+mesmo executável e rota, 287 faltas (17,11 ms). Detalhes: `docs/N6-PLANO.md` 20.6. Com o tempo experimental e o Vulkan
+(janela): 5,45 ms por campo, mas **1 falta**: as cargas instantâneas (D11) concentram o trabalho num campo só (pico de
+63 ms). O experimental não é, por si, melhor para a continuidade do áudio.
+
+### 12.3 Pendências de desempenho registradas
+
+1. **Espera síncrona da GPU na thread do jogo.** Cada render espera a cerca e a fila ociosa (`vk_device.cpp`): 1,6 ms
+   por render a 480p, 5,4–5,8 ms a 4K (pior 85 ms). A 4K com efeitos isso dá 1 falta em 150 s. Tentativa feita e
+   **revertida**: trocar o `vkQueueWaitIdle` por um carimbo do quadro no cabeçalho (sem esperar o trabalho da
+   apresentação) não melhorou (480p: 3,14 ms de espera e 8,22 ms por campo; 4K: 5,43 ms e um pico de 2 s). A solução de
+   verdade é não devolver a imagem à CPU quando a apresentação usa o slot da GPU (leitura assíncrona), uma mudança de
+   arquitetura do renderizador a decidir com o mantenedor.
+2. **Recuo para o software:** continua abaixo do tempo real no gameplay (~23 ms por campo headless). Otimizar o
+   rasterizador de referência tem valor limitado (o N8 decide o destino dele).
+3. **11.1 (download da música):** continua aberto; é o próximo item de temporização.
+4. **Promoção do tempo experimental** (U5–U8 e a cobertura de troca de sala, combate, save/load e finais): continua
+   aberta; o ganho medido aqui (−38 % no Vulkan) é um argumento a favor, e as cargas concentradas num campo, um ponto a
+   tratar antes.

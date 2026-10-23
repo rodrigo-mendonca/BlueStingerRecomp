@@ -1414,3 +1414,27 @@ unitários de áudio 80, vídeo 45, localização 9, interface 25, normal e ASan
 
 **Scripts ajustados:** `n6_efeitos.ps1` e `n6_falas.ps1` fixam `--audio legado` antes da opção do provedor testado (com o
 padrão nativo, a execução "legado" deles teria os outros provedores nativos e a comparação deixaria de isolar o provedor).
+
+### 20.6 H9 aprovado (2026-10-23, retomada do N2)
+
+Com o **Vulkan como renderizador padrão** (fechamento do N7, `docs/N7-PLANO.md` seção 25), o H9 passou: o gargalo do
+gameplay era o rasterizador em software, não o áudio nem o modelo de tempo (`docs/N2-PLANO.md` seção 12).
+
+| Execução (`n6_h.ps1 -Casos H9`, Preview `465b2ed`, RTX 5080) | Trabalho por campo | Campos > 16,68 ms | Faltas de dados |
+|---|---|---|---|
+| Vulkan (padrão), rodada 1 | 7,18 ms | 10 | **0** em 8 978 blocos |
+| Vulkan (padrão), rodada 2 | 7,14 ms | 11 | **0** em 8 977 |
+| Vulkan (padrão), rodada 3 | 7,22 ms | 11 | **0** em 8 977 |
+| Software (`graficos.toml`), mesmo executável e rota | 17,11 ms | 3 249 | 287 em 7 600 (reprova, como antes) |
+
+Nas três rodadas aprovadas: 0 erros de escrita, 0 perdas do dispositivo, 0 descartes, 0 saturadas; fila máxima 132–149 ms.
+O limite não mudou.
+
+**Decisão:** o critério H9 está cumprido na configuração padrão do produto; com H1–H8 já aprovados (20.2), a fase H deixa
+de ser condicional e o **N6 fica concluído (100 %)**. O legado continua como fallback (`--audio legado`) até o N8.
+
+Limites registrados (não fazem parte do critério, que é o padrão):
+- **recuo para o software** (sem Vulkan): as faltas continuam (287 em 150 s), porque o rasterizador em software custa
+  ~15 ms por campo;
+- **4K com bloom e tonemapping:** 1 falta em 150 s (9,68 ms por campo, 910 campos acima do orçamento). A thread do jogo
+  espera cada render na GPU (5,4–5,8 ms a 4K); ver `docs/N2-PLANO.md` 12.3.

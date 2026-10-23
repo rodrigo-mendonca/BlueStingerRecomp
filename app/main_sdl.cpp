@@ -67,8 +67,8 @@ namespace {
 
 const char* kTitle = "Blue Stinger (recompilado)";
 
-// N6-H: o padrao dos tres provedores de audio (efeitos, falas, musica): NATIVO desde a promocao condicional da fase H
-// (docs/N6-PLANO.md secao 20.5; H1-H8 aprovados, H9 bloqueado pelo desempenho do N2). O legado continua como fallback ate
+// N6-H: o padrao dos tres provedores de audio (efeitos, falas, musica): NATIVO desde a fase H (docs/N6-PLANO.md secoes
+// 20.5 e 20.6; H1-H9 aprovados, o H9 com o Vulkan padrao desde 2026-10-23). O legado continua como fallback ate
 // o N8: --audio legado ou BS_AUDIO=legado; --audio-efeitos/-falas/-musica valem sobre os dois.
 constexpr bool kAudioNativeDefault = true;
 // N7 (fechamento, docs/N7-PLANO.md secao 25): o renderizador padrao da janela e o VULKAN, com recuo seguro para o

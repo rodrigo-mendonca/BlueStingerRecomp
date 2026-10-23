@@ -10,7 +10,7 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 
 ## Status (2026-10-23)
 
-**Progresso geral: ~67 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
+**Progresso geral: ~68 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
 fração concluída; em 2026-10-22 o roteiro ganhou a N9, Remasterização, e os mods passaram para a N10). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 em português do Brasil por padrão, com inglês como alternativa (pacotes gerados localmente a partir do disco do usuário e instalados pelo Builder; transcrição, tradução e revisão por IA, provisórias; o texto não vai para o repositório). O desenho
@@ -21,18 +21,18 @@ em português do Brasil por padrão, com inglês como alternativa (pacotes gerad
 | M0–M4 | Extrator, decodificador SH-4, gerador de C++, runtime e primeiro executável | concluídas | — |
 | N0 | Manifesto de hardware, fronteira jogo/SDK, interfaces nativas | concluída | 100 |
 | N1 | Sistema de arquivos nativo | concluída | 100 |
-| N2 | Tempo e eventos nativos | **pausada**: estável em uso; o tempo das cargas de som e o desempenho (hoje um pouco abaixo do tempo real em gameplay) retomam depois do N7 | 50 |
+| N2 | Tempo e eventos nativos | **em andamento** (retomado em 2026-10-23): o desempenho do gameplay foi medido; o que deixava o jogo abaixo do tempo real era o renderizador em software, e com o Vulkan padrão o gameplay leva ~7 ms por campo (tempo real: 16,7 ms). Faltam o tempo das cargas de som, a cobertura e a promoção do tempo experimental | 55 |
 | N3 | Controles nativos (SDL3/XInput, remapeamento, perfis) | concluída | 100 |
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |
-| N6 | Áudio nativo (efeitos, falas, música Manatee, DSP da AICA) | concluída com promoção **condicional** (**H9 bloqueado** pelo desempenho do N2): nativo é o padrão (`--audio legado` é o fallback até o N8); validação contra o original (Flycast) e gravações reais de gameplay; H1–H8 aprovados; **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** | 95 |
+| N6 | Áudio nativo (efeitos, falas, música Manatee, DSP da AICA) | concluída (2026-10-23): nativo é o padrão (`--audio legado` é o fallback até o N8); validação contra o original (Flycast) e gravações reais de gameplay; H1–H9 aprovados, o H9 (tempo real sem faltas de dados) com o Vulkan padrão | 100 |
 | N7 | Renderização Vulkan | concluída com promoção **condicional** (2026-10-23): **o Vulkan é o renderizador padrão**, com recuo automático para o software (sem GPU compatível, ou se o dispositivo falhar no jogo); desenha o jogo **bit a bit igual** ao renderizador de referência, 3× mais rápido; **resolução interna de 720p a 4K**; **efeitos de imagem** (correção de cor, tonemapping, nitidez, bloom, CRT, shaders de mod); **menu de configurações dentro do jogo** (Esc ou Back do controle); **legendas** no gameplay e nos filmes (português do Brasil por padrão, ou inglês); **câmera livre no analógico direito** com o analógico esquerdo andando para onde a vista olha; camadas de validação do Vulkan sem mensagens. Pendências: GPU AMD integrada (perda intermitente do dispositivo num modo de diagnóstico, sem causa identificada), fog e volumes modificadores contra o Flycast. SSAO, 16:9 real e MSAA passaram para o N9 | 95 |
 | N8 | Remoção da camada legada (simulação do console) | não iniciada | 0 |
 | N9 | Remasterização: texturas HD, iluminação e efeitos, modelos, cutscenes, áudio remasterizado (com o original como opção), HUD e menus; presets Original Dreamcast e Remasterizado | não iniciada | 0 |
 | N10 | Sistema de mods (ferramentas, manifestos, pacotes de idioma, texturas, áudio, vídeo e shaders) e elevação dos sistemas do jogo para C++ editável; revisão final e distribuição | não iniciada (a arquitetura de extensão vem sendo preparada nas etapas anteriores) | 0 |
 
-Desempenho: nesta etapa o gameplay leva ~18 ms por campo numa máquina de desenvolvimento (o tempo real é 16,7 ms), então
-o jogo pode ficar um pouco lento e o som pode picotar em trechos pesados; isso é do N2 e não está aprovado.
+Desempenho: com o Vulkan (padrão) o gameplay leva ~7 ms por campo numa máquina de desenvolvimento (o tempo real é 16,7 ms) e o
+áudio toca sem faltas; no recuo para o software (~17 ms por campo) o jogo pode ficar um pouco lento e o som pode picotar.
 
 Detalhes e evidências de cada verificação: [STATUS.md](STATUS.md). Arquitetura: [ARCHITECTURE.md](ARCHITECTURE.md).
 Planos por etapa em [docs/](docs/).
