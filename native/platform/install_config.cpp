@@ -57,13 +57,15 @@ std::string config_text(const InstallConfig& c) {
                        "# Trocar o valor nao move as partidas de um lugar para o outro.\n"
                        "[saves]\nlocal = \"") +
            (c.saves == SavesLocation::Portable ? "portatil" : "documentos") + "\"\n" +
-           "\n# legendas.idioma: \"en-US\" (padrao), outro idioma (pt-BR...) ou \"nenhuma\". As legendas vem de mods\n"
+           "\n# legendas.idioma: \"auto\" (padrao: pt-BR se instalado, senao en-US), um idioma (pt-BR, en-US...) ou \"nenhuma\".\n"
+           "# As legendas vem de mods\n"
            "# (mods\\video, mods\\<pacote>\\legendas); sem legendas no idioma, nada aparece.\n"
            "[legendas]\nidioma = \"" + (c.subtitles.empty() ? std::string("nenhuma") : c.subtitles) + "\"\n";
 }
 
 bool parse_subtitles(const std::string& v, std::string* out) {
     if (v == "nenhuma" || v == "off" || v == "nao" || v == "none") return *out = "", true;
+    if (v == "auto" || v == "automatico") return *out = "auto", true;
     if (v.empty() || v.size() > 35 || !std::isalpha(static_cast<unsigned char>(v[0]))) return false;
     for (char ch : v)
         if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '-') return false;

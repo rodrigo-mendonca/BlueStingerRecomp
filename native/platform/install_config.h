@@ -17,9 +17,10 @@ inline constexpr const wchar_t* kConfigFile = L"instalacao.toml";
 
 enum class SavesLocation { Documents, Portable };
 
-// Legendas (o original nao tem; sao de mods, externas e substituiveis): ligadas por padrao em ingles. [legendas]
-// idioma = "<BCP-47>" (en-US, pt-BR...) ou "nenhuma" (desligadas); --legendas na linha de comando vence o arquivo.
-inline constexpr const char* kDefaultSubtitles = "en-US";
+// Legendas (o original nao tem; sao de mods, externas e substituiveis). [legendas] idioma = "<BCP-47>" (en-US, pt-BR...),
+// "nenhuma" (desligadas) ou "auto" (padrao, 2026-10-23: pt-BR se o pacote estiver instalado, senao en-US, senao
+// desligadas; o jogo resolve pelos pacotes em mods\); --legendas na linha de comando vence o arquivo.
+inline constexpr const char* kDefaultSubtitles = "auto";
 
 struct InstallConfig {
     SavesLocation saves = SavesLocation::Documents;

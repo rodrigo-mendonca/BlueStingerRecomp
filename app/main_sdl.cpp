@@ -1270,19 +1270,30 @@ struct TempSaves {
 };
 TempSaves g_tempSaves;
 
-// Idioma das legendas: --legendas > legendas.idioma do instalacao.toml > en-US (padrao). "" = desligadas.
+// "auto" (o padrao): pt-BR se um pacote de mods\ tiver as falas em pt-BR, senao en-US, senao desligadas (com aviso).
+std::string resolveAutoSubtitles() {
+    const auto mods = bs::native::localization::ModPackages::discover(exeDir() / L"mods", "T13001N V1.000");
+    for (const char* lang : {"pt-BR", "en-US"})
+        if (const auto f = mods.find("legendas/falas.{idioma}.toml", lang); f && f->language == lang) {
+            std::fprintf(stderr, "[legenda] idioma automatico: %s (pacote %s)\n", lang, f->package->id.c_str());
+            return lang;
+        }
+    std::fprintf(stderr, "[legenda] idioma automatico: nenhum pacote de legendas em mods\\; legendas desativadas\n");
+    return {};
+}
+
+// Idioma das legendas: --legendas > legendas.idioma do instalacao.toml > "auto" (padrao). "" = desligadas.
 std::string subtitlesLanguage(const Args& a) {
     std::string out;
     if (a.subtitlesSet) {
-        if (bs::native::install::parse_subtitles(a.subtitles, &out)) return out;
-        std::fprintf(stderr, "[legenda] --legendas \"%s\" invalido; usando %s\n", a.subtitles.c_str(),
-                     bs::native::install::kDefaultSubtitles);
-        return bs::native::install::kDefaultSubtitles;
+        if (bs::native::install::parse_subtitles(a.subtitles, &out)) return out == "auto" ? resolveAutoSubtitles() : out;
+        std::fprintf(stderr, "[legenda] --legendas \"%s\" invalido; usando o automatico\n", a.subtitles.c_str());
+        return resolveAutoSubtitles();
     }
     std::string warn;
     const auto  cfg = bs::native::install::read_config(exeDir(), &warn);
     if (!warn.empty()) std::fprintf(stderr, "[legenda] %s\n", warn.c_str());
-    return cfg.subtitles;
+    return cfg.subtitles == "auto" ? resolveAutoSubtitles() : cfg.subtitles;
 }
 
 fs::path savesRoot(const Args& a) {
@@ -1363,8 +1374,8 @@ const char* kUsage =
     "     --apresentacao vulkan|sdl: janela (padrao: vulkan = apresentacao direta pelo dispositivo do renderizador, a\n"
     "       resolucao interna sem passar pela CPU; sdl = SDL_Renderer, recuo; BS_APRESENTACAO=sdl muda o padrao)\n"
     "     --resolucao-interna <altura>: resolucao interna do Vulkan so nesta execucao (480 = original; 720, 1080)\n"
-    "     --legendas <idioma>|nenhuma: legendas de mods nos filmes e nas falas (padrao: en-US, ou legendas.idioma do\n"
-    "       instalacao.toml; en-US recua para en; sem legendas no idioma, nada aparece)\n"
+    "     --legendas <idioma>|auto|nenhuma: legendas de mods nos filmes e nas falas (padrao: auto = pt-BR se o pacote\n"
+    "       estiver instalado, senao en-US; ou legendas.idioma do instalacao.toml; en-US recua para en)\n"
     "     --audio nativo|legado: os tres provedores de audio de uma vez (padrao: nativo; legado = SDK de som e driver\n"
     "       Manatee originais na AICA emulada, fallback temporario); as opcoes abaixo valem sobre ela\n"
     "     --audio-efeitos nativo|legado: efeitos sonoros (padrao: nativo = BS_SND.MLT do disco pelo mixer nativo)\n"

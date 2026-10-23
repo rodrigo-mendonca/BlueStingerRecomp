@@ -12,6 +12,12 @@ namespace st = native::settings;
 namespace {
 
 std::string onoff(bool b) { return b ? "ligado" : "desligado"; }
+// o nome do idioma no menu (o codigo BCP-47 para os que nao estao aqui)
+std::string language_label(const std::string& lang) {
+    if (lang == "pt-BR") return "Português (Brasil)";
+    if (lang == "en-US" || lang == "en") return "English";
+    return lang;
+}
 std::string pct(uint32_t v) { return std::to_string(v) + " %"; }
 std::string camera_label(st::CameraMode m) {
     static const char* n[] = {"Original", "H\u00edbrida", "Livre"};
@@ -225,11 +231,14 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
     case Page::Subtitles: {
         const auto& s     = prefs_.subtitles;
         const auto  langs = languages_;
-        e.push_back({"Legendas", onoff(s.enabled), true, [](Preferences& p, int) { p.subtitles.enabled = !p.subtitles.enabled; }});
-        e.push_back({"Idioma", s.language, s.enabled, [langs](Preferences& p, int d) {
-                         auto it = std::find(langs.begin(), langs.end(), p.subtitles.language);
-                         int  i  = it == langs.end() ? 0 : int(it - langs.begin()) + d;
-                         p.subtitles.language = langs[size_t((i + int(langs.size())) % int(langs.size()))];
+        // os idiomas dos pacotes instalados e "Desativadas" no fim da volta
+        e.push_back({"Idioma", s.enabled ? language_label(s.language) : "Desativadas", true, [langs](Preferences& p, int d) {
+                         const int n  = int(langs.size()) + 1;
+                         auto      it = std::find(langs.begin(), langs.end(), p.subtitles.language);
+                         const int i  = !p.subtitles.enabled ? n - 1 : it == langs.end() ? 0 : int(it - langs.begin());
+                         const int j  = ((i + d) % n + n) % n;
+                         p.subtitles.enabled = j < n - 1;
+                         if (p.subtitles.enabled) p.subtitles.language = langs[size_t(j)];
                      }});
         e.push_back({"Tamanho do texto", pct(s.size_pct), s.enabled,
                      [](Preferences& p, int d) { p.subtitles.size_pct = step(p.subtitles.size_pct, d, 50, 200, 10); }});

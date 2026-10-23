@@ -155,26 +155,27 @@ BS_TEST(ui_install_saves_root) {
     BS_CHECK(ni::saves_root({}, false, L"F:\\Pendrive\\BlueStinger", port, docs, fb) == fs::path(L"F:\\Pendrive\\BlueStinger\\saves"));
 }
 
-// Legendas em ingles por padrao (2026-10-21): sem arquivo, en-US; "nenhuma" desliga; outro idioma vale; valor invalido
+// Legendas automaticas por padrao (2026-10-23; antes en-US): sem arquivo, "auto"; "nenhuma" desliga; outro idioma vale; valor invalido
 // avisa e fica no padrao; o Recompiler grava a escolha junto com o modo dos saves e a releitura a preserva
 BS_TEST(ui_install_config_subtitles) {
     Dir d;
-    BS_CHECK(ni::read_config(d.p).subtitles == "en-US");
+    BS_CHECK(ni::read_config(d.p).subtitles == "auto");
     std::ofstream(d.p / ni::kConfigFile) << "[legendas]\nidioma = \"nenhuma\"\n";
     BS_CHECK(ni::read_config(d.p).subtitles.empty());
     std::ofstream(d.p / ni::kConfigFile) << "[legendas]\nidioma = \"pt-BR\"\n";
     BS_CHECK(ni::read_config(d.p).subtitles == "pt-BR");
     std::ofstream(d.p / ni::kConfigFile) << "[legendas]\nidioma = \"../x\"\n";
     std::string w;
-    BS_CHECK(ni::read_config(d.p, &w).subtitles == "en-US" && !w.empty());
+    BS_CHECK(ni::read_config(d.p, &w).subtitles == "auto" && !w.empty());
     ni::InstallConfig c{ni::SavesLocation::Portable, ""};
     BS_CHECK(ni::write_config(d.p, c));
     const auto r = ni::read_config(d.p);
     BS_CHECK(r.saves == ni::SavesLocation::Portable && r.subtitles.empty());
     BS_CHECK(ni::write_config(d.p, {ni::SavesLocation::Documents}));
-    BS_CHECK(ni::read_config(d.p).subtitles == "en-US");
+    BS_CHECK(ni::read_config(d.p).subtitles == "auto");
     std::string out = "x";
     BS_CHECK(ni::parse_subtitles("off", &out) && out.empty());
     BS_CHECK(ni::parse_subtitles("en", &out) && out == "en");
+    BS_CHECK(ni::parse_subtitles("automatico", &out) && out == "auto");
     BS_CHECK(!ni::parse_subtitles("", &out) && !ni::parse_subtitles("en_US", &out) && !ni::parse_subtitles("1en", &out));
 }

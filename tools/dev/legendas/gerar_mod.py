@@ -51,6 +51,18 @@ def glossario():
 
 
 def aplicar_glossario(texto, gl):
+    """Ate o texto parar de mudar: uma troca curta pode completar uma longa ("Elliot G. Balad" -> "Eliot G. Balad" ->
+    "Eliot G. Ballade")."""
+    trocas = []
+    for _ in range(4):
+        texto, t = _glossario_uma_vez(texto, gl)
+        if not t:
+            break
+        trocas += t
+    return texto, trocas
+
+
+def _glossario_uma_vez(texto, gl):
     trocas = []
     for errado, certo in gl:
         if errado == certo:
@@ -133,6 +145,29 @@ def linhas_de(transcricao, gl, duracao):
     return out
 
 
+def aplicar_revisao(l, rv):
+    """Revisao de uma linha (revisoes.tsv): texto e, opcionalmente, tempos e estado. tipo "humana" (padrao) vale como
+    revisada; "ia" (revisao de texto por IA, sem ouvir o audio) fica "revisada-ia" e o pacote continua provisorio.
+    estado "excluida" tira a linha do jogo (alucinacao do modelo em silencio); "revisar" mantem a marca com o texto novo."""
+    tipo = rv.get("tipo") or "humana"
+    if rv.get("texto"):
+        t = rv["texto"].replace("\\n", "\n")
+        l["texto"] = t if "\n" in t else (quebrar(t) or t)
+    nota = rv.get("nota", "")
+    if rv.get("estado") == "excluida":
+        l["estado"], l["motivo"] = "excluida", f"revisao {tipo}: {nota or 'excluida'}"
+    elif rv.get("estado") == "revisar":
+        l["estado"], l["motivo"] = "revisar", f"revisao {tipo}, ainda duvidosa: {nota}"
+    else:
+        l["estado"] = "revisada" if tipo == "humana" else "revisada-ia"
+        l["motivo"] = f"revisao {tipo}" + (f" ({rv.get('revisor')})" if rv.get("revisor") else "") + (f": {nota}" if nota else "")
+    if rv.get("inicio"):
+        l["inicio"], l["fim"] = float(rv["inicio"]), float(rv["fim"])
+
+
+ESTADOS = {"automatica": "auto", "revisar": "revisar", "excluida": "excluidas", "revisada": "revisadas", "revisada-ia": "revisadas_ia"}
+
+
 def t_inicio(t):  # 2 casas: o inicio arredonda para cima e o fim para baixo (nunca passa do fim da fala)
     return math.ceil(round(t * 100, 6)) / 100
 
@@ -157,7 +192,11 @@ def main():
     a = ap.parse_args()
     gl = glossario()
     cat = {r["id"]: r for r in ler_tsv(os.path.join(a.trabalho, "catalogo.tsv"))}
-    revis = {(r["voz"], int(r["linha"])): r for r in ler_tsv(os.path.join(a.trabalho, "revisoes.tsv"))}
+    # revisoes por recurso ("voz/<nome>" ou "filme/<nome>") e linha; a coluna antiga "voz" ainda vale
+    # as do repositorio (revisoes.en-US.tsv, ao lado deste script) e, por cima, as locais da pasta de trabalho
+    revis = {}
+    for arq in (os.path.join(AQUI, f"revisoes.{IDIOMA}.tsv"), os.path.join(a.trabalho, "revisoes.tsv")):
+        revis.update({(r.get("recurso") or r["voz"], int(r["linha"])): r for r in ler_tsv(arq)})
     mod = os.path.join(a.trabalho, "mod", "legendas-en")
     if os.path.isdir(mod):
         shutil.rmtree(mod)
@@ -165,7 +204,7 @@ def main():
     os.makedirs(os.path.join(mod, "fontes"))
     env_com_fala, sem_fala_nao_env = [], []  # a classificacao pela deteccao de voz (o nome ENV nao e prova)
     falas, tsv, rel = [], [], dict(vozes=0, com_fala=0, sem_fala=0, linhas=0, auto=0, revisar=0, excluidas=0, revisadas=0,
-                                   filmes=0, linhas_filmes=0, bloqueadas=0, pendentes_transcricao=0)
+                                   revisadas_ia=0, filmes=0, linhas_filmes=0, bloqueadas=0, pendentes_transcricao=0)
     for vid, r in sorted(cat.items(), key=lambda x: int(x[0])):
         if r["nome"] == "-":
             continue
@@ -180,6 +219,9 @@ def main():
         t = json.load(open(p, encoding="utf-8"))
         voz = "voz/" + os.path.splitext(r["nome"])[0].lower()
         ls = linhas_de(t, gl, float(r["segundos"]))
+        for k, l in enumerate(ls):  # a revisao vence o automatico (texto, tempos, estado), antes de decidir se ha fala
+            if (rv := revis.get((voz, k))):
+                aplicar_revisao(l, rv)
         if not [l for l in ls if l["estado"] != "excluida"]:
             rel["sem_fala"] += 1
             if r["categoria"] != "ambiente":
@@ -191,29 +233,29 @@ def main():
         if r["categoria"] == "ambiente":
             env_com_fala.append(r["nome"])
         for k, l in enumerate(ls):
-            rv = revis.get((voz, k))
-            if rv:  # revisao humana vence (texto e tempos)
-                l.update(texto=rv["texto"].replace("\\n", "\n"), estado="revisada", motivo="revisao humana: " + rv.get("revisor", ""))
-                if rv.get("inicio"):
-                    l["inicio"], l["fim"] = float(rv["inicio"]), float(rv["fim"])
             rel["linhas"] += 1
-            rel[{"automatica": "auto", "revisar": "revisar", "excluida": "excluidas", "revisada": "revisadas"}[l["estado"]]] += 1
+            rel[ESTADOS[l["estado"]]] += 1
             tsv.append([voz, vid, r["nome"], k, l["inicio"], l["fim"], l["texto"], l["asr"], f"{l['confianca']:.3f}", l["estado"], l["motivo"], l["trocas"], r["categoria"]])
             if l["estado"] != "excluida":
                 falas.append((voz, vid, k, l))
     with open(os.path.join(mod, "legendas", f"falas.{IDIOMA}.toml"), "w", encoding="utf-8", newline="\n") as o:
         o.write(f"# Legendas em ingles das falas do Blue Stinger (pacote legendas-en {a.versao}).\n"
-                "# Transcricao AUTOMATICA (faster-whisper large-v3) para revisao: as linhas marcadas \"revisar\" tem\n"
-                "# palavras de baixa confianca (fontes/transcricoes.en-US.tsv). Tempos em segundos desde o inicio da fala.\n")
+                "# Transcricao automatica (faster-whisper large-v3) com revisao de texto por IA, sem revisao humana: as linhas\n"
+                "# marcadas \"revisar\" continuam duvidosas (fontes/transcricoes.en-US.tsv). Tempos em segundos desde o inicio\n"
+                "# da fala.\n")
         for voz, vid, k, l in falas:
             o.write(f"\n[[fala]]  # id {vid}, linha {k}, {l['estado']}\nvoz = {toml_str(voz)}\ninicio = {t_inicio(l['inicio']):.2f}\n"
                     f"fim = {t_fim(l['fim']):.2f}\ntexto = {toml_str(l['texto'])}\n")
     for p in sorted(glob.glob(os.path.join(a.trabalho, "transcricoes", "filme-*.json"))):
         t = json.load(open(p, encoding="utf-8"))
         nome = t["chave"]
-        ls = [l for l in linhas_de(t, gl, t["duracao"]) if l["estado"] != "excluida"]
+        todas = linhas_de(t, gl, t["duracao"])
+        for k, l in enumerate(todas):
+            if (rv := revis.get((f"filme/{nome.lower()}", k))):
+                aplicar_revisao(l, rv)
+        ls = [l for l in todas if l["estado"] != "excluida"]
         rel["filmes"] += 1
-        for k, l in enumerate(linhas_de(t, gl, t["duracao"])):
+        for k, l in enumerate(todas):
             tsv.append([f"filme/{nome.lower()}", "-", nome, k, l["inicio"], l["fim"], l["texto"], l["asr"], f"{l['confianca']:.3f}", l["estado"], l["motivo"], l["trocas"], "filme"])
         if not ls:
             continue
@@ -246,17 +288,16 @@ sem mudar o executável e sem conter áudio ou vídeo do jogo (só texto).
   de cada fala (o jogo pode tocá-la a qualquer momento; a legenda acompanha o áudio).
 - `legendas/<FILME>.{IDIOMA}.srt`: os filmes, no tempo de mídia.
 - `fontes/transcricoes.{IDIOMA}.tsv`: cada linha com a confiança, o estado (`automatica`, `revisar`, `revisada`,
-  `excluida`) e as correções de nomes; base para a tradução para outros idiomas.
+  `revisada-ia`, `excluida`) e as correções de nomes; base para a tradução para outros idiomas.
 
-**Estado:** transcrição automática (faster-whisper large-v3, local) ainda **não revisada por humanos**. Linhas com
-palavras de baixa confiança estão marcadas `revisar`; trechos incompreensíveis ficaram de fora (`excluida`).
+**Estado:** transcrição automática (faster-whisper large-v3, local) com revisão de texto por IA ({rel["revisadas_ia"]}
+linhas corrigidas: nomes pelo texto do jogo, pontuação, alucinações do modelo em silêncio excluídas), ainda **não revisada
+por humanos**. Linhas duvidosas continuam `revisar`; trechos incompreensíveis ficaram de fora (`excluida`).
 
-**Uso:**
-- **Filmes (aparecem na tela hoje):** copie os arquivos de `video\\` para `mods\\video\\` ao lado do `bluestinger.exe`
-  e rode com `--legendas {IDIOMA}` (o player de filmes do N5 desenha as legendas).
-- **Falas do gameplay:** copie a pasta `legendas-en` para `mods\\` e rode com `--audio-falas nativo --legendas {IDIOMA}`
-  (as falas nativas estão em validação no N6). O **desenho** dessas legendas na tela ainda não existe (etapa N7): hoje o
-  jogo só registra a legenda ativa no log.
+**Uso:** é um **mod padrão** do projeto (`mods-padrao/`). O Builder (Recompiler, Developer e linha de comando) o
+instala em toda instalação: a pasta vai para `mods\\legendas-en` e os `.srt` de `video\\` vão para `mods\\video`, ao lado do
+`BlueStinger.exe`. As legendas aparecem nos filmes e nas falas do gameplay; o menu interno (Esc, Legendas) liga,
+desliga e troca o idioma. Pela linha de comando: `--legendas {IDIOMA}|nenhuma`.
 """)
     with open(os.path.join(a.trabalho, "relatorio.md"), "w", encoding="utf-8", newline="\n") as o:
         o.write(f"# Relatório da transcrição ({datetime.date.today().isoformat()})\n\n")

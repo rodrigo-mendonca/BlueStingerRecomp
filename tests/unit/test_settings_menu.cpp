@@ -66,19 +66,25 @@ BS_TEST(settings_menu_audio_subtitles_and_changes) {
     go(m, "Legendas");
     m.input(MenuAction::Confirm, 0);
     BS_CHECK(m.prefs().subtitles.enabled && m.prefs().subtitles.language == "en-US");  // ingles ligado por padrao
+    auto v = m.view();
+    BS_CHECK(v.items[size_t(find(v, "Idioma"))].value == "English");
     go(m, "Idioma");
     m.input(MenuAction::Right, 0);
-    BS_CHECK(m.prefs().subtitles.language == "pt-BR");
+    BS_CHECK(m.prefs().subtitles.language == "pt-BR" && m.view().items[size_t(find(m.view(), "Idioma"))].value == "Português (Brasil)");
     go(m, "Tamanho do texto");
     m.input(MenuAction::Right, 0);
     BS_CHECK(m.prefs().subtitles.size_pct == 110);
     go(m, "Contorno");
     m.input(MenuAction::Confirm, 0);  // sem contorno: o fundo liga (um dos dois sempre)
     BS_CHECK(!m.prefs().subtitles.outline && m.prefs().subtitles.box);
-    go(m, "Legendas");
-    m.input(MenuAction::Confirm, 0);
+    go(m, "Idioma");
+    m.input(MenuAction::Right, 0);  // depois do ultimo idioma: desativadas
     BS_CHECK(!m.prefs().subtitles.enabled && m.prefs().subtitles.effective_language().empty());
+    BS_CHECK(m.view().items[size_t(find(m.view(), "Idioma"))].value == "Desativadas");
+    BS_CHECK(!m.view().items[size_t(find(m.view(), "Tamanho do texto"))].enabled);
     BS_CHECK(m.take_changes(out) && !out.subtitles.enabled);
+    m.input(MenuAction::Right, 0);  // e volta ao primeiro, ligadas
+    BS_CHECK(m.prefs().subtitles.enabled && m.prefs().subtitles.language == "en-US");
 }
 
 BS_TEST(settings_menu_display_confirmation_and_revert) {
