@@ -723,6 +723,28 @@ roadmap e nada é implementado antes da etapa autorizada.
 - sem mods, os recursos originais (convertidos pelo Builder a partir do CDI do usuário) são a
   referência de fidelidade.
 
+### N9 (planejado): um projeto, duas edições
+
+Planejamento aprovado em 2026-10-23; **não iniciado** (começa depois do N8). Detalhes, critérios e decisões abertas em
+`docs/N9-PLANO.md`, seção 2.
+
+- **Blue Stinger Original** e **Blue Stinger Remastered** são duas instalações do **mesmo núcleo C++** (código gerado
+  + `native/`: gameplay, tempo, áudio, saves, controles, Vulkan). Sem projeto separado, recompilação do zero, fork
+  permanente ou branch por edição.
+- **Perfil de edição** (`EditionProfile`, provisório): escolhido pelo Recompiler, gravado em `instalacao.toml`
+  (`[edicao]`), lido uma vez e imutável na execução. É separado das **preferências** do jogador (graficos/audio/
+  legendas/controles.toml): o perfil define padrões e restrições (`clamp_to`, como as capacidades do renderizador
+  hoje), as preferências escolhem dentro delas. Saves e atualizações não mudam o perfil. Perfil não é preset gráfico.
+- **Remastered:** câmera Livre obrigatória (as rotinas originais ficam no núcleo para eventos roteirizados e para a
+  Original), legendas ligadas em pt-BR, menus e saves de PC (a lógica de VMU continua atrás do cartão nativo do N4),
+  gráficos modernos ajustáveis.
+- **Camadas:** núcleo (o mesmo) → apresentação (UI nativa, HUD, pós-processamento, iluminação, água, texturas HD,
+  widescreen) → preferências → perfil de edição → instalador. O núcleo expõe eventos e estados; a apresentação não
+  muda o estado lógico. Onde o núcleo depende da edição (por exemplo, a instalação dos slots da câmera), o ponto é
+  documentado e testado nas duas edições.
+- Recursos audiovisuais substituíveis sem recompilar (contratos do N5, N6 e N7); APIs e ferramentas de mods no N10;
+  nada da camada legada removida no N8 volta; nenhum recurso comercial no repositório público.
+
 ## 7. Validação
 
 - **Unitários (M2)**: decodificador exaustivo (todas as 65 536 palavras
@@ -760,6 +782,7 @@ Registradas em 2026-10-13.
 | D11 | Vídeo | **Media Foundation** para vídeos convertidos pelo Builder (`IVideoPlayer`), desde que formato e fidelidade sejam validados. Senão, apresentar alternativas ao mantenedor. |
 | D13 | Plataformas | (2026-10-19) **Windows x64**: desenvolvimento, validação e distribuição atuais. **Linux x86_64**: plataforma futura, sem port agora. C++20 e CMake portáveis, SDL3 para janela, entrada e sistema, Vulkan nas duas. Nenhuma dependência nova de Win32 no gameplay, no código recompilado ou nos contratos compartilhados: APIs de plataforma só em implementações de backend. Media Foundation, XAudio2 e DirectWrite seguem como backends Windows. Auditoria e alternativas em `docs/DECISAO-VULKAN-LINUX.md`. |
 | D12 | Módulos | `native/`, `legacy/` e `transitional/` são alvos CMake desde o N0. Os arquivos só mudam de lugar quando o subsistema migrar. A leitura de CDI saiu do produto (`bs_runtime_cdi`). |
+| D14 | Edições (N9, planejado) | (2026-10-23) Um projeto e um núcleo C++, **duas edições instaláveis**: Original e Remastered, escolhidas pelo Recompiler por um perfil de edição separado das preferências. Remastered com câmera Livre obrigatória. Sem fork nem branch por edição. Ver "N9 (planejado)" na seção 6 e `docs/N9-PLANO.md`. |
 
 ## 9. Riscos
 

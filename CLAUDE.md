@@ -14,6 +14,12 @@ V1.000) para C++ nativo em Windows x64. Arquitetura e decisões em
   sem licença. Usá-los só como referência de comportamento.
 - `STATUS.md` registra cada verificação com data e método.
 - Commits só quando o mantenedor pedir.
+- **N9 (Remasterização)** está só planejado (`docs/N9-PLANO.md`, 2026-10-23): não implementar nada dele antes do
+  encerramento do N8 e da autorização do mantenedor. Regras permanentes: um projeto e um núcleo C++ com **duas
+  edições** (Original e Remastered), escolhidas pelo Recompiler por um perfil de edição separado das preferências; a
+  **edição Original** continua fiel ao Dreamcast e validada contra as referências; na **Remastered a câmera Livre é
+  obrigatória**; nada de fork, branch por edição ou volta da camada legada; arte do jogo (capa, texturas, áudio) nunca
+  no repositório público, só local a partir dos arquivos do usuário (ex.: `icone-local/`).
 
 ## Build e testes
 

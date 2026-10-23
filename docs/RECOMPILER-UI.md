@@ -77,6 +77,19 @@ compilador) em `docs/DISTRIBUICAO-COMPILADOR.md`.
 O Recompiler não mudou de comportamento: só passou a usar o header comum `builder/ui/win_shared.h` (chave
 da etapa e idiomas do Windows), sem mudança de casos.
 
+## Futuro (N9, planejado em 2026-10-23; não iniciado)
+
+`docs/N9-PLANO.md`, N9.0 e N9.1. O Recompiler vira um **instalador gráfico** com identidade visual própria, mantendo o
+`bs_builder_core` como mecanismo (o contrato da linha de comando e do Developer não muda):
+- escolha da **edição** (Blue Stinger Original ou Remastered), gravada em `instalacao.toml` (`[edicao]`) como perfil
+  de edição, separado das preferências do jogador;
+- telas: boas-vindas, edição, CDI, componentes e idiomas, pasta, progresso real, conclusão ("Jogar agora");
+- detecção e atualização de instalações sem perder saves e preferências, verificação, desinstalador, cancelamento
+  seguro, log técnico opcional;
+- arte com origem e direitos documentados; arte do jogo só a partir dos arquivos do próprio usuário, só local (como o
+  ícone da capa em `icone-local/`, 2026-10-23).
+Nada disso começa antes do N8.
+
 ## BlueStinger-Developer (2026-10-20, worktree `../recomp-BStinger-dev`)
 
 **O que o Developer exporta (e o que não exporta).** O projeto é uma **recompilação estática**: cada função do

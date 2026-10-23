@@ -2587,6 +2587,19 @@ Detalhes, causas e medições: `docs/N7-PLANO.md` 18.6; pendências e direitos: 
 - **Dist:** Preview e Builder `8b73b3a` com os pacotes novos (Preview `mods\`, kit `mods-padrao\`); o LEIA-ME do jogo
   com o texto novo das legendas entra na próxima montagem.
 
+### N9: planejamento oficial (2026-10-23; N9 não iniciado)
+
+Pedido do mantenedor: consolidar o planejamento do N9 (Blue Stinger Remastered), só documentação. Registro em
+`docs/N9-PLANO.md`; referências em `docs/PLANO-PORT-NATIVO.md` (seção 4), `ARCHITECTURE.md` (seção 6 "N9 (planejado)"
+e D14), `docs/RECOMPILER-UI.md` ("Futuro") e `CLAUDE.md` (regras permanentes). Decisões de escopo:
+- **um projeto, duas edições instaláveis** do mesmo núcleo C++ (Original e Remastered), escolhidas pelo Recompiler por
+  um **perfil de edição** separado das preferências; sem fork nem branch por edição;
+- **Remastered:** câmera Livre obrigatória, legendas ligadas em pt-BR, menus e saves de PC (VMU invisível ao jogador,
+  adaptador interno mantido), gráficos modernos ajustáveis, widescreen; **Original:** fiel ao Dreamcast, validada
+  contra as referências do port;
+- subetapas N9.0–N9.11 com requisitos, critérios de aceitação, prioridades (E/R/O) e decisões abertas (12);
+- começa depois do N8; a ordem N0–N10 não muda; ferramentas e APIs de mods continuam no N10.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2610,7 +2623,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **concluída com promoção condicional** (2026-10-23): Vulkan padrão da janela com recuo para o software; N7a, N7b e N7c validadas; pendências abertas: AMD integrada (sem causa identificada), fog e volumes contra o Flycast; SSAO, 16:9 real e MSAA transferidos para o N9 (`docs/N7-PLANO.md` seção 25) | 95 |
 | N8 Sem legado | não iniciada | 0 |
-| N9 Remasterização | não iniciada | 0 |
+| N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
 Progresso geral: ~69 % (onze etapas de peso igual).

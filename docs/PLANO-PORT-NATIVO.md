@@ -237,6 +237,13 @@ migração versionada.
 - **Distribuição:**
   - nenhum recurso comercial protegido no repositório sem autorização;
   - separação clara entre a remasterização oficial do projeto e os mods dos usuários (N10).
+- **Planejamento oficial (2026-10-23): `docs/N9-PLANO.md`.** Um projeto, **duas edições instaláveis** do mesmo núcleo
+  C++: **Blue Stinger Original** (fiel ao Dreamcast; câmera Original ou Livre) e **Blue Stinger Remastered** (câmera
+  Livre obrigatória, legendas ligadas em pt-BR, menus e saves de PC, gráficos modernos, widescreen). O Recompiler escolhe
+  a edição (perfil de edição separado das preferências). Subetapas N9.0–N9.11: perfis de edição, instalador gráfico,
+  interface do jogo, saves de PC, controles, widescreen e HUD, iluminação, água e reflexos, texturas HD e
+  antialiasing, filmes, áudio e acessibilidade, refinamentos, desempenho e validação. **Só planejamento: começa depois
+  do N8**, sem mudar a ordem N0–N10.
 
 **N10. Sistema de mods e elevação dos sistemas do jogo** (o antigo N9; contínua)
 - Mods:
@@ -310,7 +317,7 @@ Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: 
    `docs/DECISAO-VULKAN-LINUX.md`, seção 2.
 5. **Retorno ao N2**: encerrar as pendências do N2b e implementar o N2c.
 6. **N8**: remoção dos componentes de emulação.
-7. **N9**: remasterização (decisão de 2026-10-22).
+7. **N9**: remasterização (decisão de 2026-10-22; planejamento em `docs/N9-PLANO.md`, 2026-10-23).
 8. **N10**: gameplay C++ editável e sistema de mods (o antigo N9).
 
 **Escopo do retorno ao N2.**
