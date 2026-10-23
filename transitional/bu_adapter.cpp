@@ -89,6 +89,17 @@ void fServer(Sh4Context* c) {
             ++(e.a == uint32_t(kOk) ? s.stats.loadOk : s.stats.loadFail);
         }
         if (e.op == kOpSave) ++(e.a == uint32_t(kOk) ? s.stats.saveOk : s.stats.saveFail);
+        // diagnostico BS_SAVES_LOG=<arquivo>: o passo de jogo de cada conclusao de LOAD/SAVE (a lista de excecoes do N2 amarra
+        // as diferencas do tempo experimental a uma conclusao de LOAD especifica: tools/dev/n2_sessoes.py)
+        static FILE* opLog = [] {
+            const char* v = std::getenv("BS_SAVES_LOG");
+            FILE*       f = v && *v ? std::fopen(v, "w") : nullptr;
+            if (f) std::fprintf(f, "passo\top\tresultado\n");
+            return f;
+        }();
+        if (opLog && (e.op == kOpLoad || e.op == kOpSave))
+            std::fprintf(opLog, "%llu\t%s\t%s\n", static_cast<unsigned long long>(time::game_steps()), e.op == kOpLoad ? "load" : "save",
+                         e.a == uint32_t(kOk) ? "ok" : "falha"), std::fflush(opLog);
         s.m->release(e.drive);  // livre antes da conclusao: dentro dela o jogo consulta disk_info
         callGuest(c, s.cbDone, uint32_t(e.drive), e.op, e.a);
     }

@@ -1,0 +1,47 @@
+# N2 (docs/N2-PLANO.md secao 5): lista FECHADA e versionada das diferencas aceitas entre o tempo experimental (N2b-2,
+# --tempo experimental) e o estavel (--tempo nativo). Fora daqui vale igualdade estrita por passo de jogo. Cada item tem
+# causa provada e evidencia; tools/dev/n2_sessoes.py aplica as regras marcadas com `regra`.
+# So metadados de comportamento: nenhum byte do jogo.
+
+[[excecao]]
+id        = "d11-carga-cartao"
+classe    = "D11"
+onde      = "conclusao de um LOAD do cartao (saves nativos do N4)"
+efeito    = "ate 1 passo de jogo com o estado da carga adiantado ou intermediario; o passo seguinte e igual ao estavel"
+causa     = "no experimental o trabalho nao consome tempo logico: a leitura do cartao termina dentro do passo; no estavel ela atravessa VBlanks e termina entre passos"
+evidencia = "sessao-20261021-145006: so o passo 1084 difere (LOAD concluido no 1083; o do experimental = o do estavel no 1085); sessao-20261021-140145: so o passo 1703 (LOAD concluido no 1702; estado intermediario), igual a partir do 1704; saves iguais nas duas (2026-10-23)"
+# cada passo diferente vem logo depois do passo de uma conclusao de LOAD registrada pelo jogo (BS_SAVES_LOG; o estado
+# por passo e o do inicio do passo), um por LOAD, e o passo seguinte e igual
+regra     = "passos-isolados-por-load"
+
+[[excecao]]
+id        = "d11-boot-quadro-intermediario"
+classe    = "D11"
+onde      = "boot (V4-V13 do estavel)"
+efeito    = "o quadro intermediario F1211C1A... do estavel nao aparece no experimental"
+causa     = "as cargas do boot nao consomem VBlanks no experimental"
+evidencia = "docs/N2b2-RELATORIO.md 4.4; test_n2b2 N3 exige exatamente esta excecao"
+
+[[excecao]]
+id        = "d11-menu-itens"
+classe    = "D11"
+onde      = "abertura e fechamento do menu de itens (carga de modelos)"
+efeito    = "as trocas de quadro da transicao diferem; leituras, audio e estado iguais"
+causa     = "a carga dos modelos do menu nao consome VBlanks no experimental"
+evidencia = "docs/N2b2-RELATORIO.md 4.5.1 (86 de 99 trocas entre as leituras 5974 e 6174)"
+
+[[excecao]]
+id        = "d11-copias-guarda-stream"
+classe    = "D11"
+onde      = "anel do stream de video (Sofdec legado): 8 palavras depois do fim de cada canal"
+efeito    = "4 regravacoes a menos das copias de guarda em cada video"
+causa     = "partida do video mais curta no experimental"
+evidencia = "docs/N2b2-RELATORIO.md 4.3"
+
+[[excecao]]
+id        = "d11-download-musica"
+classe    = "D11"
+onde      = "download nativo de SMPB/SMSB (8C15D534)"
+efeito    = "sem a espera do DMA (176,7 ns/byte): as cargas de musica nao levam VBlanks e os lotes do driver antes e depois do download caem no mesmo tick"
+causa     = "transitional::time::hardware_wait nao espera no experimental (o trabalho nao consome tempo logico)"
+evidencia = "docs/N2-PLANO.md 12.4; o estado por passo continua igual (sessoes acima)"
