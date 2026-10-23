@@ -714,8 +714,8 @@ public:
         if (menu_.is_open()) {
             menu_.tick(now);
             if (held_ >= 0 && now >= nextRepeat_) act(bs::MenuAction(held_), now), nextRepeat_ = now + 0.12;
-            if (!menu_.is_open()) close();  // "Voltar ao jogo" ou Voltar na pagina principal
         }
+        resumeIfClosed();
         bs::Preferences next;
         if (menu_.take_changes(next)) apply(next, false);
         // a tela so vai para o arquivo depois de aceita: sem confirmacao em curso, a aplicada e a confirmada
@@ -909,6 +909,7 @@ public:
 private:
     int                               outW_ = 0, outH_ = 0;
     int                               held_ = -1, captures_ = 0;
+    bool                              hostPaused_ = false;  // o jogo esta pausado por este menu
     std::string                       lastCapture_;
     double                            nextRepeat_ = 0;
     float                             stick_[2] = {};
@@ -936,13 +937,21 @@ private:
         return wh > 0 ? y * float(outH_) / float(wh) : y;
     }
 
-    void act(bs::MenuAction a, double now) { menu_.input(a, now); }
+    void act(bs::MenuAction a, double now) {
+        menu_.input(a, now);
+        resumeIfClosed();
+    }
+    // O modelo fecha sozinho ("Voltar ao jogo", Voltar na pagina principal, Esc): o jogo volta junto, por qualquer caminho.
+    // Antes so o botao View/Back retomava; fechar com B/Esc depois de visitar uma pagina deixava o jogo pausado.
+    void resumeIfClosed() {
+        if (hostPaused_ && !menu_.is_open()) close();
+    }
     void hold(bs::MenuAction a, double now) { held_ = int(a), nextRepeat_ = now + 0.4; }
 
     void openMenu() {
         input_.release_keyboard();  // teclas do jogo seguras ate aqui soltam (o jogo fica pausado)
         menu_.open();
-        host_.setPaused(true);
+        host_.setPaused(true), hostPaused_ = true;
         std::fprintf(stderr, "[menu] aberto (jogo pausado no VBlank %llu)\n", static_cast<unsigned long long>(host_.vblanks()));
     }
     void close() {
@@ -950,7 +959,7 @@ private:
         bs::Preferences next;
         if (menu_.take_changes(next)) apply(next, false);  // uma confirmacao de tela pendente voltou ao fechar
         held_ = -1;
-        host_.setPaused(false);
+        host_.setPaused(false), hostPaused_ = false;
         std::fprintf(stderr, "[menu] fechado no VBlank %llu (jogo continua)\n", static_cast<unsigned long long>(host_.vblanks()));
     }
 
