@@ -15,13 +15,14 @@ namespace bs::builder {
 
 // N0: tools/dcmap (mapa de regioes, usado pela sonda do runtime), native, legacy e transitional
 // sao alvos do CMake raiz e entram no kit.
-const wchar_t* const kKitEntries[16] = {L"CMakeLists.txt", L"LICENSE", L"VERSION", L"app", L"runtime",
+const wchar_t* const kKitEntries[17] = {L"CMakeLists.txt", L"LICENSE", L"VERSION", L"app", L"runtime",
                                         L"tools/extractor", L"tools/dist/LEIA-ME.txt", L"config",
                                         L"tools/dcmap", L"native", L"legacy", L"transitional",
                                         L"tools/build",           // N2b: dependencias do MSVC por JSON (D10)
                                         L"third_party/dr_libs",   // N6 fase E: FLAC de mods (cabecalho unico)
                                         L"third_party/xiph",      // N6: OGG/Vorbis de mods (libogg + libvorbis)
-                                        L"third_party/vulkan"};   // N7b: cabecalhos Vulkan (Khronos, Apache-2.0)
+                                        L"third_party/vulkan",    // N7b: cabecalhos Vulkan (Khronos, Apache-2.0)
+                                        L"mods-padrao"};          // N7c: mods padrao (legendas), em toda instalacao
 
 namespace {
 

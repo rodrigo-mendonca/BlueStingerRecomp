@@ -7,7 +7,8 @@
 #
 # A distribuicao do Builder NAO contem nada do jogo (nem codigo gerado, nem executavel do
 # jogo, nem dados do disco); a montagem confere isso antes de trocar a pasta. Uma tentativa
-# que falha deixa a anterior intacta.
+# que falha deixa a anterior intacta. Os mods padrao do projeto (mods-padrao: as legendas, so texto) vao no kit e o
+# Builder os instala em <instalacao>\mods.
 param(
     [string]$Out = "",
     [switch]$NoBuild
@@ -65,7 +66,7 @@ $kit = Join-Path $stage "kit"
 # O que o .gitignore exclui (game-data, generated, ISO, ...) nunca entra (revisao Codex).
 $kitEntries = @("CMakeLists.txt", "LICENSE", "app", "runtime", "tools/extractor", "tools/dist/LEIA-ME.txt", "config",
                 "tools/dcmap", "native", "legacy", "transitional", "tools/build", "third_party/dr_libs", "third_party/xiph",
-                "third_party/vulkan")
+                "third_party/vulkan", "mods-padrao")
 $kitList = @(git -C $repo -c core.quotepath=off ls-files --cached --others --exclude-standard -- @kitEntries)
 if ($LASTEXITCODE -ne 0 -or $kitList.Count -lt 20) { Fail "git ls-files falhou ou listou poucos arquivos ($($kitList.Count))" }
 foreach ($rel in $kitList) {
@@ -164,6 +165,7 @@ Distribuicao: Builder (sem conteudo do jogo)
 Montada em: $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 Runtime do MSVC: $($crt.Name) ($([IO.Path]::GetFileName($env:VCToolsRedistDir.TrimEnd('\'))))
 Kit de fontes: $($kitFiles.Count) arquivos, $([math]::Round((($kitFiles | Measure-Object Length -Sum).Sum / 1MB), 1)) MB (SDL3 release-3.2.30)
+Mods padrao: $((Get-ChildItem -Directory (Join-Path $kit 'mods-padrao') -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
 "@ | Set-Content -Encoding utf8 "$stage\VERSAO.txt"
 
 # troca segura (como em make_preview.ps1)

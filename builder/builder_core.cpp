@@ -912,6 +912,25 @@ Result build(const Request& req, const Callbacks& cb) {
             fs::copy(kit / L"mods" / L"video", stage / L"mods" / L"video", fs::copy_options::recursive);
             log("mods de video copiados para o pacote");
         }
+        // mods padrao do projeto (kit\mods-padrao\<id>\mod.toml, so texto: as legendas), em toda instalacao: vao para
+        // <instalacao>\mods\<id>; as legendas dos filmes (video\ do pacote) tambem para mods\video, onde o player as
+        // procura, sem substituir os mods de video do projeto copiados acima
+        if (fs::is_directory(kit / L"mods-padrao", ec)) {
+            size_t n = 0;
+            for (const auto& e : fs::directory_iterator(kit / L"mods-padrao")) {
+                if (!e.is_directory() || !fs::is_regular_file(e.path() / L"mod.toml", ec)) continue;
+                fs::create_directories(stage / L"mods" / e.path().filename());
+                fs::copy(e.path(), stage / L"mods" / e.path().filename(), fs::copy_options::recursive);
+                if (fs::is_directory(e.path() / L"video", ec)) {
+                    fs::create_directories(stage / L"mods" / L"video");
+                    fs::copy(e.path() / L"video", stage / L"mods" / L"video",
+                             fs::copy_options::recursive | fs::copy_options::skip_existing);
+                }
+                log("mod padrao: " + path_text(e.path().filename()));
+                ++n;
+            }
+            if (n == 0) log("mods-padrao sem nenhum pacote (mod.toml)");
+        }
 
         // 8. verificacao do executavel montado, SEM o CDI: responde, da boot com os dados do
         // pacote (data\ ao lado do exe) e confere o SHA-256 de todos os arquivos de dados

@@ -9,9 +9,9 @@ C++ junto com o runtime aqui, no seu computador, e prepara os dados do disco num
 proprio. Depois da conversao, o jogo NAO precisa mais do CDI (nem de emulador): a pasta
 gerada pode ser movida e o CDI guardado.
 
-Esta pasta NAO contem nada do jogo: so o Builder, o codigo-fonte do runtime (licenca MIT) e
-do SDL3 (licenca zlib). O jogo gerado (executavel e pasta data\) e derivado da sua copia:
-use-o so localmente e nao o publique.
+Esta pasta NAO contem dados nem codigo do jogo: so o Builder, o codigo-fonte do runtime
+(licenca MIT), do SDL3 (licenca zlib) e o mod padrao de legendas (texto). O jogo gerado
+(executavel e pasta data\) e derivado da sua copia: use-o so localmente e nao o publique.
 
 Requisitos
 ----------
@@ -40,6 +40,12 @@ compila com o seu Visual Studio, monta o pacote numa pasta temporaria, testa o e
 SEM o CDI (dados e boot curto) e so entao troca a versao instalada. Se qualquer etapa falhar
 ou for cancelada, a versao anterior continua intacta. A versao anterior fica guardada em
 BlueStinger.anterior (para voltar, renomeie as pastas).
+
+Legendas (mod padrao)
+---------------------
+Toda instalacao recebe o mod padrao de legendas em ingles (kit\mods-padrao\legendas-en, so texto):
+vai para BlueStinger\mods\legendas-en (falas do gameplay) e mods\video (filmes). Liga, desliga e
+ajusta pelo menu do jogo (Esc, Legendas). E uma transcricao automatica ainda nao revisada.
 
 Projeto C++ editavel e mods (BlueStinger-Developer.exe)
 -------------------------------------------------------
