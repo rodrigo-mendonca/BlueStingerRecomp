@@ -11,6 +11,10 @@ namespace bs::native::settings {
 // Original: a camera do jogo, sem nada instalado. Hibrida: o analogico direito gira e ela volta sozinha. Livre: o
 // deslocamento fica ate o R3 (ou nova entrada).
 enum class CameraMode : uint8_t { Original, Hybrid, Free };
+// Movimentacao com a camera girada (Hibrida e Livre): Camera = o analogico esquerdo anda para onde a vista olha (o
+// deslocamento de yaw da camera livre e somado a entrada); Original = relativo a camera do jogo, como no console.
+// No modo Original da camera nao ha deslocamento: o movimento e sempre o original.
+enum class MoveMode : uint8_t { Original, Camera };
 
 struct CameraSettings {
     CameraMode mode        = CameraMode::Original;
@@ -23,10 +27,12 @@ struct CameraSettings {
     bool       r3_recenter = true;
     float      pitch_up    = 25.0f;   // limites do pitch em graus (0 a 45)
     float      pitch_down  = 25.0f;
+    MoveMode   movement    = MoveMode::Camera;
     bool       operator==(const CameraSettings&) const = default;
 };
 
 const char*    camera_mode_name(CameraMode m);  // "original", "hibrida", "livre"
+const char*    move_mode_name(MoveMode m);      // "original", "camera"
 CameraSettings clamp_camera(CameraSettings s);   // faixas (e nao finitos voltam ao padrao)
 
 // A secao [camera] (sem o resto do arquivo); invalida: padrao + aviso.

@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace ni = bs::native::input;
 namespace ib = bs::transitional::input_bridge;
@@ -205,4 +206,140 @@ BS_TEST(camera_orbit_geometry) {
     // distancia limitada
     const fc::Vec3 far = fc::orbit({0, 0, 0}, 0, 0, {0, 0, -5000}, fc::units(180), 0);
     BS_CHECK(std::fabs(far.z + 2 * fc::kMaxOrbit) < 1e-2f);
+}
+
+// Movimentacao relativa a camera: padrao "camera", "original" lido e gravado, valor desconhecido avisa.
+BS_TEST(camera_movement_settings) {
+    NearestRounding rounding;
+    BS_CHECK(st::CameraSettings{}.movement == st::MoveMode::Camera);
+    BS_CHECK(st::camera_from_toml("[camera]\nmodo = \"livre\"\n").movement == st::MoveMode::Camera);  // arquivo antigo
+    std::string w;
+    BS_CHECK(st::camera_from_toml("[camera]\nmovimento = \"original\"\n", &w).movement == st::MoveMode::Original && w.empty());
+    BS_CHECK(st::camera_from_toml("[camera]\nmovimento = \"tanque\"\n", &w).movement == st::MoveMode::Camera && !w.empty());
+    st::CameraSettings a;
+    a.mode = st::CameraMode::Hybrid, a.movement = st::MoveMode::Original;
+    BS_CHECK(st::camera_from_toml(st::camera_to_toml(a)) == a);
+    st::CameraSettings bad;
+    bad.movement = st::MoveMode(7);
+    BS_CHECK(st::clamp_camera(bad).movement == st::MoveMode::Camera);
+}
+
+// O analogico girado pelo yaw da vista (y para baixo): frente com a vista 90 graus a direita vira direita; 180, tras.
+// O comprimento se conserva e passa a ser no maximo 1 (a diagonal do teclado nao ganha velocidade).
+BS_TEST(camera_movement_rotate_stick) {
+    NearestRounding rounding;
+    auto rot = [](float x, float y, float d) {
+        fc::rotate_stick(x, y, d);
+        return std::pair<float, float>{x, y};
+    };
+    auto near = [](std::pair<float, float> v, float x, float y) { return std::fabs(v.first - x) < 1e-5f && std::fabs(v.second - y) < 1e-5f; };
+    BS_CHECK(near(rot(0, -1, 0), 0, -1));
+    BS_CHECK(near(rot(0, -1, 90), 1, 0));    // frente -> direita do jogo
+    BS_CHECK(near(rot(0, -1, -90), -1, 0));  // frente -> esquerda
+    BS_CHECK(near(rot(0, -1, 180), 0, 1));   // frente -> tras
+    BS_CHECK(near(rot(1, 0, 90), 0, 1));     // direita -> tras
+    const auto h = rot(0.5f, 0, 37);
+    BS_CHECK(std::fabs(std::hypot(h.first, h.second) - 0.5f) < 1e-5f);
+    const auto d = rot(1, -1, 30);  // teclado na diagonal: comprimento 1,41 limitado a 1
+    BS_CHECK(std::fabs(std::hypot(d.first, d.second) - 1) < 1e-5f && std::fabs(d.first) <= 1 && std::fabs(d.second) <= 1);
+    BS_CHECK(near(rot(std::nanf(""), 0, 45), 0, 0));
+    // sem a camera livre instalada, a amostra passa intacta
+    ni::ControllerState s;
+    s.axis(ni::Axis::StickX) = 0.3f, s.axis(ni::Axis::StickY) = -0.8f, s.buttons = 5;
+    BS_CHECK(fc::move_yaw() == 0);
+    const ni::ControllerState r = fc::relative_input(s);
+    BS_CHECK(r.axis(ni::Axis::StickX) == 0.3f && r.axis(ni::Axis::StickY) == -0.8f && r.buttons == 5);
+}
+
+// A transformacao vem antes do filtro da gravacao (que grava o efetivo) e nao vale para a fonte de teste (a reproducao ja
+// traz o efetivo), salvo quando pedida (diagnosticos da camera).
+BS_TEST(camera_movement_transform_order) {
+    ni::InputSystem sys;
+    sys.gamepad_added(1, "pad");
+    sys.gamepad_axis(1, "lefty", -1.0f);
+    float seen = 0;
+    sys.set_transform([](const ni::SampleContext&, const ni::ControllerState& s) {
+        ni::ControllerState o = s;
+        o.axis(ni::Axis::StickX) = 1, o.axis(ni::Axis::StickY) = 0;
+        return o;
+    });
+    sys.set_filter([&](const ni::SampleContext&, const ni::ControllerState& s) {
+        seen = s.axis(ni::Axis::StickX);
+        return s;
+    });
+    BS_CHECK(sys.latch({}).axis(ni::Axis::StickX) == 1 && seen == 1);
+    sys.set_test_source([](const ni::SampleContext&) {
+        ni::ControllerState s;
+        s.axis(ni::Axis::StickY) = -1;
+        return s;
+    });
+    BS_CHECK(sys.latch({}).axis(ni::Axis::StickX) == 0);  // reproducao: sem transformar
+    sys.set_transform([](const ni::SampleContext&, const ni::ControllerState& s) {
+        ni::ControllerState o = s;
+        o.axis(ni::Axis::StickX) = 0.5f;
+        return o;
+    }, true);
+    BS_CHECK(sys.latch({}).axis(ni::Axis::StickX) == 0.5f);  // diagnostico da camera
+    sys.set_transform({});
+    BS_CHECK(sys.latch({}).axis(ni::Axis::StickX) == 0);
+}
+
+// Vista ancorada no mundo (movimentacao relativa): o giro da camera do jogo sai do deslocamento; nada no Original nem
+// durante a volta da Hibrida.
+BS_TEST(camera_movement_absorb) {
+    NearestRounding rounding;
+    fc::CameraRig   r = rig(st::CameraMode::Free);
+    run(r, 60, {1, 0});  // 90 graus/s por 1 s
+    const float y0 = r.yaw();
+    BS_CHECK(y0 > 80 && y0 < 95);
+    r.absorb(30);
+    BS_CHECK(std::fabs(r.yaw() - (y0 - 30)) < 1e-3f);
+    r.absorb(y0 - 30);
+    BS_CHECK(r.yaw() == 0);
+    r.absorb(-50);  // sem deslocamento: a vista segue a camera do jogo, nada a compensar
+    BS_CHECK(r.yaw() == 0);
+    run(r, 6, {1, 0});
+    const float y1 = r.yaw();
+    BS_CHECK(y1 > 0);
+    r.absorb(-150);  // a camera do jogo gira para o outro lado: a vista fica (deslocamento maior, normalizado)
+    BS_CHECK(std::fabs(r.yaw() - (y1 + 150 > 180 ? y1 + 150 - 360 : y1 + 150)) < 1e-3f);
+    fc::CameraRig p = rig(st::CameraMode::Free);
+    run(p, 12, {1, 0});
+    p.absorb(p.yaw() + 5);  // a camera do jogo passa da vista: o deslocamento acaba em zero, nao troca de lado
+    BS_CHECK(p.yaw() == 0);
+    // passar por +-180 nao e alcancar (revisao Codex 2026-10-23): +170 com a camera girando -20 vira -170 (= +190)
+    fc::CameraRig q = rig(st::CameraMode::Free);
+    run(q, 60, {1, 0});
+    q.absorb(q.yaw() - 170);  // deixa o deslocamento em 170
+    BS_CHECK(std::fabs(q.yaw() - 170) < 1e-3f);
+    q.absorb(-20);
+    BS_CHECK(std::fabs(q.yaw() + 170) < 1e-3f);
+    q.absorb(20);  // e o simetrico: -170 com +20 volta a +170 (= -190)
+    BS_CHECK(std::fabs(q.yaw() - 170) < 1e-3f);
+    fc::CameraRig o = rig(st::CameraMode::Original);
+    o.absorb(30);
+    BS_CHECK(o.yaw() == 0);
+    fc::CameraRig h = rig(st::CameraMode::Hybrid);
+    run(h, 30, {1, 0});
+    fc::RigInput r3;
+    r3.recenter = true;
+    h.step(r3, false);
+    BS_CHECK(h.returning());
+    const float hy = h.yaw();
+    h.absorb(20);
+    BS_CHECK(h.yaw() == hy);
+}
+
+// O angulo entregue ao jogo, vista - referencia (unidades do SDK, 0x10000 = 360 graus, crescendo para a esquerda):
+// wrap de 16 bits, os dois sentidos e o desvio dos cortes somado a vista.
+BS_TEST(camera_movement_relative_degrees) {
+    NearestRounding rounding;
+    BS_CHECK(fc::relative_degrees(0x1234, 0x1234) == 0);
+    BS_CHECK(std::fabs(fc::relative_degrees(0x0000, 0x4000) - 90) < 1e-4f);    // vista 90 graus a direita da referencia
+    BS_CHECK(std::fabs(fc::relative_degrees(0x4000, 0x0000) + 90) < 1e-4f);    // a esquerda
+    BS_CHECK(std::fabs(fc::relative_degrees(0x0010, 0xFFF0) + 0.17578f) < 1e-4f);  // 0xFFF0 -> 0x0010 atravessa o wrap
+    BS_CHECK(std::fabs(fc::relative_degrees(0xFFF0, 0x0010) - 0.17578f) < 1e-4f);
+    BS_CHECK(std::fabs(std::fabs(fc::relative_degrees(0x8000, 0x0000)) - 180) < 1e-4f);
+    BS_CHECK(std::fabs(fc::relative_degrees(0x10000 + 0x2000, 0x2000)) < 1e-4f);  // a vista com volta inteira (bias)
+    BS_CHECK(std::fabs(fc::relative_degrees(0x2000 - 0x4000, 0x2000) - 90) < 1e-4f);  // bias de corte negativo
 }

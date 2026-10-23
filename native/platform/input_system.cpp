@@ -141,6 +141,8 @@ struct InputSystem::Impl {
     XInputReader                 xreader;  // vazio: XInputGetState
     SampleFn                     test;
     InputSystem::FilterFn        filter;
+    InputSystem::FilterFn        transform;  // N7c: movimentacao relativa a camera (antes do filtro)
+    bool                         transformTest = false;
     ControllerState              last;
     std::vector<ConnectionEvent> events;
     uint64_t                     tick = 0;
@@ -298,15 +300,25 @@ void InputSystem::set_filter(FilterFn fn) {
     impl_->filter = std::move(fn);
 }
 
+void InputSystem::set_transform(FilterFn fn, bool test_source) {
+    std::lock_guard lk(impl_->mu);
+    impl_->transform = std::move(fn), impl_->transformTest = test_source;
+}
+
 ControllerState InputSystem::latch(const SampleContext& ctx) {
     std::lock_guard lk(impl_->mu);
-    if (impl_->test) return impl_->last = impl_->test(ctx);
+    if (impl_->test) {
+        ControllerState s = impl_->test(ctx);
+        if (impl_->transform && impl_->transformTest) s = impl_->transform(ctx, s);
+        return impl_->last = s;
+    }
     if (impl_->xinput) impl_->pollXInput(map_);
     std::vector<ControllerState> parts;
     parts.push_back(keyboardState(impl_->keys, map_));
     if (const int a = impl_->active(map_.options); a >= 0) parts.push_back(padState(impl_->pads[size_t(a)], map_));
     ControllerState s = merge(parts);
     s.connected       = true;  // a janela sempre tem o teclado: a porta do jogador 1 nunca fica vazia
+    if (impl_->transform) s = impl_->transform(ctx, s);
     if (impl_->filter) s = impl_->filter(ctx, s);
     return impl_->last = s;
 }

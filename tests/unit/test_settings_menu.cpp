@@ -181,8 +181,10 @@ BS_TEST(settings_menu_camera_page) {
     m.input(MenuAction::Confirm, 0);
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Camera);
     auto v = m.view();
-    for (const char* l : {"Sensibilidade horizontal", "Zona morta", "Inverter eixo Y", "Retorno autom\u00e1tico", "Limite para cima"})
+    for (const char* l : {"Sensibilidade horizontal", "Zona morta", "Inverter eixo Y", "Retorno autom\u00e1tico", "Limite para cima",
+                          "Movimenta\u00e7\u00e3o"})
         BS_CHECK(find(v, l) >= 0 && !v.items[size_t(find(v, l))].enabled);
+    BS_CHECK(v.items[size_t(find(v, "Movimenta\u00e7\u00e3o"))].value == "Original");  // no Original, o do console
     bs::Preferences p;
     BS_CHECK(!m.take_changes(p));
     go(m, "Modo");
@@ -190,6 +192,14 @@ BS_TEST(settings_menu_camera_page) {
     BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Hybrid);
     v = m.view();
     BS_CHECK(v.items[size_t(find(v, "Retorno autom\u00e1tico"))].enabled && v.items[size_t(find(v, "Zona morta"))].enabled);
+    // movimentacao: relativa a camera por padrao na Hibrida e na Livre; muda na hora
+    const int mov = find(v, "Movimenta\u00e7\u00e3o");
+    BS_CHECK(mov >= 0 && v.items[size_t(mov)].enabled && v.items[size_t(mov)].value == "Relativa \u00e0 c\u00e2mera");
+    go(m, "Movimenta\u00e7\u00e3o");
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.take_changes(p) && p.camera.movement == st::MoveMode::Original && m.view().items[size_t(mov)].value == "Original");
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.take_changes(p) && p.camera.movement == st::MoveMode::Camera);
     go(m, "Sensibilidade horizontal");
     m.input(MenuAction::Right, 0);
     BS_CHECK(m.take_changes(p) && p.camera.sens_x == 130);

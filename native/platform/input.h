@@ -160,6 +160,10 @@ public:
     // estado ja combinado e devolve o que o jogo ve. Nao vale com a fonte de teste.
     using FilterFn = std::function<ControllerState(const SampleContext&, const ControllerState&)>;
     void set_filter(FilterFn fn);
+    // Transformacao da amostra do jogo (N7c: movimentacao relativa a camera livre), depois de combinar os dispositivos do
+    // host e ANTES do filtro: a gravacao guarda o efetivo e a reproducao (fonte de teste) o entrega sem transformar de
+    // novo. `test_source` = vale tambem para a fonte de teste (so os diagnosticos da camera, BS_CAMERA_FIXA/ROTEIRO).
+    void set_transform(FilterFn fn, bool test_source = false);
 
     // Amostra do jogador 1 no ponto de amostragem; fica guardada como a ultima amostra.
     ControllerState latch(const SampleContext& ctx);

@@ -263,6 +263,11 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
             return [=](Preferences& p, int d) { p.camera.*m = std::clamp(std::round((p.camera.*m + by * float(d)) / by) * by, lo, hi); };
         };
         e.push_back({"Modo", camera_label(c.mode), true, [](Preferences& p, int d) { p.camera.mode = cycle(p.camera.mode, d, 3); }});
+        // no Original nao ha deslocamento: o movimento e sempre o do console
+        e.push_back({"Movimentação", !on || c.movement == st::MoveMode::Original ? "Original" : "Relativa à câmera", on,
+                     [](Preferences& p, int) {
+                         p.camera.movement = p.camera.movement == st::MoveMode::Camera ? st::MoveMode::Original : st::MoveMode::Camera;
+                     }});
         e.push_back({"Sensibilidade horizontal", num(c.sens_x, 0, " \u00b0/s"), on, fstep(&st::CameraSettings::sens_x, 10, 10, 360)});
         e.push_back({"Sensibilidade vertical", num(c.sens_y, 0, " \u00b0/s"), on, fstep(&st::CameraSettings::sens_y, 10, 10, 360)});
         e.push_back({"Zona morta", num(c.deadzone, 2, ""), on, fstep(&st::CameraSettings::deadzone, 0.05f, 0, 0.6f)});

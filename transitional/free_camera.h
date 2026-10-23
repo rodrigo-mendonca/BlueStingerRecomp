@@ -41,6 +41,10 @@ public:
     void  configure(const st::CameraSettings& s) { cfg_ = st::clamp_camera(s); }
     void  step(const RigInput& in, bool suspended);
     void  reset();  // corte de camera, troca de modo: volta ao centro na hora
+    // Movimentacao relativa: a camera do jogo girou `degrees` (para a direita = positivo da vista): o deslocamento
+    // compensa e a vista fica onde estava no mundo, ate a camera do jogo alcanca-la (deslocamento zero: dali em diante a
+    // vista segue a camera do jogo). Nada sem deslocamento, durante a volta ao enquadramento do jogo nem no Original.
+    void  absorb(float degrees);
     float yaw() const { return yaw_; }
     float pitch() const { return pitch_; }
     bool  returning() const { return returning_; }
@@ -79,8 +83,26 @@ void uninstall(BoundaryRegistry& registry);
 bool installed();
 void vblank(uint64_t n);  // um passo do rig (nada sem instalacao)
 
+// Movimentacao relativa a camera (N7c). O jogo ja le o analogico relativo a camera DELE (yaw em 0x8C24CD60, que a camera
+// livre nao muda); a vista esta girada pelo deslocamento do rig. Girar a entrada so por esse deslocamento faz o analogico
+// para frente andar para onde a vista olha, sem rotacao dupla. So o yaw: o pitch nao entra.
+// rotate_stick: (x, y) do analogico (y para baixo, como o SDL) girado por `degrees` (vista para a direita = positivo),
+// antes limitado ao circulo unitario (a diagonal nao ganha velocidade). Pura, para os testes.
+void  rotate_stick(float& x, float& y, float degrees);
+// O angulo do analogico para o rumo ser a vista: (vista - referencia do jogo) em unidades do SDK, com o wrap de 16 bits,
+// convertido para graus da vista (para a direita = positivo; o yaw do SDK cresce para a esquerda). Pura, para os testes.
+float relative_degrees(int32_t view, int32_t ref);
+// O deslocamento da vista na ultima montagem de gameplay, em graus; 0 sem instalacao, com o movimento "original", em cena
+// roteirizada ou corte (o deslocamento ja e zero ali) ou sem montagem ha mais de 30 VBlanks.
+float move_yaw();
+// A amostra do jogo com o analogico esquerdo girado para andar para onde a vista olha (o resto igual). O jogo trava a
+// referencia da camera dele no toque do analogico; o angulo entregue e (vista agora - camera do jogo no toque), so depois
+// que a vista sai do enquadramento do jogo nesse toque. Na thread do jogo.
+native::input::ControllerState relative_input(const native::input::ControllerState& s);
+
 struct Stats {
     uint64_t builds = 0, applied = 0, suspended = 0, cuts = 0, foreign = 0;  // foreign: chamadas de outros pontos
+    uint64_t moved = 0;  // amostras do jogo com o analogico girado (movimentacao relativa)
 };
 Stats       stats();
 std::string summary();

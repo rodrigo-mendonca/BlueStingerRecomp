@@ -551,7 +551,8 @@ void GameHost::threadMain() {
                                        opt_.time != TimeProviderKind::Experimental);
         }
         // N7c: camera livre (secao 23 do N7-PLANO). Original: nada instalado. Diagnostico: BS_CAMERA_ROTEIRO (analogico por
-        // VBlank, no lugar do controle), BS_CAMERA_LOG (uma linha por montagem), BS_CAMERA_FIXA=yaw,pitch (deslocamento fixo)
+        // VBlank, no lugar do controle), BS_CAMERA_LOG (uma linha por montagem), BS_CAMERA_FIXA=yaw,pitch (deslocamento fixo),
+        // BS_CAMERA_MOVIMENTO=camera|original (a movimentacao desta execucao)
         {
             transitional::free_camera::Options co;
             co.cfg = opt_.camera;
@@ -562,7 +563,21 @@ void GameHost::threadMain() {
                 if (std::sscanf(v, "%f,%f", &co.fixedYaw, &co.fixedPitch) != 2) throw std::runtime_error("BS_CAMERA_FIXA: use yaw,pitch");
                 co.fixed = true;
             }
+            if (const char* v = std::getenv("BS_CAMERA_MOVIMENTO"); v && *v) {  // diagnostico: "camera" ou "original"
+                if (std::strcmp(v, "camera") == 0) co.cfg.movement = native::settings::MoveMode::Camera;
+                else if (std::strcmp(v, "original") == 0) co.cfg.movement = native::settings::MoveMode::Original;
+                else throw std::runtime_error("BS_CAMERA_MOVIMENTO: use camera ou original");
+            }
+            // movimentacao relativa a camera: o analogico esquerdo girado pelo yaw da vista, na amostra do jogo (antes da
+            // gravacao, que guarda o efetivo). Roteiros so com os diagnosticos da camera: a reproducao ja traz o efetivo.
+            // Por isso BS_CAMERA_FIXA/ROTEIRO sao para roteiros com a entrada crua: com uma gravacao do BS_GRAVAR eles
+            // girariam de novo o que ja e efetivo (revisao Codex 2026-10-23).
+            const bool diagnostic = !co.script.empty() || co.fixed;
             transitional::free_camera::configure(transitional::boundary_registry(), std::move(co));
+            if (opt_.input)
+                opt_.input->set_transform([](const native::input::SampleContext&, const native::input::ControllerState& s) {
+                    return transitional::free_camera::relative_input(s);
+                }, diagnostic);
             if (transitional::free_camera::installed())
                 std::fprintf(stderr, "[camera] modo %s\n", native::settings::camera_mode_name(opt_.camera.mode));
         }
@@ -760,6 +775,7 @@ void GameHost::threadMain() {
     }
     if (transitional::free_camera::stats().builds) std::fputs(transitional::free_camera::summary().c_str(), stderr);
     transitional::free_camera::uninstall(transitional::boundary_registry());  // sempre (o menu pode ter instalado)
+    if (opt_.input) opt_.input->set_transform({});
     if (transitional::render_capture::stats().renders)  // N7a: BS_RENDER_IR
         std::fputs(transitional::render_capture::summary().c_str(), stderr);
     transitional::render_capture::install(transitional::render_capture::Mode::Off);  // sempre (revisao Codex 2026-10-21)

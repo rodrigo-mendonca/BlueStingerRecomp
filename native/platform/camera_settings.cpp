@@ -16,6 +16,8 @@ const char* camera_mode_name(CameraMode m) {
     return n[size_t(m)];
 }
 
+const char* move_mode_name(MoveMode m) { return m == MoveMode::Camera ? "camera" : "original"; }
+
 CameraSettings clamp_camera(CameraSettings s) {
     const CameraSettings d;
     auto f = [](float& v, float def, float lo, float hi) { v = std::isfinite(v) ? std::clamp(v, lo, hi) : def; };
@@ -23,6 +25,7 @@ CameraSettings clamp_camera(CameraSettings s) {
     f(s.smoothing, d.smoothing, 0, 0.9f), f(s.return_s, d.return_s, 1, 15), f(s.pitch_up, d.pitch_up, 0, 45);
     f(s.pitch_down, d.pitch_down, 0, 45);
     if (uint8_t(s.mode) > uint8_t(CameraMode::Free)) s.mode = CameraMode::Original;
+    if (uint8_t(s.movement) > uint8_t(MoveMode::Camera)) s.movement = d.movement;
     return s;
 }
 
@@ -38,7 +41,8 @@ std::string camera_to_toml(const CameraSettings& s) {
       << "retorno_s = " << s.return_s << "   # hibrida: segundos sem usar ate voltar\n"
       << "r3_recentraliza = " << (s.r3_recenter ? "true" : "false") << "\n"
       << "pitch_cima = " << s.pitch_up << "   # graus\n"
-      << "pitch_baixo = " << s.pitch_down << "\n";
+      << "pitch_baixo = " << s.pitch_down << "\n"
+      << "movimento = \"" << move_mode_name(s.movement) << "\"   # \"camera\" (anda para onde a vista olha) ou \"original\"\n";
     return o.str();
 }
 
@@ -64,6 +68,11 @@ CameraSettings camera_from_toml(const std::string& text, std::string* warning) {
         else if (*m == "hibrida") s.mode = CameraMode::Hybrid;
         else if (*m == "livre") s.mode = CameraMode::Free;
         else if (warning) *warning = "controles.toml: [camera] modo \"" + *m + "\" desconhecido (original)";
+    }
+    if (auto m = (*t)["movimento"].value<std::string>()) {
+        if (*m == "camera") s.movement = MoveMode::Camera;
+        else if (*m == "original") s.movement = MoveMode::Original;
+        else if (warning) *warning = "controles.toml: [camera] movimento \"" + *m + "\" desconhecido (camera)";
     }
     flt("sensibilidade_x", s.sens_x), flt("sensibilidade_y", s.sens_y), flt("zona_morta", s.deadzone);
     bln("inverter_y", s.invert_y), flt("suavizacao", s.smoothing), flt("retorno_s", s.return_s);
