@@ -1642,11 +1642,19 @@ int mainWindow(Args& a) {
     prefs.graphics = st::clamp_to(prefs.graphics, caps);
     if (!prefs.graphics.vulkan) a.render = 0;
     std::vector<std::string> languages;  // os idiomas dos pacotes de legendas encontrados
-    for (const auto& pkg : bs::native::localization::ModPackages::discover(exeDir() / L"mods", "T13001N V1.000").packages())
+    const auto modPackages = bs::native::localization::ModPackages::discover(exeDir() / L"mods", "T13001N V1.000");
+    for (const auto& pr : modPackages.problems())
+        std::fprintf(stderr, "[menu] pacote de mod recusado (%s): %s\n", utf8(pr.dir.filename()).c_str(), pr.message.c_str());
+    for (const auto& pkg : modPackages.packages())
         for (const auto& l : pkg.languages)
             if (std::find(languages.begin(), languages.end(), l) == languages.end()) languages.push_back(l);
     if (std::find(languages.begin(), languages.end(), prefs.subtitles.language) == languages.end())
         languages.insert(languages.begin(), prefs.subtitles.language);
+    {
+        std::string l;
+        for (const auto& x : languages) l += (l.empty() ? "" : ", ") + x;
+        std::fprintf(stderr, "[menu] idiomas das legendas: %s (atual: %s)\n", l.c_str(), prefs.subtitles.language.c_str());
+    }
     uint64_t endVblank = 0;
     {
         bs::GameHost host;

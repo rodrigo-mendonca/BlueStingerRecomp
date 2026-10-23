@@ -85,6 +85,18 @@ BS_TEST(settings_menu_audio_subtitles_and_changes) {
     BS_CHECK(m.take_changes(out) && !out.subtitles.enabled);
     m.input(MenuAction::Right, 0);  // e volta ao primeiro, ligadas
     BS_CHECK(m.prefs().subtitles.enabled && m.prefs().subtitles.language == "en-US");
+    // partindo do pt-BR automatico (a dist), com Confirmar como no controle: pt-BR -> Desativadas -> English
+    bs::Preferences pt;
+    pt.subtitles.language = "pt-BR";
+    bs::SettingsMenu q(pt, {}, {"en-US", "pt-BR"});
+    q.open();
+    go(q, "Legendas");
+    q.input(MenuAction::Confirm, 0);
+    go(q, "Idioma");
+    q.input(MenuAction::Confirm, 0);
+    BS_CHECK(!q.prefs().subtitles.enabled);
+    q.input(MenuAction::Confirm, 0);
+    BS_CHECK(q.prefs().subtitles.enabled && q.prefs().subtitles.language == "en-US");
 }
 
 BS_TEST(settings_menu_display_confirmation_and_revert) {
