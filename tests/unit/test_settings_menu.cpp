@@ -16,6 +16,12 @@ int find(const bs::MenuView& v, const std::string& label) {
         if (v.items[i].label == label) return int(i);
     return -1;
 }
+// a interface acompanha o idioma das legendas: os testes de navegacao usam os rotulos em portugues
+bs::Preferences pt() {
+    bs::Preferences p;
+    p.subtitles.language = "pt-BR";
+    return p;
+}
 // leva a selecao ate o item (para baixo)
 void go(bs::SettingsMenu& m, const std::string& label, double t = 0) {
     for (int i = 0; i < 40 && m.view().items[size_t(m.view().selected)].label != label; ++i) m.input(MenuAction::Down, t);
@@ -25,7 +31,7 @@ void go(bs::SettingsMenu& m, const std::string& label, double t = 0) {
 BS_TEST(settings_menu_navigation_and_unavailable_options) {
     st::Capabilities caps;
     caps.vulkan = true, caps.max_msaa = 8, caps.max_anisotropy = 16, caps.max_height = 2160;  // so o modo fiel existe
-    bs::SettingsMenu m({}, caps, {"en-US", "pt-BR"});
+    bs::SettingsMenu m(pt(), caps, {"en-US", "pt-BR"});
     BS_CHECK(!m.is_open());
     m.open();
     BS_CHECK(m.is_open() && m.page() == bs::SettingsMenu::Page::Main);
@@ -37,10 +43,11 @@ BS_TEST(settings_menu_navigation_and_unavailable_options) {
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Graphics);
     const auto g = m.view();
     // nada implementado alem do fiel: as opcoes de melhoria aparecem indisponiveis ("em breve") e nao mudam
-    for (const char* l : {"Predefini\u00e7\u00e3o", "Resolu\u00e7\u00e3o interna", "Antialiasing (MSAA)", "Efeitos de imagem"}) {
+    for (const char* l : {"Resolu\u00e7\u00e3o interna", "Antialiasing (MSAA)", "Efeitos de imagem"}) {
         const int i = find(g, l);
         BS_CHECK(i >= 0 && !g.items[size_t(i)].enabled && g.items[size_t(i)].value.find("em breve") != std::string::npos);
     }
+    BS_CHECK(find(g, "Predefini\u00e7\u00e3o") < 0);  // retirada (2026-10-23): so mostrava "Personalizado"
     go(m, "Antialiasing (MSAA)");
     m.input(MenuAction::Right, 0);
     BS_CHECK(m.prefs().graphics.msaa == 1);
@@ -53,7 +60,7 @@ BS_TEST(settings_menu_navigation_and_unavailable_options) {
 }
 
 BS_TEST(settings_menu_audio_subtitles_and_changes) {
-    bs::SettingsMenu m({}, {}, {"en-US", "pt-BR"});
+    bs::SettingsMenu m(pt(), {}, {"en-US", "pt-BR"});
     m.open();
     go(m, "\u00c1udio");
     m.input(MenuAction::Confirm, 0);
@@ -65,12 +72,9 @@ BS_TEST(settings_menu_audio_subtitles_and_changes) {
     m.input(MenuAction::Back, 0);
     go(m, "Legendas");
     m.input(MenuAction::Confirm, 0);
-    BS_CHECK(m.prefs().subtitles.enabled && m.prefs().subtitles.language == "en-US");  // ingles ligado por padrao
+    BS_CHECK(m.prefs().subtitles.enabled && m.prefs().subtitles.language == "pt-BR");
     auto v = m.view();
-    BS_CHECK(v.items[size_t(find(v, "Idioma"))].value == "English");
-    go(m, "Idioma");
-    m.input(MenuAction::Right, 0);
-    BS_CHECK(m.prefs().subtitles.language == "pt-BR" && m.view().items[size_t(find(m.view(), "Idioma"))].value == "Português (Brasil)");
+    BS_CHECK(v.items[size_t(find(v, "Idioma"))].value == "Português (Brasil)");
     go(m, "Tamanho do texto");
     m.input(MenuAction::Right, 0);
     BS_CHECK(m.prefs().subtitles.size_pct == 110);
@@ -86,13 +90,14 @@ BS_TEST(settings_menu_audio_subtitles_and_changes) {
     m.input(MenuAction::Confirm, 0);  // sem contorno: o fundo liga (um dos dois sempre)
     BS_CHECK(!m.prefs().subtitles.outline && m.prefs().subtitles.box);
     go(m, "Idioma");
-    m.input(MenuAction::Right, 0);  // depois do ultimo idioma: desativadas
+    m.input(MenuAction::Right, 0);  // depois do ultimo idioma: desativadas (a interface fica em portugues)
     BS_CHECK(!m.prefs().subtitles.enabled && m.prefs().subtitles.effective_language().empty());
     BS_CHECK(m.view().items[size_t(find(m.view(), "Idioma"))].value == "Desativadas");
     BS_CHECK(!m.view().items[size_t(find(m.view(), "Tamanho do texto"))].enabled);
     BS_CHECK(m.take_changes(out) && !out.subtitles.enabled);
-    m.input(MenuAction::Right, 0);  // e volta ao primeiro, ligadas
+    m.input(MenuAction::Right, 0);  // e volta ao primeiro, ligadas: ingles, e a interface muda junto
     BS_CHECK(m.prefs().subtitles.enabled && m.prefs().subtitles.language == "en-US");
+    BS_CHECK(m.english() && find(m.view(), "Language") >= 0 && m.view().items[size_t(find(m.view(), "Language"))].value == "English");
     // partindo do pt-BR automatico (a dist), com Confirmar como no controle: pt-BR -> Desativadas -> English
     bs::Preferences pt;
     pt.subtitles.language = "pt-BR";
@@ -110,7 +115,7 @@ BS_TEST(settings_menu_audio_subtitles_and_changes) {
 BS_TEST(settings_menu_display_confirmation_and_revert) {
     st::Capabilities caps;
     caps.vulkan = true, caps.max_msaa = 8, caps.max_anisotropy = 16, caps.max_height = 2160, caps.features.window_modes = true;
-    bs::SettingsMenu m({}, caps, {"en-US"});
+    bs::SettingsMenu m(pt(), caps, {"en-US"});
     m.open();
     go(m, "Gr\u00e1ficos");
     m.input(MenuAction::Confirm, 0);
@@ -134,25 +139,88 @@ BS_TEST(settings_menu_display_confirmation_and_revert) {
     BS_CHECK(m.prefs().graphics.window == st::WindowMode::Fullscreen);
 }
 
-// Fechamento do N7: o Vulkan e o padrao do menu e trocar a predefinicao nao troca o renderizador escolhido
-BS_TEST(settings_menu_renderer_default_and_preset) {
+// Fechamento do N7: o Vulkan e o padrao do menu. Simplificacao (2026-10-23): sem "Predefinicao"; "Efeitos de imagem" e
+// um submenu (sem valor de opcao), como as paginas da principal e a Camera; as opcoes individuais continuam.
+BS_TEST(settings_menu_renderer_default_and_submenus) {
     st::Capabilities caps;
     caps.vulkan = true, caps.max_msaa = 8, caps.max_anisotropy = 16, caps.max_height = 2160;
-    caps.features.scaling = caps.features.filtering = caps.features.msaa = true;
-    bs::SettingsMenu m({}, caps, {"en-US"});
+    caps.features.scaling = caps.features.filtering = caps.features.msaa = caps.features.color = true;
+    bs::SettingsMenu m(pt(), caps, {"en-US", "pt-BR"});
     BS_CHECK(m.prefs().graphics.vulkan);
     m.open();
+    auto v = m.view();
+    for (const char* l : {"Gráficos", "Áudio", "Legendas", "Controles"}) BS_CHECK(v.items[size_t(find(v, l))].submenu);
+    for (const char* l : {"Restaurar padrões", "Voltar ao jogo"}) BS_CHECK(!v.items[size_t(find(v, l))].submenu);
     go(m, "Gráficos"), m.input(MenuAction::Confirm, 0);
-    BS_CHECK(m.view().items[size_t(find(m.view(), "Renderizador"))].value == "Vulkan");
+    v = m.view();
+    BS_CHECK(v.items[size_t(find(v, "Renderizador"))].value == "Vulkan" && !v.items[size_t(find(v, "Renderizador"))].submenu);
+    BS_CHECK(find(v, "Predefinição") < 0);
+    const int fx = find(v, "Efeitos de imagem");
+    BS_CHECK(fx >= 0 && v.items[size_t(fx)].submenu && v.items[size_t(fx)].enabled && v.items[size_t(fx)].value.empty());
+    go(m, "Resolução interna"), m.input(MenuAction::Right, 0);  // as opcoes individuais continuam
+    BS_CHECK(m.prefs().graphics.resolution == st::Resolution::P720 && !m.view().prompt.empty());
+    m.input(MenuAction::Confirm, 0);  // a resolucao pede confirmacao (como a tela)
+    go(m, "Antialiasing (MSAA)"), m.input(MenuAction::Right, 0);
+    BS_CHECK(m.prefs().graphics.msaa == 2);
     go(m, "Renderizador"), m.input(MenuAction::Confirm, 0);
     BS_CHECK(!m.prefs().graphics.vulkan);
-    go(m, "Predefinição"), m.input(MenuAction::Right, 0);
-    BS_CHECK(m.prefs().graphics.resolution == st::Resolution::P1080 && !m.prefs().graphics.vulkan);
+    go(m, "Efeitos de imagem"), m.input(MenuAction::Right, 0);  // submenu: Direita nao muda nada, Confirmar abre
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Graphics);
+    m.input(MenuAction::Confirm, 0);
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Effects);
+    m.input(MenuAction::Back, 0), m.input(MenuAction::Back, 0);
+    go(m, "Controles"), m.input(MenuAction::Confirm, 0);
+    v = m.view();
+    BS_CHECK(v.items[size_t(find(v, "Câmera"))].submenu && v.items[size_t(find(v, "Câmera"))].value == "Original Dreamcast");
+}
+
+// Idioma da interface: acompanha o das legendas (pt-BR = portugues; English = ingles), na hora, inclusive titulos, valores,
+// ajuda e confirmacoes; com as legendas desativadas fica o ultimo idioma. Reinicio: o idioma vem de legendas.toml.
+BS_TEST(settings_menu_interface_language) {
+    bs::SettingsMenu m({}, {}, {"en-US", "pt-BR"});  // padrao: en-US
+    BS_CHECK(m.english());
+    m.open();
+    auto v = m.view();
+    BS_CHECK(v.title == "Settings" && v.help.find("navigate") != std::string::npos);
+    for (const char* l : {"Graphics", "Audio", "Subtitles", "Controls", "Restore defaults", "Return to game"}) BS_CHECK(find(v, l) >= 0);
+    go(m, "Graphics"), m.input(MenuAction::Confirm, 0);
+    v = m.view();
+    BS_CHECK(v.title == "Settings \u203a Graphics" && find(v, "Renderer") >= 0 && find(v, "Image effects") >= 0);
+    BS_CHECK(v.items[size_t(find(v, "Internal resolution"))].value.find("coming soon") != std::string::npos);
+    m.input(MenuAction::Back, 0);
+    go(m, "Subtitles"), m.input(MenuAction::Confirm, 0);
+    go(m, "Language"), m.input(MenuAction::Right, 0);  // en-US -> pt-BR: a interface muda na hora, na mesma pagina
+    v = m.view();
+    BS_CHECK(!m.english() && v.title == "Configura\u00e7\u00f5es \u203a Legendas" && v.items[size_t(find(v, "Idioma"))].value == "Português (Brasil)");
+    BS_CHECK(v.items[size_t(find(v, "Contorno"))].value == "ligado" && v.help.find("navegar") != std::string::npos);
+    go(m, "Idioma"), m.input(MenuAction::Right, 0);  // desativadas: continua em portugues
+    v = m.view();
+    BS_CHECK(!m.prefs().subtitles.enabled && !m.english() && v.items[size_t(find(v, "Idioma"))].value == "Desativadas");
+    bs::Preferences saved;
+    BS_CHECK(m.take_changes(saved) && saved.subtitles.language == "pt-BR" && !saved.subtitles.enabled);
+    // reinicio com as legendas desativadas (o que legendas.toml guarda): a interface volta em portugues
+    bs::SettingsMenu r(saved, {}, {"en-US", "pt-BR"});
+    BS_CHECK(!r.english());
+    r.open();
+    BS_CHECK(r.view().title == "Configura\u00e7\u00f5es");
+    go(r, "Restaurar padr\u00f5es"), r.input(MenuAction::Confirm, 0);
+    BS_CHECK(r.view().prompt.find("Restaurar") == 0);
+    r.input(MenuAction::Confirm, 0);  // restaurar mantem o idioma escolhido (e liga as legendas)
+    BS_CHECK(r.prefs().subtitles.enabled && r.prefs().subtitles.language == "pt-BR" && !r.english());
+    // confirmacao de tela em ingles
+    st::Capabilities caps;
+    caps.vulkan = true, caps.max_height = 2160, caps.features.window_modes = true;
+    bs::SettingsMenu e({}, caps, {"en-US"});
+    e.open();
+    go(e, "Graphics"), e.input(MenuAction::Confirm, 0);
+    go(e, "Display mode"), e.input(MenuAction::Right, 1.0);
+    BS_CHECK(e.view().prompt.find("Keep this display setting?") == 0);
+    BS_CHECK(e.view().items[size_t(find(e.view(), "Display mode"))].value == "fullscreen");
 }
 
 BS_TEST(settings_menu_restore_defaults_and_controls) {
     bs::Preferences p;
-    p.audio.master = 40, p.subtitles.enabled = false, p.subtitles.size_pct = 180;
+    p.audio.master = 40, p.subtitles.enabled = false, p.subtitles.size_pct = 180, p.subtitles.language = "pt-BR";
     bs::SettingsMenu m(p, {}, {"en-US"});
     m.set_controls_info({{"A", "Z / a"}, {"START", "ENTER / start"}});
     m.open();
@@ -165,6 +233,7 @@ BS_TEST(settings_menu_restore_defaults_and_controls) {
     m.input(MenuAction::Confirm, 0);
     bs::Preferences def;
     def.graphics.vulkan = false;  // sem Vulkan (caps vazias) o padrao recua para o software
+    def.subtitles.language = "pt-BR";  // restaurar mantem o idioma escolhido
     BS_CHECK(m.prefs() == def);
     go(m, "Controles");
     m.input(MenuAction::Confirm, 0);
@@ -179,7 +248,7 @@ BS_TEST(settings_menu_effects_page) {
     st::Capabilities caps;
     caps.vulkan = true, caps.max_height = 2160;
     caps.features.color = caps.features.shaders = true;
-    bs::SettingsMenu m({}, caps, {"en-US"});
+    bs::SettingsMenu m(pt(), caps, {"en-US"});
     bs::ShaderChoice ok, bad;
     ok.name = "cor-quente", ok.params = {{"temperatura", "Temperatura", -1, 1, 0.5f, 0.1f}};
     bad.name = "quebrado", bad.error = "shader invalido";
@@ -216,7 +285,7 @@ BS_TEST(settings_menu_effects_page) {
 
 // N7c (secao 23): Configuracoes > Controles > Camera. Original deixa as opcoes inativas; Voltar volta a Controles.
 BS_TEST(settings_menu_camera_page) {
-    bs::SettingsMenu m({}, {}, {"en-US"});
+    bs::SettingsMenu m(pt(), {}, {"en-US"});
     m.open();
     go(m, "Controles");
     m.input(MenuAction::Confirm, 0);

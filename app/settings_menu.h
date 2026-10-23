@@ -9,7 +9,10 @@
 //   - mudanca aplicavel na hora vira pendente de aplicacao (take_changes) imediatamente;
 //   - mudanca de tamanho/modo de tela (requires_confirmation) aplica e pede confirmacao: sem ela em 15 s (ou com
 //     Voltar), a configuracao anterior volta sozinha;
-//   - "Restaurar padroes" pede confirmacao e volta tudo ao padrao (Original Dreamcast, volumes 100, legendas en-US).
+//   - "Restaurar padroes" pede confirmacao e volta tudo ao padrao (Original Dreamcast, volumes 100, legendas ligadas),
+//     mantendo o idioma escolhido;
+//   - o idioma da interface acompanha o das legendas (pt-* = portugues, os outros = ingles); com as legendas
+//     desativadas fica o ultimo escolhido (o idioma continua gravado em legendas.toml). Vale na hora e no reinicio.
 #include "platform/camera_settings.h"
 #include "platform/graphics_settings.h"
 #include "platform/user_settings.h"
@@ -32,7 +35,8 @@ enum class MenuAction : uint8_t { Up, Down, Left, Right, Confirm, Back };
 
 struct MenuItem {
     std::string label, value;
-    bool        enabled = true;  // false: indisponivel (mostrado, nao alteravel)
+    bool        enabled = true;   // false: indisponivel (mostrado, nao alteravel)
+    bool        submenu = false;  // abre outra pagina (o desenho mostra ">" e nao as setas de valor)
 };
 
 // N7c (secao 21): um shader de pos-processamento de mod encontrado (mods\shaders), com os parametros do manifesto;
@@ -51,6 +55,7 @@ struct MenuView {
     std::vector<MenuItem> items;
     int                   selected = 0;
     std::string           prompt;  // confirmacao em curso ("Manter esta configuracao? 12 s") ou vazio
+    std::string           help;    // a linha de ajuda do rodape (no idioma da interface)
 };
 
 class SettingsMenu {
@@ -87,12 +92,14 @@ public:
 
     enum class Page : uint8_t { Main, Graphics, Audio, Subtitles, Controls, Effects, Camera };
     Page page() const { return page_; }
+    bool english() const;  // o idioma da interface (pelo idioma das legendas)
 
 private:
     struct Entry;
     std::vector<Entry> entries() const;
     void               change(int dir, double now);
     void               commit(const Preferences& next, double now);
+    const char*        L(const char* pt, const char* en) const { return english() ? en : pt; }
 
     Preferences                      prefs_, defaults_;
     native::settings::Capabilities   caps_;

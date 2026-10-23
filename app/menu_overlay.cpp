@@ -36,8 +36,8 @@ std::string key(const MenuView& v, uint32_t w, uint32_t h, float cx, float cy, f
     std::string k = v.title + "\x1f" + v.prompt + "\x1f" + std::to_string(v.selected) + "\x1f" + std::to_string(w) + "x" +
                     std::to_string(h) + "@" + std::to_string(cx) + "," + std::to_string(cy) + "," + std::to_string(cw) + "," +
                     std::to_string(ch);
-    for (const auto& i : v.items) k += "\x1e" + i.label + "\x1f" + i.value + (i.enabled ? "1" : "0");
-    return k;
+    for (const auto& i : v.items) k += "\x1e" + i.label + "\x1f" + i.value + (i.enabled ? "1" : "0") + (i.submenu ? "s" : "");
+    return k + "\x1f" + v.help;
 }
 
 } // namespace
@@ -138,7 +138,18 @@ const std::vector<uint32_t>& MenuOverlay::layer(const MenuView& v, uint32_t w, u
             ID2D1Brush* tb = it.enabled ? static_cast<ID2D1Brush*>(bText) : bDim;
             text(wide(it.label), fItem, {row.l + pad * 0.5f, row.t, row.l + (row.r - row.l) * 0.5f, row.b}, tb);
             Impl::Row hr{i, row, {}, {}};
-            if (!it.value.empty()) {
+            if (it.submenu) {  // abre outra pagina: ">" na ponta, o valor (se houver) so informativo, sem setas
+                const float vr = row.r - pad * 0.5f, aw = size * 1.2f, vl = row.l + (row.r - row.l) * 0.5f;
+                text(L"›", fTitle, {vr - aw, row.t, vr, row.b}, it.enabled ? static_cast<ID2D1Brush*>(bAccent) : bDim);
+                IDWriteTextLayout* lay = nullptr;
+                const std::wstring val = wide(it.value);
+                if (!val.empty() && SUCCEEDED(m.dw->CreateTextLayout(val.c_str(), UINT32(val.size()), fItem, vr - vl - 2 * aw, rowH, &lay))) {
+                    lay->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+                    lay->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                    rt->DrawTextLayout(D2D1::Point2F(vl + aw, row.t), lay, bDim);
+                    release(lay);
+                }
+            } else if (!it.value.empty()) {
                 const float vl = row.l + (row.r - row.l) * 0.5f, vr = row.r - pad * 0.5f, aw = size * 1.2f;
                 const bool  arrows = it.enabled;
                 if (arrows) {
@@ -159,8 +170,7 @@ const std::vector<uint32_t>& MenuOverlay::layer(const MenuView& v, uint32_t w, u
         }
         if (first > 0) text(L"▲", fSmall, {panel.l, listTop - size * 0.9f, panel.r, listTop}, bDim);
         if (first + fit < n) text(L"▼", fSmall, {panel.l, listBot, panel.r, listBot + size * 0.9f}, bDim);
-        text(L"Setas / D-pad: navegar     ◀ ▶: alterar     Enter / A: escolher     Esc / B: voltar", fSmall,
-             {panel.l, panel.b - footerH, panel.r, panel.b - pad * 0.2f}, bDim);
+        text(wide(v.help), fSmall, {panel.l, panel.b - footerH, panel.r, panel.b - pad * 0.2f}, bDim);
         if (!v.prompt.empty()) {  // confirmacao por cima de tudo
             const float bw = pw * 0.86f, bh = size * 4.2f;
             const Rect  box{cx + (cw - bw) / 2, cy + (ch - bh) / 2, cx + (cw + bw) / 2, cy + (ch + bh) / 2};
