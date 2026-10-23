@@ -378,8 +378,18 @@ BS_TEST(builder_rejects_bad_inputs_without_side_effects) {
                              L"runtime/CMakeLists.txt", L"tools/extractor/CMakeLists.txt", L"tools/dist/LEIA-ME.txt",
                              L"tools/dcmap/CMakeLists.txt", L"native/CMakeLists.txt", L"legacy/CMakeLists.txt",
                              L"transitional/CMakeLists.txt", L"tools/build/msvc_srcdeps.cmake",
-                             L"third_party/SDL3/CMakeLists.txt"})
+                             L"third_party/SDL3/CMakeLists.txt", L"app/bluestinger.rc.in"})
         writeFile(kit / f, "");
+    // sem o icone do executavel o kit esta incompleto (o .rc o inclui)
+    BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").find("bluestinger.ico") != std::string::npos);
+    writeFile(kit / L"app/res/bluestinger.ico", "");  // vazio: invalido (revisao Codex 2026-10-23)
+    BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").find("icone invalido") != std::string::npos);
+    // um .ico minimo valido: cabecalho (0, 1, 1 imagem), uma entrada de 16 bytes e 4 bytes de imagem no deslocamento 22
+    const std::string ico = std::string("\0\0\1\0\1\0", 6) + std::string("\x10\x10\0\0\1\0\x20\0\4\0\0\0\x16\0\0\0", 16) + "PNG!";
+    writeFile(kit / L"app/res/bluestinger.ico", ico);
+    writeFile(kit / L"icone-local/bluestinger.ico", ico.substr(0, 24));  // o local (opcional) tambem e conferido
+    BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").find("icone-local") != std::string::npos);
+    writeFile(kit / L"icone-local/bluestinger.ico", ico);
     // N3-1: sem as fontes do toml++ (nem no kit nem ao lado do SDL3) o kit esta incompleto
     BS_CHECK(check_kit(kit, kit / L"third_party" / L"SDL3").find("toml++") != std::string::npos);
     writeFile(kit / L"third_party/tomlplusplus/CMakeLists.txt", "");

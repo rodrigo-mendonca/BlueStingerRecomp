@@ -41,6 +41,23 @@ if(BS_BUILD_GAME AND TARGET bs_generated)
 
   # Subsistema grafico (sem janela de console); a entrada continua sendo main().
   add_executable(bluestinger WIN32 main_sdl.cpp window_present.cpp)  # N7c: apresentacao Vulkan direta ou SDL
+  if(WIN32)
+    # Icone do executavel: o original do projeto (app/res, desenho de tools/dev/gerar_icone.py) ou, se existir,
+    # icone-local/bluestinger.ico, feito da capa do proprio usuario (gerar_icone.py --capa). Esse fica fora do git e
+    # so entra em builds locais: e arte do jogo, nao se publica.
+    set(BS_ICON "${CMAKE_CURRENT_SOURCE_DIR}/res/bluestinger.ico")
+    # (a escolha e na configuracao do CMake: por ou tirar o icone local vale na proxima configuracao)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/icone-local/bluestinger.ico")
+      set(BS_ICON "${CMAKE_SOURCE_DIR}/icone-local/bluestinger.ico")
+      message(STATUS "icone: icone-local/bluestinger.ico (capa do usuario; uso local, nao publicar)")
+    endif()
+    # o compilador de recursos nao acompanha o .ico: o hash dele no .rc gerado faz a troca do icone recompilar o recurso
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${BS_ICON}")
+    file(SHA256 "${BS_ICON}" BS_ICON_HASH)
+    file(TO_CMAKE_PATH "${BS_ICON}" BS_ICON_RC)
+    configure_file(bluestinger.rc.in ${CMAKE_CURRENT_BINARY_DIR}/bluestinger.rc @ONLY)
+    target_sources(bluestinger PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/bluestinger.rc)
+  endif()
   target_include_directories(bluestinger PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   target_link_libraries(bluestinger PRIVATE bs_app_core bs_generated SDL3::SDL3-static)
   # mods do projeto editavel: cada .cpp de BS_MODS_DIR entra no executavel (BS_MOD registra)

@@ -3,7 +3,7 @@
 # bs-builder.exe (linha de comando), runtime do MSVC, licencas, instrucoes e o kit de fontes
 # (runtime, app, leitor de disco, config, SDL3) que o Builder compila na maquina do usuario.
 #
-#   powershell -ExecutionPolicy Bypass -File tools/dist/make_builder.ps1 [-Out <pasta>] [-NoBuild] [-LegendasLocais]
+#   powershell -ExecutionPolicy Bypass -File tools/dist/make_builder.ps1 [-Out <pasta>] [-NoBuild] [-LegendasLocais] [-IconeLocal]
 #
 # A distribuicao do Builder NAO contem nada do jogo (nem codigo gerado, nem executavel do
 # jogo, nem dados do disco); a montagem confere isso antes de trocar a pasta. Uma tentativa
@@ -11,10 +11,14 @@
 # -LegendasLocais: copia para o kit os pacotes locais de mods-padrao/ (legendas transcritas e traduzidas, texto
 # derivado das falas do jogo, fora do git: ver mods-padrao/README.md). So para a distribuicao local de testes: o
 # VERSAO.txt avisa que ela nao pode ser publicada. Sem a opcao, o Builder sai sem legendas.
+# -IconeLocal: copia para o kit icone-local/bluestinger.ico (feito da capa do proprio usuario por
+# tools/dev/gerar_icone.py --capa, fora do git): o executavel que o Builder gera usa esse icone no lugar do original.
+# Tambem so para a distribuicao local (arte do jogo).
 param(
     [string]$Out = "",
     [switch]$NoBuild,
-    [switch]$LegendasLocais
+    [switch]$LegendasLocais,
+    [switch]$IconeLocal
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
@@ -88,6 +92,18 @@ if ($LegendasLocais) {
     }
     if (-not $locais) { Fail "-LegendasLocais sem nenhum pacote em mods-padrao (ver mods-padrao/README.md)" }
     Step "legendas locais no kit: $($locais -join ', ') (uso local: nao publicar)"
+}
+if ($IconeLocal) {
+    $ico = Join-Path $repo "icone-local\bluestinger.ico"
+    if (-not (Test-Path -LiteralPath $ico)) { Fail "-IconeLocal sem icone-local\bluestinger.ico (tools/dev/gerar_icone.py --capa)" }
+    $b = [IO.File]::ReadAllBytes($ico)  # cabecalho .ico (0, tipo 1, n > 0) com as entradas; o check_kit confere o resto
+    if ($b.Length -lt 22 -or $b[0] -ne 0 -or $b[1] -ne 0 -or $b[2] -ne 1 -or $b[3] -ne 0 -or ($b[4] + 256 * $b[5]) -eq 0) {
+        Fail "icone-local\bluestinger.ico nao e um .ico valido"
+    }
+    New-Item -ItemType Directory -Force -Path (Join-Path $kit "icone-local") | Out-Null
+    Copy-Item -LiteralPath $ico -Destination (Join-Path $kit "icone-local\bluestinger.ico")
+    $locais += "icone da capa"
+    Step "icone local (capa do usuario) no kit (uso local: nao publicar)"
 }
 $version = (git -C $repo describe --always --dirty --abbrev=7 2>$null)
 if (-not $version) { $version = "desconhecida" }
@@ -174,13 +190,13 @@ if ($LASTEXITCODE -ne 2) { Fail "bs-builder.exe montado nao respondeu (codigo $L
 $kitFiles = Get-ChildItem -LiteralPath $kit -Recurse -File
 @"
 Blue Stinger Builder $version
-Distribuicao: Builder ($(if ($locais) { 'com legendas locais: uso local, nao publicar' } else { 'sem conteudo do jogo' }))
+Distribuicao: Builder ($(if ($locais) { 'com conteudo local do jogo: uso local, nao publicar' } else { 'sem conteudo do jogo' }))
 Montada em: $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 Runtime do MSVC: $($crt.Name) ($([IO.Path]::GetFileName($env:VCToolsRedistDir.TrimEnd('\'))))
 Kit de fontes: $($kitFiles.Count) arquivos, $([math]::Round((($kitFiles | Measure-Object Length -Sum).Sum / 1MB), 1)) MB (SDL3 release-3.2.30)
 "@ | Set-Content -Encoding utf8 "$stage\VERSAO.txt"
 if ($locais) {
-    "Legendas locais no kit: $($locais -join ', '). Texto derivado das falas do jogo: distribuicao SO para uso local," +
+    "Conteudo local no kit: $($locais -join ', '). Derivado do jogo (falas, capa): distribuicao SO para uso local," +
         " NAO publicar." | Add-Content -Encoding utf8 "$stage\VERSAO.txt"
 }
 

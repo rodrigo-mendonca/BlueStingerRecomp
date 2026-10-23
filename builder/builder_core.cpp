@@ -259,16 +259,34 @@ void syncTree(const fs::path& from, const fs::path& to) {
     }
 }
 
+// Um .ico que o compilador de recursos aceita: cabecalho (0, tipo 1, n > 0) e cada imagem dentro do arquivo (revisao
+// Codex 2026-10-23: um arquivo vazio passava como kit completo).
+bool ico_valid(const fs::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    const std::string b((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    auto u16 = [&](size_t o) { return uint32_t(uint8_t(b[o])) | uint32_t(uint8_t(b[o + 1])) << 8; };
+    auto u32 = [&](size_t o) { return u16(o) | u16(o + 2) << 16; };
+    if (b.size() < 6 || u16(0) != 0 || u16(2) != 1 || u16(4) == 0 || b.size() < 6 + 16 * size_t(u16(4))) return false;
+    for (size_t i = 0; i < u16(4); ++i) {
+        const uint64_t size = u32(6 + 16 * i + 8), off = u32(6 + 16 * i + 12);
+        if (size == 0 || off < 6 + 16 * uint64_t(u16(4)) || off + size > b.size()) return false;
+    }
+    return true;
+}
+
 } // namespace
 
 std::string check_kit(const fs::path& kit, const fs::path& sdl3) {
     std::error_code ec;
     for (const wchar_t* f : {L"CMakeLists.txt", L"LICENSE", L"config/bluestinger_us.toml", L"app/CMakeLists.txt",
+                             L"app/bluestinger.rc.in", L"app/res/bluestinger.ico",  // icone do executavel
                              L"runtime/CMakeLists.txt", L"tools/extractor/CMakeLists.txt", L"tools/dist/LEIA-ME.txt",
                              L"tools/dcmap/CMakeLists.txt", L"native/CMakeLists.txt", L"legacy/CMakeLists.txt",
                              L"tools/build/msvc_srcdeps.cmake",
                              L"transitional/CMakeLists.txt"})
         if (!fs::is_regular_file(kit / f, ec)) return "kit de fontes incompleto: falta " + path_text(kit / f);
+    for (const wchar_t* f : {L"app/res/bluestinger.ico", L"icone-local/bluestinger.ico"})  // o local e opcional
+        if (fs::exists(kit / f, ec) && !ico_valid(kit / f)) return "icone invalido no kit: " + path_text(kit / f);
     if (!fs::is_regular_file(sdl3 / L"CMakeLists.txt", ec))
         return "fontes do SDL3 nao encontradas em " + path_text(sdl3);
     if (const fs::path toml = toml_dir(kit, sdl3); !fs::is_regular_file(toml / L"CMakeLists.txt", ec))

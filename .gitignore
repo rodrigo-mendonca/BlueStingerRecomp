@@ -41,3 +41,6 @@ __pycache__/
 /tools/dev/legendas/revisoes.*.tsv
 /tools/dev/legendas/traducao.*.tsv
 /tools/dev/legendas/pendentes.*.tsv
+
+# icone feito da capa do proprio usuario (tools/dev/gerar_icone.py --capa): arte do jogo, so uso local. Nao versionar.
+/icone-local/
