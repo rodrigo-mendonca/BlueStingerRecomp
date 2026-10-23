@@ -21,6 +21,7 @@
 #include "menu_overlay.h"
 #include "window_present.h"
 #include "settings_menu.h"
+#include "cursor_policy.h"
 #include "localization/mod_packages.h"
 #include "localization/subtitle_service.h"
 #include "platform/camera_settings.h"
@@ -1004,6 +1005,8 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
     std::string   gfxError;
     std::unique_ptr<VirtualPad> virtualPad;
     if (const char* v = std::getenv("BS_CONTROLE_VIRTUAL"); v && *v) virtualPad = std::make_unique<VirtualPad>(readFile(v));
+    bs::CursorWhy cursorWhy    = bs::CursorWhy::Fullscreen;  // o estado inicial do SDL: visivel
+    bool          cursorHidden = false;
     while (!quit) {
         if (virtualPad && virtualPad->step()) quit = true;
         SDL_Event e;
@@ -1044,6 +1047,23 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             else  // o GUID e o que o usuario copia para um [perfis."<guid>"]
                 std::printf("[controles] conectado: %s (GUID %s; %s)\n", ev.name.c_str(), ev.guid.empty() ? "-" : ev.guid.c_str(),
                             ev.profile.empty() ? "mapa [controle]" : ("perfil " + ev.profile).c_str());
+        }
+        // cursor (app/cursor_policy.h): pelas flags da janela a cada volta, entao Alt+Tab, F11 e a troca de modo pelo menu
+        // valem na hora, sem depender da ordem dos eventos
+        {
+            const SDL_WindowFlags fl  = SDL_GetWindowFlags(window);
+            const bs::CursorWhy   why = bs::cursor_state((fl & SDL_WINDOW_FULLSCREEN) != 0, (fl & SDL_WINDOW_INPUT_FOCUS) != 0, menu.open());
+            if (why != cursorWhy) {
+                bool ok = true;
+                if (bs::cursor_hidden(why) != cursorHidden) {
+                    ok = bs::cursor_hidden(why) ? SDL_HideCursor() : SDL_ShowCursor();
+                    if (ok) cursorHidden = bs::cursor_hidden(why);  // recusado: tenta de novo na proxima volta
+                }
+                if (ok) cursorWhy = why;
+                // o estado efetivo do SDL junto (o teste n7_cursor.py confere que bate com a regra)
+                std::fprintf(stderr, "[cursor] %s; SDL %s%s\n", bs::cursor_why_name(why), SDL_CursorVisible() ? "visivel" : "oculto",
+                             ok ? "" : (std::string(" (recusado: ") + SDL_GetError() + ")").c_str());
+            }
         }
         // falhas de apresentacao viram erro (janela preta com codigo 0 pareceria sucesso):
         // criar a textura falha de vez; as demais so se persistirem (~2 s seguidos)
@@ -1111,6 +1131,10 @@ int runWindow(bs::GameHost& host, ni::InputSystem& input, const Args& a, SDL_Win
             }
             SDL_SetWindowTitle(window, full.c_str());
         }
+    }
+    if (cursorHidden) {  // nunca sai escondido
+        SDL_ShowCursor();
+        std::fprintf(stderr, "[cursor] visivel (encerramento); SDL %s\n", SDL_CursorVisible() ? "visivel" : "oculto");
     }
     host.requestStop();
     host.join();

@@ -2,6 +2,7 @@
 // confirmacao com reversao automatica, restaurar padroes e o pedido dos controles. Sem janela nem desenho.
 #include "test.h"
 
+#include "cursor_policy.h"
 #include "settings_menu.h"
 
 #include <cmath>
@@ -325,4 +326,16 @@ BS_TEST(settings_menu_camera_page) {
     BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Original && p.camera.sens_x == 130);
     m.input(MenuAction::Back, 0);
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Controls);
+}
+
+// Cursor do mouse (app/cursor_policy.h): so no modo janela, escondido no gameplay com foco; o menu e a perda de foco o
+// mostram; em tela cheia nada muda (visivel, como antes).
+BS_TEST(cursor_policy_windowed_only) {
+    using bs::CursorWhy;
+    BS_CHECK(bs::cursor_state(false, true, false) == CursorWhy::Gameplay && bs::cursor_hidden(CursorWhy::Gameplay));
+    BS_CHECK(bs::cursor_state(false, true, true) == CursorWhy::Menu && !bs::cursor_hidden(CursorWhy::Menu));
+    BS_CHECK(bs::cursor_state(false, false, false) == CursorWhy::NoFocus && !bs::cursor_hidden(CursorWhy::NoFocus));
+    BS_CHECK(bs::cursor_state(false, false, true) == CursorWhy::NoFocus);
+    for (bool focus : {false, true})
+        for (bool menu : {false, true}) BS_CHECK(!bs::cursor_hidden(bs::cursor_state(true, focus, menu)));
 }
