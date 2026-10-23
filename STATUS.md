@@ -2505,20 +2505,28 @@ pelo `n6_h.ps1 -Casos H9` (150 s). Detalhes: `docs/N2-PLANO.md` seção 12 e `do
 
 | Medida | Resultado |
 |---|---|
-| Trabalho por campo, headless (software / Vulkan, tempo estável) | 22,98 / 7,48 ms |
-| Idem, tempo experimental | 20,4 / 3,8–4,6 ms |
+| Trabalho por campo, headless 9 000 VBlanks com LOAD real (software / Vulkan, tempo estável) | 16,63 / 6,82 ms |
+| Idem, tempo experimental | 13,99 / 4,04 ms |
 | H9 na janela, Vulkan padrão (3 rodadas) | **0 faltas** em ~8 977 blocos; 7,14–7,22 ms por campo |
 | H9 na janela, software (mesmo executável) | 287 faltas; 17,11 ms por campo |
-| H9 a 4K com bloom e tonemapping | 1 falta; 9,68 ms por campo (espera síncrona da GPU, 5,4–5,8 ms por render) |
-| H9 com tempo experimental e Vulkan | 1 falta; 5,45 ms por campo (cargas num campo só, pico de 63 ms) |
+| H9 a 4K com bloom e tonemapping (LOAD real) | 2 faltas; 7,92 ms por campo (espera síncrona da GPU por render) |
+| H9 com tempo experimental e Vulkan (LOAD real) | 1 falta; 4,50 ms por campo (cargas num campo só, pico de 62 ms) |
 
-- **Causa das faltas do H9:** o rasterizador em software (~15 ms por campo), não o áudio nem o modelo de tempo. Com o
+- **Correção de método:** uma primeira matriz headless e as variantes 4K/experimental copiaram o save sem importar (o LOAD não acontecia); foram refeitas com o LOAD real (valores acima). O H9 pelo `n6_h.ps1` não foi afetado.
+- **Causa das faltas do H9:** o rasterizador em software (~10 ms por campo nesta rota), não o áudio nem o modelo de tempo. Com o
   Vulkan padrão o H9 passa e o **N6 fica concluído**.
 - **Tentativa revertida:** trocar o `vkQueueWaitIdle` depois da cerca por um carimbo do quadro (para a thread do jogo
   não esperar a apresentação) não melhorou (480p: 8,22 ms por campo; 4K: igual, com um pico de 2 s). Código voltou ao
   anterior; unitários e render passaram nas duas versões (304/0, 36/0).
 - **Pendências:** espera síncrona da GPU (leitura assíncrona: decisão de arquitetura); recuo para o software abaixo do
   tempo real; 11.1 (download da música); promoção do experimental (U5–U8).
+
+### N2 11.1: espera do DMA do download da música; passos de jogo no tempo legado (2026-10-23)
+
+Detalhes e provas: `docs/N2-PLANO.md` 12.4 e 12.5.
+- Espera do DMA (176,7 ns/byte) no download nativo da música, pela primitiva `time::hardware_wait` (no experimental não espera, D11). Sessão gravada do mantenedor (7 496 passos, 4 trocas de música): estado idêntico em todos os passos e saves iguais, com e sem a espera; VBlanks 6–26 mais tarde (o tempo das cargas). Revisão do Codex: 2 achados aceitos, 2 rejeitados com evidência.
+- Defeito corrigido: `game_steps()` era 0 no `--tempo legado`, e as falas nativas (por passo) faziam legado e nativo divergirem com o áudio nativo. `test_tempo`: 22 → 34 de 35; o A3 restante era a referência do N1, registrada com o áudio legado (atualizada).
+- Pendente: `test_assistido` A5 (três roteiros param no passo ~1037 nos dois modos de tempo; a investigar).
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

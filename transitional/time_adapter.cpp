@@ -2,6 +2,7 @@
 
 #include "cri_idle.h"
 
+#include "cpu/sh4_runtime.h"
 #include "cpu/time_hooks.h"
 #include "platform/clock.h"
 #include "platform/event_queue.h"
@@ -12,6 +13,7 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -631,9 +633,47 @@ private:
     } exp_stats_;
 };
 
-std::unique_ptr<NativeTime> g_native;
-Stats                       g_lastStats;
-std::string                 g_lastProgress;
+// N2 (2026-10-23): --tempo legado com o contador de passos de jogo. Tudo e do provedor legado; so a saida da espera do
+// VBlank do jogo e contada, como no nativo. Sem ele, game_steps() ficava em 0 no legado e as falas nativas (que andam
+// por passo de jogo) se comportavam diferente conforme o provedor de tempo (test_tempo A1: 3 ciclos de diferenca no
+// VBlank ~2270 com o audio nativo).
+class LegacySteps final : public TimeProvider {
+public:
+    const char* name() const override { return l_.name(); }
+    void        reset(uint64_t now) override { l_.reset(now); }
+    uint64_t    clock(uint64_t cycles) override { return l_.clock(cycles); }
+    uint32_t    holly_due(uint64_t now) override { return l_.holly_due(now); }
+    void        spg_changed() override { l_.spg_changed(); }
+    void        render_scheduled(uint64_t due) override { l_.render_scheduled(due); }
+    void        maple_scheduled(uint64_t due) override { l_.maple_scheduled(due); }
+    void        maple_cancel() override { l_.maple_cancel(); }
+    void        disc_scheduled(uint64_t due) override { l_.disc_scheduled(due); }
+    bool        disc_due(uint64_t now) override { return l_.disc_due(now); }
+    void        disc_cancel() override { l_.disc_cancel(); }
+    uint32_t    rtc_seconds(uint64_t now) override { return l_.rtc_seconds(now); }
+    void        rtc_set(uint32_t seconds, uint64_t now) override { l_.rtc_set(seconds, now); }
+    void        progress(uint32_t thread, uint64_t polls, uint32_t pc) override { l_.progress(thread, polls, pc); }
+    void        wait_point(uint32_t pc, uint32_t thread, uint64_t polls) override { l_.wait_point(pc, thread, polls); }
+    void        wait_end(uint32_t pc, uint32_t thread, uint64_t polls) override {
+        if (pc == kVblankWaitPc) {
+            ++steps;
+            if (g_stepObserver) g_stepObserver(steps, g_stepCtx);
+        }
+        l_.wait_end(pc, thread, polls);
+    }
+    uint64_t last_vblank_due() const override { return l_.last_vblank_due(); }
+    bool     wait(Sh4Context* c, uint32_t pc, uint32_t thread) override { return l_.wait(c, pc, thread); }
+    bool     holly_pending(uint64_t now) override { return l_.holly_pending(now); }
+    uint64_t steps = 0;
+
+private:
+    TimeProvider& l_ = time_legacy_provider();
+};
+
+std::unique_ptr<NativeTime>  g_native;
+std::unique_ptr<LegacySteps> g_legacy;
+Stats                        g_lastStats;
+std::string                  g_lastProgress;
 
 } // namespace
 
@@ -643,7 +683,19 @@ void install(const Options& opt) {
     time_set_provider(g_native.get());
 }
 
+void install_legacy_steps() {
+    uninstall();
+    g_legacy = std::make_unique<LegacySteps>();
+    time_set_provider(g_legacy.get());
+}
+
 void uninstall() {
+    if (g_legacy) {
+        time_set_provider(nullptr);
+        g_lastStats           = {};
+        g_lastStats.gameSteps = g_legacy->steps;
+        g_legacy.reset();
+    }
     if (!g_native) return;
     time_set_provider(nullptr);
     g_lastStats    = g_native->stats;
@@ -655,7 +707,9 @@ bool installed() { return g_native != nullptr; }
 
 Stats stats() { return g_native ? g_native->stats : g_lastStats; }
 
-uint64_t game_steps() { return g_native ? g_native->stats.gameSteps : g_lastStats.gameSteps; }
+uint64_t game_steps() {
+    return g_native ? g_native->stats.gameSteps : g_legacy ? g_legacy->steps : g_lastStats.gameSteps;
+}
 
 void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx) {
     g_stepObserver = fn;
@@ -663,5 +717,23 @@ void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx) {
 }
 
 std::string progress_summary() { return g_native ? g_native->progress_summary() : g_lastProgress; }
+
+bool hardware_wait(Sh4Context* c, uint64_t ticks) {
+    if (g_native && std::strcmp(g_native->name(), "experimental") == 0) return false;  // D11: o trabalho nao consome tempo
+    // como o laco de espera gerado: o tempo anda ate o proximo atendimento e os eventos vencidos (VBlank, render,
+    // Maple, GD-ROM) sao entregues no caminho, com as interrupcoes (o retorno da chamada e o ponto de retomada). A
+    // interrupcao e uma chamada aninhada (sh4_intc.cpp, take: o rte do tratador volta ao SPC) e a troca de thread
+    // suspende esta fibra: a espera continua de onde parou, com o mesmo prazo. So um longjmp (c->redirect) a encerra;
+    // o chamador sobe sem mexer nos registradores. `polls` conta um ponto por atendimento (observacao do progresso; o
+    // laco original no SDK faria mais voltas, sem efeito no tempo estavel). (Revisao Codex 2026-10-23.)
+    const uint64_t end = c->cycles + ticks;
+    c->pc              = c->pr;
+    while (c->cycles < end && !c->redirect) {
+        c->cycles = std::min(end, std::max(c->cycles, c->next_event));
+        ++c->polls;
+        if (c->cycles >= c->next_event) sh4_service(c);
+    }
+    return true;
+}
 
 } // namespace bs::transitional::time

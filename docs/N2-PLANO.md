@@ -367,20 +367,23 @@ Prioridade do mantenedor: temporização, desempenho e as faltas de áudio que b
 
 ### 12.1 Onde estava o tempo do gameplay
 
-Rota LOAD (save g1, `passo_load_slot1.txt`), headless, 6 000 VBlanks, áudio nativo, Preview `465b2ed`, RTX 5080, duas
-rodadas alternadas (`perf4.ps1`):
+Rota LOAD (save g1 importado com `--saves-importar`, `passo_load_slot1.txt`; LOAD 3/3 ok), headless, 9 000 VBlanks (o
+gameplay começa por volta do VBlank 4 300; a média inclui título e menus), áudio nativo, Preview `465b2ed`, RTX 5080,
+duas rodadas alternadas (`perf4.ps1`):
 
 | Renderizador e tempo | Trabalho por campo | Tempo total |
 |---|---|---|
-| software, estável | 22,99 / 22,97 ms | 141 s |
-| Vulkan, estável | 7,47 / 7,49 ms | 48 s |
-| software, experimental | 20,32 / 20,51 ms | 125–126 s |
-| Vulkan, experimental | 4,63 / 3,84 ms | 26–31 s |
+| software, estável | 16,66 / 16,60 ms | 154 s |
+| Vulkan, estável | 6,82 / 6,82 ms | 66 s |
+| software, experimental | 13,97 / 14,00 ms | 130 s |
+| Vulkan, experimental | 4,06 / 4,01 ms | 41 s |
 
-- O **rasterizador em software custa ~15 ms por campo** no gameplay: era ele que deixava o jogo abaixo do tempo real
-  (11.2), e não o modelo de tempo nem o áudio.
-- O **tempo experimental** tira mais 2,8–3,6 ms (a thread 3 deixa de girar sem efeito), mas não resolve o software.
-
+- O **rasterizador em software custa ~10 ms por campo** em média nesta rota: era ele que deixava o jogo abaixo do tempo
+  real (11.2), e não o modelo de tempo nem o áudio.
+- O **tempo experimental** tira mais ~2,8 ms (a thread 3 deixa de girar sem efeito), mas não resolve o software.
+- Correção de método (2026-10-23): uma primeira matriz copiou o save direto para a pasta, sem importar; o LOAD não
+  acontecia e a medida não era de gameplay. Ela foi descartada e refeita acima. As execuções do H9 pelo `n6_h.ps1`
+  (que importa o save) não foram afetadas.
 ### 12.2 H9 (11.2) resolvido pelo Vulkan padrão
 
 Na janela, com o Vulkan padrão, o H9 passou 3 vezes seguidas (0 faltas; 7,14–7,22 ms por campo); com o software, no
@@ -402,3 +405,51 @@ mesmo executável e rota, 287 faltas (17,11 ms). Detalhes: `docs/N6-PLANO.md` 20
 4. **Promoção do tempo experimental** (U5–U8 e a cobertura de troca de sala, combate, save/load e finais): continua
    aberta; o ganho medido aqui (−38 % no Vulkan) é um argumento a favor, e as cargas concentradas num campo, um ponto a
    tratar antes.
+
+### 12.4 11.1 feito: a espera do DMA do download da música (2026-10-23)
+
+- **Primitiva:** `transitional::time::hardware_wait(c, ticks)` (`transitional/time_adapter.*`): anda `ticks` de
+  compatibilidade atendendo os eventos no caminho, como o laço de espera gerado (`sh4_service` no prazo de cada
+  atendimento). A interrupção é chamada aninhada (`sh4_intc.cpp`, `take`) e a troca de thread suspende a fibra, então a
+  espera continua com o mesmo prazo; só um longjmp (`c->redirect`) a encerra, e o slot sobe sem tocar em R0. No tempo
+  experimental não espera (D11: o trabalho não consome tempo lógico).
+- **Uso:** o slot nativo do `8C15D534` (SMPB/SMSB) espera 35,34 ciclos por byte (176,7 ns/byte, ajuste linear das
+  medidas do Flycast: 85,5 ms para 483 680 bytes, 2,5 ms para 13 984); o banco novo só vale no fim do DMA.
+  `BS_MUSICA_DOWNLOAD_INSTANTANEO=1` (diagnóstico) volta ao comportamento anterior. O resumo do jogo mostra
+  `espera do DMA N downloads (X ms)`.
+- **Revisão do Codex** (`reviews/codex-20261023-105338.md`, inline): 4 achados. Aceitos: [ALTA] redirect durante a
+  espera (o slot agora sobe sem `call.ret` nem contadores) e [MÉDIA] o banco publicado antes do fim do DMA (agora só
+  depois). Rejeitados com evidência: [ALTA] "a interrupção perde o resto da espera" (a entrega é chamada aninhada:
+  `take` → `sh4_dispatch` síncrono, o `rte` volta ao SPC, e a troca de thread suspende a fibra; o prazo fica na pilha
+  da espera) e [MÉDIA] `polls` diferente do laço original (é observação do progresso no tempo estável; documentado).
+  Um anexo do prompt trazia um endereço errado (`8C17D940`; o literal em `8C15D58C` é `0x8C17DAEC`); não afetou os
+  achados.
+
+**Validação:**
+
+| Prova | Resultado |
+|---|---|
+| Unitários | 304/0 |
+| Boot e LOAD (rota por passo) | SMSB do boot no VBlank 25 (sem a espera: 19); a carga da M2A depois do LOAD 6 VBlanks mais tarde (o original: ~5,5 campos); 4 downloads, 180,3 ms |
+| Sessão gravada do mantenedor (`sessao-20261021-145006`, 7 496 passos, 10 cargas, 4 trocas de música), com e sem a espera | estado lógico **idêntico em todos os passos** nos dois; saves iguais (sem a data do envelope); VBlanks deslocados de 6 a 26 (o tempo das cargas) |
+| Troca de música do passo 6548 | com a espera, o primeiro lote (−113, parar) vale 5 VBlanks antes do segundo (−16 em 2 s, tocar); sem ela, os dois no mesmo VBlank. Nesta troca o jogo já tinha baixado a porta com um fade (passo 6542), então as duas versões entram com fade (TL das primeiras notas ~150 nas duas) |
+| `test_tempo` (35 casos) | 22 → 34 depois da correção 12.5; o restante (A3 contra a referência) dá `F472ECC2` com a espera, conferido à parte, que é a referência nova |
+
+**Limite:** o caso do N6 em que a porta estava em −16 na troca (M2A → M2C no Flycast, fade ausente no nativo) não
+aparece nas rotas nem nas gravações disponíveis; a garantia vem da ordem dos lotes medida aqui e do algoritmo do fader
+(unitário `audio_manatee_fader_driver_algorithm`).
+
+### 12.5 Defeito achado: passos de jogo no `--tempo legado` (corrigido)
+
+O `test_tempo` (que não tinha sido refeito desde a promoção do áudio nativo no N6) falhava em A1/A3/A5: com o áudio
+nativo, `--tempo legado` e `nativo` divergiam (3 ciclos a menos num IRQ por volta do VBlank 2 270), com e sem a espera;
+com `BS_AUDIO=legado`, eram idênticos. Causa: `time::game_steps()` ficava em 0 no legado (o contador vivia só no
+provedor nativo), e as falas nativas andam por passo de jogo. Correção: `install_legacy_steps()` instala no legado um
+provedor que delega tudo ao legado do runtime e só conta a saída da espera do VBlank do jogo. Depois: legado = nativo
+com o áudio nativo, com e sem a espera; `test_tempo` 34/35, e a falha restante era a referência do quadro do A3, que
+o N1 registrou com o áudio legado (`F7818C7E`; com o áudio nativo o quadro é `F472ECC2`, igual com e sem a espera,
+conferido no mesmo executável). A referência passou a depender do áudio da bateria.
+
+**Pendente:** `test_assistido` A5: os roteiros `passo_cgate`, `passo_heliporto` e `passo_combate` param de progredir no
+passo ~1037–1075 nos dois modos de tempo (sem erro; A1–A4 e A7 iguais até ali). Não foi comparado com o executável
+anterior; a investigar.

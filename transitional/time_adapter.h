@@ -15,6 +15,10 @@
 #include <cstdint>
 #include <string>
 
+namespace bs {
+struct Sh4Context;
+}
+
 namespace bs::transitional::time {
 
 struct Options {
@@ -60,6 +64,9 @@ constexpr uint64_t kDefaultStallUnits = 64000000;
 // Instala o provedor nativo no runtime (antes de boot_prepare). Lanca std::invalid_argument
 // para mutacao desconhecida ou trace que nao abre.
 void install(const Options& opt);
+// --tempo legado: o provedor legado do runtime, inteiro, com o contador de passos de jogo (game_steps) por cima. Nada
+// mais muda; installed() continua false.
+void install_legacy_steps();
 // Volta ao provedor legado e fecha o trace.
 void uninstall();
 bool installed();
@@ -82,5 +89,11 @@ uint64_t game_steps();
 // Diagnostico: chamado na thread do jogo a cada passo de jogo, na saida da espera do VBlank do
 // jogo (ponto logico igual nos dois modos de tempo). nullptr desliga.
 void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx);
+
+// N2 (docs/N2-PLANO.md 11.1): o SH-4 parado dentro de uma chamada substituida enquanto o hardware trabalha (o DMA do
+// download da musica para a RAM de som, medido no Flycast). Anda `ticks` (base de compatibilidade, um por ciclo a
+// 200 MHz) atendendo os eventos no caminho, como o laco de espera gerado. No tempo experimental nao espera (D11: o
+// trabalho nao consome tempo logico) e devolve false.
+bool hardware_wait(Sh4Context* c, uint64_t ticks);
 
 } // namespace bs::transitional::time

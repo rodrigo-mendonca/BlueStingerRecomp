@@ -668,6 +668,10 @@ void GameHost::threadMain() {
             else to.stall_units = transitional::time::kDefaultStallUnits;
             transitional::time::install(to);
             input_set_step_counter([] { return transitional::time::game_steps(); });  // roteiros por passo
+        } else {
+            transitional::time::install_legacy_steps();  // os passos de jogo tambem no legado (falas nativas por passo)
+        }
+        if (opt_.time == TimeProviderKind::Native || opt_.time == TimeProviderKind::Experimental) {
             // Diagnostico (gameplay assistido): BS_STATE_PASSO=<arquivo> grava a cada BS_STATE_PASSO_CADA
             // passos de jogo (padrao 10), no inicio do passo, o hash da regiao de variaveis do jogo
             // (0x8C240000-0x8C25FFFF), a vida do Eliot (int16 em 0x8C24FBCC) e a posicao dele (floats em
@@ -756,6 +760,7 @@ void GameHost::threadMain() {
     }
     // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
     std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
+    if (!transitional::time::installed()) transitional::time::uninstall();  // o contador de passos do legado
     if (transitional::time::installed()) {
         input_set_step_counter(nullptr);
         transitional::time::set_step_observer(nullptr, nullptr);

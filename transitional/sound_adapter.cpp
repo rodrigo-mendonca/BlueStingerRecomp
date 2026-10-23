@@ -65,6 +65,7 @@ struct State {
         std::vector<uint8_t> bytes;
     };
     std::vector<MusOp>                      musQueue;
+    uint64_t                                musWaits = 0, musWaitBytes = 0;  // downloads com a espera do DMA (N2, 11.1)
     std::unique_ptr<na::SoundCatalog>       catalog;  // dublagens (mods\audio)
     std::map<std::string, std::shared_ptr<const na::SoundData>> voiceCache;  // originais por nome
     std::filesystem::path                   voiceDir;
@@ -197,6 +198,17 @@ void musSlot(Sh4Context* c) {
         logf("mus-carga", "tipo=%s slot=%u bytes=%u", nome, slotN, *tam);
         State::MusOp op{State::MusOp::K::Down};
         op.a = slotN, op.magic = tipo, op.bytes = std::move(bytes);  // copiado agora: o jogo libera o buffer em seguida
+        // N2 (docs/N2-PLANO.md 11.1): no original o SH-4 fica dentro do download o tempo do DMA para a RAM de som, linear
+        // no tamanho (Flycast, n6_oraculo.py --musica: 85,5 ms para 483 680 bytes, 2,5 ms para 13 984: 176,7 ns/byte =
+        // 35,34 ciclos a 200 MHz). Enquanto isso o driver aplica o lote anterior (o carregador manda volume -113 e parar
+        // antes dos downloads; o fade de entrada da musica nova parte dai); o banco novo so vale no fim do DMA (revisao
+        // Codex 2026-10-23). BS_MUSICA_DOWNLOAD_INSTANTANEO=1 (diagnostico) devolve na hora, como antes.
+        static const bool instant = [] {
+            const char* v = std::getenv("BS_MUSICA_DOWNLOAD_INSTANTANEO");
+            return v && *v && *v != '0';
+        }();
+        if (!instant && transitional::time::hardware_wait(c, uint64_t(*tam) * 3534 / 100)) ++g->musWaits, g->musWaitBytes += *tam;
+        if (c->redirect) return;  // um longjmp no tratador de interrupcao: sobe sem tocar em R0 (revisao Codex 2026-10-23)
         g->musQueue.push_back(std::move(op));
         call.ret(0);
     } else {
@@ -648,10 +660,10 @@ std::string summary() {
         std::snprintf(b, sizeof b,
                       "[audio] musica nativa: cargas %llu (recusadas %llu, outros tipos ao original %llu), tocar %llu (erros %llu), "
                       "parar %llu, volume %llu, pan %llu, 0x35/0x36 %llu/%llu; ticks %llu, notas %llu, vozes %llu, sem camada %llu, "
-                      "recusadas %llu\n",
+                      "recusadas %llu; espera do DMA %llu downloads (%.1f ms)\n",
                       u(p.downloads), u(p.refusedDownloads), u(g->musForwarded), u(p.plays), u(p.playErrors), u(p.stops),
                       u(p.volumes), u(p.pans), u(g->musCalls[5]), u(g->musCalls[6]), u(p.ticks), u(s.notes), u(s.voices),
-                      u(s.noLayer), u(s.refused));
+                      u(s.noLayer), u(s.refused), u(g->musWaits), double(g->musWaitBytes) * 176.7e-6);
         r += b;
     }
     if (g_voices) {

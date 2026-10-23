@@ -36,7 +36,9 @@ New-Item -ItemType File -Path $marker | Out-Null
 # quadros de referencia: N0 (arquivos legado, 6 000) e N1 (test_arquivos, 8 000)
 # saves legado: as referencias sao anteriores ao N4 (sem cartao: "VMU not found"); com o cartao nativo o
 # boot monta e consulta o cartao e o quadro de 8 000 VBlanks sai com outra fase de animacao (mesma cena)
-$refQuadro = @{ "legado_6000" = "B49D68E2165B8505"; "nativo_8000" = "F7818C7E18FA130C"; "legado_8000" = "F472ECC27954D27B" }
+# audio nativo padrao (N6, 2026-10-21): no 8 000 de arquivos nativo o quadro e o F472ECC2 (o mesmo do arquivos legado);
+# o F7818C7E do N1 e o do audio legado (conferido em 2026-10-23 com BS_AUDIO=legado no mesmo executavel)
+$refQuadro = @{ "legado_6000" = "B49D68E2165B8505"; "nativo_8000" = $(if ($env:BS_AUDIO -eq "legado") { "F7818C7E18FA130C" } else { "F472ECC27954D27B" }); "legado_8000" = "F472ECC27954D27B" }
 # prioridade dos tipos no mesmo instante (native::time::EventKind)
 $prio = @{ VBlankIn = 0; VBlankOut = 1; RenderDone = 2; InputDone = 3; FileDone = 4; Timer = 5; AudioTick = 6 }
 
