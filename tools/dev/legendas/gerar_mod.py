@@ -32,6 +32,9 @@ import shutil
 import sys
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, AQUI)
+import sincronia  # noqa: E402  (2026-10-23: inicio/fim pela voz audivel e partes nas pausas)
+
 TRABALHO = os.path.join(os.environ.get("LOCALAPPDATA", "."), "BlueStingerRecomp", "legendas-en")
 MAX_LINHA, MAX_LINHAS, MIN_DUR, FOLGA = 42, 2, 0.8, 0.2
 P_REVISAR, P_MEDIA_REVISAR, P_EXCLUIR = 0.5, 0.75, 0.45
@@ -127,7 +130,7 @@ def linhas_de(transcricao, gl, duracao):
             # 6 vezes ou mais, palavra que nao cabe numa linha, ou o indice de repeticao do proprio modelo
             if re.search(r"(\w)\1{5,}", asr) or any(len(w["p"].strip()) > MAX_LINHA for w in g) or s.get("compression_ratio", 0) > 2.4:
                 out.append(dict(inicio=g[0]["i"], fim=g[-1]["f"], texto=asr[:80], confianca=media, estado="excluida",
-                                motivo="provavel alucinacao (repeticao)", asr=asr[:200], trocas=""))
+                                motivo="provavel alucinacao (repeticao)", asr=asr[:200], trocas="", palavras=g, asr_gl=asr))
                 continue
             if media < P_EXCLUIR or (len(g) < 2 and baixas):
                 estado, motivo = "excluida", f"confianca {media:.2f}" + (f"; baixas {baixas}" if baixas else "")
@@ -136,13 +139,29 @@ def linhas_de(transcricao, gl, duracao):
             else:
                 estado, motivo = "automatica", f"confianca {media:.2f}"
             out.append(dict(inicio=g[0]["i"], fim=g[-1]["f"], texto=quebrar(texto) or texto, confianca=media, estado=estado,
-                            motivo=motivo, asr=asr, trocas=",".join(trocas)))
+                            motivo=motivo, asr=asr, trocas=",".join(trocas), palavras=g, asr_gl=texto))
     # tempos: duracao minima e folga sem invadir a seguinte nem passar do fim
     for k, l in enumerate(out):
         prox = out[k + 1]["inicio"] if k + 1 < len(out) else duracao
         l["fim"] = min(max(l["fim"] + FOLGA, l["inicio"] + MIN_DUR), prox, duracao)
         l["fim"] = max(l["fim"], l["inicio"] + 0.1)
     return out
+
+
+def sincronizar(ls, wav, duracao, rel):
+    """Tempos pela voz audivel e partes nas pausas (sincronia.py) para as linhas que vao para o jogo; as excluidas ficam
+    como estao. Conta no relatorio quanto o inicio andou e quantas linhas viraram partes."""
+    segs = sincronia.trechos_audiveis(wav) if wav else None
+    vivas = [l for l in ls if l["estado"] != "excluida"]
+    for k, l in enumerate(vivas):
+        prox = vivas[k + 1]["inicio"] if k + 1 < len(vivas) else duracao
+        partes, modo = sincronia.partes_da_linha(l, segs, prox, duracao, l.get("asr_gl") if l["estado"] != "revisada" else None)
+        partes = [(a, b, quebrar(" ".join(x.split())) or x, c) for a, b, x, c in partes]
+        rel["sinc_linhas"] += 1
+        rel["sinc_atraso"].append(partes[0][0] - float(l["inicio"]))
+        rel["sinc_" + ("partes" if len(partes) > 1 else modo if modo in ("pausa-sem-corte", "sem-audio", "sem-trecho") else "ok")] += 1
+        l["partes"], l["corte"] = partes, modo
+        l["inicio"], l["fim"] = partes[0][0], partes[-1][1]
 
 
 def aplicar_revisao(l, rv):
@@ -204,7 +223,10 @@ def main():
     os.makedirs(os.path.join(mod, "fontes"))
     env_com_fala, sem_fala_nao_env = [], []  # a classificacao pela deteccao de voz (o nome ENV nao e prova)
     falas, tsv, rel = [], [], dict(vozes=0, com_fala=0, sem_fala=0, linhas=0, auto=0, revisar=0, excluidas=0, revisadas=0,
-                                   revisadas_ia=0, filmes=0, linhas_filmes=0, bloqueadas=0, pendentes_transcricao=0)
+                                   revisadas_ia=0, filmes=0, linhas_filmes=0, bloqueadas=0, pendentes_transcricao=0,
+                                   sinc_linhas=0, sinc_atraso=[], sinc_partes=0, sinc_ok=0, **{"sinc_pausa-sem-corte": 0,
+                                   "sinc_sem-audio": 0, "sinc_sem-trecho": 0})
+    partes_tsv = []
     for vid, r in sorted(cat.items(), key=lambda x: int(x[0])):
         if r["nome"] == "-":
             continue
@@ -229,6 +251,7 @@ def main():
             for k, l in enumerate(ls):
                 tsv.append([voz, vid, r["nome"], k, l["inicio"], l["fim"], l["texto"], l["asr"], f"{l['confianca']:.3f}", l["estado"], l["motivo"], l["trocas"], r["categoria"]])
             continue
+        sincronizar(ls, os.path.join(a.trabalho, "pcm", r["pcm"]) if r.get("pcm") else None, float(r["segundos"]), rel)
         rel["com_fala"] += 1
         if r["categoria"] == "ambiente":
             env_com_fala.append(r["nome"])
@@ -244,8 +267,11 @@ def main():
                 "# marcadas \"revisar\" continuam duvidosas (fontes/transcricoes.en-US.tsv). Tempos em segundos desde o inicio\n"
                 "# da fala.\n")
         for voz, vid, k, l in falas:
-            o.write(f"\n[[fala]]  # id {vid}, linha {k}, {l['estado']}\nvoz = {toml_str(voz)}\ninicio = {t_inicio(l['inicio']):.2f}\n"
-                    f"fim = {t_fim(l['fim']):.2f}\ntexto = {toml_str(l['texto'])}\n")
+            for n, (pa, pb, ptxt, _) in enumerate(l["partes"]):  # uma entrada por parte (falas separadas por silencio)
+                parte = f", parte {n + 1} de {len(l['partes'])}" if len(l["partes"]) > 1 else ""
+                o.write(f"\n[[fala]]  # id {vid}, linha {k}{parte}, {l['estado']}\nvoz = {toml_str(voz)}\ninicio = {t_inicio(pa):.2f}\n"
+                        f"fim = {t_fim(pb):.2f}\ntexto = {toml_str(ptxt)}\n")
+                partes_tsv.append([voz, k, n, f"{pa:.2f}", f"{pb:.2f}", ptxt, l["corte"]])
     for p in sorted(glob.glob(os.path.join(a.trabalho, "transcricoes", "filme-*.json"))):
         t = json.load(open(p, encoding="utf-8"))
         nome = t["chave"]
@@ -253,6 +279,10 @@ def main():
         for k, l in enumerate(todas):
             if (rv := revis.get((f"filme/{nome.lower()}", k))):
                 aplicar_revisao(l, rv)
+        sincronizar(todas, os.path.join(a.trabalho, "filmes-audio", nome + ".wav"), t["duracao"], rel)
+        for k, l in enumerate(todas):
+            for n, (pa, pb, ptxt, _) in enumerate(l.get("partes", [])):
+                partes_tsv.append([f"filme/{nome.lower()}", k, n, f"{pa:.2f}", f"{pb:.2f}", ptxt, l["corte"]])
         ls = [l for l in todas if l["estado"] != "excluida"]
         rel["filmes"] += 1
         for k, l in enumerate(todas):
@@ -260,8 +290,9 @@ def main():
         if not ls:
             continue
         rel["linhas_filmes"] += len(ls)
-        srt = "".join(f"{k}\n{srt_tempo(l['inicio'])} --> {srt_tempo(math.floor(l['fim'] * 1000) / 1000)}\n{l['texto']}\n\n"
-                      for k, l in enumerate(ls, 1))
+        cues = [(pa, pb, ptxt) for l in ls for pa, pb, ptxt, _ in l["partes"]]
+        srt = "".join(f"{k}\n{srt_tempo(pa)} --> {srt_tempo(math.floor(pb * 1000) / 1000)}\n{ptxt}\n\n"
+                      for k, (pa, pb, ptxt) in enumerate(cues, 1))
         # o mesmo SRT em dois lugares: o pacote (SubtitleService, desenho no N7) e o leiaute do N5 (mods\video\<NOME>.en.srt),
         # que o player de filmes ja desenha hoje (docs/MODS-VIDEO.md; ate a unificacao das pastas de mods)
         for destino in (os.path.join(mod, "legendas", f"{nome}.{IDIOMA}.srt"), os.path.join(mod, "video", f"{nome}.en.srt")):
@@ -272,6 +303,15 @@ def main():
         o.write("recurso\tid\tarquivo\tlinha\tinicio\tfim\ttexto\ttexto_asr\tconfianca\testado\tmotivo\tglossario\tcategoria\n")
         for row in tsv:
             o.write("\t".join(str(x).replace("\n", "\\n") if not isinstance(x, float) else f"{x:.2f}" for x in row) + "\n")
+    with open(os.path.join(mod, "fontes", f"partes.{IDIOMA}.tsv"), "w", encoding="utf-8", newline="\n") as o:
+        o.write("recurso\tlinha\tparte\tinicio\tfim\ttexto\tcorte\n")
+        for row in partes_tsv:
+            o.write("\t".join(str(x).replace("\n", "\\n") for x in row) + "\n")
+    at = sorted(rel["sinc_atraso"])
+    print("sincronia: %d linhas; inicio movido para a voz: mediana %.2f s, p90 %.2f s, max %.2f s; %d viraram partes, %d com "
+          "pausa sem corte seguro, %d sem audio de referencia" % (rel["sinc_linhas"], at[len(at) // 2] if at else 0,
+          at[int(len(at) * 0.9)] if at else 0, at[-1] if at else 0, rel["sinc_partes"], rel["sinc_pausa-sem-corte"],
+          rel["sinc_sem-audio"] + rel["sinc_sem-trecho"]))
     shutil.copy(os.path.join(AQUI, "glossario.tsv"), os.path.join(mod, "fontes", "glossario.tsv"))
     with open(os.path.join(mod, "mod.toml"), "w", encoding="utf-8", newline="\n") as o:
         o.write(f'formato    = 1\nid         = "legendas-en"\nnome       = "Legendas em inglês (falas e filmes)"\n'
@@ -307,7 +347,7 @@ desliga e troca o idioma. Pela linha de comando: `--legendas {IDIOMA}|nenhuma`.
         o.write("\n**Classificação pela detecção de voz** (o nome ENV não é prova; conferir de ouvido):\n\n")
         o.write(f"- nome ENV com fala detectada ({len(env_com_fala)}): {', '.join(env_com_fala) or '-'}\n")
         o.write(f"- sem ENV e sem fala detectada ({len(sem_fala_nao_env)}): {', '.join(sem_fala_nao_env) or '-'}\n")
-    print(json.dumps(rel, ensure_ascii=False))
+    print(json.dumps({k: v for k, v in rel.items() if k != "sinc_atraso"}, ensure_ascii=False))
     return 0
 
 
