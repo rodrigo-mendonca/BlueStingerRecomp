@@ -57,13 +57,16 @@ function VBlanksFor($roteiro) {
     return [int64]($last * 2 + 3000)
 }
 
+# video legado: os roteiros por passo foram gravados com ele. No filme nativo (N5) o filme roda dentro de UM passo de jogo:
+# a entrada por passo nao o pula, o NEWGAME toca inteiro (452 s logicos) e o orcamento de VBlanks acabava dentro dele nos
+# dois modos de tempo (A5 parado no passo ~1037; 2026-10-24). Os modos de tempo continuam comparados com o mesmo video.
 function Launch($tag, $tempo, $roteiro, $n) {
     $p   = Join-Path $Saida $tag
     $all = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $roteiro; BS_FILE_LOG = "${p}_fl.tsv"
               BS_FRAME_LOG = "${p}_fr.tsv"; BS_AICA_LOG = "${p}_au.tsv"; BS_AICA_LOG_TUDO = "1"; BS_STATE_PASSO = "${p}_st.tsv" }
     foreach ($k in $all.Keys) { Set-Item "env:$k" $all[$k] }
     try {
-        $proc = Start-Process -FilePath "cmd.exe" -PassThru -WindowStyle Hidden -ArgumentList "/c `"`"$Exe`" --data `"$Data`" --tempo $tempo --headless $n > `"${p}_saida.txt`" 2>&1`""
+        $proc = Start-Process -FilePath "cmd.exe" -PassThru -WindowStyle Hidden -ArgumentList "/c `"`"$Exe`" --data `"$Data`" --tempo $tempo --video legado --headless $n > `"${p}_saida.txt`" 2>&1`""
         $null = $proc.Handle
     } finally { foreach ($k in $all.Keys) { Set-Item "env:$k" "" } }
     return @{ Tag = $tag; Proc = $proc; P = $p; N = $n }
