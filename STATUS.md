@@ -2342,6 +2342,138 @@ Commits: `0ae1415` tonemapping, `875995c` nitidez, `898b087` bloom, `56fff7c` CR
   perda em 2 rotas. As camadas não acusam nenhum uso incorreto da API nessa rota, o que reforça a hipótese de falha
   do driver dependente do histórico da sessão. A correção da sincronização não é a causa nem a solução.
 
+### N7: integração ao master, limpeza, build principal e validação (2026-10-22/23)
+
+**Integração.**
+- `master` avançou por fast-forward até o `n7-vulkan` (`317ded3`), sem conflito.
+- As alterações locais particulares do principal ficaram onde estavam (`docs/DISTRIBUICAO-COMPILADOR.md`,
+  `_bs-extract.exe`, `tools/extractor/build/`).
+- Backups: branch `backup/master-antes-n7` e `%LOCALAPPDATA%\BlueStingerRecomp\backups\master-antes-n7-20261022`
+  (patch local, arquivos particulares, `generated/` anterior).
+- `generated/` regenerado com o `bs-recomp` do principal: idêntico ao do n7, 14 arquivos.
+
+**`tools/extractor/known_versions.h` (particular).** A alteração local que acrescenta o Head Hunter apagou o `};` do
+array, e o arquivo não compila (é o mesmo que entra no kit do Builder). Ele foi afastado com
+`git stash push -- tools/extractor/known_versions.h` durante os builds e as distribuições e devolvido no fim, conferido
+pelo SHA-256 (cópia também no backup acima). O conteúdo não foi alterado; a correção é do mantenedor.
+
+**Achado do ctest.** `n0_native_limpo` reprovava: quatro comentários de `native/render` citavam caminhos de
+`runtime/`. Os comentários foram trocados (`3298a92`). Release com o disco: 18/18 (`boot_trace` pulado).
+
+**Limpeza (só o comprovadamente descartável, depois de procurar junções em todas as pastas):**
+- `%TEMP%`: a instalação de teste do `test_preview` (1,1 GB), 8 pastas do `n7_janela.py` (0,6 GB) e diretórios
+  menores de testes: 1,74 GB.
+- Logs de build obsoletos na raiz das worktrees n6 e n7.
+- `dist\`: as 8 cópias antigas da Preview (marcos N1 a N3), a pedido do mantenedor: 2,22 GB livres.
+- Mantidos (candidatos, decisão do mantenedor): a worktree n6 (o `build/n7-ww` usa o `generated` dela); as capturas
+  do N7 e do N6 em `%LOCALAPPDATA%` (a investigação AMD continua aberta); `dist\.bs-build`;
+  `BlueStinger-Preview.anterior` (o rollback automático do `make_preview`).
+- Junções existentes (não tocadas): `recomp-BStinger-n6\build\n6-game\app\mods\{legendas-en,video}`, para o pacote de
+  legendas em `%LOCALAPPDATA%`.
+
+**Build principal.** Preset `msvc-release` em `build\msvc-release`, com o SDL3 do `_deps` do principal e os
+cabeçalhos Vulkan vendorizados (sem SDK). Distribuições:
+- `dist\BlueStinger-Builder` (Recompiler, Developer, bs-builder, kit);
+- `dist\BlueStinger-Preview` (montada pelo próprio Builder a partir do CDI).
+
+**Validação da build principal** (Preview, cópia do executável em `%TEMP%`, 15 verificações; NVIDIA RTX 5080):
+
+| Caso | Resultado |
+|---|---|
+| `test_preview` | 9/0 (inicia sem o CDI, dependências, pasta só leitura, sem `data\`) |
+| Software headless (1200 VBlanks) | rc 0; áudio nativo (efeitos, falas, música) ativo |
+| Vulkan headless | 586 quadros, 0 falhas, 0 recriações |
+| Vulkan × software (comparar) | 586 renders, 0 pixels diferentes |
+| Janela com apresentação direta: original, 1080p (1440×1080), 4K (2880×2160) | 0 falhas nos três; limite da GPU 2160 |
+| Janela software (padrão) | rc 0, 59,9 campos/s |
+| Shaders de mod | `cor-quente` válido; os 3 inválidos recusados com o motivo |
+| Recuo sem Vulkan (janela e headless) | "Vulkan indisponível", segue no software |
+| Menu pelo controle virtual: Legendas desligadas | `legendas.toml` gravado; o reinício lê "desligadas" |
+| Câmera livre | estado do jogo idêntico ao Original. A primeira tentativa usou o VBlank 1200 e depois o 4000: até ali a rota de combate está em cena roteirizada (`CD68`), e a câmera fica corretamente suspensa |
+
+**Distribuição pelo Recompiler.** O `BlueStinger-Recompiler.exe` de `dist\BlueStinger-Builder`, com `--auto --portatil`,
+instalou a partir do CDI numa pasta nova: 16 filmes convertidos, mod padrão de legendas e jogo carregando o pacote
+sozinho.
+
+**Legendas como mod padrão** (decisão do mantenedor, 2026-10-22). O Builder instala em toda instalação os pacotes de
+`mods-padrao/` (`2969913`). O LEIA-ME do jogo foi atualizado com os recursos do N7 (`b11179d`).
+- **Atualização de 2026-10-23 (decisão do mantenedor):** as transcrições e traduções são texto derivado das falas do
+  jogo comercial e não vão para o Git nem para o pacote público.
+  - O conteúdo de `mods-padrao/` passou a ser só local (`.gitignore`; no Git fica só o `mods-padrao/README.md`, com
+    o processo de geração).
+  - O `make_builder.ps1` só os leva para o kit com `-LegendasLocais`, e o `VERSAO.txt` avisa: uso local, não publicar.
+  - **Pendência para o mantenedor:** o commit `2969913` (local, sem push) contém o texto inglês 0.1.0 em
+    `mods-padrao/legendas-en`. Antes de um push, esse commit precisa ser reescrito, e essa decisão é dele.
+
+### Legendas: revisão, reconferência no áudio e pt-BR (2026-10-22/23)
+
+Revisão por IA (Claude e Codex), sem revisão humana. Os dois pacotes continuam `provisorio = true`.
+
+**Inglês (`legendas-en` 0.2.0):**
+- **Revisão de texto:**
+  - nomes pelo texto do jogo (o glossário passou a repetir até estabilizar: "Elliot G. Balad" → "Eliot G. Ballade";
+    ESER, Kimratech, Gigadent Disk, Rat's Place, Dino-site);
+  - pontuação dos diálogos;
+  - contexto: Jean King (E080/E082C); Devlin; Doxin em vez de "dachshund" (E039, achado do Codex);
+  - alucinações do Whisper em silêncio excluídas ("Thanks for watching!").
+- **Reconferência no áudio** (`reconferir.py`, o mesmo modelo com os nomes do jogo), em 78 falas e 6 filmes:
+  - 12 linhas recuperadas: os 9 avisos do E006D, tomados por repetição alucinada e confirmados com 0,97–1,00; o
+    aviso curto do E101A; o E089B_G e o E089B_M;
+  - correções de sentido: E067B, E056, E015, E102, E029B, NEWGAME 7;
+  - a troca "Han" → "hon" (E048) foi desfeita: o áudio repete "Han", e a linha ficou "revisar".
+- **Resultado:** 734 linhas no jogo (691 falas, 43 de filmes; eram 722 antes da reconferência): 609 automáticas, 53
+  revisadas por IA, 72 ainda "revisar" (áudio duvidoso) e 11 excluídas.
+
+**Português do Brasil (`legendas-pt-br` 0.1.0):**
+- **Tradução por IA** das 734 linhas, com os mesmos tempos e chaves; duas linhas de 42 caracteres, conferidas pelo
+  gerador.
+- **Revisão independente pelo Codex de todas as 734 chaves**, em 9 lotes com uma linha por chave
+  (`tools/dev/legendas/revisar_codex.py`; relatório em `reviews/legendas-pt-20261023-0108/relatorio.md`, local):
+  - 667 ok e 67 com observação;
+  - decisões: 33 aceitas, 5 ajustadas (o tamanho, ou a sugestão mudava o sentido), 5 rejeitadas com motivo (E125
+    "trocar de roupa", E072B "preso", E185A "Gigadent" como lugar, E017B sem o "G.", E002B "Mal e mal");
+  - **24 pendentes** de áudio ou contexto, mantidas sem alteração e listadas em `fontes/pendentes.pt-BR.tsv` no
+    pacote: Stamp Rally, "Belliot", "OVA", "Han", sequências alfanuméricas e outras. Revisão ainda não concluída.
+
+**Idioma.**
+- O `instalacao.toml` e o padrão passam a ser `auto`: pt-BR se o pacote estiver instalado, senão en-US, senão
+  desativadas com aviso.
+- Menu Legendas > Idioma: Português (Brasil), English e Desativadas. Muda na hora e grava no `legendas.toml`.
+
+**Validação na `dist`** (executável da Preview):
+- execução direta: "idioma automatico: pt-BR (pacote legendas-pt-br)";
+- **filme NEWGAME**: 67 quadros com pt-BR, en-US e nenhuma no mesmo VBlank. Em 19 há legenda, só na faixa de baixo
+  e diferente do inglês; nos outros 48, nada sobre a imagem. Exemplo conferido na captura: "Puxa, nem tenho permissão
+  para entrar / no bairro residencial da ilha.";
+- gameplay e menu: ver "Validação da dist (2026-10-23)".
+
+### Validação da dist (2026-10-23)
+
+Executável e mods de `dist\BlueStinger-Preview` (`4c24049-dirty`, montada pelo Builder a partir do CDI, com os
+pacotes locais `legendas-en` 0.2.0 e `legendas-pt-br` 0.1.0); casos em cópias da pasta, para a Preview não acumular
+arquivos de teste; NVIDIA RTX 5080.
+
+| Caso | Resultado |
+|---|---|
+| `test_preview` | 9/0: inicia sem o CDI, dependências, sem caminhos de desenvolvimento, pasta só leitura, sem `data\` |
+| `test_saves` (`-Exe` da dist, cartões em pastas temporárias) | 25 ok, 0 falhas (S12 pulado: precisa de VMU do Flycast) |
+| Execução direta da `dist` | "idioma automatico: pt-BR (pacote legendas-pt-br)"; filme NEWGAME pelo player nativo |
+| Software / Vulkan / Vulkan × software | rc 0, áudio nativo / 586 quadros, 0 falhas / 0 pixels diferentes |
+| Janela com apresentação direta: original, 1080p, 4K | 0 falhas; limite da GPU 2160 |
+| Shaders de mod e recuo sem Vulkan | `cor-quente` válido e 3 inválidos recusados / segue no software |
+| Câmera livre (VBlank 8860) | imagem diferente, estado do jogo idêntico ao Original |
+| Menu > Legendas > Idioma (controle virtual) | pt-BR → Desativadas → English, gravado e lido no reinício (depois da correção abaixo) |
+| Legendas pt-BR no gameplay (`n7_legendas.py`, software e Vulkan) | APROVADO nos dois: 866 quadros com fala, 339 sem |
+| Legendas no filme NEWGAME (pt-BR × en-US × nenhuma) | 19 quadros com legenda só na faixa de baixo, diferente do inglês; 48 sem nada |
+| Movimento relativo (R0, R3, R7, R10) | R7 rumo 92,7° / vista 92,8°; R10 acompanha o giro; R3 idêntico ao Original |
+
+**Defeito achado na validação da dist (corrigido).** O menu oferecia só pt-BR e Desativadas: com os dois pacotes
+instalados, a lista do menu tinha um idioma. A causa era
+`for (... : ModPackages::discover(...).packages())`: no C++20 o temporário de `discover()` morre antes do laço, e o
+laço lia uma referência pendente (comportamento indefinido). O resultado agora fica numa variável, e o log mostra a
+lista ("[menu] idiomas das legendas: en-US, pt-BR") e os pacotes recusados com o motivo. Um unitário novo reproduz o
+caminho da dist (pt-BR automático → Desativadas → English). Não há outro laço com esse padrão no código.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2363,7 +2495,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
-| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta, efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod) e câmera livre no analógico direito (Original, Híbrida, Livre); validação com as camadas do Vulkan aprovada (2026-10-22); faltam o SSAO e o fechamento | 85 |
+| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta, efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod) e câmera livre no analógico direito (Original, Híbrida, Livre); validação com as camadas do Vulkan aprovada (2026-10-22); legendas como mod padrão; fechamento proposto (`docs/N7-PLANO.md` seção 24: AMD condicional, SSAO proposto para o N9), aguarda a decisão do mantenedor | 90 |
 | N8 Sem legado | não iniciada | 0 |
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |

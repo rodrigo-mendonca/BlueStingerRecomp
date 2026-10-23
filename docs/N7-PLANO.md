@@ -1343,5 +1343,141 @@ do jogo continua idêntico.
   e então a vista gira no lugar;
 - `CD68` como "câmera roteirizada" foi comprovado na rota de combate; em outras cenas, o tratamento conservador é o
   mesmo;
-- o movimento continua relativo à câmera do jogo (analógico esquerdo intocado). Movimento relativo à câmera vista
-  fica para depois, como opção separada, após validação de mira, combate e animações.
+- o movimento continuava relativo à câmera do jogo (analógico esquerdo intocado). Resolvido na seção 23.3.
+
+### 23.3 Movimentação relativa à câmera (correção de usabilidade, 2026-10-22)
+
+**Pedido do mantenedor.** Com a câmera girada pelo analógico direito, o analógico esquerdo para frente deve andar para
+onde a vista olha, como num jogo moderno em terceira pessoa. O modo Original não muda. Os controles do N3 não são
+reabertos.
+
+**Investigação.**
+- O direcional do jogo é relativo à câmera do jogo (N2b2-GAMEPLAY 1.4). A câmera livre só desloca a vista, nos
+  argumentos das seis chamadas do SDK; ela não escreve em `0x8C24CD50`/`CD60`.
+- Em gameplay, com a vista girada 90° e o analógico seguro, o Eliot mantém o rumo enquanto a câmera de perseguição do
+  jogo gira para trás dele. O rumo não segue a câmera atual: segue uma **referência travada**.
+- A referência é `0x8C24D680` (`0x8C24D2CC + 0x3B4`, na estrutura do Eliot), uma cópia de `CD60`. O jogo a grava em
+  `8C041674`, `8C041830` e `8C04199E`. O `BS_RAM_WATCH` mostra a cópia feita no toque e refeita durante o toque quando o
+  ângulo do analógico muda o bastante. É o que mantém a direção nos cortes de câmera.
+
+**Implementação** (`transitional/free_camera`, `native/platform/input`, `camera_settings`, menu):
+- **Entrada efetiva.** O analógico esquerdo é girado de **vista − `D680`**: o jogo soma a referência dele e o rumo
+  resultante é a vista, sem rotação dupla. Só o yaw entra; o pitch não muda o movimento. O vetor é limitado ao círculo
+  unitário antes de girar, então a diagonal do teclado não ganha velocidade. A zona morta é a do N3 (antes da rotação).
+- **Vista ancorada no mundo.** Com o movimento relativo, o giro da câmera do jogo é descontado do deslocamento do rig
+  (`CameraRig::absorb`). A vista fica onde o jogador a deixou, e o deslocamento cai sozinho a zero quando a câmera de
+  perseguição chega atrás do Eliot. Nada disso acontece durante a volta da Híbrida, com o movimento "original" ou no
+  Original.
+- **Quando gira.** Só depois que a vista sai do enquadramento do jogo nesse toque. Sem deslocamento, a entrada passa
+  intacta e o estado é idêntico ao Original. Em cena roteirizada (`CD68`), em corte, sem montagem há 30 VBlanks e com o
+  analógico no centro, nada muda. Num corte com o toque já ativo, o salto da vista entra num desvio: o rumo continua,
+  como no original. O D-pad não é girado.
+- **Onde.** Na amostra do jogo (`InputSystem::latch`), **antes** do filtro da gravação: o `BS_GRAVAR` grava o analógico
+  efetivo e a reprodução (fonte de teste) o entrega sem girar de novo. A reprodução não depende da câmera. Os
+  diagnósticos da câmera (`BS_CAMERA_FIXA`, `BS_CAMERA_ROTEIRO`) giram também a fonte de teste.
+- **Opção.** `[camera] movimento = "camera" | "original"` no `controles.toml`, com padrão `camera` (o Original da câmera
+  não tem deslocamento). No menu: Controles > Câmera > Movimentação (Original / Relativa à câmera), que muda na hora.
+  Para testes, `BS_CAMERA_MOVIMENTO`.
+
+**Validação** (rota de exploração até o passo 3029 e depois o analógico exato, `AY=0`, por 300 passos; estado por passo
+com `BS_STATE_PASSO_SEM_CAMERA`; rumo = deslocamento do Eliot em `0x8C24D668`):
+
+| Caso | Resultado |
+|---|---|
+| Original + frente (R0) | a base |
+| Livre com o movimento "original", vista 90° (R3, R9) | estado **idêntico** ao R0 em 3620 passos |
+| Livre, vista 90° à direita pelo rig (R7) | rumo 92,7° com a vista em 92,8°; a câmera do jogo vai para trás do Eliot e o deslocamento cai a ~0 |
+| Híbrida (R8) | igual ao R7; volta ao enquadramento do jogo depois de 3 s sem o analógico direito |
+| Vista girando enquanto anda (R10) | o rumo acompanha a vista (−45,1°/−46,7° contra −44,3°/−46,8°) sem passar do ponto |
+| Vista 180° pelo rig (R12) | rumo −177°, oposto à câmera do jogo (2,7°); um giro de 45° da câmera de perseguição numa montagem (posição +15) deixou de ser tratado como corte |
+| Pitch de 30° (R4) | estado idêntico ao do mesmo caso sem pitch |
+| Diagonal girada para a frente (unitário) | comprimento 1, sem ganho |
+| Determinismo (R1 × R1b) | idêntico |
+| Vulkan × software (R6) | estado idêntico |
+| Combate inteiro (`passo_combate`, 9000 VBlanks), Híbrida sem tocar no analógico direito (R11) | **idêntico ao Original** em 4320 passos, 0 montagens com deslocamento: a mira e os disparos não mudam |
+| Janela (`BS_GRAVAR` + controle virtual do SDL), vista girada, e a reprodução headless **sem** câmera livre | 231 amostras giradas gravadas como efetivas (ex.: `AY=145+AX=254`); estado **idêntico** em 3632 passos |
+
+**Achados durante a validação (corrigidos):**
+- a compensação agia também sem deslocamento e afastava a vista da câmera do jogo sem o jogador mexer no analógico
+  direito (319 montagens no R11): agora só com deslocamento, e ele para em zero quando a câmera do jogo alcança a vista;
+- a regra "yaw acima de 40° é corte" zerava o deslocamento num giro rápido da câmera de perseguição (R12): com o
+  movimento relativo, o corte é só o salto de posição.
+
+**Revisão do Codex** (`reviews/codex-20261023-003543.md`). O sandbox do Codex não lê o repositório nesta sessão
+(`helper_sandbox_lock_failed`, `SetNamedSecurityInfoW` erro 5, no principal e na n7). O diff, o disassembly dos três
+pontos de cópia e as medidas foram no prompt (`tools/dev/codex_review_inline.py`).
+- **[MÉDIA, aceito]** O `absorb` normalizava antes de ver a passagem por zero: +170° com a câmera girando −20° virava
+  zero em vez de −170°. Agora compara o valor sem normalizar, com testes dos dois sentidos.
+- **[BAIXA, aceito]** O cálculo real (vista − `D680`) não tinha teste: virou `relative_degrees` (pura), testada com wrap
+  `0xFFF0 → 0x0010`, os dois sentidos, ±180° e o desvio de corte.
+- **Não verificado, registrado:** `BS_CAMERA_FIXA`/`ROTEIRO` junto com uma gravação reproduzida girariam de novo a
+  entrada efetiva. São diagnósticos para roteiros com entrada crua (comentário no `GameHost`).
+- **Conferido sem problema:** a leitura de 16 bits (o original mascara com `0xFFFF` nos três pontos), o wrap, os
+  sinais, a ordem transformação → gravação, o Original intacto e a suspensão em cena e sem montagem.
+
+**Limites.**
+- Com o deslocamento fixo de diagnóstico (`BS_CAMERA_FIXA`), a vista fica presa à câmera do jogo e o Eliot a persegue.
+  Não é um modo de jogo.
+- A mira e o combate só foram validados sem deslocamento (idênticos ao Original). Com a vista girada, o Eliot vira
+  para onde a vista manda, como no movimento.
+- O D-pad continua relativo à câmera do jogo.
+
+## 24. Fechamento do N7: critérios, situação e proposta (2026-10-22)
+
+Preparado para a decisão do mantenedor; o N7 só fecha com ela. Nível 2 da política de testes: testes completos do
+subsistema e comparação com o legado, sem a regressão integral.
+
+### Situação por frente
+
+| Frente | Situação | Evidência |
+|---|---|---|
+| N7a: captura do TA na IR | **concluída** | modo `conferir` em todo render da rota de combate: 0 divergências (seção 13) |
+| N7b: backend Vulkan fiel | **concluída** | rota de combate, todo render comparado: NVIDIA 4487/4487 idênticos; AMD integrada 4486/4487 (1 recriação, ver AMD) (seção 14) |
+| Validation Layers (validação completa + sincronização) | **concluída** | A1 AMD comparar, N1 NVIDIA nativo, J1 janela 1080p com a apresentação direta: 0 mensagens, depois de corrigido um hazard de sincronização da profundidade (`STATUS.md`, "Validação com as camadas do Vulkan") |
+| Apresentação direta e resolução interna (caminho B) | **concluída** | original idêntico; 720p a 4K desenhados no alvo maior, limitados pela GPU (seção 20) |
+| Menu interno (seção 17) | **concluído, com limites** | Gráficos, Áudio, Legendas, Controles, Restaurar padrões; pausa entre VBlanks; persistência; confirmação de tela com volta em 15 s. Limites: sem a opção "Configurações" desenhada no menu do título (a tecla vale em qualquer tela); remapear pelo menu "em breve" |
+| Legendas no gameplay e nos filmes (seção 18) | **concluídas** | `n7_legendas.py` aprovado em software e Vulkan; pacotes `legendas-en` e `legendas-pt-br` como mods padrão locais (`mods-padrao/`, fora do Git), instalados pelo Builder; idioma automático pt-BR; filmes conferidos na imagem (`STATUS.md`) |
+| Pós-processamento e shaders de mod (seção 21) | **concluídos** | cor, tonemapping, nitidez, bloom, CRT; shaders externos SPIR-V validados; o preset Original não aplica nenhum passe |
+| Câmera livre (seção 23) | **concluída** | Original sem nada instalado (quadros idênticos); Híbrida e Livre com o estado do jogo por passo idêntico ao Original |
+| Recuo sem Vulkan | **concluído** | sem dispositivo, o jogo segue no software com o motivo no log |
+| GPU AMD integrada | **condicional** | perda intermitente do dispositivo no modo `comparar` (render 371, 1 em 3 rotas sem as camadas; nenhuma com as camadas). As camadas não acusam uso incorreto da API. A causa **não** foi identificada; a hipótese de driver não está comprovada. A recuperação recria o dispositivo. A apresentação direta não foi testada na AMD |
+| Vulkan como padrão | **pendente da decisão do mantenedor** | o software continua padrão (`kRenderNativeDefault = false`) |
+| Rotas além da de combate (Vulkan × software) | **parcial** | combate (todo render) e janelas com gameplay real; as rotas do `test_assistido` não foram comparadas render a render |
+| Fog e volumes modificadores (seção 16) | **pendente de fidelidade** | o software de referência também não os aplica: o Vulkan é igual a ele, não ao console. A referência é o Flycast (oráculo gráfico, ainda não comparado) |
+| MSAA, filtragem bilinear/anisotrópica, presets Equilibrado e Alta Qualidade | **não feitos** | o menu os mostra "em breve"; só o preset Original é real |
+| 16:9 de verdade, texturas HD, iluminação e sombras aprimoradas | **não feitos** | contrato das texturas HD pronto (seção 13); 16:9 exige corrigir projeção e HUD |
+| SSAO | **não feito**: ver abaixo | |
+
+### SSAO: viabilidade
+
+O que existe:
+- a profundidade do renderizador: o 1/w do PVR das opacas e do punch-through, no alvo da resolução interna;
+- a matriz de visão por quadro em `0x8C24CC38` (seção 23).
+
+O que falta, e por que não cabe no N7 sem inventar dados:
+1. **A projeção.** O PVR recebe vértices já projetados. A distância e o centro da tela do SDK (os parâmetros do
+   `njSetScreen` ou equivalente) não foram localizados. Sem eles, a posição no espaço da câmera viria de um campo de
+   visão suposto, que é exatamente o "dado inventado" que a seção 21 proíbe.
+2. **A separação entre a cena e o HUD.** O HUD 2D vai nas mesmas listas, com o próprio 1/w. Sem uma marca por desenho
+   (cena ou HUD) na IR, o SSAO escureceria as bordas do HUD e dos textos.
+3. **A profundidade depois do render pass.** Hoje ela é descartada (`storeOp DONT_CARE`). Guardá-la e entregá-la ao
+   pós-processamento é simples, mas só faz sentido com 1 e 2.
+
+**Proposta:** transferir o SSAO para o **N9 (Remasterização)**, com os três pré-requisitos acima como primeira tarefa
+dele. O menu continua mostrando "SSAO (em breve)" e o Original não muda.
+
+### Proposta de fechamento
+
+1. Encerrar o N7 com **promoção condicional**, como o N6, com as frentes concluídas acima.
+2. Pendências abertas que ficam registradas:
+   - a AMD integrada, sem causa identificada;
+   - fog e volumes modificadores contra o Flycast;
+   - rotas além da de combate.
+   Fog e volumes devem ser resolvidos antes do N8, porque o N8 remove o legado, que inclui o rasterizador em software
+   usado hoje como referência.
+3. Para o N9: SSAO, 16:9, texturas HD, MSAA, filtragem, iluminação e sombras aprimoradas, e os presets que dependem
+   delas.
+4. Decisões do mantenedor:
+   - o Vulkan vira padrão, com recuo automático para o software?
+   - aceita a transferência do item 3?
+5. Depois: retomar o N2 (U5–U8, promoção do tempo experimental, N2c), sem antecipar N8, N9 ou N10.
