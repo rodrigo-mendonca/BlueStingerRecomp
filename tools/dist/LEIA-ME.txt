@@ -74,9 +74,10 @@ do controles.toml.
 - Camera: Original (a do jogo), Hibrida (o analogico direito gira e a camera volta sozinha) ou
   Livre. So muda a imagem: colisao, inimigos e controles do jogo nao veem a camera livre.
   Opcao: --camera original|hibrida|livre.
-- Legendas: das falas no gameplay e dos filmes. O mod padrao mods\legendas-en (ingles, transcricao
-  automatica ainda nao revisada) vem com toda instalacao; outros pacotes em mods\<pacote>\legendas.
-  Opcao: --legendas <idioma>|nenhuma.
+- Legendas: das falas no gameplay e dos filmes, pelos pacotes em mods\ (legendas-pt-br e
+  legendas-en, quando instalados: traducao e transcricao por IA, sem revisao humana). Idioma no menu:
+  Portugues (Brasil), English ou Desativadas; o inicial e o portugues quando o pacote existe.
+  Opcao: --legendas <idioma>|auto|nenhuma.
 
 Dados e problemas
 -----------------

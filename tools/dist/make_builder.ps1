@@ -3,15 +3,18 @@
 # bs-builder.exe (linha de comando), runtime do MSVC, licencas, instrucoes e o kit de fontes
 # (runtime, app, leitor de disco, config, SDL3) que o Builder compila na maquina do usuario.
 #
-#   powershell -ExecutionPolicy Bypass -File tools/dist/make_builder.ps1 [-Out <pasta>] [-NoBuild]
+#   powershell -ExecutionPolicy Bypass -File tools/dist/make_builder.ps1 [-Out <pasta>] [-NoBuild] [-LegendasLocais]
 #
 # A distribuicao do Builder NAO contem nada do jogo (nem codigo gerado, nem executavel do
 # jogo, nem dados do disco); a montagem confere isso antes de trocar a pasta. Uma tentativa
-# que falha deixa a anterior intacta. Os mods padrao do projeto (mods-padrao: as legendas, so texto) vao no kit e o
-# Builder os instala em <instalacao>\mods.
+# que falha deixa a anterior intacta.
+# -LegendasLocais: copia para o kit os pacotes locais de mods-padrao/ (legendas transcritas e traduzidas, texto
+# derivado das falas do jogo, fora do git: ver mods-padrao/README.md). So para a distribuicao local de testes: o
+# VERSAO.txt avisa que ela nao pode ser publicada. Sem a opcao, o Builder sai sem legendas.
 param(
     [string]$Out = "",
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$LegendasLocais
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
@@ -75,6 +78,16 @@ foreach ($rel in $kitList) {
     $dst = Join-Path $kit $rel
     New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
     Copy-Item -LiteralPath $src -Destination $dst
+}
+$locais = @()
+if ($LegendasLocais) {
+    foreach ($p in Get-ChildItem -Directory (Join-Path $repo "mods-padrao") -ErrorAction SilentlyContinue) {
+        if (-not (Test-Path (Join-Path $p.FullName "mod.toml"))) { continue }
+        Copy-Item -Recurse -LiteralPath $p.FullName -Destination (Join-Path $kit "mods-padrao\$($p.Name)")
+        $locais += $p.Name
+    }
+    if (-not $locais) { Fail "-LegendasLocais sem nenhum pacote em mods-padrao (ver mods-padrao/README.md)" }
+    Step "legendas locais no kit: $($locais -join ', ') (uso local: nao publicar)"
 }
 $version = (git -C $repo describe --always --dirty --abbrev=7 2>$null)
 if (-not $version) { $version = "desconhecida" }
@@ -161,12 +174,15 @@ if ($LASTEXITCODE -ne 2) { Fail "bs-builder.exe montado nao respondeu (codigo $L
 $kitFiles = Get-ChildItem -LiteralPath $kit -Recurse -File
 @"
 Blue Stinger Builder $version
-Distribuicao: Builder (sem conteudo do jogo)
+Distribuicao: Builder ($(if ($locais) { 'com legendas locais: uso local, nao publicar' } else { 'sem conteudo do jogo' }))
 Montada em: $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 Runtime do MSVC: $($crt.Name) ($([IO.Path]::GetFileName($env:VCToolsRedistDir.TrimEnd('\'))))
 Kit de fontes: $($kitFiles.Count) arquivos, $([math]::Round((($kitFiles | Measure-Object Length -Sum).Sum / 1MB), 1)) MB (SDL3 release-3.2.30)
-Mods padrao: $((Get-ChildItem -Directory (Join-Path $kit 'mods-padrao') -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')
 "@ | Set-Content -Encoding utf8 "$stage\VERSAO.txt"
+if ($locais) {
+    "Legendas locais no kit: $($locais -join ', '). Texto derivado das falas do jogo: distribuicao SO para uso local," +
+        " NAO publicar." | Add-Content -Encoding utf8 "$stage\VERSAO.txt"
+}
 
 # troca segura (como em make_preview.ps1)
 Step "instalando em $Out"

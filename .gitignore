@@ -35,3 +35,9 @@ CMakeUserPresets.json
 __pycache__/
 # distribuicoes locais (binarios derivados da copia do usuario)
 /dist/
+# legendas transcritas e traduzidas (texto derivado das falas do jogo): so locais, geradas por tools/dev/legendas;
+# o Builder as instala a partir desta pasta (ver mods-padrao/README.md). Nao versionar nem publicar.
+/mods-padrao/*/
+/tools/dev/legendas/revisoes.*.tsv
+/tools/dev/legendas/traducao.*.tsv
+/tools/dev/legendas/pendentes.*.tsv
