@@ -10,7 +10,7 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 
 ## Status (2026-10-23)
 
-**Progresso geral: ~68 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
+**Progresso geral: ~69 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
 fração concluída; em 2026-10-22 o roteiro ganhou a N9, Remasterização, e os mods passaram para a N10). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 em português do Brasil por padrão, com inglês como alternativa (pacotes gerados localmente a partir do disco do usuário e instalados pelo Builder; transcrição, tradução e revisão por IA, provisórias; o texto não vai para o repositório). O desenho
@@ -21,7 +21,7 @@ em português do Brasil por padrão, com inglês como alternativa (pacotes gerad
 | M0–M4 | Extrator, decodificador SH-4, gerador de C++, runtime e primeiro executável | concluídas | — |
 | N0 | Manifesto de hardware, fronteira jogo/SDK, interfaces nativas | concluída | 100 |
 | N1 | Sistema de arquivos nativo | concluída | 100 |
-| N2 | Tempo e eventos nativos | **em andamento** (retomado em 2026-10-23): o desempenho do gameplay foi medido; o que deixava o jogo abaixo do tempo real era o renderizador em software, e com o Vulkan padrão o gameplay leva ~7 ms por campo (tempo real: 16,7 ms). Faltam o tempo das cargas de som, a cobertura e a promoção do tempo experimental | 55 |
+| N2 | Tempo e eventos nativos | **em andamento** (retomado em 2026-10-23): o desempenho do gameplay foi medido; o que deixava o jogo abaixo do tempo real era o renderizador em software, e com o Vulkan padrão o gameplay leva ~7 ms por campo (tempo real: 16,7 ms). O tempo das cargas de som foi feito, e o tempo experimental foi conferido em sessões reais (estado por passo igual, fora de uma exceção documentada por LOAD do cartão). Faltam os critérios restantes e a promoção do experimental, ainda não recomendada | 60 |
 | N3 | Controles nativos (SDL3/XInput, remapeamento, perfis) | concluída | 100 |
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |

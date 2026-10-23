@@ -434,7 +434,7 @@ Ver a seção 12 (medição sequencial).
 | U4 | D7: TMU parado + supressão = legado, exceto as cessões marcadas causalmente; consumidores do TMU validados (B11) | **Cumprido em uma rota**. "Todos os consumidores relevantes" depende do U7 |
 | U5 | Predicado de produto com custo dentro do B9 (≤ 1,05×) e o detector como oráculo | **Pendente.** Seção 12: só há uma extrapolação linear, sem medida do mecanismo real |
 | U6 | D9(a): conclusão de controles e GD-ROM validada separadamente no legado e no nativo | **Pendente** |
-| U7 | Cobertura: ao menos uma rota reproduzível com troca de sala e uma com save/load, com U1–U4 repetidos | **Pendente** (falta roteiro) |
+| U7 | Cobertura: ao menos uma rota reproduzível com troca de sala e uma com save/load, com U1–U4 repetidos | **Parcial (2026-10-23).** As rotas existem: duas sessões gravadas do mantenedor (troca de sala, combate, save e LOAD) e as rotas do `test_assistido`; o estado por passo do experimental é igual ao do estável fora da exceção `d11-carga-cartao` (`docs/N2-PLANO.md` 13.3). Falta repetir U1–U4 (inventário e detector) nelas |
 | U8 | D11: cada trecho da 9.3 provado seguro ou tratado explicitamente | **Pendente** (exige o N2b-2 experimental) |
 | U9 | Revisão independente do Codex | Seção 11 |
 

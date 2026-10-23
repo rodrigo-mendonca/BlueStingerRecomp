@@ -2526,7 +2526,40 @@ pelo `n6_h.ps1 -Casos H9` (150 s). Detalhes: `docs/N2-PLANO.md` seção 12 e `do
 Detalhes e provas: `docs/N2-PLANO.md` 12.4 e 12.5.
 - Espera do DMA (176,7 ns/byte) no download nativo da música, pela primitiva `time::hardware_wait` (no experimental não espera, D11). Sessão gravada do mantenedor (7 496 passos, 4 trocas de música): estado idêntico em todos os passos e saves iguais, com e sem a espera; VBlanks 6–26 mais tarde (o tempo das cargas). Revisão do Codex: 2 achados aceitos, 2 rejeitados com evidência.
 - Defeito corrigido: `game_steps()` era 0 no `--tempo legado`, e as falas nativas (por passo) faziam legado e nativo divergirem com o áudio nativo. `test_tempo`: 22 → 34 de 35; o A3 restante era a referência do N1, registrada com o áudio legado (atualizada).
-- Pendente: `test_assistido` A5 (três roteiros param no passo ~1037 nos dois modos de tempo; a investigar).
+- Pendente: `test_assistido` A5 (três roteiros param no passo ~1037 nos dois modos de tempo; a investigar). Resolvido
+  na seção seguinte.
+
+### N2: A5, áudio a 4K e cobertura do tempo experimental (2026-10-23)
+
+Detalhes e tabelas: `docs/N2-PLANO.md` seção 13.
+- **A5 (`d6b0e45`):** os roteiros por passo foram gravados com o vídeo legado. Com o vídeo nativo, o filme do NEW GAME
+  (452 s lógicos) toca inteiro dentro do passo 1038 e o orçamento do `--headless` acabava nele. Correção:
+  `test_assistido` com `--video legado`, como o `test_tempo`. Resultado: 28/0, A5 até o fim das quatro rotas.
+- **Áudio a 4K:** faltas raras (0–2 em 150 s a 4K e 1440p; 0 a 480p) vêm de picos de GPU no título e nos menus
+  (65–78 ms de GPU, medido com o diagnóstico novo `BS_VK_LENTOS`). No gameplay nenhum render passou de 19 ms.
+  **A sincronização assíncrona da GPU não foi implementada:** não é comprovadamente necessária, porque nos picos a
+  GPU está de fato ocupada.
+- **Cobertura do experimental:** `tools/dev/n2_sessoes.py` reproduz as sessões gravadas e confere o estado por passo
+  e os saves. A lista fechada `config/n2_excecoes.toml` tem 5 exceções D11; a regra `d11-carga-cartao` é amarrada ao
+  registro de LOADs do jogo (`BS_SAVES_LOG`, `transitional/bu_adapter.cpp`).
+
+| Prova | Resultado |
+|---|---|
+| estável, 2 sessões (7 915 + 7 496 passos) | igualdade estrita em todos os passos; saves iguais |
+| experimental, 2 sessões | 1 passo diferente em cada (1703, 1084), cada um logo depois de um LOAD (1702, 1083) e igual no seguinte; saves iguais |
+| negativo: mutação de RAM (vida, `8C24FBCC`) no experimental | FALHA (6 001 passos e saves diferentes) |
+| negativo: registro de LOADs ignorado (`--negativo-sem-loads`) | as 2 sessões rejeitadas só pela falta do LOAD |
+| negativos da lista fechada | id repetido, regra repetida, campo faltando e regra desconhecida: recusados |
+
+- **Promoção do experimental:** **não recomendada ainda** (13.4). Pendências: 1 falta no H9; a espera do DMA da
+  música ausente (D11); U5, U6 e U8; U7 parcial (rotas cobertas, U1–U4 não repetidos nelas).
+- **Revisões do Codex:**
+  - `codex-20261023-182322`: 5 achados, todos aceitos e corrigidos (LOAD amarrado ao passo; rodapé ausente e
+    referência vazia falham; só LOADs até o fim; o TOML controla o verificador).
+  - `codex-20261023-184053`: 4 achados, todos aceitos e corrigidos (`--reavaliar` com `--mutacao` recusado; negativo
+    exige diferenças; ids e regras únicos; referência de 1 até o fim).
+  - `codex-20261023-184000` não vale como revisão: a cópia do repositório recusou o git (dono do diretório), o Codex
+    não recebeu o diff e não emitiu achados. Por isso a revisão foi refeita com o material no prompt.
 
 ### N7c: câmera livre em ambientes fechados (2026-10-23)
 
@@ -2570,7 +2603,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 |---|---|---|
 | N0 Fundação | concluída | 100 |
 | N1 Arquivos | concluída | 100 |
-| N2 Tempo e eventos | **em andamento** (retomado em 2026-10-23): desempenho do gameplay medido e resolvido com o Vulkan padrão (11.2); falta 11.1, U5–U8, a promoção do experimental e o N2c | 55 |
+| N2 Tempo e eventos | **em andamento** (retomado em 2026-10-23): 11.2 resolvido com o Vulkan padrão, 11.1 feito (espera do DMA), A5 corrigido, áudio a 4K investigado (sem sincronização assíncrona), cobertura do experimental com sessões reais e lista fechada; falta U5, U6, U8, completar U7, a promoção do experimental (não recomendada ainda) e o N2c | 60 |
 | N3 Controles | concluída | 100 |
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
@@ -2580,7 +2613,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~68 % (onze etapas de peso igual).
+Progresso geral: ~69 % (onze etapas de peso igual).
 
 ### N7c: câmera livre e segundo analógico (2026-10-22; worktree n7-vulkan)
 

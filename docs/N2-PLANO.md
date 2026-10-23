@@ -450,6 +450,99 @@ com o áudio nativo, com e sem a espera; `test_tempo` 34/35, e a falha restante 
 o N1 registrou com o áudio legado (`F7818C7E`; com o áudio nativo o quadro é `F472ECC2`, igual com e sem a espera,
 conferido no mesmo executável). A referência passou a depender do áudio da bateria.
 
-**Pendente:** `test_assistido` A5: os roteiros `passo_cgate`, `passo_heliporto` e `passo_combate` param de progredir no
-passo ~1037–1075 nos dois modos de tempo (sem erro; A1–A4 e A7 iguais até ali). Não foi comparado com o executável
-anterior; a investigar.
+**Pendente (resolvido em 13.1):** `test_assistido` A5: os roteiros `passo_cgate`, `passo_heliporto` e `passo_combate`
+paravam de progredir no passo ~1037–1075 nos dois modos de tempo.
+
+## 13. Fechamento das pendências de tempo (2026-10-23)
+
+### 13.1 `test_assistido` A5: causa e correção
+
+- **Causa real:** os roteiros por passo (`passo_*.txt`) foram gravados com o vídeo **legado**. Com o vídeo nativo
+  (padrão desde o fim do N5), o filme de abertura do NEW GAME toca inteiro **dentro de um único passo de jogo** (o
+  1038): 452 s lógicos, 13 570 quadros. O orçamento de VBlanks do `--headless` acabava dentro desse passo, nos dois
+  modos de tempo, e o roteiro "parava" sem erro. Não era defeito de tempo, de entrada nem do jogo.
+- **Correção:** o `test_assistido` roda com `--video legado`, como o `test_tempo` já fazia (o vídeo nativo tem as
+  suas baterias no N5). Commit `d6b0e45`.
+- **Resultado:** 28 casos, 0 falhas; A5 chega ao fim de todas as rotas (cgate 9 283 passos, heliporto 14 479,
+  combate 12 981, load_opcoes 3 197).
+
+### 13.2 Cortes de áudio a 4K: medida e decisão (sem sincronização assíncrona)
+
+Janela, rota LOAD, 150 s, Vulkan, tempo estável (`h9_var.ps1`):
+
+| Configuração | Faltas de áudio | Trabalho por campo |
+|---|---|---|
+| 480p (13.2 e 12.2) | 0, 0, 0 | ~7,2 ms |
+| 1440p com efeitos | 1 | ~7,7–8,3 ms |
+| 4K com efeitos | 0, 2 | ~7,7–8,3 ms |
+| 4K sem efeitos | 1 | ~7,7–8,3 ms |
+
+- A média é a mesma em todas as resoluções; as faltas vêm de **picos isolados**. O diagnóstico novo
+  `BS_VK_LENTOS=<ms>` (`vk_device.cpp`, uma linha por render acima do limite, com o tempo de GPU, refeituras da lista
+  de fragmentos, pipelines novos e bytes de textura enviados) mostrou que os picos estão no **título e nos menus**:
+  render 370 (VBlank 774) com 65,5 ms **de GPU** (sem refeitura, sem pipeline novo) e render 610 (VBlank 1 254) com
+  78 ms de GPU e 1 refeitura da lista de fragmentos. **No gameplay nenhum render passa de 19 ms.**
+- **Decisão: a sincronização assíncrona da GPU não foi implementada.** Ela não é comprovadamente necessária: nos
+  picos, a GPU está de fato ocupada (o custo é de GPU, não da espera da CPU), e o render seguinte esperaria a mesma
+  GPU de qualquer forma. A mudança traria risco (ordem de leitura do quadro, slots da apresentação) sem ganho medido
+  no gameplay. Ajustar o crescimento da lista de fragmentos foi avaliado e descartado (marginal: 1 refeitura num pico
+  de menu). A pendência 12.3.1 fica reclassificada como **não bloqueante**; se houver relato de corte no gameplay a 4K,
+  o `BS_VK_LENTOS` é o instrumento.
+
+### 13.3 Cobertura do tempo experimental: sessões do mantenedor
+
+`tools/dev/n2_sessoes.py` reproduz as sessões gravadas (`gravacoes.py`, gravadas no tempo estável) num modo de tempo e
+confere o estado lógico **por passo** e os saves (sem a data do envelope):
+
+- **estável:** igualdade estrita;
+- **experimental:** só as regras da lista fechada `config/n2_excecoes.toml` (cinco exceções D11 com causa e
+  evidência). A única com regra automática, `d11-carga-cartao`, exige que cada passo diferente seja o passo de uma
+  conclusão de LOAD do cartão registrada pelo próprio jogo (`BS_SAVES_LOG=<arquivo>`, `transitional/bu_adapter.cpp`),
+  um passo por LOAD, e que o passo seguinte volte a ser igual.
+
+Sessões do mantenedor `sessao-20261021-140145` (7 915 passos; troca de sala, combate, SAVE e 8 LOADs até o fim) e
+`sessao-20261021-145006` (7 496 passos; 8 LOADs, SAVE, 4 trocas de música); executável com `BS_SAVES_LOG`:
+
+| Prova | Resultado |
+|---|---|
+| estável | igualdade estrita em todos os passos das duas; saves iguais |
+| experimental | 1 passo diferente em cada sessão: 1703 (LOAD concluído no 1702; estado intermediário) e 1084 (LOAD no 1083; o estado do experimental é o do estável no 1085). Iguais no passo seguinte; saves iguais |
+| negativo: mutação de RAM na vida (`8C24FBCC`, VBlank 3000), experimental | FALHA: 6 001 passos diferentes, não isolados e sem LOAD; saves diferentes |
+| negativo do verificador: registro de LOADs ignorado (`--negativo-sem-loads`) | as duas sessões rejeitadas só pela falta do LOAD |
+| negativos da lista fechada | id repetido, regra repetida, campo faltando e regra desconhecida: recusados |
+| `--reavaliar` com `--mutacao`; `--reavaliar` de outro modo de tempo | recusados |
+
+O mapeamento é LOAD no passo k → linha k + 1 porque o `BS_STATE_PASSO` grava o estado **no início** de cada passo
+(`app/game_host.cpp`). Por isso a primeira versão da regra, que exigia o LOAD no mesmo passo, rejeitou as duas sessões.
+O mapeamento foi corrigido e documentado; ele não é uma folga a mais.
+
+Revisões do Codex (inline):
+
+- `codex-20261023-182322`: 5 achados, todos aceitos: diferença não amarrada a um LOAD; sessão sem rodapé pulada;
+  LOADs contados depois do fim; o TOML não controlava o verificador; referência vazia passava.
+- `codex-20261023-184053`: 4 achados, todos aceitos: `--reavaliar` aceitava `--mutacao`; o negativo podia passar
+  sem diferenças; ids e regras repetidos; a referência precisava começar no passo 1.
+
+### 13.4 Avaliação da promoção do tempo experimental
+
+**Recomendação: não promover ainda.** O `--tempo nativo` (estável) continua padrão; o experimental continua
+selecionável.
+
+A favor:
+
+- −40 % de trabalho por campo no Vulkan (6,82 → 4,04 ms, 12.1) e determinismo por passo preservado (13.3).
+- Saves iguais aos do estável nas sessões reais; 0 passos faltando; `test_assistido` compara os dois modos (28/0).
+
+Bloqueios (cada um com o critério de saída):
+
+1. **Áudio:** 1 falta no H9 na janela com o experimental (12.2); as cargas instantâneas (D11) concentram o trabalho
+   num campo (pico de ~62 ms). Sair: 0 faltas em 3 execuções do H9 com o experimental.
+2. **Fidelidade do 11.1:** no experimental o download da música não espera o DMA (`d11-download-musica`); os dois
+   lotes de uma troca de música caem no mesmo tick. Sair: a espera declarada como ponto de espera do tempo lógico,
+   ou prova de que nenhuma troca audível depende dela.
+3. **U5, U6 e U8** do `docs/N2b-PROPOSTA.md` 10 continuam pendentes, e U7 é parcial (falta repetir U1–U4 nas rotas
+   novas).
+
+A exceção `d11-carga-cartao` (1 passo por LOAD) não bloqueia por si: o jogo volta ao estado do estável no passo
+seguinte e os saves são iguais. Mas ela muda o passo em que o efeito de um LOAD aparece. Por isso, roteiros e gravações
+por passo têm de ser reproduzidos no mesmo modo de tempo em que foram gravados.
