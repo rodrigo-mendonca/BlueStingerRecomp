@@ -16,6 +16,9 @@ projeto não tem afiliação com nenhum detentor de direitos.
   áudio, vídeo.
 - Código gerado a partir do executável do jogo (`generated/`, `analysis/`).
 - Saves, traces e capturas que contenham dados do jogo.
+- Transcrições e traduções das falas e dos filmes (pacotes de legendas): são texto derivado do jogo e não há
+  autorização para publicá-las. As ferramentas que as geram são do projeto; cada usuário gera os pacotes a partir da
+  própria cópia (`mods-padrao/README.md`, `docs/LEGENDAS-PENDENCIAS.md`).
 
 O `.gitignore` bloqueia esses caminhos e extensões. `config/*.toml` contém só
 metadados (ID de produto, hashes, tamanhos e endereços) e nenhum byte do jogo.

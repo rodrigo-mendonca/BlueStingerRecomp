@@ -8,13 +8,13 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 > **Este repositório não contém o jogo** nem nenhum dado dele. Você precisa fornecer a sua própria cópia do disco
 > (CDI, NTSC-U T13001N V1.000). Ver [LEGAL.md](LEGAL.md).
 
-## Status (2026-10-22)
+## Status (2026-10-23)
 
 **Progresso geral: ~67 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
 fração concluída; em 2026-10-22 o roteiro ganhou a N9, Remasterização, e os mods passaram para a N10). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 em português do Brasil por padrão, com inglês como alternativa (pacotes gerados localmente a partir do disco do usuário e instalados pelo Builder; transcrição, tradução e revisão por IA, provisórias; o texto não vai para o repositório). O desenho
-ainda passa pela simulação do PowerVR2 (o renderizador Vulkan é o N7).
+é feito pelo **Vulkan por padrão** (N7, fechado com promoção condicional), com recuo automático para o renderizador em software.
 
 | Etapa | O que é | Situação | % |
 |---|---|---|---|
@@ -26,7 +26,7 @@ ainda passa pela simulação do PowerVR2 (o renderizador Vulkan é o N7).
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |
 | N6 | Áudio nativo (efeitos, falas, música Manatee, DSP da AICA) | concluída com promoção **condicional** (**H9 bloqueado** pelo desempenho do N2): nativo é o padrão (`--audio legado` é o fallback até o N8); validação contra o original (Flycast) e gravações reais de gameplay; H1–H8 aprovados; **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** | 95 |
-| N7 | Renderização Vulkan | **em andamento**: N7a e N7b validadas (o Vulkan desenha o jogo **bit a bit igual** ao renderizador atual em gameplay, 3× mais rápido; o software segue padrão até a aprovação); N7c em andamento: **legendas das falas aparecem no gameplay e nos filmes** (português do Brasil por padrão, ou inglês; menu Legendas > Idioma) e **menu de configurações dentro do jogo** (Esc ou Back do controle: renderizador, modo e tamanho da janela, V-Sync, volumes, legendas; o jogo pausa enquanto ele está aberto); **resolução interna de 720p a 4K com o Vulkan**, desenhada de verdade na resolução maior e apresentada direto pela GPU (o modo original continua idêntico); **efeitos de imagem** no menu (correção de cor, tonemapping, nitidez, bloom, CRT e shaders de mod validados, 0,28 ms de GPU todos juntos em 4K; sobre a imagem do jogo, sem tocar o menu e as legendas; o Original continua sem nenhum); **câmera livre no analógico direito** (Esc/Back > Controles > Câmera: Original, Híbrida que volta sozinha, ou Livre até o R3; o analógico esquerdo anda para onde a vista olha, e o modo Original e as cinemáticas não mudam); validação com as camadas do Vulkan aprovada (0 mensagens); fechamento proposto, com a GPU AMD integrada ainda condicional e o SSAO proposto para o N9 | 90 |
+| N7 | Renderização Vulkan | concluída com promoção **condicional** (2026-10-23): **o Vulkan é o renderizador padrão**, com recuo automático para o software (sem GPU compatível, ou se o dispositivo falhar no jogo); desenha o jogo **bit a bit igual** ao renderizador de referência, 3× mais rápido; **resolução interna de 720p a 4K**; **efeitos de imagem** (correção de cor, tonemapping, nitidez, bloom, CRT, shaders de mod); **menu de configurações dentro do jogo** (Esc ou Back do controle); **legendas** no gameplay e nos filmes (português do Brasil por padrão, ou inglês); **câmera livre no analógico direito** com o analógico esquerdo andando para onde a vista olha; camadas de validação do Vulkan sem mensagens. Pendências: GPU AMD integrada (perda intermitente do dispositivo num modo de diagnóstico, sem causa identificada), fog e volumes modificadores contra o Flycast. SSAO, 16:9 real e MSAA passaram para o N9 | 95 |
 | N8 | Remoção da camada legada (simulação do console) | não iniciada | 0 |
 | N9 | Remasterização: texturas HD, iluminação e efeitos, modelos, cutscenes, áudio remasterizado (com o original como opção), HUD e menus; presets Original Dreamcast e Remasterizado | não iniciada | 0 |
 | N10 | Sistema de mods (ferramentas, manifestos, pacotes de idioma, texturas, áudio, vídeo e shaders) e elevação dos sistemas do jogo para C++ editável; revisão final e distribuição | não iniciada (a arquitetura de extensão vem sendo preparada nas etapas anteriores) | 0 |

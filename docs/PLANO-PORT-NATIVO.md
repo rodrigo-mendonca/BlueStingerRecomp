@@ -224,6 +224,10 @@ migração versionada.
   6. apresentação do HUD, dos menus e das legendas;
   7. presets **Original Dreamcast** e **Remasterizado**;
   8. cada recurso liga e desliga pelo menu interno.
+- **Recebidos do N7** (decisão do mantenedor, 2026-10-23; `docs/N7-PLANO.md` seção 25.2): **SSAO**, **widescreen real
+  (16:9)** e **MSAA**, com a filtragem bilinear/anisotrópica e os presets Equilibrado e Alta Qualidade. Primeiras
+  tarefas: a projeção do SDK e a marca cena/HUD por desenho na IR (SSAO e 16:9), a profundidade guardada depois do
+  render pass (SSAO) e o alvo multiamostrado com resolve (MSAA).
 - **Arquitetura:**
   - reutiliza a infraestrutura Vulkan do N7 (resolução interna, apresentação direta, cadeia de pós-processamento) e os
     contratos de substituição do N5 (filmes), do N6 (áudio) e do N7 (texturas HD por conteúdo, shaders);

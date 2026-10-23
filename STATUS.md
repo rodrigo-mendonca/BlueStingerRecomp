@@ -2443,8 +2443,8 @@ Revisão por IA (Claude e Codex), sem revisão humana. Os dois pacotes continuam
 **Validação na `dist`** (executável da Preview):
 - execução direta: "idioma automatico: pt-BR (pacote legendas-pt-br)";
 - **filme NEWGAME**: 67 quadros com pt-BR, en-US e nenhuma no mesmo VBlank. Em 19 há legenda, só na faixa de baixo
-  e diferente do inglês; nos outros 48, nada sobre a imagem. Exemplo conferido na captura: "Puxa, nem tenho permissão
-  para entrar / no bairro residencial da ilha.";
+  e diferente do inglês; nos outros 48, nada sobre a imagem. Uma das capturas foi conferida a olho, com as duas linhas
+  em português (o texto fica no pacote local, não aqui);
 - gameplay e menu: ver "Validação da dist (2026-10-23)".
 
 ### Validação da dist (2026-10-23)
@@ -2474,12 +2474,36 @@ laço lia uma referência pendente (comportamento indefinido). O resultado agora
 lista ("[menu] idiomas das legendas: en-US, pt-BR") e os pacotes recusados com o motivo. Um unitário novo reproduz o
 caminho da dist (pt-BR automático → Desativadas → English). Não há outro laço com esse padrão no código.
 
+### Fechamento do N7 (2026-10-23)
+
+Decisão do mantenedor (2026-10-23): Vulkan preferencial com recuo seguro para o software; a pendência AMD continua
+registrada; SSAO, widescreen real e MSAA passam para o N9. Detalhes: `docs/N7-PLANO.md` seção 25.
+
+- **Vulkan padrão da janela** (`kRenderNativeDefault = true`, `GraphicsSettings::vulkan = true`); `graficos.toml`,
+  `--render` e `BS_RENDER` valem sobre o padrão; o `--headless` continua no software (referência das baterias).
+- **Recuo:** sem dispositivo, `clamp_to` força o software (antes herdava o padrão da estrutura); apresentação direta
+  com falha recua para o SDL; perda do dispositivo no jogo: 3 recriações e depois o software até o fim da sessão.
+- **Defeito corrigido:** a troca de predefinição no menu trocava o renderizador; agora o preserva.
+- **Validação** (build Release, RTX 5080), método: `valida_fecho.ps1` (pasta de teste com DLLs e mods da Preview):
+  F1 janela sem opções no Vulkan (428 quadros, 0 falhas); F2 sem dispositivo no software (rc 0); F3 `graficos.toml`
+  com software respeitado; F4 `--render software`; F5 headless no software; F6 comparar 586 renders, 0,0000 %.
+  Unitários 304/0, UI 25/0.
+- **Revisão do Codex** (inline, `reviews/codex-20261023-093452.md`): 1 achado [MÉDIA] rejeitado (o Vulkan no headless
+  com `--render nativo` é intencional, caso C2 das baterias); a ajuda da linha de comando foi esclarecida.
+- **Legendas:** pendências (72 en-US a revisar, 24 pt-BR dependentes do áudio, só as chaves) e a verificação dos
+  direitos de redistribuição em `docs/LEGENDAS-PENDENCIAS.md`: não há autorização para publicar o texto; os pacotes
+  continuam locais, instalados pelo Builder na distribuição de testes. `LEGAL.md` passou a listá-los entre o que nunca
+  entra no repositório. Dois trechos de uma linha do texto do jogo (um no `STATUS.md`, um num unitário) foram trocados
+  por descrição e texto próprio.
+- **Publicação:** `docs/PUBLICACAO-GITHUB.md` com a verificação dos 25 commits locais e o procedimento proposto (não
+  executado) para tirar o pacote do commit `2969913` antes de um push.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
 viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
-1. terminar o N7 (N7c);
-2. retorno ao N2;
+1. terminar o N7 (N7c) — **feito em 2026-10-23** (promoção condicional);
+2. retorno ao N2 — **em andamento desde 2026-10-23**;
 3. N8;
 4. N9;
 5. N10.
@@ -2495,7 +2519,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | concluída com promoção condicional; **H9 bloqueado** pelo desempenho do N2 | 95 |
-| N7 Vulkan | **em andamento**: N7a e N7b validadas (pendência AMD aberta); N7c com legendas, menu, resoluções até 4K com apresentação direta, efeitos de imagem (cor, tonemapping, nitidez, bloom, CRT, shaders de mod) e câmera livre no analógico direito (Original, Híbrida, Livre); validação com as camadas do Vulkan aprovada (2026-10-22); legendas como mod padrão; fechamento proposto (`docs/N7-PLANO.md` seção 24: AMD condicional, SSAO proposto para o N9), aguarda a decisão do mantenedor | 90 |
+| N7 Vulkan | **concluída com promoção condicional** (2026-10-23): Vulkan padrão da janela com recuo para o software; N7a, N7b e N7c validadas; pendências abertas: AMD integrada (sem causa identificada), fog e volumes contra o Flycast; SSAO, 16:9 real e MSAA transferidos para o N9 (`docs/N7-PLANO.md` seção 25) | 95 |
 | N8 Sem legado | não iniciada | 0 |
 | N9 Remasterização | não iniciada | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
