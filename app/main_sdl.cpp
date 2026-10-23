@@ -94,7 +94,7 @@ struct Args {
     int render = -1;  // --render nativo|software (N7b; -1 = nao dado)
     bool renderExplicit = false;  // --render ou BS_RENDER dados (valem sobre o graficos.toml do menu)
     uint32_t internalHeight = 0;  // --resolucao-interna <altura> (N7c; 0 = a do graficos.toml)
-    int      cameraMode = -1;     // --camera original|hibrida|livre (N7c; -1 = a do controles.toml, ou Original sem janela)
+    int      cameraMode = -1;     // --camera original|livre (N7c; -1 = a do controles.toml, ou Original sem janela)
     int      present = -1;        // --apresentacao vulkan|sdl (N7c; -1 = Vulkan quando houver)
     bs::AudioEffectsProvider audioEffects = bs::AudioEffectsProvider::Legacy;  // --audio-efeitos nativo|legado (N6)
     bs::AudioVoicesProvider  audioVoices  = bs::AudioVoicesProvider::Legacy;   // --audio-falas nativo|legado (N6 fase E)
@@ -178,8 +178,7 @@ bool parseArgs(Args& a) {
         }
         else if (s == L"--camera" && (v = next())) {
             if (*v == L"original") a.cameraMode = 0;
-            else if (*v == L"hibrida") a.cameraMode = 1;
-            else if (*v == L"livre") a.cameraMode = 2;
+            else if (*v == L"livre" || *v == L"hibrida") a.cameraMode = 1;  // hibrida: modo retirado (2026-10-23)
             else return false;
         }
         else if (s == L"--resolucao-interna" && (v = next())) {
@@ -1386,7 +1385,7 @@ const char* kUsage =
     "     --audio-falas nativo|legado: falas (padrao: nativo = WAV do disco e dublagens de mods)\n"
     "     --audio-musica nativo|legado: musica (padrao: nativo = sequenciador e sintetizador Manatee em C++ com os\n"
     "       M*.MPB/MSB e o MANATEE.DRV do disco, e o DSP da AICA)\n"
-    "     --camera original|hibrida|livre: camera livre no analogico direito so nesta execucao (padrao: [camera] do\n"
+    "     --camera original|livre: camera livre no analogico direito so nesta execucao (padrao: [camera] do\n"
     "       controles.toml, ou original; original = a camera do jogo, sem nada instalado)\n"
     "     --map <arquivo>: teclado no formato antigo ACAO = TECLA (substitui o [teclado] de controles.toml)\n"
     "Os dados do jogo ficam em data\\ ao lado do executavel (preparados pelo Blue Stinger Builder).\n"

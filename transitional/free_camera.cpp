@@ -3,6 +3,7 @@
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 #include "mods/mod_api.h"
+#include "time_adapter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,14 +22,14 @@ namespace ni = bs::native::input;
 void CameraRig::reset() { yaw_ = pitch_ = vx_ = vy_ = idle_ = 0, returning_ = false; }
 
 void CameraRig::absorb(float degrees) {
-    // so com a vista fora do enquadramento do jogo: sem deslocamento, a vista segue a camera do jogo (como no Original);
-    // quando a camera do jogo alcanca a vista (o sinal troca), o deslocamento acaba ali
-    if (cfg_.mode == st::CameraMode::Original || returning_ || yaw_ == 0 || !std::isfinite(degrees)) return;
-    // a passagem por zero se ve no valor sem normalizar: +170 - (-20) = +190 (= -170) e a vista ficando, nao a camera
-    // alcancando (revisao Codex 2026-10-23)
+    // Livre: a vista fica ancorada no mundo; o giro da camera do jogo entra todo no deslocamento, que nao "acaba" quando
+    // a camera do jogo passa pela vista. Antes (ate 2026-10-23) a ancoragem parava no zero: nas salas em que a camera de
+    // perseguicao gira forte atras do Eliot (RCG02), o deslocamento zerava no primeiro passo e a vista voltava a seguir a
+    // camera do jogo, que girava com o rumo dele: o analogico para a direita virava "frente" na imagem (docs/N7-PLANO.md
+    // 23.4). So o R3 (volta ao enquadramento do jogo) e os cortes (reset) tiram a vista do lugar.
+    if (cfg_.mode == st::CameraMode::Original || returning_ || !std::isfinite(degrees)) return;
     const float raw = yaw_ - degrees;
-    if ((raw > 0) != (yaw_ > 0) || std::fabs(raw) < 0.05f) return void(yaw_ = 0);
-    yaw_ = raw > 180 ? raw - 360 : raw < -180 ? raw + 360 : raw;
+    yaw_            = raw > 180 ? raw - 360 : raw < -180 ? raw + 360 : raw;
 }
 
 void CameraRig::step(const RigInput& in, bool suspended) {
@@ -45,7 +46,6 @@ void CameraRig::step(const RigInput& in, bool suspended) {
     if (moving) returning_ = false, idle_ = 0;
     else idle_ += kStep;
     if (in.recenter && cfg_.r3_recenter) returning_ = true;
-    if (cfg_.mode == st::CameraMode::Hybrid && idle_ >= cfg_.return_s) returning_ = true;
     // suavizacao: a velocidade segue o analogico com um filtro de primeira ordem (fator por 1/60 s)
     const float a = std::pow(cfg_.smoothing, kStep * 60.f);
     vx_ = vx_ * a + x * cfg_.sens_x * (1 - a);
@@ -95,6 +95,7 @@ constexpr int32_t  kMaxPitch     = 14563;  // 80 graus: o pitch final nunca pass
 constexpr float    kCutDistance  = 60.0f;  // salto de posicao entre montagens: corte de camera
 constexpr int32_t  kCutYaw       = 7282;   // 40 graus
 constexpr uint64_t kIdleVblanks  = 30;     // sem montagem de gameplay: suspende
+constexpr float    kReleased     = 0.05f;  // analogico esquerdo abaixo disto: solto (o toque e o desvio acabam); ruido medido 0,003
 
 enum Fn { Pitch, Yaw, Position, Translate, RotY, RotX, kFns };
 struct Site {
@@ -129,6 +130,7 @@ struct State {
     Vec3                    lastPos;
     int32_t                 lastYaw = 0;
     std::vector<ScriptLine> script;
+    bool                    scriptBySteps = false;  // roteiro com "indice passo": o indice e o passo de jogo
     bool                    fixed = false;  // BS_CAMERA_FIXA: deslocamento constante (testes)
     float                   fixedYaw = 0, fixedPitch = 0;
     FILE*                   log = nullptr;
@@ -165,14 +167,18 @@ void fPitch(Sh4Context* c) {
     if (s.haveLast) {
         const float   d  = std::hypot(pos.x - s.lastPos.x, pos.y - s.lastPos.y, pos.z - s.lastPos.z);
         const int32_t dy = int16_t(uint16_t(uint32_t(yaw - s.lastYaw) & 0xFFFF));
-        // movimentacao relativa: a vista fica ancorada no mundo quando a camera do jogo gira sozinha (a de perseguicao
-        // vai para tras do Eliot, as vezes 45 graus numa montagem: R12, 2026-10-23); so o salto de posicao e corte.
-        // O yaw do jogo cresce girando para a esquerda, entao -dy e o giro para a direita.
-        const bool anchored = s.o.cfg.movement == st::MoveMode::Camera && !s.fixed && !s.scene;
+        // a vista fica ancorada no mundo quando a camera do jogo gira sozinha (a de perseguicao vai para tras do Eliot,
+        // as vezes 45 graus numa montagem: R12, 2026-10-23); so o salto de posicao e corte. Vale para os dois modos de
+        // movimentacao: a ancoragem e da camera. O yaw do jogo cresce girando para a esquerda, entao -dy e o giro para
+        // a direita.
+        const bool anchored = !s.fixed && !s.scene;
         if (!std::isfinite(d) || d > kCutDistance || (!anchored && std::abs(dy) > kCutYaw)) ++s.stats.cuts, s.rig.reset();
         else if (anchored) s.rig.absorb(-float(dy) * (360.0f / 65536.0f));
     }
-    s.haveLast = true, s.lastPos = pos, s.lastYaw = yaw;
+    // a linha de base so vale fora de cena: depois de uma cena (ou de uma suspensao, ou da troca de modo) a primeira montagem
+    // so captura, e a ancoragem comeca na seguinte; senao o giro contra uma montagem antiga viraria um deslocamento que o
+    // jogador nao pediu (revisao Codex 2026-10-23)
+    s.haveLast = !s.scene, s.lastPos = pos, s.lastYaw = yaw;
     s.dyaw = s.dpitch = 0, s.delta = {}, s.moveDeg = 0;
     const bool finite = std::isfinite(pos.x) && std::isfinite(pos.y) && std::isfinite(pos.z) && std::isfinite(player.x) &&
                         std::isfinite(player.y) && std::isfinite(player.z);
@@ -191,9 +197,9 @@ void fPitch(Sh4Context* c) {
         }
     }
     if (s.log)
-        std::fprintf(s.log, "%llu\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\n",
+        std::fprintf(s.log, "%llu\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\n",
                      static_cast<unsigned long long>(s.vb), pos.x, pos.y, pos.z, int(yaw), int(pitch), player.x, player.y, player.z,
-                     int(s.scene), int(s.dyaw), int(s.dpitch), s.delta.x, s.delta.y, s.delta.z);
+                     int(s.scene), int(s.dyaw), int(s.dpitch), s.delta.x, s.delta.y, s.delta.z, int(s.moveRef));
     s.pending = true;
     c->r[5] = uint32_t(pitch + s.dpitch);
     s.prev[Pitch](c);
@@ -220,13 +226,18 @@ void fSite(Sh4Context* c) {
 
 constexpr Sh4Func kWrappers[kFns] = {&fPitch, &fSite<Yaw>, &fSite<Position>, &fSite<Translate>, &fSite<RotY>, &fSite<RotX>};
 
-std::vector<ScriptLine> readScript(const std::string& path) {
+std::vector<ScriptLine> readScript(const std::string& path, bool& bySteps) {
     std::ifstream in(path);
+    bySteps = false;
     if (!in) throw std::runtime_error("BS_CAMERA_ROTEIRO: nao abre " + path);
     std::vector<ScriptLine> out;
     std::string             line;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#') continue;
+        if (line.rfind("indice passo", 0) == 0) {  // como os roteiros de entrada: indice = passo de jogo
+            bySteps = true;
+            continue;
+        }
         std::istringstream ls(line);
         ScriptLine         l;
         int                r3 = 0;
@@ -272,12 +283,12 @@ void configure(BoundaryRegistry& registry, Options o) {
     g->fixed  = false;
     // Original: nada de diagnostico (nem roteiro, nem log); o menu ainda pode trocar o modo depois (com a entrada guardada)
     if (g->o.cfg.mode != st::CameraMode::Original) {
-        if (!g->o.script.empty()) g->script = readScript(g->o.script);
+        if (!g->o.script.empty()) g->script = readScript(g->o.script, g->scriptBySteps);
         g->fixed = g->o.fixed, g->fixedYaw = g->o.fixedYaw, g->fixedPitch = g->o.fixedPitch;
         if (!g->o.log.empty()) {
             g->log = std::fopen(g->o.log.c_str(), "w");
             if (!g->log) throw std::runtime_error("BS_CAMERA_LOG: nao abre " + g->o.log);
-            std::fprintf(g->log, "vblank\tx\ty\tz\tyaw\tpitch\tpx\tpy\tpz\tcena\tdyaw\tdpitch\tdx\tdy\tdz\n");
+            std::fprintf(g->log, "vblank\tx\ty\tz\tyaw\tpitch\tpx\tpy\tpz\tcena\tdyaw\tdpitch\tdx\tdy\tdz\tref\n");
         }
     }
     set_settings(registry, g->o.cfg);
@@ -289,6 +300,7 @@ void set_settings(BoundaryRegistry& registry, const st::CameraSettings& cfg) {
     g->rig.reset();
     g->pending = false;
     g->move    = {};
+    g->haveLast = false;  // a montagem seguinte e a nova linha de base
     if (g->o.cfg.mode == st::CameraMode::Original) {
         if (g_installed) {
             for (const Site& site : kSites) registry.select(site.addr, Provider::Legacy);
@@ -318,14 +330,17 @@ void vblank(uint64_t n) {
     s.vb     = n;
     RigInput in;
     if (!s.script.empty()) {
-        auto it = std::upper_bound(s.script.begin(), s.script.end(), n, [](uint64_t v, const ScriptLine& l) { return v < l.vblank; });
+        const uint64_t at = s.scriptBySteps ? time::game_steps() : n;
+        auto it = std::upper_bound(s.script.begin(), s.script.end(), at, [](uint64_t v, const ScriptLine& l) { return v < l.vblank; });
         if (it != s.script.begin()) in = std::prev(it)->in;
     } else if (s.o.input) {
         const ni::ControllerState cs = s.o.input();
         in.x = cs.axis(ni::Axis::CameraX), in.y = cs.axis(ni::Axis::CameraY);
         in.recenter = (cs.buttons & ni::CameraRecenter) != 0;
     }
-    s.rig.step(in, s.scene || n - s.lastBuild > kIdleVblanks);
+    const bool idle = n - s.lastBuild > kIdleVblanks;
+    if (idle) s.haveLast = false;  // sem montagens (menu, filme): a primeira depois so captura
+    s.rig.step(in, s.scene || idle);
 }
 
 void rotate_stick(float& x, float& y, float degrees) {
@@ -358,8 +373,12 @@ ni::ControllerState relative_input(const ni::ControllerState& in) {
     State&      s = *g;
     MoveLatch&  m = s.move;
     const float x0 = in.axis(ni::Axis::StickX), y0 = in.axis(ni::Axis::StickY);
+    // o toque acaba quando o analogico volta ao centro: nao so com zero exato (a zona morta padrao do analogico esquerdo e 0,
+    // e um controle parado, ou o centro 128 do Dreamcast, da valores pequenos). Antes (ate 2026-10-23) o toque nunca
+    // acabava, e o desvio dos cortes (`bias`) de toques antigos girava todas as direcoes depois de uma cena ou porta
+    // (docs/N7-PLANO.md 23.4: ~104 graus no corredor RMT00).
     if (!g_installed || s.o.cfg.movement != st::MoveMode::Camera || s.scene || s.vb - s.lastBuild > kIdleVblanks ||
-        (x0 == 0 && y0 == 0)) {
+        !(std::hypot(x0, y0) >= kReleased)) {
         m = {};
         return in;
     }
@@ -373,6 +392,17 @@ ni::ControllerState relative_input(const ni::ControllerState& in) {
     m.lastView = view;
     if (!m.engaged) return in;
     const float d = relative_degrees(view + m.bias, s.moveRef);
+    // Diagnostico BS_CAMERA_MOV_LOG=<arquivo>: cada amostra girada (VBlank, entrada, vista, desvio dos cortes, referencia
+    // do jogo, angulo entregue), para conferir a transformacao contra o rumo real (docs/N7-PLANO.md 23.4)
+    static FILE* movLog = [] {
+        const char* v = std::getenv("BS_CAMERA_MOV_LOG");
+        FILE*       f = v && *v ? std::fopen(v, "w") : nullptr;
+        if (f) std::fprintf(f, "vblank\tx\ty\tvista\tdesvio\tref\tgiro\n");
+        return f;
+    }();
+    if (movLog)
+        std::fprintf(movLog, "%llu\t%.3f\t%.3f\t%d\t%d\t%d\t%.2f\n", static_cast<unsigned long long>(s.vb), x0, y0, int(view),
+                     int(m.bias), int(s.moveRef), d);
     if (d == 0) return in;
     ni::ControllerState out = in;
     float               x = x0, y = y0;

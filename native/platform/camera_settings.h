@@ -8,10 +8,11 @@
 
 namespace bs::native::settings {
 
-// Original: a camera do jogo, sem nada instalado. Hibrida: o analogico direito gira e ela volta sozinha. Livre: o
-// deslocamento fica ate o R3 (ou nova entrada).
-enum class CameraMode : uint8_t { Original, Hybrid, Free };
-// Movimentacao com a camera girada (Hibrida e Livre): Camera = o analogico esquerdo anda para onde a vista olha (o
+// Original: a camera do jogo, sem nada instalado. Livre: o analogico direito gira a vista, ancorada no mundo (so ele e o R3 a
+// mudam; a camera do jogo nao a arrasta), e o esquerdo anda para onde ela olha. O antigo modo "hibrida" (que voltava
+// sozinho) foi retirado em 2026-10-23: o controles.toml antigo com ele vira Livre.
+enum class CameraMode : uint8_t { Original, Free };
+// Movimentacao com a camera Livre: Camera = o analogico esquerdo anda para onde a vista olha (o
 // deslocamento de yaw da camera livre e somado a entrada); Original = relativo a camera do jogo, como no console.
 // No modo Original da camera nao ha deslocamento: o movimento e sempre o original.
 enum class MoveMode : uint8_t { Original, Camera };
@@ -23,7 +24,6 @@ struct CameraSettings {
     float      deadzone    = 0.15f;   // 0 a 0.6
     bool       invert_y    = false;
     float      smoothing   = 0.5f;    // 0 (nenhuma) a 0.9
-    float      return_s    = 3.0f;    // hibrida: segundos sem usar ate voltar a camera do jogo (1 a 15)
     bool       r3_recenter = true;
     float      pitch_up    = 25.0f;   // limites do pitch em graus (0 a 45)
     float      pitch_down  = 25.0f;
@@ -31,7 +31,7 @@ struct CameraSettings {
     bool       operator==(const CameraSettings&) const = default;
 };
 
-const char*    camera_mode_name(CameraMode m);  // "original", "hibrida", "livre"
+const char*    camera_mode_name(CameraMode m);  // "original", "livre"
 const char*    move_mode_name(MoveMode m);      // "original", "camera"
 CameraSettings clamp_camera(CameraSettings s);   // faixas (e nao finitos voltam ao padrao)
 

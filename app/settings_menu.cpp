@@ -20,7 +20,7 @@ std::string language_label(const std::string& lang) {
 }
 std::string pct(uint32_t v) { return std::to_string(v) + " %"; }
 std::string camera_label(st::CameraMode m) {
-    static const char* n[] = {"Original", "H\u00edbrida", "Livre"};
+    static const char* n[] = {"Original Dreamcast", "C\u00e2mera Livre"};
     return n[size_t(m)];
 }
 
@@ -272,7 +272,7 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         auto fstep = [](float st::CameraSettings::*m, float by, float lo, float hi) {
             return [=](Preferences& p, int d) { p.camera.*m = std::clamp(std::round((p.camera.*m + by * float(d)) / by) * by, lo, hi); };
         };
-        e.push_back({"Modo", camera_label(c.mode), true, [](Preferences& p, int d) { p.camera.mode = cycle(p.camera.mode, d, 3); }});
+        e.push_back({"Modo", camera_label(c.mode), true, [](Preferences& p, int d) { p.camera.mode = cycle(p.camera.mode, d, 2); }});
         // no Original nao ha deslocamento: o movimento e sempre o do console
         e.push_back({"Movimentação", !on || c.movement == st::MoveMode::Original ? "Original" : "Relativa à câmera", on,
                      [](Preferences& p, int) {
@@ -283,8 +283,6 @@ std::vector<SettingsMenu::Entry> SettingsMenu::entries() const {
         e.push_back({"Zona morta", num(c.deadzone, 2, ""), on, fstep(&st::CameraSettings::deadzone, 0.05f, 0, 0.6f)});
         e.push_back({"Inverter eixo Y", onoff(c.invert_y), on, [](Preferences& p, int) { p.camera.invert_y = !p.camera.invert_y; }});
         e.push_back({"Suaviza\u00e7\u00e3o", num(c.smoothing, 1, ""), on, fstep(&st::CameraSettings::smoothing, 0.1f, 0, 0.9f)});
-        e.push_back({"Retorno autom\u00e1tico", num(c.return_s, 1, " s"), c.mode == st::CameraMode::Hybrid,
-                     fstep(&st::CameraSettings::return_s, 0.5f, 1, 15)});
         e.push_back({"Recentralizar com R3", onoff(c.r3_recenter), on, [](Preferences& p, int) { p.camera.r3_recenter = !p.camera.r3_recenter; }});
         e.push_back({"Limite para cima", num(c.pitch_up, 0, "\u00b0"), on, fstep(&st::CameraSettings::pitch_up, 5, 0, 45)});
         e.push_back({"Limite para baixo", num(c.pitch_down, 0, "\u00b0"), on, fstep(&st::CameraSettings::pitch_down, 5, 0, 45)});

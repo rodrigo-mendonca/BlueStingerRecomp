@@ -69,7 +69,9 @@ using InputFn = std::function<native::input::ControllerState()>;
 struct Options {
     st::CameraSettings cfg;
     InputFn            input;   // o analogico da camera (InputSystem::peek); vazio = nenhum
-    std::string        script;  // BS_CAMERA_ROTEIRO: "vblank x y [r3]" por linha (testes; substitui `input`)
+    // BS_CAMERA_ROTEIRO: "vblank x y [r3]" por linha, ou "passo x y [r3]" depois de uma linha "indice passo" (testes;
+    // substitui `input`)
+    std::string        script;
     std::string        log;     // BS_CAMERA_LOG: uma linha por montagem interceptada
     bool               fixed = false;  // BS_CAMERA_FIXA=yaw,pitch: deslocamento constante em graus (testes)
     float              fixedYaw = 0, fixedPitch = 0;

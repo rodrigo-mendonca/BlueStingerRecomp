@@ -73,9 +73,10 @@ do controles.toml.
   tonemapping, nitidez, bloom e filtro CRT (o CRT pede 1080p ou mais).
 - Shaders de mod: pacotes em mods\shaders (SPIR-V validado antes de carregar; um shader invalido
   e desativado com o motivo no bluestinger.log, sem derrubar a imagem).
-- Camera: Original (a do jogo), Hibrida (o analogico direito gira e a camera volta sozinha) ou
-  Livre. So muda a imagem: colisao, inimigos e controles do jogo nao veem a camera livre.
-  Opcao: --camera original|hibrida|livre.
+- Camera: Original Dreamcast (a camera e os controles do jogo) ou Camera Livre: o analogico direito
+  gira a vista, que fica onde voce a deixou (R3 volta ao enquadramento do jogo), e o analogico
+  esquerdo anda para onde a vista olha, em areas abertas e fechadas. Colisao, inimigos e a logica
+  do jogo nao mudam. Opcao: --camera original|livre.
 - Legendas: das falas no gameplay e dos filmes, pelos pacotes em mods\ (legendas-pt-br e
   legendas-en, quando instalados: traducao e transcricao por IA, sem revisao humana). Idioma no menu:
   Portugues (Brasil), English ou Desativadas; o inicial e o portugues quando o pacote existe.

@@ -212,23 +212,24 @@ BS_TEST(settings_menu_camera_page) {
     m.open();
     go(m, "Controles");
     m.input(MenuAction::Confirm, 0);
-    BS_CHECK(m.page() == bs::SettingsMenu::Page::Controls && m.view().items[0].value == "Original");
+    BS_CHECK(m.page() == bs::SettingsMenu::Page::Controls && m.view().items[0].value == "Original Dreamcast");
     go(m, "C\u00e2mera");
     m.input(MenuAction::Confirm, 0);
     BS_CHECK(m.page() == bs::SettingsMenu::Page::Camera);
     auto v = m.view();
-    for (const char* l : {"Sensibilidade horizontal", "Zona morta", "Inverter eixo Y", "Retorno autom\u00e1tico", "Limite para cima",
+    for (const char* l : {"Sensibilidade horizontal", "Zona morta", "Inverter eixo Y", "Limite para cima",
                           "Movimenta\u00e7\u00e3o"})
         BS_CHECK(find(v, l) >= 0 && !v.items[size_t(find(v, l))].enabled);
     BS_CHECK(v.items[size_t(find(v, "Movimenta\u00e7\u00e3o"))].value == "Original");  // no Original, o do console
     bs::Preferences p;
     BS_CHECK(!m.take_changes(p));
     go(m, "Modo");
-    m.input(MenuAction::Right, 0);  // Hibrida
-    BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Hybrid);
+    m.input(MenuAction::Right, 0);  // Camera Livre (o modo Hibrido foi retirado: so dois)
+    BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Free);
     v = m.view();
-    BS_CHECK(v.items[size_t(find(v, "Retorno autom\u00e1tico"))].enabled && v.items[size_t(find(v, "Zona morta"))].enabled);
-    // movimentacao: relativa a camera por padrao na Hibrida e na Livre; muda na hora
+    BS_CHECK(find(v, "Retorno autom\u00e1tico") < 0 && v.items[size_t(find(v, "Zona morta"))].enabled);
+    BS_CHECK(v.items[size_t(find(v, "Modo"))].value == "C\u00e2mera Livre");
+    // movimentacao: relativa a camera por padrao na Livre; muda na hora
     const int mov = find(v, "Movimenta\u00e7\u00e3o");
     BS_CHECK(mov >= 0 && v.items[size_t(mov)].enabled && v.items[size_t(mov)].value == "Relativa \u00e0 c\u00e2mera");
     go(m, "Movimenta\u00e7\u00e3o");
@@ -243,9 +244,6 @@ BS_TEST(settings_menu_camera_page) {
     m.input(MenuAction::Confirm, 0);
     BS_CHECK(m.take_changes(p) && p.camera.invert_y);
     go(m, "Modo");
-    m.input(MenuAction::Right, 0);  // Livre: o retorno automatico e so da hibrida
-    v = m.view();
-    BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Free && !v.items[size_t(find(v, "Retorno autom\u00e1tico"))].enabled);
     m.input(MenuAction::Right, 0);  // volta ao Original
     BS_CHECK(m.take_changes(p) && p.camera.mode == st::CameraMode::Original && p.camera.sens_x == 130);
     m.input(MenuAction::Back, 0);

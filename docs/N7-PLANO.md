@@ -1544,3 +1544,73 @@ Nada disso foi antecipado.
 ### 25.4 Próximo passo
 
 Retomar o **N2**: temporização, desempenho e os underruns de áudio que bloqueiam o H9 do N6 (`docs/N2-PLANO.md`).
+
+### 23.4 Câmera livre em ambientes fechados (2026-10-23, correção de jogabilidade)
+
+Relato do jogador: em áreas abertas a câmera Livre e o movimento funcionavam; em corredores e salas, o analógico
+esquerdo para a direita podia fazer o Eliot andar para a frente na imagem, ele deixava de acompanhar a vista e os
+controles pareciam voltar ao original. Pedido do mantenedor: corrigir em qualquer área jogável e retirar o modo Híbrido.
+
+**Método.** Bateria por área, reproduzível (roteiros por passo de jogo): o analógico esquerdo nas 8 direções × a vista
+em 0°, 45°, 90°, 180° e 270° (giro pelo analógico direito via `BS_CAMERA_ROTEIRO` com `indice passo`), mais andar com a
+vista girando e o R3. Medidas: o deslocamento real do Eliot no plano (`BS_STATE_PASSO`) e a orientação dele pela câmera
+de perseguição do jogo (`CD60` no fim do segmento, que se alinha atrás do Eliot), o que separa **direção errada** de
+**deslizar na parede**. Instrumentação mínima: `BS_CAMERA_LOG` ganhou a coluna `ref` (`D680`) e `BS_CAMERA_MOV_LOG`
+registra cada amostra girada (entrada, vista, desvio dos cortes, referência, giro); `BS_PAD_TRACE` e `BS_RAM_WATCH`
+deram a entrada que o jogo leu e `D680`/`CD60` por VBlank.
+
+**O jogo está certo.** Em todas as áreas o rumo do Eliot é `D680` + o ângulo da entrada entregue (ex.: entrada
+(−100, −80) = +51°, `D680` 322,7° → previsto 14°, real 2→13°). `D680` é a cópia do yaw da câmera do jogo no toque
+(23.3); as áreas fechadas não usam outra rotina de movimento nem outra referência nas rotas medidas.
+
+**Causa 1 — a ancoragem parava no zero.** A vista só ficava ancorada no mundo enquanto o deslocamento do rig era ≠ 0;
+quando a câmera do jogo "alcançava" a vista, o deslocamento acabava e a vista voltava a seguir a câmera de perseguição,
+que gira ~2°/VBlank atrás do Eliot quando ele anda. Corredor RCG02, vista girada 90°: o deslocamento caiu de 36,9° para
+0 no primeiro segmento; segurando "direita", o rumo girou de 34° a 249° (o Eliot andou em círculo, sempre à direita da
+imagem do momento, que girava junto). A câmera do jogo gira à mesma velocidade no cais aberto (2°/VBlank; mais longe do
+Eliot, 350 × 233 unidades): o defeito existia nos dois, e aparece mais nos corredores, perto da câmera e com mais
+paredes. Correção: no Livre a vista fica **sempre** ancorada (`CameraRig::absorb`); só o analógico direito, o R3 e os
+cortes a mudam.
+
+**Causa 2 — o toque nunca acabava.** A movimentação relativa guarda, durante um toque, o desvio dos cortes de câmera
+(`bias`, para o rumo continuar quando a câmera corta). O toque só acabava com o analógico em **zero exato**; a zona
+morta padrão do analógico esquerdo é 0 e um controle parado (ou o centro 128 do Dreamcast) dá ~0,003. O desvio de
+cortes antigos (cenas, portas) ficava para sempre: no corredor RMT00, 18 994 unidades (104°), e **todas** as direções
+saíam giradas ~104° (0 de 42 certas). Correção: o toque acaba abaixo de 0,05 (`kReleased`).
+
+**Revisão do Codex** (`reviews/codex-20261023-144759.md`, inline): 2 achados, **aceitos**. [ALTA] depois de cena,
+suspensão ou troca de modo a linha de base (`lastYaw`) ficava velha e, com a ancoragem sempre ativa, a primeira
+montagem criaria um deslocamento não pedido: a base agora é invalidada nesses casos e a primeira montagem só captura.
+[MÉDIA] o primeiro limiar (0,15) deixava de girar inclinações leves válidas: o toque acaba abaixo de 0,05 (bem acima do
+ruído de 0,003) e acima disso a entrada é girada.
+
+**Híbrido retirado.** Modos: Original Dreamcast e Câmera Livre. `controles.toml` com `modo = "hibrida"` vira Livre
+(as outras preferências ficam); `retorno_s` é ignorado; `--camera hibrida` vira `livre`. O código exclusivo do
+Híbrido (retorno automático e a opção do menu) saiu; o R3 continua.
+
+**Validação** (build Release; analógico esquerdo, vista girada pelo rig real):
+
+| Área | Ambiente | Orientação certa | Deslocamento |
+|---|---|---|---|
+| B1 cais RCG00 (`passo_cgate` 2660) | aberto | 41/42 | 34 ok, 6 colisões, 2 bloqueados, 0 errados |
+| B2 corredor RCG02 (LOAD do g1) | corredor estreito | 41/42 | 29 ok; os 10 com desvio são deslizamento (orientação certa) |
+| B3 sala RCG90 (sessão do mantenedor, 1186) | sala fechada pequena | 41/42 | quase tudo encosta em parede (orientação certa) |
+| B4 corredor RMT00 (sessão, 1822) | corredor | 23/24 (18 em cena) | 16 ok (antes: 0) |
+| B5 RMT00, área do combate (sessão, 3604) | corredor com combate | 41/42 | 33 ok, 8 colisões |
+| B6 REL01 (sessão, 6559) | sala interna logo após o externo | 18/24 (6 bloqueados, 18 em cena) | — |
+| B7 RCG03 depois da porta (`passo_heliporto` 7790, vista girada antes, no corredor) | transição interno → externo | 41/42 | 34 ok, 8 colisões, 0 errados |
+
+O único "fora" das áreas livres é o "girando-frente", em que a vista gira 90° durante o segmento: no fim o Eliot fica
+a +5,6° da vista nas quatro áreas medidas. O caso relatado (vista girada e analógico para a direita) andou para a
+direita da vista em todos os ângulos e áreas. Câmera originalmente fixa: nenhuma zona assim nas rotas e gravações
+disponíveis (todas as salas medidas usam câmera de perseguição; os cortes caem nas cenas). Fica como cobertura pendente.
+
+| Prova | Resultado |
+|---|---|
+| Original Dreamcast: executável novo × anterior, `passo_combate` | estado por passo idêntico (4 317 passos) |
+| Combate e mira: `passo_combate` Original × Livre com a vista girada ~80° antes do combate | estado do jogo idêntico por passo (4 317; 634 montagens giradas; dano de 100 para 40) |
+| Vulkan × software (B1) | estado e montagens idênticos |
+| Determinismo (B1 repetida) | idêntica |
+| Gravação na janela (vista girada pelo rig, 359 amostras giradas) × reprodução headless sem câmera | iguais em 5 683 passos |
+| Save/Load | LOAD do save g1 nas baterias B2 (3/3) |
+| Unitários | 304/0 (Híbrido migrando para Livre, ancoragem que não para no zero, menu com dois modos) |

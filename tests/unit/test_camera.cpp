@@ -69,9 +69,9 @@ BS_TEST(camera_settings_toml) {
     BS_CHECK(st::camera_from_toml("") == st::CameraSettings{});
     std::string w;
     const st::CameraSettings s = st::camera_from_toml(
-        "[camera]\nmodo = \"hibrida\"\nsensibilidade_x = 1000\nzona_morta = -1\ninverter_y = true\nretorno_s = 5\n"
+        "[camera]\nmodo = \"hibrida\"\nsensibilidade_x = 1000\nzona_morta = -1\ninverter_y = true\nretorno_s = 5\n"  // hibrida: migra
         "pitch_cima = 10\n", &w);
-    BS_CHECK(s.mode == st::CameraMode::Hybrid && s.sens_x == 360 && s.deadzone == 0 && s.invert_y && s.return_s == 5 &&
+    BS_CHECK(s.mode == st::CameraMode::Free && s.sens_x == 360 && s.deadzone == 0 && s.invert_y &&
              s.pitch_up == 10 && w.empty());
     BS_CHECK(st::camera_from_toml("[camera]\nmodo = \"orbita\"\n", &w).mode == st::CameraMode::Original && !w.empty());
     st::CameraSettings a;
@@ -117,7 +117,7 @@ namespace {
 namespace fc = bs::transitional::free_camera;
 fc::CameraRig rig(st::CameraMode mode, float smoothing = 0) {
     st::CameraSettings s;
-    s.mode = mode, s.smoothing = smoothing, s.sens_x = 90, s.sens_y = 60, s.return_s = 1, s.pitch_up = 20, s.pitch_down = 10;
+    s.mode = mode, s.smoothing = smoothing, s.sens_x = 90, s.sens_y = 60, s.pitch_up = 20, s.pitch_down = 10;
     fc::CameraRig r;
     r.configure(s);
     return r;
@@ -148,15 +148,13 @@ BS_TEST(camera_rig_modes) {
     f.step({0, 0, true}, false);
     f.step({1, 0}, false);
     BS_CHECK(!f.returning());
-    // Hibrida: volta sozinha depois de return_s (1 s) sem usar
-    fc::CameraRig h = rig(st::CameraMode::Hybrid);
+    // Livre: nao volta sozinha (o antigo modo Hibrido, retirado), nem depois de muito tempo sem usar
+    fc::CameraRig h = rig(st::CameraMode::Free);
     run(h, 30, {-1, 0});
     const float left = h.yaw();
     BS_CHECK(left < 0);
-    run(h, 50);
-    BS_CHECK(h.yaw() == left);  // ainda dentro de return_s
-    run(h, 300);
-    BS_CHECK(h.yaw() == 0);
+    run(h, 600);
+    BS_CHECK(h.yaw() == left);
     // suspensao (cena roteirizada): zera na hora
     run(h, 30, {1, 0});
     h.step({1, 0}, true);
@@ -217,7 +215,7 @@ BS_TEST(camera_movement_settings) {
     BS_CHECK(st::camera_from_toml("[camera]\nmovimento = \"original\"\n", &w).movement == st::MoveMode::Original && w.empty());
     BS_CHECK(st::camera_from_toml("[camera]\nmovimento = \"tanque\"\n", &w).movement == st::MoveMode::Camera && !w.empty());
     st::CameraSettings a;
-    a.mode = st::CameraMode::Hybrid, a.movement = st::MoveMode::Original;
+    a.mode = st::CameraMode::Free, a.movement = st::MoveMode::Original;
     BS_CHECK(st::camera_from_toml(st::camera_to_toml(a)) == a);
     st::CameraSettings bad;
     bad.movement = st::MoveMode(7);
@@ -284,8 +282,9 @@ BS_TEST(camera_movement_transform_order) {
     BS_CHECK(sys.latch({}).axis(ni::Axis::StickX) == 0);
 }
 
-// Vista ancorada no mundo (movimentacao relativa): o giro da camera do jogo sai do deslocamento; nada no Original nem
-// durante a volta da Hibrida.
+// Vista ancorada no mundo (Livre): todo o giro da camera do jogo sai do deslocamento, inclusive passando pelo zero (a
+// camera de perseguicao que gira atras do Eliot nao arrasta mais a vista: docs/N7-PLANO.md 23.4); nada no Original nem
+// durante a volta do R3.
 BS_TEST(camera_movement_absorb) {
     NearestRounding rounding;
     fc::CameraRig   r = rig(st::CameraMode::Free);
@@ -295,19 +294,17 @@ BS_TEST(camera_movement_absorb) {
     r.absorb(30);
     BS_CHECK(std::fabs(r.yaw() - (y0 - 30)) < 1e-3f);
     r.absorb(y0 - 30);
-    BS_CHECK(r.yaw() == 0);
-    r.absorb(-50);  // sem deslocamento: a vista segue a camera do jogo, nada a compensar
-    BS_CHECK(r.yaw() == 0);
-    run(r, 6, {1, 0});
-    const float y1 = r.yaw();
-    BS_CHECK(y1 > 0);
-    r.absorb(-150);  // a camera do jogo gira para o outro lado: a vista fica (deslocamento maior, normalizado)
-    BS_CHECK(std::fabs(r.yaw() - (y1 + 150 > 180 ? y1 + 150 - 360 : y1 + 150)) < 1e-3f);
+    BS_CHECK(std::fabs(r.yaw()) < 1e-3f);
+    r.absorb(-50);  // sem deslocamento a vista tambem fica: a camera do jogo girou 50 para a direita
+    BS_CHECK(std::fabs(r.yaw() - 50) < 1e-3f);
+    fc::CameraRig z = rig(st::CameraMode::Free);  // sem tocar no analogico direito: a vista ja e ancorada
+    z.absorb(25), z.absorb(25);
+    BS_CHECK(std::fabs(z.yaw() + 50) < 1e-3f);
     fc::CameraRig p = rig(st::CameraMode::Free);
     run(p, 12, {1, 0});
-    p.absorb(p.yaw() + 5);  // a camera do jogo passa da vista: o deslocamento acaba em zero, nao troca de lado
-    BS_CHECK(p.yaw() == 0);
-    // passar por +-180 nao e alcancar (revisao Codex 2026-10-23): +170 com a camera girando -20 vira -170 (= +190)
+    p.absorb(p.yaw() + 5);  // a camera do jogo passa da vista: o deslocamento troca de lado (-5), nao acaba
+    BS_CHECK(std::fabs(p.yaw() + 5) < 1e-3f);
+    // passar por +-180: +170 com a camera girando -20 vira -170 (= +190)
     fc::CameraRig q = rig(st::CameraMode::Free);
     run(q, 60, {1, 0});
     q.absorb(q.yaw() - 170);  // deixa o deslocamento em 170
@@ -319,17 +316,16 @@ BS_TEST(camera_movement_absorb) {
     fc::CameraRig o = rig(st::CameraMode::Original);
     o.absorb(30);
     BS_CHECK(o.yaw() == 0);
-    fc::CameraRig h = rig(st::CameraMode::Hybrid);
+    fc::CameraRig h = rig(st::CameraMode::Free);
     run(h, 30, {1, 0});
     fc::RigInput r3;
     r3.recenter = true;
     h.step(r3, false);
     BS_CHECK(h.returning());
     const float hy = h.yaw();
-    h.absorb(20);
+    h.absorb(20);  // a volta do R3 vai ao enquadramento do jogo: nao ancora
     BS_CHECK(h.yaw() == hy);
 }
-
 // O angulo entregue ao jogo, vista - referencia (unidades do SDK, 0x10000 = 360 graus, crescendo para a esquerda):
 // wrap de 16 bits, os dois sentidos e o desvio dos cortes somado a vista.
 BS_TEST(camera_movement_relative_degrees) {

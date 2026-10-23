@@ -12,7 +12,7 @@ namespace bs::native::settings {
 namespace fs = std::filesystem;
 
 const char* camera_mode_name(CameraMode m) {
-    static constexpr const char* n[] = {"original", "hibrida", "livre"};
+    static constexpr const char* n[] = {"original", "livre"};
     return n[size_t(m)];
 }
 
@@ -22,7 +22,7 @@ CameraSettings clamp_camera(CameraSettings s) {
     const CameraSettings d;
     auto f = [](float& v, float def, float lo, float hi) { v = std::isfinite(v) ? std::clamp(v, lo, hi) : def; };
     f(s.sens_x, d.sens_x, 10, 360), f(s.sens_y, d.sens_y, 10, 360), f(s.deadzone, d.deadzone, 0, 0.6f);
-    f(s.smoothing, d.smoothing, 0, 0.9f), f(s.return_s, d.return_s, 1, 15), f(s.pitch_up, d.pitch_up, 0, 45);
+    f(s.smoothing, d.smoothing, 0, 0.9f), f(s.pitch_up, d.pitch_up, 0, 45);
     f(s.pitch_down, d.pitch_down, 0, 45);
     if (uint8_t(s.mode) > uint8_t(CameraMode::Free)) s.mode = CameraMode::Original;
     if (uint8_t(s.movement) > uint8_t(MoveMode::Camera)) s.movement = d.movement;
@@ -31,14 +31,13 @@ CameraSettings clamp_camera(CameraSettings s) {
 
 std::string camera_to_toml(const CameraSettings& s) {
     std::ostringstream o;
-    o << "[camera]  # camera livre (N7c): modo \"original\" (a do jogo), \"hibrida\" (volta sozinha) ou \"livre\"\n"
+    o << "[camera]  # camera livre (N7c): modo \"original\" (a do jogo) ou \"livre\" (analogico direito)\n"
       << "modo = \"" << camera_mode_name(s.mode) << "\"\n"
       << "sensibilidade_x = " << s.sens_x << "   # graus por segundo\n"
       << "sensibilidade_y = " << s.sens_y << "\n"
       << "zona_morta = " << s.deadzone << "\n"
       << "inverter_y = " << (s.invert_y ? "true" : "false") << "\n"
       << "suavizacao = " << s.smoothing << "\n"
-      << "retorno_s = " << s.return_s << "   # hibrida: segundos sem usar ate voltar\n"
       << "r3_recentraliza = " << (s.r3_recenter ? "true" : "false") << "\n"
       << "pitch_cima = " << s.pitch_up << "   # graus\n"
       << "pitch_baixo = " << s.pitch_down << "\n"
@@ -65,7 +64,7 @@ CameraSettings camera_from_toml(const std::string& text, std::string* warning) {
     };
     if (auto m = (*t)["modo"].value<std::string>()) {
         if (*m == "original") s.mode = CameraMode::Original;
-        else if (*m == "hibrida") s.mode = CameraMode::Hybrid;
+        else if (*m == "hibrida") s.mode = CameraMode::Free;  // modo retirado (2026-10-23): a camera livre continua
         else if (*m == "livre") s.mode = CameraMode::Free;
         else if (warning) *warning = "controles.toml: [camera] modo \"" + *m + "\" desconhecido (original)";
     }
@@ -75,7 +74,7 @@ CameraSettings camera_from_toml(const std::string& text, std::string* warning) {
         else if (warning) *warning = "controles.toml: [camera] movimento \"" + *m + "\" desconhecido (camera)";
     }
     flt("sensibilidade_x", s.sens_x), flt("sensibilidade_y", s.sens_y), flt("zona_morta", s.deadzone);
-    bln("inverter_y", s.invert_y), flt("suavizacao", s.smoothing), flt("retorno_s", s.return_s);
+    bln("inverter_y", s.invert_y), flt("suavizacao", s.smoothing);  // retorno_s (da hibrida): ignorado
     bln("r3_recentraliza", s.r3_recenter), flt("pitch_cima", s.pitch_up), flt("pitch_baixo", s.pitch_down);
     return clamp_camera(s);
 }

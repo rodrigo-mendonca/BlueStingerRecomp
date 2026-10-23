@@ -2528,6 +2528,13 @@ Detalhes e provas: `docs/N2-PLANO.md` 12.4 e 12.5.
 - Defeito corrigido: `game_steps()` era 0 no `--tempo legado`, e as falas nativas (por passo) faziam legado e nativo divergirem com o áudio nativo. `test_tempo`: 22 → 34 de 35; o A3 restante era a referência do N1, registrada com o áudio legado (atualizada).
 - Pendente: `test_assistido` A5 (três roteiros param no passo ~1037 nos dois modos de tempo; a investigar).
 
+### N7c: câmera livre em ambientes fechados (2026-10-23)
+
+Detalhes, método e tabelas: `docs/N7-PLANO.md` 23.4.
+- **Causas comprovadas:** (1) a ancoragem da vista parava quando a câmera do jogo a alcançava; daí em diante a vista seguia a câmera de perseguição, que gira atrás do Eliot (no corredor, segurando "direita" ele andava em círculo); (2) o toque do analógico esquerdo só acabava com zero exato (zona morta 0; parado dá ~0,003), e o desvio de cortes antigos ficava (RMT00: 104°, 0 de 42 direções certas). O jogo usa a mesma referência (`D680`) nas áreas abertas e fechadas.
+- **Correção:** vista sempre ancorada no Livre; toque acaba abaixo de 0,05; linha de base invalidada depois de cena, suspensão e troca de modo (revisão do Codex, 2 achados aceitos). Modo Híbrido retirado (`hibrida` → Livre).
+- **Validação:** 7 áreas (aberta, corredores, sala fechada, combate em corredor, sala após o externo, transição interno → externo), 8 direções × 5 ângulos: orientação certa em todos os segmentos em que o Eliot anda; Original idêntico ao executável anterior; combate idêntico ao Original; Vulkan = software; gravação × reprodução iguais. Câmera originalmente fixa: nenhuma zona nas rotas disponíveis (pendente).
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
