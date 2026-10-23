@@ -24,6 +24,8 @@ Controles (teclado e controles Xbox, PlayStation, Switch Pro e genericos)
   A / B / X / Y ... Z / X / A / S    baixo / direita / esquerda / cima
   Gatilhos L / R .. Q / W            gatilhos
   Analogico ....... I / J / K / L    analogico esquerdo
+  Camera livre .... -                analogico direito (R3 centraliza; desligada por padrao)
+  Configuracoes ... Esc              Back / Select
   Tela cheia ...... F11
 Remapeamento, zona morta e perfis por modelo de controle: controles.toml (criado na primeira
 execucao, na mesma pasta do bluestinger.log; apague-o para voltar ao padrao). O log mostra o
@@ -53,6 +55,29 @@ data\video (pacote montado sem filmes), o jogo pula os filmes.
 Se algum filme se comportar diferente do esperado: BlueStinger.exe --video legado (decodificador
 original, temporario) e informe o caso.
 
+Configuracoes (Esc no teclado, Back no controle)
+-----------------------------------------------
+O menu interno pausa o jogo. Paginas: Graficos (com Efeitos de imagem), Audio, Legendas e
+Controles, mais Restaurar padroes. Mudancas de tela pedem confirmacao (voltam sozinhas se nao
+confirmadas). O que for salvo fica em
+graficos.toml, audio.toml e legendas.toml (na mesma pasta do bluestinger.log) e na secao [camera]
+do controles.toml.
+- Renderizador: Software (padrao, o rasterizador de referencia) ou Vulkan (GPU). Sem Vulkan
+  disponivel, o jogo volta sozinho para o software. Opcao: --render software|nativo.
+- Resolucao interna (so com Vulkan): Original (640x480), 720p, 1080p, 1440p ou 2160p (4K, limitada
+  pelo que a GPU aceita). A imagem continua 4:3; em telas largas ha faixas nas laterais.
+  Opcao: --resolucao-interna <altura>.
+- Efeitos de imagem (opcionais; o preset Original nao aplica nenhum): correcao de cor,
+  tonemapping, nitidez, bloom e filtro CRT (o CRT pede 1080p ou mais).
+- Shaders de mod: pacotes em mods\shaders (SPIR-V validado antes de carregar; um shader invalido
+  e desativado com o motivo no bluestinger.log, sem derrubar a imagem).
+- Camera: Original (a do jogo), Hibrida (o analogico direito gira e a camera volta sozinha) ou
+  Livre. So muda a imagem: colisao, inimigos e controles do jogo nao veem a camera livre.
+  Opcao: --camera original|hibrida|livre.
+- Legendas: das falas no gameplay e dos filmes. O mod padrao mods\legendas-en (ingles, transcricao
+  automatica ainda nao revisada) vem com toda instalacao; outros pacotes em mods\<pacote>\legendas.
+  Opcao: --legendas <idioma>|nenhuma.
+
 Dados e problemas
 -----------------
 - BlueStinger.exe --verify-data confere o SHA-256 de todos os arquivos de data\.
@@ -65,9 +90,14 @@ Dados e problemas
 
 Limitacoes conhecidas
 ---------------------
-- Sem audio.
+- Audio nativo (efeitos, falas e musica): pode haver pequenas falhas quando o jogo fica abaixo do
+  tempo real. Se algo soar errado: --audio legado (temporario) e informe o caso.
 - Pontos de save do jogo so aparecem mais adiante na campanha (nenhum nas primeiras salas).
-- Renderizacao em software: quedas de ritmo em cenas com muitas camadas transparentes.
+- Renderizacao em software: quedas de ritmo em cenas com muitas camadas transparentes (o Vulkan
+  nao tem esse limite).
+- GPUs AMD integradas: perda intermitente do dispositivo Vulkan num modo de diagnostico; o jogo
+  recria o dispositivo sozinho. Se acontecer no jogo normal, use --render software e informe.
+- Widescreen 16:9 de verdade e SSAO ainda nao existem.
 - Controles fisicos (Xbox, PlayStation) ainda sem teste manual; teclado testado.
 - Diferencas visuais pequenas em relacao ao hardware (sem dither; bordas de texto).
 - A partida (NEW GAME) esta em validacao; veja STATUS.md do projeto.
