@@ -1615,6 +1615,35 @@ disponíveis (todas as salas medidas usam câmera de perseguição; os cortes ca
 | Save/Load | LOAD do save g1 nas baterias B2 (3/3) |
 | Unitários | 304/0 (Híbrido migrando para Livre, ancoragem que não para no zero, menu com dois modos) |
 
+### 23.5 Câmera Livre na troca de cenário (2026-10-23, correção de jogabilidade)
+
+Relato: atravessando uma transição com o analógico esquerdo para a frente, o Eliot passava a andar para a esquerda na
+área nova até a direção ser corrigida à mão.
+
+**Reprodução** (`tools/dev/n7_camera_transicao.py`): `passo_heliporto` até a porta RCG02 → RCG03, vista girada ~45° no
+corredor, analógico esquerdo segurado para a frente desde antes do A da porta até o exterior. **Causa medida:** o
+desvio dos cortes (`MoveLatch::bias`, que mantém o rumo num corte de câmera dentro da área) somou o salto da vista da
+troca de cenário: 41 134 unidades (~134°). O jogo mantém `D680` (47 910) enquanto o analógico está seguro, e a vista
+nova recomeçava na câmera do jogo do exterior (yaw 0): o giro entregue ficava em 37° e o Eliot andava ~105° fora da
+frente da vista (mediana de 3 trechos).
+
+**Correção:** o adaptador nativo de arquivos (`transitional/gdfs_adapter`) conta as cargas de sala (a leitura do início
+de um `R*.BIN`, com dados): `room_loads()`. Na montagem seguinte a uma carga, a câmera trata a troca como corte (a vista
+recomeça na câmera do jogo da área nova, mesmo quando a câmera nova fica perto da antiga) e `relative_input` zera o
+desvio: o movimento acompanha a vista nova **sem soltar o analógico**. Cortes dentro da área continuam com o rumo. Nada
+por sala, nenhum ângulo fixo, o modo Original não é tocado (os slots nem são instalados nele).
+
+| Prova | Resultado |
+|---|---|
+| `n7_camera_transicao.py` (porta RCG02 → RCG03, analógico seguro) | antes: desvio 41 134, ângulo deslocamento × frente da vista mediana 105°; depois: desvio 0, mediana 0° (trechos 31, 81, 25, 5, 1, 0, 0, 0: o Eliot virando para a frente nova), a carga contada na montagem do corte |
+| Original, mesma rota | nenhuma amostra girada |
+| Original, `passo_combate`: executável da `dist` × novo | estado por passo idêntico (5 817 passos) |
+
+**Revisão do Codex** (`reviews/codex-20261023-212005.md`, junto com as legendas dos filmes): aceitos: a carga só conta
+com dados lidos; o teste amarra a contagem à montagem do corte (coluna `salas` no `BS_CAMERA_LOG`). **Limite
+registrado:** só o provedor nativo de arquivos conta as cargas; com `--arquivos legado` (recuo até o N8) a troca de
+cenário cai no comportamento anterior.
+
 ### 18.6 Correção definitiva das legendas das falas (2026-10-23)
 
 Relato do jogador: (1) legendas vários segundos antes da fala, sumindo mais ou menos na hora certa; (2) duas falas

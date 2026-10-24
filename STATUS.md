@@ -2587,6 +2587,23 @@ Detalhes, causas e medições: `docs/N7-PLANO.md` 18.6; pendências e direitos: 
 - **Dist:** Preview e Builder `8b73b3a` com os pacotes novos (Preview `mods\`, kit `mods-padrao\`); o LEIA-ME do jogo
   com o texto novo das legendas entra na próxima montagem.
 
+### Correções de jogo e interface: menu, câmera, legendas dos filmes, ícone e cursor (2026-10-23)
+
+Pedido do mantenedor: cinco defeitos vistos no jogo, ícone e cursor. Cada item tem teste de regressão próprio.
+
+| Item | Causa e correção | Prova |
+|---|---|---|
+| Menu: jogo pausado depois de mudar uma opção (`a690d58`) | fechar com B/Esc na página principal ou "Voltar ao jogo" fechava só o modelo; só o View/Back retomava o jogo. O menu agora guarda a pausa que fez e retoma por qualquer caminho | `tools/dev/n7_menu_pausa.py` (janela, controle virtual; vídeo, áudio, controles, legendas, isolados e em sequência): executável anterior 2 de 3 falham; novo 6/6 |
+| Menu de vídeo simplificado e idioma da interface (`03b00cf`) | sem "Predefinição"; "Efeitos de imagem" vira submenu sem valor; indicador › nos submenus; interface no idioma das legendas (pt-* = português, os outros = inglês; desativadas mantêm o último; vale no reinício; restaurar padrões mantém o idioma) | unitários (submenus, idioma), capturas em pt-BR e en-US |
+| Ícone (`9bc9b65`) | ícone original do projeto no git (`app/res`, desenho geométrico); o da capa do jogo só local (`icone-local/`, fora do git, `make_builder.ps1 -IconeLocal`), sem grão e com nitidez por tamanho | o ícone extraído do executável; `check_kit` confere o `.ico` (vazio, truncado, válido) |
+| Cursor (`b24b4ae`) | escondido só em janela, com foco e o menu fechado; visível no menu, sem foco e em tela cheia; visível ao sair | `tools/dev/n7_cursor.py`: 8 estados na ordem, com o estado real do SDL |
+| Câmera Livre na troca de cenário | o desvio dos cortes somava o salto da vista da troca (~134°); a carga de sala (`gdfs::room_loads`) vira corte e zera o desvio, sem soltar o analógico | `tools/dev/n7_camera_transicao.py`: 105° → 0°; Original sem mudança (5 817 passos idênticos). `docs/N7-PLANO.md` 23.5 |
+| Legendas dos filmes (N5) | a ressincronização usava a energia, e a trilha dos filmes tem música o tempo todo: linhas esticadas até a seguinte e falas juntas. Os filmes passam a usar as palavras do ASR; no jogo, a legenda segue o áudio audível (monotônico: tirou uma piscada medida no NEWGAME) | `tools/dev/n5_legendas_filmes.py`: 5 de 6 filmes com defeito → 0, en e pt-BR; NEWGAME na janela, en e pt-BR: cada linha uma vez, 0 a +0,2 s depois da voz. `docs/LEGENDAS-PENDENCIAS.md` "Filmes" |
+
+Revisões do Codex: `codex-20261023-193911` (menu: 1 aceito, 1 rejeitado com evidência, o rótulo "ANALOGICO" nunca
+aparece), `codex-20261023-195145` (ícone e cursor: 3 aceitos), `codex-20261023-212005` (câmera e filmes: 6 aceitos, 1
+registrado como limite: o provedor legado de arquivos não conta as cargas de sala).
+
 ### N9: planejamento oficial (2026-10-23; N9 não iniciado)
 
 Pedido do mantenedor: consolidar o planejamento do N9 (Blue Stinger Remastered), só documentação. Registro em

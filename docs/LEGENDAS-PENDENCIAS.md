@@ -131,6 +131,35 @@ Pendências que ficam (só as chaves):
   confiável de quem fala em cada linha. A opção do menu fica indisponível até haver essa informação (nada por
   suposição).
 
+## Filmes (en 0.3.1 / pt-BR 0.2.1, 2026-10-23)
+
+Relato do jogador: falas seguidas dos filmes numa legenda só. **Causa:** a ressincronização de 0.3.0 usou a energia
+do áudio para achar a voz; nos filmes a trilha tem música e efeitos quase o tempo todo, então o filme inteiro parecia
+"audível": nenhuma pausa, cada linha ia até a seguinte (até 95 s numa linha) e falas separadas por silêncio ficavam
+juntas. Os pacotes 0.3.0/0.2.0 instalados em `mods\video` eram esses.
+
+**Correção** (só os filmes; texto, chaves, revisões e as falas do gameplay iguais, `falas.*.toml` idênticos byte a
+byte): os trechos de voz dos filmes vêm das palavras do ASR (`sincronia.palavras_corrigidas`, `trechos_das_palavras`),
+com dois defeitos conhecidos corrigidos só na primeira palavra de cada segmento do ASR (esticada sobre o silêncio
+anterior, ou posta segundos antes da frase dela: 5,3 s entre as duas primeiras palavras de uma frase do E185A); corte
+no meio de uma frase só com 1,5 s de silêncio (`ressincronizar.py --so-filmes`). No jogo, a legenda do filme segue a
+posição **audível** (a posição do filme menos a fila da saída, monotônica), como as falas.
+
+| Medida (por idioma; `tools/dev/n5_legendas_filmes.py --pacotes`) | 0.3.0 / 0.2.0 | 0.3.1 / 0.2.1 |
+|---|---|---|
+| filmes com defeito (dos 6 com legenda) | 5 | 0 |
+| linhas que entram antes da voz (> 0,1 s) | 21 | 0 |
+| linhas que ficam > 1,5 s depois da voz | 15 | 0 |
+| linhas com duas falas separadas por ≥ 1,5 s | 4 | 0 |
+| NEWGAME na janela (en e pt-BR): entrada pelo áudio | antes da voz até a fila (133–500 ms) | 0 a +0,2 s depois do início da voz, cada linha uma vez (sem piscar); numa de três execuções uma linha entrou a +0,31 s, junto de um descarte de áudio do filme (fila atrasada pelo host), e não se repetiu |
+
+Pendências que ficam:
+- as linhas do pacote que já terminavam no meio de uma frase continuam assim (ex.: duas linhas do E195 que dividem uma
+  frase ao meio): é a divisão do texto do pacote, não do tempo; refazê-la é revisão de texto;
+- as 72 linhas en e as 24 traduções pt-BR "revisar" continuam como acima;
+- a medida no jogo só cobre o NEWGAME (o único filme alcançado pelas rotas); os outros cinco foram conferidos pelos
+  pacotes contra as palavras do ASR.
+
 ## Direitos de redistribuição (verificação de 2026-10-23)
 
 O que foi verificado:
