@@ -58,3 +58,10 @@ publicado são falsos positivos de caminho (`translator/analysis/`, `runtime/hle
 - Ramos `backup/*` são locais: não publicar.
 - Antes de cada push: `python tools/dev/varre_publicacao.py origin/master..master` (sai com 1 se achar algo) e a
   conferência dos arquivos particulares.
+
+## Publicação de 2026-10-24
+
+O fechamento do N2 e a atualização objetiva do README foram publicados por avanço normal de `c92a31a` para
+`0903ba5`, sem reescrever o histórico. Antes do push, `origin/master` era ancestral direto (`0` commits remotos
+exclusivos e `8` locais); a varredura comparou 898 frases comerciais locais nos 8 commits e encontrou **0 achados**.
+`known_versions.h`, `docs/DISTRIBUICAO-COMPILADOR.md`, saves, mods, backups, stashes e worktrees permaneceram locais.

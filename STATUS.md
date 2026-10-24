@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. N7 concluído com promoção condicional do Vulkan e limitações registradas. Próximo, somente após autorização explícita do mantenedor: regressão integral de entrada e N8. Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 concluído funcionalmente em 2026-10-24:** Vulkan padrão com recuo seguro; limitações de AMD, fidelidade de fog/volumes e cobertura adicional registradas sem serem ocultadas. Próximo, somente após autorização explícita do mantenedor: regressão integral de entrada e N8. Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2495,8 +2495,9 @@ registrada; SSAO, widescreen real e MSAA passam para o N9. Detalhes: `docs/N7-PL
   continuam locais, instalados pelo Builder na distribuição de testes. `LEGAL.md` passou a listá-los entre o que nunca
   entra no repositório. Dois trechos de uma linha do texto do jogo (um no `STATUS.md`, um num unitário) foram trocados
   por descrição e texto próprio.
-- **Publicação:** `docs/PUBLICACAO-GITHUB.md` com a verificação dos 25 commits locais e o procedimento proposto (não
-  executado) para tirar o pacote do commit `2969913` antes de um push.
+- **Publicação:** a limpeza descrita em `docs/PUBLICACAO-GITHUB.md` foi executada antes da publicação de 2026-10-23;
+  em 2026-10-24 o fechamento do N2 foi publicado por avanço normal até `0903ba5`, depois de nova varredura de 898
+  frases comerciais em 8 commits, com 0 achados e os arquivos particulares preservados.
 
 ### N2 retomado: desempenho e H9 (2026-10-23)
 
@@ -2658,7 +2659,7 @@ e D14), `docs/RECOMPILER-UI.md` ("Futuro") e `CLAUDE.md` (regras permanentes). D
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
 viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
-1. terminar o N7 (N7c) — **feito em 2026-10-23** (promoção condicional);
+1. terminar o N7 (N7c) — **concluído funcionalmente em 2026-10-24**;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
 3. N8 — não iniciado; aguarda autorização explícita (N2c será a primeira subetapa técnica);
 4. N9;
@@ -2675,12 +2676,12 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
-| N7 Vulkan | **concluída com promoção condicional** (2026-10-23): Vulkan padrão da janela com recuo para o software; N7a, N7b e N7c validadas; pendências abertas: AMD integrada (sem causa identificada), fog e volumes contra o Flycast; SSAO, 16:9 real e MSAA transferidos para o N9 (`docs/N7-PLANO.md` seção 25) | 95 |
+| N7 Vulkan | **concluída funcionalmente** (2026-10-24): Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Limitações registradas: AMD integrada no modo de diagnóstico, fog/volumes sem oráculo Flycast e cobertura render a render concentrada na rota de combate. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 100 |
 | N8 Sem legado | não iniciada; aguarda autorização explícita | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~72 % (onze etapas de peso igual).
+Progresso geral: ~73 % (onze etapas de peso igual).
 
 ### N7c: câmera livre e segundo analógico (2026-10-22; worktree n7-vulkan)
 
