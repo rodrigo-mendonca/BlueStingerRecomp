@@ -8,9 +8,9 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 > **Este repositório não contém o jogo** nem nenhum dado dele. Você precisa fornecer a sua própria cópia do disco
 > (CDI, NTSC-U T13001N V1.000). Ver [LEGAL.md](LEGAL.md).
 
-## Status (2026-10-23)
+## Status (2026-10-24)
 
-**Progresso geral: ~69 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
+**Progresso geral: ~72 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
 fração concluída; em 2026-10-22 o roteiro ganhou a N9, Remasterização, e os mods passaram para a N10). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 em português do Brasil por padrão, com inglês como alternativa (pacotes gerados localmente a partir do disco do usuário e instalados pelo Builder; transcrição, tradução e revisão por IA, provisórias; o texto não vai para o repositório). O desenho
