@@ -629,7 +629,8 @@ cerca de 65 ms por quadro: a rota levou 514 s, contra 66 s com `HOST_CACHED`.
 - Passadas de 64 em 64 davam imagem errada na AMD integrada, então foram abandonadas.
 - Testes de 70 e 140 camadas, idênticos nas duas GPUs.
 
-**Pendência de estabilidade (AMD integrada, só no modo `comparar`):**
+**Resultado histórico de 2026-10-22 (AMD integrada, só no modo `comparar`; superado pela reinvestigação da seção
+25.6):**
 - **Sintoma:** `VK_ERROR_DEVICE_LOST` no envio do render 371 em quase todas as rotas. O render 370
   sai com a imagem anterior, embora a cerca e a fila ociosa acusem sucesso.
 - **Isolamento:**
@@ -639,7 +640,8 @@ cerca de 65 ms por quadro: a rota levou 514 s, contra 66 s com `HOST_CACHED`.
   - não há TDR no log do sistema.
 - **Mitigação:** recuperação (dispositivo recriado; o render é refeito; até 3 por sessão), e a rota
   completa com 1 quadro errado.
-- **Próximo passo:** as Validation Layers num terminal não elevado.
+- **Próximo passo naquela data:** as Validation Layers num terminal não elevado; executado depois, sem mensagens, e
+  complementado pelo diagnóstico de crash da seção 25.6.
 
 **Testes dirigidos** (nas duas GPUs):
 - `bs_render_tests`, 24 testes: `frame_prep` (5) e as 8 cenas fiéis no Vulkan, determinísticas, com 0
@@ -1440,7 +1442,7 @@ subsistema e comparação com o legado, sem a regressão integral.
 | Pós-processamento e shaders de mod (seção 21) | **concluídos** | cor, tonemapping, nitidez, bloom, CRT; shaders externos SPIR-V validados; o preset Original não aplica nenhum passe |
 | Câmera livre (seção 23) | **concluída** | Original sem nada instalado (quadros idênticos); Híbrida e Livre com o estado do jogo por passo idêntico ao Original |
 | Recuo sem Vulkan | **concluído** | sem dispositivo, o jogo segue no software com o motivo no log |
-| GPU AMD integrada | **condicional** | perda intermitente do dispositivo no modo `comparar` (render 371, 1 em 3 rotas sem as camadas; nenhuma com as camadas). As camadas não acusam uso incorreto da API. A causa **não** foi identificada; a hipótese de driver não está comprovada. A recuperação recria o dispositivo. A apresentação direta não foi testada na AMD |
+| GPU AMD integrada | **condicional** | o resultado histórico foi perda no render 371 em 1 de 3 rotas sem camadas; a reinvestigação da seção 25.6 comprovou que o render varia e que o dispositivo relata `Invalid Read`. As camadas não acusam uso incorreto da API. O shader/recurso de origem **não** foi identificado; a hipótese de driver não está comprovada. A recuperação recria o dispositivo. A apresentação direta não foi testada na AMD |
 | Vulkan como padrão | **concluído (seção 25)** | decisão do mantenedor de 2026-10-23: Vulkan padrão na janela, recuo para o software; o `--headless` continua no software |
 | Rotas além da de combate (Vulkan × software) | **parcial** | combate (todo render) e janelas com gameplay real; as rotas do `test_assistido` não foram comparadas render a render |
 | Fog e volumes modificadores (seção 16) | **pendente de fidelidade** | o software de referência também não os aplica: o Vulkan é igual a ele, não ao console. A referência é o Flycast (oráculo gráfico, ainda não comparado) |
@@ -1583,7 +1585,9 @@ zero VUID/SYNC-HAZARD e zero recriações. Isso restringe a investigação, mas 
 pendência.
 
 **Fog e modifier volumes.** O resumo da IR passou a contar cada modo de fog e o primeiro render de uso, sem alterar a
-imagem. Na rota completa de 9000 VBlanks (RTX 5080, `--render nativo`) houve 4484 renders, zero falhas Vulkan e:
+imagem. O comando foi o executável Release atual com `--video legado --render nativo --headless 9000`,
+`BS_INPUT_SCRIPT=tools/dist/roteiros/passo_combate.txt` e `BS_RELOGIO_FIXO=1700000000`. Na RTX 5080 houve 4484 renders,
+zero falhas Vulkan e:
 
 | Evidência | Resultado |
 |---|---:|
@@ -1596,7 +1600,10 @@ imagem. Na rota completa de 9000 VBlanks (RTX 5080, `--render nativo`) houve 448
 Portanto, fog por tabela e volumes são usados de verdade e não podem ser classificados como efeitos opcionais do N9.
 O repositório não contém uma captura gráfica Flycast pareada com o render 1127; sem essa referência não há base para
 implementar ou aprovar a semântica visual. A instrumentação localiza o cenário a extrair no próximo ensaio, mas não
-substitui o oráculo. N7 permanece em **95%**.
+substitui o oráculo. O localizador foi repetido duas vezes até 3000 VBlanks com as mesmas opções: ambas produziram 1483
+renders, as mesmas contagens parciais e primeiro fog/volume no render 1127. As contagens antigas de 4487 renders
+pertencem ao executável pré-fechamento do N2 e continuam como evidência histórica daquele binário; os números desta
+seção são do executável atual. N7 permanece em **95%**.
 
 Validação dirigida desta rodada: `bs_unit_tests` 306/306; rota NVIDIA 9000 VBlanks, 4484 renders e zero falhas; A1 AMD
 com Validation Layers 0 mensagens/0 recriações; A1 AMD sem camadas 9/10 sem perda e 1/10 com perda reproduzida. As

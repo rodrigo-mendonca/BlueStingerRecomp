@@ -3134,7 +3134,10 @@ Na rota `passo_combate` de 9000 VBlanks, a nova telemetria de cobertura localizo
 e de volumes modificadores no render 1127. Foram 2.758.908 desenhos com fog por tabela, nenhum com fog por vértice ou
 `Table2`, 76.287 volumes e 2.109.830 triângulos de volume. O controle NVIDIA concluiu 4484 renders sem falha. Não há no
 repositório uma captura Flycast pareada com esse render; fog e volumes continuam sem implementação fiel e sem aprovação
-visual. Evidências e limites completos: `docs/N7-PLANO.md`, seção 25.6.
+visual. A execução usou `--video legado --render nativo --headless 9000`, relógio fixo e o roteiro de combate; duas
+repetições dirigidas até 3000 VBlanks confirmaram o primeiro uso no render 1127 e todas as contagens parciais. Os 4487
+renders da tabela histórica acima são do executável anterior ao fechamento do N2. Evidências e limites completos:
+`docs/N7-PLANO.md`, seção 25.6.
 
 ### N7a: captura do TA na IR de render (2026-10-21; worktree n7-vulkan)
 
