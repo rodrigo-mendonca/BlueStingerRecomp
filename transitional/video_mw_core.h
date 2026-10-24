@@ -72,9 +72,12 @@ public:
     const native::video::MovieCatalog&    catalog() const { return catalog_; }
 
 private:
-    void feedAudio(int64_t pos);
+    void    feedAudio(int64_t pos);
+    int64_t audiblePos();  // a posicao do filme que esta saindo do dispositivo (a legenda segue ela; nunca volta)
 
     MwCoreOptions                                 o_;
+    std::wstring                                  lastSub_;  // BS_VIDEO_LEGENDA_LOG
+    int64_t                                       audibleMax_ = 0;
     native::video::MovieCatalog                   catalog_;
     const native::video::MovieEntry*              entry_ = nullptr;
     std::unique_ptr<native::video::MoviePlayback> play_;

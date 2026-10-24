@@ -1,6 +1,8 @@
 #include "video_mw_core.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <mutex>
 
 namespace bs::transitional::video {
@@ -34,7 +36,7 @@ int32_t MwPlayerCore::start(std::string_view fname, int64_t now) {
     const std::string name = baseName(fname);
     entry_                 = catalog_.find(name);
     colorDirty_            = true;  // a faixa de TV depende da origem (Builder ou mod)
-    start100ns_ = now, lastPos_ = 0;
+    start100ns_ = now, lastPos_ = 0, audibleMax_ = 0, lastSub_.clear();
     if (!entry_ || entry_->absent || entry_->file.empty()) {
         if (o_.log) o_.log("[video] filme sem recurso: " + name + (entry_ && entry_->absent ? " (ausente no disco original)" : " (nao convertido pelo Builder)"));
         return state_ = o_.missingStat;
@@ -158,6 +160,18 @@ void MwPlayerCore::stop() {
     state_ = kMwStop;  // como o mwSfdStop original (8C1582B2 grava 0 no estado), inclusive depois de 3/4
 }
 
+int64_t MwPlayerCore::audiblePos() {
+    if (!audio_ || !play_) return lastPos_;
+    const auto&    f  = play_->format();
+    const size_t   ch = std::max<size_t>(1, f.channels);
+    const uint64_t q  = audio_->queued_frames() + pending_.size() / ch;  // quadros de audio ainda nao ouvidos
+    const int64_t  p  = f.sampleRate ? std::max<int64_t>(0, lastPos_ - int64_t(q * 10000000ull / f.sampleRate)) : lastPos_;
+    // nunca volta: quando a fila cresce de uma consulta para a outra a conta recuava alguns ms e a legenda que acabara de
+    // sair piscava de volta (NEWGAME, 212 s, medido na janela)
+    audibleMax_ = std::max(audibleMax_, p);
+    return audibleMax_;
+}
+
 void MwPlayerCore::pause(bool p) {
     if (audio_) audio_->pause(p);
 }
@@ -174,8 +188,32 @@ bool MwPlayerCore::frame(nv::VideoFrame& out) {
     }
     color_.apply(out.argb);
     if (!subs_.empty() && subRenderer_ && subRenderer_->ok() && !pref_or(o_.subtitleLang).empty()) {
-        const std::wstring t = nv::subtitle_at(subs_, lastPos_);
+        // a legenda segue o audio que esta saindo do dispositivo, como as falas do gameplay (2026-10-23): a posicao logica
+        // menos o que ainda esta na fila da saida e em pending_. Sem isso a linha entrava ate ~200 ms antes da voz (a fila
+        // do XAudio2). A saida nula (headless) nao tem fila: nada muda nos testes deterministicos.
+        const int64_t audible = audiblePos();
+        const std::wstring t = nv::subtitle_at(subs_, audible);
         if (!t.empty()) subRenderer_->draw(out.argb, out.width, out.height, t);
+        // Diagnostico BS_VIDEO_LEGENDA_LOG=<arquivo>: cada troca de legenda do filme com a posicao logica e a audivel (ms)
+        static FILE* subLog = [] {
+            const char* v = std::getenv("BS_VIDEO_LEGENDA_LOG");
+            FILE*       f = v && *v ? std::fopen(v, "w") : nullptr;
+            if (f) std::fprintf(f, "logico_ms\taudivel_ms\tlegenda\n");
+            return f;
+        }();
+        if (subLog && t != lastSub_) {
+            std::string u8;  // UTF-8 (BMP; as legendas nao usam outros planos), quebras de linha como espaco
+            for (wchar_t ch : t) {
+                const uint32_t v = ch == L'\n' ? ' ' : uint32_t(ch);
+                if (v < 0x80) u8 += char(v);
+                else if (v < 0x800) u8 += char(0xC0 | (v >> 6)), u8 += char(0x80 | (v & 0x3F));
+                else u8 += char(0xE0 | (v >> 12)), u8 += char(0x80 | ((v >> 6) & 0x3F)), u8 += char(0x80 | (v & 0x3F));
+            }
+            std::fprintf(subLog, "%lld\t%lld\t%s\n", static_cast<long long>(lastPos_ / 10000), static_cast<long long>(audible / 10000),
+                         u8.empty() ? "-" : u8.c_str());
+            std::fflush(subLog);
+            lastSub_ = t;
+        }
     }
     return true;
 }

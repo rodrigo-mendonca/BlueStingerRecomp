@@ -67,6 +67,50 @@ def trechos_audiveis(wav_path, _cache={}):
     return segs
 
 
+PALAVRA_MAX_S, PALAVRA_POR_LETRA_S = 0.6, 0.09  # duracao plausivel de uma palavra falada
+ISOLADA_S = 1.5  # palavra sem pontuacao final a mais disto da seguinte: o ASR a pos fora do lugar
+
+
+def palavras_corrigidas(palavras):
+    """As palavras do ASR de um FILME com os dois defeitos conhecidos corrigidos (2026-10-23). Num filme ha musica e
+    efeitos o tempo todo: a energia nao separa a voz, entao os tempos vem das palavras. As duas correcoes valem so para a
+    PRIMEIRA palavra de cada segmento do ASR (marca "inicio_segmento"), onde o defeito aparece; as outras ficam como o ASR
+    deu (revisao Codex 2026-10-23: aplicadas a todas, mexeriam em pausas e palavras curtas legitimas).
+      - palavra esticada sobre o silencio anterior: o inicio fica no fim menos uma duracao plausivel para o tamanho dela
+        (o fim do ASR e confiavel; o inicio e que estica);
+      - palavra sem pontuacao final separada da seguinte por ISOLADA_S ou mais (inicio de frase posto antes, ex.: a primeira
+        palavra 20 s antes do resto da frase): vai para logo antes da seguinte.
+    Devolve copias (dicts com i, f, p), na ordem."""
+    ws = [dict(w) for w in palavras if w["p"].strip()]
+    for k, w in enumerate(ws):
+        if not w.get("inicio_segmento"):
+            continue
+        letras = len(re.sub(r"[^\w']", "", w["p"]))
+        dur = min(PALAVRA_MAX_S, max(0.15, PALAVRA_POR_LETRA_S * letras))
+        if w["f"] - w["i"] > dur:
+            w["i"] = round(w["f"] - dur, 3)
+    for k in range(len(ws) - 2, -1, -1):  # de tras para frente: a seguinte ja esta no lugar
+        w, prox = ws[k], ws[k + 1]
+        if w.get("inicio_segmento") and w["p"].strip()[-1:] not in ".!?,;:" and prox["i"] - w["f"] >= ISOLADA_S:
+            dur = w["f"] - w["i"]
+            w["f"] = round(prox["i"] - 0.02, 3)
+            w["i"] = round(w["f"] - dur, 3)
+    return ws
+
+
+def trechos_das_palavras(palavras):
+    """[(inicio, fim)] da voz de um filme a partir das palavras (ja corrigidas): cada palavra e um trecho; trechos que se
+    tocam (buraco menor que FECHA_BURACO_S) se juntam. Serve de `segs` para partes_da_linha."""
+    segs = []
+    for w in sorted(palavras, key=lambda w: w["i"]):
+        a, b = float(w["i"]), float(w["f"])
+        if segs and a - segs[-1][1] < FECHA_BURACO_S:
+            segs[-1] = (segs[-1][0], max(segs[-1][1], b))
+        else:
+            segs.append((a, b))
+    return segs
+
+
 def frases(texto):
     t = " ".join(texto.replace("\\n", " ").replace("\n", " ").split())
     return [f for f in re.split(r"(?<=[.!?])\s+", t) if f]
@@ -76,9 +120,11 @@ def _plano(texto):
     return " ".join(texto.replace("\\n", " ").replace("\n", " ").split())
 
 
-def partes_da_linha(l, segs, prox_inicio, duracao, texto_asr_glossario=None):
+def partes_da_linha(l, segs, prox_inicio, duracao, texto_asr_glossario=None, corte_no_meio_s=None):
     """Partes (inicio, fim, texto, corte) de uma linha de legenda. `l`: dict com inicio, fim, texto e, quando houver,
-    palavras (as do ASR: dicts com i, f, p). corte: "inteira", "frases:<n>" (n frases antes da pausa) ou "palavras:<k>"."""
+    palavras (as do ASR: dicts com i, f, p). corte: "inteira", "frases:<n>" (n frases antes da pausa) ou "palavras:<k>".
+    corte_no_meio_s (filmes): um corte no meio de uma frase so vale com pelo menos esse silencio (uma hesitacao curta da
+    mesma pessoa nao divide a frase); None = a regra das falas."""
     ini, fim = float(l["inicio"]), float(l["fim"])
     texto = l["texto"]
     if not segs:
@@ -152,7 +198,8 @@ def partes_da_linha(l, segs, prox_inicio, duracao, texto_asr_glossario=None):
         k = 0
         while k < len(pedacos) - 1:
             gap = grupos[k + 1][0][0] - grupos[k][-1][1]
-            if gap < PAUSA_PALAVRA and (len(pedacos[k].split()) < 2 or len(pedacos[k + 1].split()) < 2):
+            meio = corte_no_meio_s is not None and pedacos[k].rstrip()[-1:] not in ".!?" and gap < corte_no_meio_s
+            if meio or (gap < PAUSA_PALAVRA and (len(pedacos[k].split()) < 2 or len(pedacos[k + 1].split()) < 2)):
                 pedacos[k:k + 2] = [pedacos[k] + " " + pedacos[k + 1]]
                 grupos[k:k + 2] = [grupos[k] + grupos[k + 1]]
             else:
