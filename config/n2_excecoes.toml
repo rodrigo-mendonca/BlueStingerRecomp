@@ -38,10 +38,5 @@ efeito    = "4 regravacoes a menos das copias de guarda em cada video"
 causa     = "partida do video mais curta no experimental"
 evidencia = "docs/N2b2-RELATORIO.md 4.3"
 
-[[excecao]]
-id        = "d11-download-musica"
-classe    = "D11"
-onde      = "download nativo de SMPB/SMSB (8C15D534)"
-efeito    = "sem a espera do DMA (176,7 ns/byte): as cargas de musica nao levam VBlanks e os lotes do driver antes e depois do download caem no mesmo tick"
-causa     = "transitional::time::hardware_wait nao espera no experimental (o trabalho nao consome tempo logico)"
-evidencia = "docs/N2-PLANO.md 12.4; o estado por passo continua igual (sessoes acima)"
+# (2026-10-23) d11-download-musica saiu da lista: no experimental a espera do DMA do download da musica agora anda o
+# instante logico (transitional::time::hardware_wait, docs/N2-PLANO.md 14.1), como no estavel.

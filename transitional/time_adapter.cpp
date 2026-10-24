@@ -367,6 +367,11 @@ public:
                           ull(s.visits), ull(e.criBlocks), ull(s.eventDuring), ull(s.effectRam), ull(s.effectOther),
                           ull(s.dirtyPages));
             out += b;
+            if (e.hwWaits) {
+                std::snprintf(b, sizeof b, "[n2b2] esperas do hardware (DMA): %llu, %llu avancos, %.2f campos\n", ull(e.hwWaits),
+                              ull(e.hwWaitSteps), double(e.hwWaitTicks) / double(kCompatTicksPerField));
+                out += b;
+            }
             for (const auto& [pc, n] : e.byWait) {
                 const WaitDecl* d = findWait(pc);
                 std::snprintf(b, sizeof b, "[n2b2] avancos na espera %08X: %llu (%s)\n", pc, ull(n), d ? d->what : "sem declaracao");
@@ -377,6 +382,42 @@ public:
     }
 
     Stats stats;
+
+    bool experimental() const { return exp_; }
+
+    // N2 (11.1 no experimental, 2026-10-23): o SH-4 parado enquanto o hardware trabalha (o DMA do download da musica).
+    // Nao e trabalho da CPU (D11 vale para o trabalho): e tempo de hardware, entao o instante logico anda `ticks`, de
+    // evento em evento (VBlank, render, Maple, GD-ROM), com a entrega no caminho, como a espera do tempo estavel faz com
+    // os ciclos. Antes o experimental devolvia na hora e os dois lotes do driver de som de uma troca de musica caiam no
+    // mesmo tick (sem o fade de entrada do original). So um longjmp (c->redirect) encerra a espera.
+    void timed_wait(Sh4Context* c, uint64_t ticks) {
+        const uint64_t end = clock_->now().ticks + ticks;
+        c->pc              = c->pr;
+        uint32_t stuck     = 0;
+        while (clock_->now().ticks < end && !c->redirect) {
+            const uint64_t now    = clock_->now().ticks;
+            uint64_t       target = end;
+            if (const auto n = display_.next_due()) target = std::min(target, n->ticks);
+            if (const auto n = disc_.next_due()) target = std::min(target, n->ticks);
+            if (target > now) {
+                clock_->advance_to(nt::Instant{target});
+                ++exp_stats_.advances, ++exp_stats_.hwWaitSteps;
+                exp_stats_.ticks += target - now, exp_stats_.hwWaitTicks += target - now;
+            }
+            ++c->polls;
+            sh4_service(c);  // entrega o que venceu (o tratador roda aninhado; a troca de thread suspende esta fibra)
+            // termino garantido: atendimentos seguidos sem o relogio andar tem limite, mesmo que as filas mudem (eventos
+            // distintos no mesmo instante sao poucos; kMaxDueNow fica muito acima). Revisoes Codex 2026-10-23 e -24.
+            if (target > now) stuck = 0;
+            else if (++stuck > kMaxDueNow) {
+                char b[200];
+                std::snprintf(b, sizeof b, "tempo experimental: evento vencido em %llu nao e entregue durante a espera do "
+                                           "hardware (retorno %08X)", ull(target), c->pr);
+                throw std::runtime_error(b);
+            }
+        }
+        ++exp_stats_.hwWaits;
+    }
 
 private:
     static unsigned long long ull(uint64_t v) { return static_cast<unsigned long long>(v); }
@@ -629,6 +670,7 @@ private:
     uint64_t                           dueNowRun_ = 0;
     struct ExpStats {
         uint64_t advances = 0, spgLine = 0, dueNow = 0, ticks = 0, maxStep = 0, criWork = 0, criBlocks = 0;
+        uint64_t hwWaits = 0, hwWaitSteps = 0, hwWaitTicks = 0;  // timed_wait (DMA da musica)
         std::map<uint32_t, uint64_t> byWait;  // avancos do tempo por ponto de espera
     } exp_stats_;
 };
@@ -719,7 +761,10 @@ void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx) {
 std::string progress_summary() { return g_native ? g_native->progress_summary() : g_lastProgress; }
 
 bool hardware_wait(Sh4Context* c, uint64_t ticks) {
-    if (g_native && std::strcmp(g_native->name(), "experimental") == 0) return false;  // D11: o trabalho nao consome tempo
+    if (g_native && g_native->experimental()) {  // o instante logico anda o tempo do hardware (nao e trabalho, D11)
+        g_native->timed_wait(c, ticks);
+        return true;
+    }
     // como o laco de espera gerado: o tempo anda ate o proximo atendimento e os eventos vencidos (VBlank, render,
     // Maple, GD-ROM) sao entregues no caminho, com as interrupcoes (o retorno da chamada e o ponto de retomada). A
     // interrupcao e uma chamada aninhada (sh4_intc.cpp, take: o rte do tratador volta ao SPC) e a troca de thread

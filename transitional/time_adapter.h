@@ -92,8 +92,9 @@ void set_step_observer(void (*fn)(uint64_t step, void* ctx), void* ctx);
 
 // N2 (docs/N2-PLANO.md 11.1): o SH-4 parado dentro de uma chamada substituida enquanto o hardware trabalha (o DMA do
 // download da musica para a RAM de som, medido no Flycast). Anda `ticks` (base de compatibilidade, um por ciclo a
-// 200 MHz) atendendo os eventos no caminho, como o laco de espera gerado. No tempo experimental nao espera (D11: o
-// trabalho nao consome tempo logico) e devolve false.
+// 200 MHz) atendendo os eventos no caminho, como o laco de espera gerado. No tempo experimental o instante logico anda o
+// mesmo tempo, de evento em evento, com a entrega no caminho (e tempo de hardware, nao trabalho: D11 nao se aplica).
+// Devolve true (esperou; no estavel e no legado pelos ciclos, no experimental pelo instante logico).
 bool hardware_wait(Sh4Context* c, uint64_t ticks);
 
 } // namespace bs::transitional::time
