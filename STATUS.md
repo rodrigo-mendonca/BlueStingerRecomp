@@ -2655,11 +2655,33 @@ e D14), `docs/RECOMPILER-UI.md` ("Futuro") e `CLAUDE.md` (regras permanentes). D
 - subetapas N9.0–N9.11 com requisitos, critérios de aceitação, prioridades (E/R/O) e decisões abertas (12);
 - começa depois do N8; a ordem N0–N10 não muda; ferramentas e APIs de mods continuam no N10.
 
+### N8: preparação técnica completa (2026-10-24; somente documentação)
+
+O N8 continua **não iniciado (0%)**. `docs/N8-PLANO.md` foi confrontado com os alvos CMake, includes e o mapa Release:
+o produto ainda liga o runtime híbrido completo, enquanto CDI, Builder/Recompiler, Flycast e ferramentas são
+dependências de construção/validação e não devem ser confundidos com legado obrigatório de runtime.
+
+- inventário L1–L22 registra caminho/símbolo, consumidor, substituto, evidência, destino, risco e teste;
+- N2c foi incorporado como N8.1, a primeira subetapa técnica; N8.0 apenas congela referências;
+- sequência N8.0–N8.8 separa tempo, alvos, boot/arquivos, Maple, filmes, AICA, render e fechamento em cortes reversíveis;
+- software permanece como fallback de produto, mas deve virar backend da IR antes da retirada de PVR/TA/VRAM;
+- a pendência AMD impede eliminar o fallback; fog por tabela/modifier volumes impedem retirar a referência gráfica;
+- N7 em 95% não bloqueia N8.0–N8.6: as referências continuam intactas; fog/volumes bloqueiam N8.7 e AMD mantém o N7
+  aberto sem transformar recuperação em correção;
+- decisões antes da implementação: limite N8 × elevação N10, fonte da IR, forma do alvo validation e campanha como
+  portão de fechamento. Nenhum código, comportamento, dist ou etapa N8/N9/N10 foi iniciado.
+
+Revisão Codex `codex-20261024-180744`: dois achados médios aceitos. O portão N7→N8 passou a ser por subetapa e N2c
+passou a enumerar o núcleo temporal; DMAC/SQ e os módulos de PVR, Maple e GD-ROM ficam para seus cortes posteriores.
+Segunda revisão `codex-20261024-180905`: três achados médios aceitos; separou `sh4_intc` de Holly, tirou DMAC da
+remoção física do N8.1, alinhou a segunda definição do N2c e deixou D-N8-2 como portão somente do N8.7.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
 viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
-1. terminar tecnicamente o N7 — **funcional, 95%; AMD e fidelidade de fog/volumes abertas**;
+1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
+   fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
 3. N8 — não iniciado; aguarda autorização explícita (N2c será a primeira subetapa técnica);
 4. N9;
@@ -2677,7 +2699,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | não iniciada; aguarda autorização explícita | 0 |
+| N8 Sem legado | planejamento técnico concluído em 2026-10-24; **não iniciada**, aguarda decisões e autorização explícita; N2c abre a implementação | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

@@ -206,9 +206,10 @@ migração versionada.
   Builder.
 - Só depois que a N7a cobriu os caminhos dinâmicos.
 
-**N2c. Fim da simulação de tempo**
-- Depois de N3, N5, N6 e N7b, com prova de que não resta consumidor: remover `BS_POLL`, a
-  INTC, a contagem de ciclos e os periféricos do SH-4.
+**N2c. Fim da simulação de tempo — primeira subetapa técnica do N8**
+- Depois de N3, N5, N6, da migração funcional do N7 e do fechamento do N2: remover `BS_POLL`, ciclos, `sh4_intc`, TMU,
+  CCN e portas. DMAC/SQ e Holly/PVR, Maple e GD-ROM deixam de usar ciclos nessa etapa, mas seus transportes permanecem
+  até os cortes específicos do N8. O N2c foi transferido para N8.1; não foi implementado no fechamento funcional do N2.
 
 **N8. Executável sem legado**
 - Critério operacional (seção 7), verificado por mapa do linker, imports, strings e
@@ -315,8 +316,8 @@ Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: 
 4. **N7**: renderização nativa em **Vulkan** (decisão de 2026-10-19; antes Direct3D 11, que nunca teve
    código): N7a, IR de comandos; N7b, provedores Ninja/Kamui. Requisitos e contrato em
    `docs/DECISAO-VULKAN-LINUX.md`, seção 2.
-5. **Retorno ao N2**: encerrar as pendências do N2b e implementar o N2c.
-6. **N8**: remoção dos componentes de emulação.
+5. **Retorno ao N2**: encerrar as pendências funcionais do N2b e promover o tempo lógico — concluído em 2026-10-24.
+6. **N8**: N2c como primeira subetapa técnica, seguido da remoção dos componentes de emulação do produto.
 7. **N9**: remasterização (decisão de 2026-10-22; planejamento em `docs/N9-PLANO.md`, 2026-10-23).
 8. **N10**: gameplay C++ editável e sistema de mods (o antigo N9).
 
@@ -324,9 +325,10 @@ Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: 
 - **N2b**: fechar os critérios pendentes, inclusive U5–U8 (`docs/N2b-PROPOSTA.md`). Avaliar a
   promoção do `--tempo experimental` e provar a equivalência nas rotas necessárias. A promoção não
   é automática: depende dessa prova e da avaliação das dependências restantes.
-- **N2c**: o escopo já definido acima (remover `BS_POLL`, a INTC, a contagem de ciclos e os
-  periféricos do SH-4), substituindo por mecanismos nativos as dependências temporais restantes
-  (interrupções, VBlank, DMA, escalonamento).
+- **N2c**: remover `BS_POLL`, ciclos, `sh4_intc`, TMU, CCN e portas, substituindo por mecanismos nativos a entrega de
+  eventos e o escalonamento. DMAC/SQ e Holly/PVR, Maple e GD-ROM apenas deixam de medir/agendar tempo nessa etapa; seus
+  transportes e sua retirada física pertencem aos cortes N8.3, N8.4 e N8.7. Por decisão posterior, o N2c abre
+  tecnicamente o N8 (`docs/N8-PLANO.md`, N8.1); não faz parte do percentual funcional já encerrado do N2.
 - Reavaliar a hipótese D7 e as perturbações só de tempo **com o cartão e o controle nativos**:
   - `test_tempo` A3, `test_n2b` B11/S4 e `test_n2b2` N3/N3b/N8b. Com o cartão, o ritmo do código de
     cartão do jogo depende do tempo.
@@ -347,8 +349,8 @@ Ordem de trabalho a partir do N4. As etapas mantêm a identificação original: 
 - testes de equivalência disponíveis;
 - alternativas nativas para vídeo, áudio, controles e eventos.
 
-**Antes do N8**, o N2 precisa satisfazer seus critérios de conclusão ou ter os bloqueios
-documentados explicitamente.
+**Antes do N8**, o N2 precisa satisfazer seus critérios funcionais. Isso foi cumprido em 2026-10-24; U1–U8 foram
+aprovados e o tempo experimental virou padrão da janela. O N2c permanece deliberadamente em N8.1.
 
 **Pontos de atrito com o que já estava documentado** (os critérios de aceitação não mudam):
 - **N2b-2 antes de N5/N6.** A Opção C da `docs/N2b-PROPOSTA.md` (D11) previa áudio e vídeo nativos

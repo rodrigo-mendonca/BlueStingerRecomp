@@ -729,6 +729,25 @@ roadmap e nada é implementado antes da etapa autorizada.
 - sem mods, os recursos originais (convertidos pelo Builder a partir do CDI do usuário) são a
   referência de fidelidade.
 
+### N8 (planejado): corte da simulação do produto
+
+Planejamento técnico concluído em 2026-10-24; **N8 não iniciado** e depende de autorização explícita. O inventário,
+os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`. O N2c é a primeira subetapa técnica: troca ciclos,
+`BS_POLL`, `sh4_intc`, TMU, CCN e portas por entrega nativa de eventos antes de qualquer outro corte. DMAC/SQ e os
+módulos de Holly/PVR, Maple e GD-ROM deixam de medir/agendar tempo nessa etapa, mas seu transporte só sai nos cortes
+específicos posteriores.
+
+O produto e o alvo de validação terão limites diferentes: o produto deixa de ligar hardware Dreamcast e providers
+legados; o alvo de validação preserva simulação, sondas e comparadores enquanto forem necessários. Builder, Recompiler,
+Flycast externo, leitura de CDI e ferramentas não são runtime legado do jogo e permanecem. O fallback software também
+permanece, mas precisa consumir a mesma IR nativa do Vulkan antes da retirada de TA/VRAM/PVR.
+
+Dois pontos condicionam a implementação: (1) harmonizar o critério literal “sem `Sh4Context`/RAM guest” com a elevação
+reservada ao N10; (2) escolher a fonte nativa da IR. A pendência AMD exige preservar o fallback software; a falta de
+paridade de fog por tabela/modifier volumes exige preservar captura, raster legado e Flycast até haver evidência.
+Essas pendências não bloqueiam N8.0–N8.6; fog/volumes bloqueiam N8.7 e a AMD mantém N7 em 95% sem autorizar retirar o
+fallback.
+
 ### N9 (planejado): um projeto, duas edições
 
 Planejamento aprovado em 2026-10-23; **não iniciado** (começa depois do N8). Detalhes, critérios e decisões abertas em
