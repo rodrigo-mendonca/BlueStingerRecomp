@@ -53,4 +53,8 @@ struct Stats {
 };
 Stats stats();
 
+// Quantas vezes o jogo comecou a ler um arquivo de sala (R*.BIN, leitura do inicio do arquivo): um sinal de troca de
+// cenario para quem precisa dele fora do jogo (a camera livre, 2026-10-23). So o provedor nativo conta.
+uint64_t room_loads();
+
 } // namespace bs::transitional::gdfs

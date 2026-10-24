@@ -2,6 +2,7 @@
 
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
+#include "gdfs_adapter.h"
 #include "mods/mod_api.h"
 #include "time_adapter.h"
 
@@ -112,7 +113,7 @@ struct ScriptLine {
 struct MoveLatch {  // movimentacao relativa: o toque atual do analogico esquerdo
     bool     held = false, engaged = false;
     int32_t  bias = 0, lastView = 0;  // soma dos saltos da vista nos cortes (o rumo continua) e a ultima vista
-    uint64_t cuts = 0;
+    uint64_t cuts = 0, rooms = 0;
 };
 
 struct State {
@@ -126,6 +127,7 @@ struct State {
     int32_t                 moveRef = 0;     // kMoveRef na ultima montagem
     Vec3                    delta;           // posicao orbitada - posicao do jogo
     uint64_t                vb = 0, lastBuild = 0;
+    uint64_t                roomLoads = 0;   // gdfs::room_loads() na ultima montagem
     bool                    haveLast = false, scene = false;
     Vec3                    lastPos;
     int32_t                 lastYaw = 0;
@@ -164,7 +166,16 @@ void fPitch(Sh4Context* c) {
     s.scene     = sh4_read16(c, kScene) != 0;
     s.moveRef   = int32_t(sh4_read16(c, kMoveRef));
     s.lastBuild = s.vb;
-    if (s.haveLast) {
+    // troca de cenario (o jogo comecou a ler um R*.BIN desde a ultima montagem): sempre um corte, mesmo quando a camera
+    // nova fica perto da antiga ou a montagem anterior era de cena. A vista recomeca na camera do jogo da area nova e o
+    // movimento acompanha a vista nova sem soltar o analogico (relative_input). Antes (ate 2026-10-23) a vista podia
+    // continuar ancorada no angulo do cenario anterior e o desvio do corte mantinha o rumo antigo: segurando "frente" pela
+    // porta, o Eliot andava de lado na area nova ate o analogico ser solto.
+    const uint64_t rooms = gdfs::room_loads();
+    if (rooms != s.roomLoads) {
+        s.roomLoads = rooms;
+        ++s.stats.cuts, ++s.stats.rooms, s.rig.reset();
+    } else if (s.haveLast) {
         const float   d  = std::hypot(pos.x - s.lastPos.x, pos.y - s.lastPos.y, pos.z - s.lastPos.z);
         const int32_t dy = int16_t(uint16_t(uint32_t(yaw - s.lastYaw) & 0xFFFF));
         // a vista fica ancorada no mundo quando a camera do jogo gira sozinha (a de perseguicao vai para tras do Eliot,
@@ -197,9 +208,10 @@ void fPitch(Sh4Context* c) {
         }
     }
     if (s.log)
-        std::fprintf(s.log, "%llu\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\n",
+        std::fprintf(s.log, "%llu\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d\t%llu\n",
                      static_cast<unsigned long long>(s.vb), pos.x, pos.y, pos.z, int(yaw), int(pitch), player.x, player.y, player.z,
-                     int(s.scene), int(s.dyaw), int(s.dpitch), s.delta.x, s.delta.y, s.delta.z, int(s.moveRef));
+                     int(s.scene), int(s.dyaw), int(s.dpitch), s.delta.x, s.delta.y, s.delta.z, int(s.moveRef),
+                     static_cast<unsigned long long>(s.roomLoads));
     s.pending = true;
     c->r[5] = uint32_t(pitch + s.dpitch);
     s.prev[Pitch](c);
@@ -288,7 +300,7 @@ void configure(BoundaryRegistry& registry, Options o) {
         if (!g->o.log.empty()) {
             g->log = std::fopen(g->o.log.c_str(), "w");
             if (!g->log) throw std::runtime_error("BS_CAMERA_LOG: nao abre " + g->o.log);
-            std::fprintf(g->log, "vblank\tx\ty\tz\tyaw\tpitch\tpx\tpy\tpz\tcena\tdyaw\tdpitch\tdx\tdy\tdz\tref\n");
+            std::fprintf(g->log, "vblank\tx\ty\tz\tyaw\tpitch\tpx\tpy\tpz\tcena\tdyaw\tdpitch\tdx\tdy\tdz\tref\tsalas\n");
         }
     }
     set_settings(registry, g->o.cfg);
@@ -301,6 +313,7 @@ void set_settings(BoundaryRegistry& registry, const st::CameraSettings& cfg) {
     g->pending = false;
     g->move    = {};
     g->haveLast = false;  // a montagem seguinte e a nova linha de base
+    g->roomLoads = gdfs::room_loads();  // as salas ja carregadas nao sao troca
     if (g->o.cfg.mode == st::CameraMode::Original) {
         if (g_installed) {
             for (const Site& site : kSites) registry.select(site.addr, Provider::Legacy);
@@ -383,9 +396,12 @@ ni::ControllerState relative_input(const ni::ControllerState& in) {
         return in;
     }
     const int32_t view = s.lastYaw + s.dyaw;  // o yaw da vista na ultima montagem (unidades do SDK)
-    if (!m.held) m.held = true, m.lastView = view, m.cuts = s.stats.cuts;
+    if (!m.held) m.held = true, m.lastView = view, m.cuts = s.stats.cuts, m.rooms = s.stats.rooms;
     if (s.stats.cuts != m.cuts) {
-        if (m.engaged) m.bias += m.lastView - view;
+        // corte dentro da area: o rumo continua (o desvio guarda o salto da vista); troca de cenario: o rumo recomeca na
+        // vista nova (o desvio de cortes antigos nao vale na area nova)
+        if (s.stats.rooms != m.rooms) m.bias = 0, m.rooms = s.stats.rooms;
+        else if (m.engaged) m.bias += m.lastView - view;
         m.cuts = s.stats.cuts;
     }
     if (s.dyaw != 0) m.engaged = true;
@@ -418,11 +434,11 @@ std::string summary() {
     const Stats& s = g->stats;
     char         b[320];
     std::snprintf(b, sizeof b,
-                  "[camera] modo %s: montagens %llu, com deslocamento %llu, suspensas %llu, cortes %llu, outras chamadas %llu; "
+                  "[camera] modo %s: montagens %llu, com deslocamento %llu, suspensas %llu, cortes %llu (trocas de cenario %llu), outras chamadas %llu; "
                   "movimento %s: amostras giradas %llu\n",
                   st::camera_mode_name(g->o.cfg.mode), static_cast<unsigned long long>(s.builds),
                   static_cast<unsigned long long>(s.applied), static_cast<unsigned long long>(s.suspended),
-                  static_cast<unsigned long long>(s.cuts), static_cast<unsigned long long>(s.foreign),
+                  static_cast<unsigned long long>(s.cuts), static_cast<unsigned long long>(s.rooms), static_cast<unsigned long long>(s.foreign),
                   st::move_mode_name(g->o.cfg.movement), static_cast<unsigned long long>(s.moved));
     return b;
 }

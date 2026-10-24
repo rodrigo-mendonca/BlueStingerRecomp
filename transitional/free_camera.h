@@ -104,6 +104,7 @@ native::input::ControllerState relative_input(const native::input::ControllerSta
 
 struct Stats {
     uint64_t builds = 0, applied = 0, suspended = 0, cuts = 0, foreign = 0;  // foreign: chamadas de outros pontos
+    uint64_t rooms = 0;  // cortes por troca de cenario (gdfs::room_loads)
     uint64_t moved = 0;  // amostras do jogo com o analogico girado (movimentacao relativa)
 };
 Stats       stats();

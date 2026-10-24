@@ -33,6 +33,7 @@ struct Gdfs {
     int32_t        status = kIdle, err = 0;
     uint32_t       mode = 0;
     uint32_t       cbRead[2] = {0, 0}, cb2[2] = {0, 0}, cbErr[2] = {0, 0};
+    bool           room = false;  // R*.BIN: arquivo de sala
 };
 
 struct State {
@@ -41,6 +42,7 @@ struct State {
     HandleTable<Gdfs> table{15};  // gen <= 15: o handle cabe em 24 bits sob a etiqueta 0x7E
     std::string       dir;        // diretorio corrente (nome logico, "" = raiz)
     Stats             stats;
+    uint64_t          roomLoads = 0;  // room_loads()
     // Pedido assincrono pendente (um por vez, como o drive do legado): publicado como ocupado
     // em gdFsReqRd32 e concluido na proxima execucao do servidor gdFs (revisao Codex 2026-10-15).
     uint32_t pendingToken = 0, pendingNsct = 0, pendingBuf = 0;
@@ -112,6 +114,7 @@ int32_t doRead(Sh4Context* c, Gdfs& g, uint32_t nsct, uint32_t buf) {
         for (uint64_t k = 0; k < r.value(); k += kSector)
             file_log_chunk("nativo", g.logical, off + k, reinterpret_cast<const uint8_t*>(tmp.data()) + k,
                            size_t(std::min<uint64_t>(kSector, r.value() - k)));
+    if (g.room && off == 0 && r.value() > 0) ++s.roomLoads;  // o jogo comecou a carregar uma sala (com dados lidos)
     g.pos += int32_t(nsct);
     g.trans  = nsct * kSector;
     g.status = kComplete;
@@ -160,6 +163,11 @@ void fOpen(Sh4Context* c) {
     Gdfs g;
     g.file      = h.value();
     g.logical   = nf::canonical_path(logical);
+    {
+        const size_t      slash = g.logical.find_last_of("/\\");
+        const std::string base  = slash == std::string::npos ? g.logical : g.logical.substr(slash + 1);
+        g.room = base.size() > 4 && base[0] == 'R' && base.compare(base.size() - 4, 4, ".BIN") == 0;
+    }
     g.sizeBytes = s.fs->size(g.file).value();
     if (g.sizeBytes > 0xFFFFFFFFull) {  // o GDFS do jogo guarda o tamanho em 32 bits
         std::fprintf(stderr, "[arquivos] %s: tamanho alem do limite do jogo (4 GB - 1)\n", logical.c_str());
@@ -432,5 +440,6 @@ void check_sizes(const nf::DataFileSystem& fs) {
 }
 
 Stats stats() { return st().stats; }
+uint64_t room_loads() { return st().roomLoads; }
 
 } // namespace bs::transitional::gdfs
