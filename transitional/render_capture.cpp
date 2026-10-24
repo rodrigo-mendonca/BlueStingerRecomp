@@ -196,6 +196,14 @@ public:
         st.draws += frame.cl.draws.size(), st.vertices += frame.cl.vertices.size(), st.sprites += frame.sprites;
         st.modifier_params += frame.modifier_params, st.modifier_volumes += frame.modifier_volumes;
         st.skipped_params += frame.skipped_params;
+        for (const nr::Draw& d : frame.cl.draws) {
+            const size_t fog = size_t(d.state.fog);
+            if (fog < st.fog_draws.size()) {
+                ++st.fog_draws[fog];
+                if (!st.fog_first_render[fog]) st.fog_first_render[fog] = st.renders;
+            }
+        }
+        if (!frame.cl.modifiers.empty() && !st.modifier_first_render) st.modifier_first_render = st.renders;
         if (mode != Mode::Check || (st.renders - 1) % every) return;
         ++st.checked;
         auto fail = [&](uint64_t& counter, const std::string& what) {
@@ -894,13 +902,14 @@ const Stats& stats() {
 std::string summary() {
     if (!g_cap) return {};
     const Stats& s = g_cap->st;
-    char         b[1024];
+    char         b[1400];
     std::snprintf(b, sizeof b,
                   "[render-ir] renders %llu (conferidos %llu): desenhos %llu, vertices %llu, triangulos %llu, sprites %llu; "
                   "IR invalida %llu, triangulos divergentes %llu, imagens divergentes %llu; texturas conferidas %llu "
                   "(divergentes %llu, sem conversao nativa %llu; chaves distintas %llu, conteudos distintos %llu); quadros "
                   "divergentes %llu; volumes modificadores %llu (%llu triangulos, sem fechamento %llu), parametros "
-                  "omitidos %llu%s%s\n",
+                  "omitidos %llu; fog desenhos tabela/vertice/nenhum/tabela2 %llu/%llu/%llu/%llu (primeiro render "
+                  "%llu/%llu/%llu/%llu), primeiro volume render %llu%s%s\n",
                   (unsigned long long)s.renders, (unsigned long long)s.checked, (unsigned long long)s.draws,
                   (unsigned long long)s.vertices, (unsigned long long)s.triangles, (unsigned long long)s.sprites,
                   (unsigned long long)s.invalid, (unsigned long long)s.triangle_mismatch, (unsigned long long)s.image_mismatch,
@@ -909,6 +918,11 @@ std::string summary() {
                   (unsigned long long)s.distinct_texture_ids, (unsigned long long)s.frame_mismatch,
                   (unsigned long long)s.modifier_volumes, (unsigned long long)s.modifier_params,
                   (unsigned long long)s.modifier_unclosed, (unsigned long long)s.skipped_params,
+                  (unsigned long long)s.fog_draws[0], (unsigned long long)s.fog_draws[1],
+                  (unsigned long long)s.fog_draws[2], (unsigned long long)s.fog_draws[3],
+                  (unsigned long long)s.fog_first_render[0], (unsigned long long)s.fog_first_render[1],
+                  (unsigned long long)s.fog_first_render[2], (unsigned long long)s.fog_first_render[3],
+                  (unsigned long long)s.modifier_first_render,
                   s.first_error.empty() ? "" : "; primeira: ", s.first_error.c_str());
     std::string out = b;
     if (!s.vk_device.empty() || !s.vk_error.empty()) {

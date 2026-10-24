@@ -82,6 +82,10 @@ struct Stats {
     uint64_t invalid = 0, triangle_mismatch = 0, image_mismatch = 0;  // tem de ficar em 0
     uint64_t textures_checked = 0, texture_mismatch = 0, textures_without_native = 0;
     uint64_t modifier_params = 0, modifier_volumes = 0, modifier_unclosed = 0, skipped_params = 0;
+    // Cobertura de fidelidade: quantos desenhos realmente pediram cada modo de fog e em qual render apareceram
+    // primeiro; o primeiro render com volumes permite extrair uma cena real para o oraculo do Flycast.
+    std::array<uint64_t, 4> fog_draws{}, fog_first_render{};
+    uint64_t modifier_first_render = 0;
     uint64_t frame_mismatch = 0;  // FrameParams que nao reproduzem os registradores usados (tem de ficar em 0)
     // N7b (Vulkan)
     std::string vk_device, vk_error;
