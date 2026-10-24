@@ -31,7 +31,11 @@ param(
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$VBlanks = 8000,
     [int]$LimiteSegundos = 2400,
-    [string]$Saida = (Join-Path $env:TEMP "bs-efeito-teste")
+    [string]$Saida = (Join-Path $env:TEMP "bs-efeito-teste"),
+    # U7 (retorno ao N2, 2026-10-23): outra rota (ex.: roteiros\passo_heliporto.txt, troca de sala e combate) e os
+    # provedores atuais ("--video legado", com cartao e controle nativos). O padrao e o estabelecido no N2b.
+    [string]$Roteiro = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"),
+    [string]$Provedores = "--saves legado --controles legado --video legado"
 )
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $ExeMods)) { Write-Host "SKIP: sem o build de investigacao BS_WRITE_WATCH ($ExeMods)"; exit 0 }
@@ -66,7 +70,7 @@ $casos = [ordered]@{
 $procs = @{}
 foreach ($tag in $casos.Keys) {
     $k = $casos[$tag]; $p = Join-Path $Saida $tag
-    $all = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt")
+    $all = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $Roteiro
               BS_EVENT_TRACE = "${p}_ev.tsv"; BS_FILE_LOG = "${p}_fl.tsv"; BS_CLOCK_LOG = "${p}_cl.tsv"
               BS_STATE_LOG = "${p}_sl.tsv"; BS_CRI_MEDIDORES = "${p}_med.tsv"; BS_CRI_FLUXO_LOG = "${p}_fx.tsv"
               BS_CRI_CESSAO_LOG = "${p}_cessao.tsv" }
@@ -75,7 +79,7 @@ foreach ($tag in $casos.Keys) {
     foreach ($e in $all.Keys) { Set-Item "env:$e" $all[$e] }
     try {
         $procs[$tag] = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --saves legado --controles legado --video legado --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
+            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) $Provedores --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
         $null = $procs[$tag].Handle
     } finally { foreach ($e in $all.Keys) { Set-Item "env:$e" "" } }
 }

@@ -72,12 +72,16 @@ def main():
     ap.add_argument("--tempo", default="experimental", choices=["nativo", "experimental"])
     ap.add_argument("--data", default=os.path.join(REPO, "dist", "BlueStinger-Preview", "data"))
     ap.add_argument("--mutacao", default="", help="negativo: BS_RAM_MUTACAO=<vblank>:<endereco> (um byte invertido); tem de falhar")
+    ap.add_argument("--arg", action="append", default=[], dest="args_extras",
+                    help="um argumento a mais do jogo por ocorrencia (ex.: --arg=--arquivos --arg=legado; D9(a)/U6)")
     ap.add_argument("sessoes", nargs="*")
     a = ap.parse_args()
     if not a.exe and not a.reavaliar:
         ap.error("--exe e obrigatorio (salvo com --reavaliar)")
-    if a.reavaliar and a.mutacao:
-        ap.error("--mutacao exige rodar o jogo (nao combina com --reavaliar)")
+    if a.exe:
+        a.exe = os.path.abspath(a.exe)  # o jogo roda com a pasta do executavel como corrente
+    if a.reavaliar and (a.mutacao or a.args_extras):
+        ap.error("--mutacao e --arg exigem rodar o jogo (nao combinam com --reavaliar)")
     if a.negativo_sem_loads and a.tempo != "experimental":
         ap.error("--negativo-sem-loads so vale no --tempo experimental")
     regras = regras_ativas() if a.tempo == "experimental" else {}
@@ -129,8 +133,9 @@ def main():
             if a.mutacao:
                 env["BS_RAM_MUTACAO"] = a.mutacao
             # o experimental termina antes (cargas sem VBlanks); a folga cobre o estavel com a espera do download da musica
-            cmd = [a.exe, "--data", a.data, "--saves-pasta", os.path.join(r, "saves"), "--tempo", a.tempo] + \
-                s["args"].split() + ["--headless", str(vb + 600)]
+            # o modo pedido vale sobre o da sessao (sessoes novas gravam --tempo; o ultimo argumento vence)
+            cmd = [a.exe, "--data", a.data, "--saves-pasta", os.path.join(r, "saves")] + s["args"].split() + \
+                a.args_extras + ["--tempo", a.tempo, "--headless", str(vb + 600)]
             with open(os.path.join(r, "jogo.txt"), "w", encoding="utf-8") as f:
                 rc = subprocess.call(cmd, stdout=f, stderr=subprocess.STDOUT, env=env, cwd=os.path.dirname(a.exe))
             with open(os.path.join(r, "rc.txt"), "w", encoding="utf-8") as f:

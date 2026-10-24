@@ -73,6 +73,10 @@ const char* kTitle = "Blue Stinger (recompilado)";
 // 20.5 e 20.6; H1-H9 aprovados, o H9 com o Vulkan padrao desde 2026-10-23). O legado continua como fallback ate
 // o N8: --audio legado ou BS_AUDIO=legado; --audio-efeitos/-falas/-musica valem sobre os dois.
 constexpr bool kAudioNativeDefault = true;
+// N2 (2026-10-24): o tempo experimental (logico, N2b-2) e o padrao da JANELA, onde o jogador joga; o --headless (baterias,
+// referencias, reproducao das gravacoes antigas) continua no estavel, como o render (Vulkan na janela, software no
+// headless). --tempo vale sobre os dois; --tempo nativo e o recuo. docs/N2-PLANO.md 14.
+constexpr bool kTimeExperimentalWindowDefault = true;
 // N7 (fechamento, docs/N7-PLANO.md secao 25): o renderizador padrao da janela e o VULKAN, com recuo seguro para o
 // software (sem dispositivo na partida: o menu fica no software; perda do dispositivo no jogo: ate 3 recriacoes e
 // depois o software ate o fim da sessao). O --headless (diagnostico e baterias) continua no software, a referencia.
@@ -88,7 +92,8 @@ struct Args {
     bool     version    = false;
     bool     verifyData = false;
     bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
-    bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado (N2a)
+    bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado|experimental (N2a/N2b-2)
+    bool                 timeSet = false;  // --tempo dado (senao: experimental na janela, estavel no headless)
     bs::ControlsProvider controls = bs::ControlsProvider::Native;  // --controles nativo|legado (N3; legado = fallback)
     bs::SavesProvider saves = bs::SavesProvider::Native;  // --saves nativo|legado (N4; legado = fallback)
     fs::path savesDir;          // --saves-pasta <dir>
@@ -146,6 +151,7 @@ bool parseArgs(Args& a) {
             else return false;
         }
         else if (s == L"--tempo" && (v = next())) {
+            a.timeSet = true;
             if (*v == L"nativo") a.time = bs::TimeProviderKind::Native;
             else if (*v == L"legado") a.time = bs::TimeProviderKind::Legacy;
             else if (*v == L"experimental") a.time = bs::TimeProviderKind::Experimental;  // N2b-2
@@ -235,6 +241,7 @@ bool parseArgs(Args& a) {
     }
     a.renderExplicit = a.render >= 0 || (std::getenv("BS_RENDER") && *std::getenv("BS_RENDER"));
     if (a.render < 0) a.render = vk ? 1 : 0;
+    if (!a.timeSet) a.time = kTimeExperimentalWindowDefault && !a.headless ? bs::TimeProviderKind::Experimental : bs::TimeProviderKind::Native;
     if (!a.effectsSet) a.audioEffects = native ? bs::AudioEffectsProvider::Native : bs::AudioEffectsProvider::Legacy;
     if (!a.voicesSet) a.audioVoices = native ? bs::AudioVoicesProvider::Native : bs::AudioVoicesProvider::Legacy;
     if (!a.musicSet) a.audioMusic = native ? bs::AudioMusicProvider::Native : bs::AudioMusicProvider::Legacy;
@@ -1395,8 +1402,9 @@ const char* kUsage =
     "     bluestinger [--data <pasta>] --verify-data\n"
     "     bluestinger --version\n"
     "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
-    "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao: nativo;\n"
-    "       experimental = N2b-2, tempo logico sem ciclos estimados, em validacao)\n"
+    "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao na janela: experimental =\n"
+    "       tempo logico sem ciclos estimados, N2b-2; padrao no --headless: nativo = o estavel, por ciclos, e o\n"
+    "       recuo; legado so para comparacao ate o N8)\n"
     "     --controles nativo|legado: provedor dos controles (padrao: nativo = o SDK de controles alimentado\n"
     "       direto, sem controle no Maple; legado = pelo Maple emulado, fallback temporario)\n"
     "     --saves nativo|legado: saves (padrao: nativo = arquivos em Documentos\\DC-Recomp\\Blue Stinger\\saves;\n"

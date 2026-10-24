@@ -40,7 +40,14 @@ import zlib
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RAIZ = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "BlueStingerRecomp", "gravacoes")
 RELOGIO = "1700000000"  # BS_RELOGIO_FIXO de todos os roteiros
-ARGS_PADRAO = "--audio nativo"  # os tres provedores nativos (efeitos tambem: os sons do menu); nao muda a partida
+ARGS_PADRAO = "--audio nativo --tempo experimental"  # os tres provedores nativos (efeitos tambem: os sons do menu); o
+# tempo explicito: a janela usa o experimental por padrao (2026-10-24) e a reproducao headless usaria o estavel
+
+
+def com_tempo(args):
+    """Os argumentos de uma sessao com o modo de tempo explicito. Sessao sem --tempo e anterior a 2026-10-24, gravada
+    no tempo estavel (o padrao de entao): a reproducao usa --tempo nativo, como na gravacao."""
+    return args if "--tempo" in args.split() else (args + " --tempo nativo").strip()
 # LOAD do slot 1 pelo titulo (N4): o jogo volta ao ponto do save no passo ~2131 e o jogador assume ali
 LOAD_SLOT1 = os.path.join(REPO, "tools", "dist", "roteiros", "passo_load_slot1.txt")
 LOAD_SLOT1_ATE = 2131
@@ -199,6 +206,7 @@ def gravar(nome, save=None, saves_de=None, de=None, ate=None, extra=None, log=pr
             origem = {"tipo": "save", "arquivo": os.path.abspath(save), "sha256": hashlib.sha256(f.read()).hexdigest()}
     else:
         os.makedirs(ini)
+    args_jogo = com_tempo(args_jogo)
     origem["cartao"] = hashes(ini)
     shutil.copytree(ini, os.path.join(d, "saves"))
     s = {"criada": time.strftime("%Y-%m-%d %H:%M:%S"), "exe": c["exe"], "data": c["data"], "args": args_jogo,
@@ -251,7 +259,7 @@ def reproduzir(nome, janela=False, log=print):
         problemas.append("estado gravado sem continuidade ate o passo %d" % fim)
     env = {"BS_INPUT_SCRIPT": os.path.join(d, "entrada.txt"), "BS_STATE_PASSO": os.path.join(r, "estado.tsv"),
            "BS_STATE_PASSO_CADA": "1"}
-    args = ["--saves-pasta", os.path.join(r, "saves")] + s["args"].split()
+    args = ["--saves-pasta", os.path.join(r, "saves")] + com_tempo(s["args"]).split()
     if not janela:
         # o mesmo VBlank em que a gravacao parou (o jogo para depois do gancho desse VBlank nos dois modos); sem rodape, o
         # VBlank do ultimo passo gravado
