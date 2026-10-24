@@ -1,10 +1,13 @@
 # D6 (docs/N2-PLANO.md): build incremental confiavel. Um objeto sem dependencias de
 # cabecalho registradas nao e recompilado quando um .h muda (no N1, main_sdl.cpp.obj velho
 # deu estouro de pilha so no build local). Tres partes:
-#   1. a arvore de build do projeto: nenhum objeto do projeto (fora do SDL3 e de .asm) pode
-#      estar sem dependencias no registro do ninja;
-#   2. um projeto minimo: depois de mudar o cabecalho, o ninja tem de recompilar o objeto;
-#   3. caso negativo: o mesmo projeto com o prefixo /showIncludes trocado tem de ser detectado.
+#   1. a arvore de build do projeto: nenhum objeto C/C++ do projeto (fora do SDL3 e de .asm) pode
+#      estar sem dependencias no registro do ninja; recursos .rc nao usam o compilador C/C++ e o
+#      projeto rastreia o icone no configure_file que gera o .rc (app/CMakeLists.txt);
+#   2. um projeto minimo: o caminho textual do /showIncludes e observado (pode nao funcionar em
+#      terminais localizados, razao para o caminho JSON) e o caminho JSON tem de recompilar depois
+#      de mudar o cabecalho;
+#   3. caso negativo: o projeto com o prefixo /showIncludes trocado tem de ficar sem dependencias.
 # Uso: cmake -DNINJA=<ninja> -DBIN=<build> -DCXX=<compilador> -DWORK=<pasta> -P check_build_incremental.cmake
 foreach(v NINJA BIN CXX WORK)
   if(NOT ${v})
@@ -35,7 +38,7 @@ endfunction()
 objects_without_deps("${BIN}" missing)
 set(bad "")
 foreach(o ${missing})
-  if(NOT o MATCHES "^_deps/" AND NOT o MATCHES "\\.asm\\.obj$")
+  if(NOT o MATCHES "^_deps/" AND NOT o MATCHES "\\.asm\\.obj$" AND NOT o MATCHES "\\.rc\\.res$")
     list(APPEND bad "${o}")
   endif()
 endforeach()
@@ -103,9 +106,13 @@ function(mini name mode out_rebuilds out_deps)
 endfunction()
 
 mini(ok msvc rebuilds missingOk)
-if(NOT rebuilds OR NOT missingOk EQUAL 0)
-  message(FATAL_ERROR "build incremental nao recompila depois de mudar um cabecalho (objetos sem dependencias: "
-                      "${missingOk}). O prefixo /showIncludes nao confere com a saida do compilador neste terminal.")
+if(missingOk EQUAL 0)
+  if(NOT rebuilds)
+    message(FATAL_ERROR "o caminho /showIncludes registrou dependencias, mas nao recompila depois de mudar um cabecalho")
+  endif()
+else()
+  message(STATUS "controle /showIncludes textual indisponivel neste terminal (${missingOk} objetos sem dependencias); "
+                 "o caminho JSON obrigatorio e verificado abaixo")
 endif()
 mini(negativo quebrado rebuildsNeg missingNeg)
 if(rebuildsNeg OR missingNeg EQUAL 0)
