@@ -10,11 +10,11 @@ sempre provadas contra o jogo original rodando no emulador Flycast. Não usa BIO
 
 ## Status (2026-10-24)
 
-**Progresso geral: ~73 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
+**Progresso geral: ~72 %** do roteiro do port nativo (N0–N10, onze etapas de peso igual; uma etapa parcial conta pela
 fração concluída; em 2026-10-22 o roteiro ganhou a N9, Remasterização, e os mods passaram para a N10). O jogo roda no Windows a partir do disco do usuário, com arquivos, controles (teclado e controle
 Xbox), saves, filmes e **áudio nativos por padrão** (efeitos, falas, música Manatee e o DSP da AICA), e legendas em inglês
 em português do Brasil por padrão, com inglês como alternativa (pacotes gerados localmente a partir do disco do usuário e instalados pelo Builder; transcrição, tradução e revisão por IA, provisórias; o texto não vai para o repositório). O desenho
-é feito pelo **Vulkan por padrão** (N7 concluído funcionalmente), com recuo automático para o renderizador em software.
+é feito pelo **Vulkan por padrão** (N7 funcional, em fechamento técnico), com recuo automático para o renderizador em software.
 
 | Etapa | O que é | Situação | % |
 |---|---|---|---|
@@ -26,7 +26,7 @@ em português do Brasil por padrão, com inglês como alternativa (pacotes gerad
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |
 | N6 | Áudio nativo (efeitos, falas, música Manatee, DSP da AICA) | concluída (2026-10-23): nativo é o padrão (`--audio legado` é o fallback até o N8); validação contra o original (Flycast) e gravações reais de gameplay; H1–H9 aprovados, o H9 (tempo real sem faltas de dados) com o Vulkan padrão | 100 |
-| N7 | Renderização Vulkan | **concluída funcionalmente** (2026-10-24): **o Vulkan é o renderizador padrão**, com recuo automático para o software (sem GPU compatível, ou se o dispositivo falhar no jogo); desenha o jogo **bit a bit igual** ao renderizador de referência, 3× mais rápido; **resolução interna de 720p a 4K**; **efeitos de imagem** (correção de cor, tonemapping, nitidez, bloom, CRT, shaders de mod); **menu de configurações dentro do jogo** (Esc ou Back do controle); **legendas** no gameplay e nos filmes (português do Brasil por padrão, ou inglês); **câmera livre no analógico direito** com o analógico esquerdo andando para onde a vista olha; camadas de validação do Vulkan sem mensagens. Limitações documentadas: perda intermitente da AMD integrada só no modo de diagnóstico, com recuperação e fallback; fog e volumes modificadores ainda sem comparação com o Flycast; cobertura render a render concentrada na rota de combate. SSAO, 16:9 real e MSAA permanecem no N9 | 100 |
+| N7 | Renderização Vulkan | **funcional, em fechamento técnico**: **o Vulkan é o renderizador padrão**, com recuo automático para o software (sem GPU compatível, ou se o dispositivo falhar no jogo); desenha o jogo **bit a bit igual** ao renderizador de referência, 3× mais rápido; **resolução interna de 720p a 4K**; **efeitos de imagem** (correção de cor, tonemapping, nitidez, bloom, CRT, shaders de mod); **menu de configurações dentro do jogo** (Esc ou Back do controle); **legendas** no gameplay e nos filmes; **câmera livre no analógico direito**. Bloqueios: causa do `VK_ERROR_DEVICE_LOST` intermitente na AMD integrada ainda não eliminada; fog e volumes modificadores ainda sem prova contra o Flycast; cobertura render a render concentrada na rota de combate. O fallback é mitigação, não correção. SSAO, 16:9 real e MSAA permanecem no N9 | 95 |
 | N8 | Remoção da camada legada (simulação do console) | não iniciada | 0 |
 | N9 | Remasterização: duas edições instaláveis do mesmo núcleo, **Original** (fiel ao Dreamcast) e **Remastered** (câmera Livre obrigatória, menus e saves de PC, legendas ligadas, widescreen, iluminação, água, texturas HD, filmes e áudio remasterizáveis, acessibilidade); instalador gráfico. Planejamento em `docs/N9-PLANO.md` | não iniciada (planejada) | 0 |
 | N10 | Sistema de mods (ferramentas, manifestos, pacotes de idioma, texturas, áudio, vídeo e shaders) e elevação dos sistemas do jogo para C++ editável; revisão final e distribuição | não iniciada (a arquitetura de extensão vem sendo preparada nas etapas anteriores) | 0 |

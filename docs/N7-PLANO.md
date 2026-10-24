@@ -1533,7 +1533,7 @@ registrados para o início do N9: projeção do SDK (`njSetScreen` ou equivalent
 profundidade guardada depois do render pass (SSAO); projeção e HUD (16:9); alvo multiamostrado e resolve (MSAA).
 Nada disso foi antecipado.
 
-### 25.3 Limitações que ficam abertas
+### 25.3 Pendências técnicas bloqueantes
 
 - **GPU AMD integrada:** perda intermitente do dispositivo (`VK_ERROR_DEVICE_LOST`) no modo `comparar`, sem causa
   identificada; a hipótese de driver **não** está comprovada. Com o Vulkan padrão, a recuperação (recriação e depois o
@@ -1541,10 +1541,10 @@ Nada disso foi antecipado.
 - Fog e volumes modificadores contra o Flycast (antes do N8, que remove o software de referência).
 - Rotas além da de combate render a render.
 
-Esses itens não são tratados como implementados nem escondidos. Eles não bloqueiam o encerramento **funcional** do
-N7: a AMD tem recuperação e recuo; as rotas adicionais ampliam a cobertura já aprovada; fog e volumes são uma lacuna
-de fidelidade herdada também pelo rasterizador em software, não uma regressão introduzida pelo Vulkan. A comparação
-com o Flycast e o tratamento de fog/volumes continuam como condição de entrada antes de remover a referência no N8.
+Esses itens não são tratados como implementados nem escondidos. A recuperação e o recuo da AMD protegem o jogador,
+mas são mitigação, não eliminação da causa. Fog e volumes são uma lacuna herdada também pelo rasterizador em software,
+mas pertencem à fidelidade obrigatória do N7. Enquanto a causa AMD e a prova/correção de fog e volumes não estiverem
+fechadas com hardware e oráculo suficientes, o N7 permanece em **95%**.
 
 ### 25.4 Próximo passo
 
@@ -1552,16 +1552,13 @@ O passo definido no fechamento de 2026-10-23 — retomar o **N2** para temporiza
 concluído em 2026-10-24 (`docs/N2-PLANO.md`, seção 14). O próximo marco é o N8, que não foi iniciado e aguarda
 autorização explícita do mantenedor.
 
-### 25.5 Encerramento funcional objetivo (2026-10-24)
+### 25.5 Correção do status (2026-10-24)
 
-Com o N2 concluído e sem defeito funcional novo comprovado no N7, o marco passa de 95% condicional para **100%
-funcional**. Foram reutilizadas as provas de nível 2 já aprovadas: equivalência bit a bit Vulkan × software, rota de
-combate completa, apresentação direta, 720p–4K, Validation Layers sem mensagens, perda de dispositivo injetada,
-fallback, menu, pausa, legendas, câmera, pós-processamento e executáveis distribuídos. Nenhum teste longo foi repetido,
-nenhuma mudança funcional foi feita e a `dist` não precisa ser remontada.
-
-Permanecem explicitamente fora desta porcentagem funcional as limitações da seção 25.3 e as melhorias transferidas
-para o N9 na seção 25.2. N8, N9 e N10 continuam não iniciados e dependem de autorização explícita do mantenedor.
+O registro anterior de 100% confundia disponibilidade funcional, protegida por fallback, com conclusão técnica. As
+provas de nível 2 já aprovadas permanecem válidas — equivalência bit a bit Vulkan × software, rota de combate,
+apresentação direta, 720p–4K, Validation Layers, falhas injetadas, fallback, menu, pausa, legendas, câmera e
+pós-processamento —, mas não eliminam os bloqueios da seção 25.3. O N7 volta a **95%: funcional, porém não totalmente
+concluído**. N8, N9 e N10 continuam não iniciados e dependem de autorização explícita do mantenedor.
 
 ### 23.4 Câmera livre em ambientes fechados (2026-10-23, correção de jogabilidade)
 
