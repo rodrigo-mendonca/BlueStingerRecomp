@@ -428,14 +428,14 @@ Ver a seção 12 (medição sequencial).
 
 | # | Critério | Situação |
 |---|---|---|
-| U1 | Inventário: toda espera temporal executada nas rotas de cobertura classificada; as reais com evento definido | **Parcial.** Na rota coberta: os 833 laços executados, todos testados pela volta sem progresso (6 esperas, 4 delas não declaradas) e cruzados sem corte de tamanho nem de frequência, com os dados brutos e a proveniência em `analysis/n2b/` (`docs/N2b-ESPERAS.md`). Lacunas: esperas que mudam estado a cada volta (contador de timeout) entre os 765 laços com escrita ou chamada, esperas de 0 voltas fora do varredor estático, laços fechados por desvio indireto, e outras rotas (U7) |
-| U2 | Ociosidade da thread 3: efeito líquido com 0 violações, com e sem o TMU parado, inclusive com Sofdec/ADX | **Cumprido em uma rota**, com as lacunas do detector da 9.2 |
-| U3 | Supressão de passadas sem efeito sob o modelo atual = legado, controle igual, negativo detectado (`test_efeito.ps1`) | **Cumprido em uma rota**. O bloqueio real é o portão do N2b-2 experimental |
-| U4 | D7: TMU parado + supressão = legado, exceto as cessões marcadas causalmente; consumidores do TMU validados (B11) | **Cumprido em uma rota**. "Todos os consumidores relevantes" depende do U7 |
-| U5 | Predicado de produto com custo dentro do B9 (≤ 1,05×) e o detector como oráculo | **Pendente.** Seção 12: só há uma extrapolação linear, sem medida do mecanismo real |
-| U6 | D9(a): conclusão de controles e GD-ROM validada separadamente no legado e no nativo | **Pendente** |
-| U7 | Cobertura: ao menos uma rota reproduzível com troca de sala e uma com save/load, com U1–U4 repetidos | **Parcial (2026-10-23).** As rotas existem: duas sessões gravadas do mantenedor (troca de sala, combate, save e LOAD) e as rotas do `test_assistido`; o estado por passo do experimental é igual ao do estável fora da exceção `d11-carga-cartao` (`docs/N2-PLANO.md` 13.3). Falta repetir U1–U4 (inventário e detector) nelas |
-| U8 | D11: cada trecho da 9.3 provado seguro ou tratado explicitamente | **Pendente** (exige o N2b-2 experimental) |
+| U1 | Inventário: toda espera temporal executada nas rotas de cobertura classificada; as reais com evento definido | **Cumprido nas rotas de cobertura (2026-10-24).** Inventário original auditável e, nas rotas ampliadas, nenhuma espera temporal não declarada chegou à guarda de vivacidade; as limitações estruturais do varredor continuam documentadas e não são tratadas como prova da campanha inteira |
+| U2 | Ociosidade da thread 3: efeito líquido com 0 violações, com e sem o TMU parado, inclusive com Sofdec/ADX | **Cumprido em duas rotas.** Na rota ampliada: 5,7 milhões de passadas sem evento e 0 violações, com e sem TMU parado |
+| U3 | Supressão de passadas sem efeito sob o modelo atual = legado, controle igual, negativo detectado (`test_efeito.ps1`) | **Cumprido em duas rotas.** `pular6` = referência nos artefatos funcionais; `repetir6` igual; negativo `pular6r` detectado |
+| U4 | D7: TMU parado + supressão = legado, exceto as cessões marcadas causalmente; consumidores do TMU validados (B11) | **Cumprido na substância.** Artefatos funcionais iguais; resta diferença de TN numa troca de thread do Sofdec legado, fora do caminho do produto desde o N5 |
+| U5 | Predicado de produto com custo dentro do B9 (≤ 1,05×) e o detector como oráculo | **Cumprido.** 4,1 ms/campo no experimental contra 6,8 ms no estável; o oráculo mediu 26 065 passadas elegíveis e 0 violações |
+| U6 | D9(a): conclusão de controles e GD-ROM validada separadamente no legado e no nativo | **Cumprido.** Arquivos e controles legados na sessão real deram o mesmo estado por passo e os mesmos saves dos provedores nativos |
+| U7 | Cobertura: ao menos uma rota reproduzível com troca de sala e uma com save/load, com U1–U4 repetidos | **Cumprido.** U1–U4 repetidos na rota com troca de sala e combate; SAVE/LOAD cobertos pelas duas sessões gravadas |
+| U8 | D11: cada trecho da 9.3 provado seguro ou tratado explicitamente | **Cumprido.** Trechos cobertos pelas baterias, sessões e lista fechada; a espera do download da música deixou de ser exceção |
 | U9 | Revisão independente do Codex | Seção 11 |
 
 ## 11. Revisões do Codex desta investigação

@@ -525,8 +525,7 @@ Revisões do Codex (inline):
 
 ### 13.4 Avaliação da promoção do tempo experimental
 
-**Recomendação: não promover ainda.** O `--tempo nativo` (estável) continua padrão; o experimental continua
-selecionável.
+**Recomendação (2026-10-23): não promover ainda.** Superada em 14.3 (2026-10-24), depois de resolver os bloqueios abaixo.
 
 A favor:
 
@@ -546,3 +545,72 @@ Bloqueios (cada um com o critério de saída):
 A exceção `d11-carga-cartao` (1 passo por LOAD) não bloqueia por si: o jogo volta ao estado do estável no passo
 seguinte e os saves são iguais. Mas ela muda o passo em que o efeito de um LOAD aparece. Por isso, roteiros e gravações
 por passo têm de ser reproduzidos no mesmo modo de tempo em que foram gravados.
+
+## 14. Conclusão funcional do N2b e promoção do tempo experimental (2026-10-24)
+
+Pedido do mantenedor: concluir o N2 funcionalmente (U5, U6, U8, completar U7), separar defeitos funcionais de
+otimizações e preservar o estável até a prova. Os três bloqueios de 13.4 foram resolvidos assim.
+
+### 14.1 Defeito funcional corrigido: a espera do DMA no tempo experimental
+
+No experimental, `transitional::time::hardware_wait` devolvia na hora (o download da música para a RAM de som não
+consumia tempo lógico): os dois lotes do driver numa troca de música caíam no mesmo tick (sem o fade de entrada do
+original) e as cargas de música concentravam trabalho num campo. Uma espera de DMA não é trabalho da CPU (D11 vale
+para o trabalho), é tempo de hardware: agora `NativeTime::timed_wait` anda o instante lógico até o fim do DMA, de
+evento em evento (VBlank, render, Maple, GD-ROM), entregando no caminho como a espera do estável faz com os ciclos;
+`c->redirect` encerra; atendimentos seguidos sem o relógio andar têm limite (erro, nunca laço). A exceção
+`d11-download-musica` saiu de `config/n2_excecoes.toml`.
+
+| Prova | Resultado |
+|---|---|
+| Sessão do mantenedor (`sessao-20261021-145006`) no experimental | 10 downloads esperados, 443,7 ms (igual ao estável); estado por passo igual ao estável fora de 1 passo por LOAD; saves iguais |
+| As duas sessões com o executável final (`n2_sessoes.py`) | aprovadas (1 passo por LOAD, saves iguais) |
+| **H9 na janela, experimental**, 3 execuções de 150 s | **0 faltas nas 3** (antes: 1 falta); 4,06–4,10 ms por campo; pior campo 40–43 ms (antes ~62 ms) |
+
+### 14.2 Critérios U (`docs/N2b-PROPOSTA.md` 10)
+
+| # | Situação | Evidência |
+|---|---|---|
+| U1 | **cumprido** nas rotas de cobertura | inventário na rota do N2b; nas rotas novas (sessões com troca de sala, combate, SAVE e LOAD; `passo_heliporto`, `passo_combate`, `passo_load_opcoes`) o experimental nunca disparou a guarda de vivacidade: uma espera temporal não declarada vira erro com o PC (N8 do `test_n2b2`) |
+| U2 | **cumprido** em duas rotas | `test_efeito -Roteiro passo_heliporto` (17 000 VBlanks, troca de sala e combate): 5,7 M passadas sem evento, **0 violações**, com e sem o TMU parado |
+| U3 | **cumprido** em duas rotas | na rota nova com os provedores do N2b (cartão, controle e vídeo legados): `pular6` = referência em TN, IRQF, leituras, estado, áudio e quadro; controle `repetir6` igual; negativo `pular6r` detectado |
+| U4 | **cumprido na substância** | TMU parado + bloqueio: IRQF, leituras, estado, áudio e quadro iguais; o TN difere numa troca de thread no início do filme Sofdec legado (campo ~2116, a thread 3 decodificando): o caminho do filme legado, que o produto não usa (filme nativo desde o N5). No experimental, que já para o TMU no passo, o estado por passo das sessões é igual ao estável |
+| U5 | **cumprido** | custo: o experimental com o predicado de produto leva 4,1 ms por campo contra 6,8 ms do estável (≤ 1,05× com folga); oráculo: build de investigação no experimental, `passo_heliporto`, o predicado bloqueou a thread 3 **26 081** vezes e o detector conferiu 26 065 passadas elegíveis com **0 violações** (nenhuma passada bloqueada seguida de trabalho sem evento) |
+| U6 | **cumprido** | D9(a) no experimental, sessão do mantenedor: `--arquivos legado` e `--controles legado` (17 171 leituras pelo Maple) dão o mesmo estado por passo e os mesmos saves que o nativo |
+| U7 | **cumprido** | U1–U4 repetidos na rota com troca de sala e combate (acima); save/LOAD pelas sessões |
+| U8 | **cumprido** | cada trecho da 9.3: boot (exceção `d11-boot-quadro-intermediario`), menus e cargas depois do filme e da área (estado por passo, leituras e áudio iguais: `test_n2b2`, `test_assistido`, sessões), início dos filmes legados (`d11-copias-guarda-stream`), menu de itens (`d11-menu-itens`), LOAD do cartão (`d11-carga-cartao`); o download da música deixou de ser exceção (14.1) |
+
+Com cartão e controle nativos (os padrões), E3/E4/E6 diferem só no TN/IRQF sob perturbação de tempo: o controle
+nativo muda a ordem das interrupções do Maple (com o controle legado o E4 fica igual) e o código de cartão do jogo
+depende do tempo (com o cartão legado o E3 fica igual). Estado, leituras, áudio e quadro iguais em todos os casos.
+Achado já registrado no fechamento do N4; não é defeito do tempo.
+
+### 14.3 Promoção (decisão técnica de 2026-10-24)
+
+- **Janela: `--tempo experimental` é o padrão** (`kTimeExperimentalWindowDefault`, `app/main_sdl.cpp`).
+- **`--headless` continua no estável**: as baterias, as referências e as gravações antigas não mudam; mesmo modelo do
+  render (Vulkan na janela, software no headless).
+- `--tempo nativo` (estável) é o recuo; `--tempo` dado vale sobre os dois.
+- Gravações (`tools/dev/gravacoes.py`): as novas guardam `--tempo` explícito; uma sessão sem `--tempo` é anterior a
+  esta data, gravada no estável, e reproduz com `--tempo nativo`. `n2_sessoes.py` põe o modo pedido depois dos
+  argumentos da sessão.
+- Revisões do Codex: `codex-20261023-225959` (espera do DMA: guarda aceita e refeita; concorrência rejeitada com
+  evidência: o tempo inteiro roda na thread do jogo, as threads do guest são fibras) e `codex-20261024-000240`
+  (guarda com término garantido e `--arg` repetível: aceitos).
+
+### 14.4 O que falta no N2
+
+- **O N2 está funcionalmente concluído.** N2c (remover `BS_POLL`, a INTC, a contagem de ciclos e os periféricos do
+  SH-4) é a primeira subetapa técnica do N8, planejada em `docs/N8-PLANO.md` (D-N8-3). Antes da retirada, o
+  experimental passa também ao headless e as referências independentes são regravadas; isso não mantém o N2 aberto.
+- A lista fechada ainda admite um estado intermediário diferente por um passo logo depois de cada LOAD do cartão
+  (`d11-carga-cartao`); no passo seguinte o estado converge e os saves são iguais. É diferença funcional conhecida e
+  delimitada, não escondida, a eliminar quando o cartão/Maple legado sair no N8.
+- U1 é prova das **rotas cobertas**, não da campanha inteira: o inventário estático continua com as limitações já
+  registradas para laços com escrita/chamada, zero voltas e desvio indireto. A guarda de vivacidade transforma uma
+  espera não declarada observada em erro; ampliar a campanha continua sendo trabalho de validação do N8.
+- A diferença de TN no início do Sofdec existe somente no provedor de vídeo legado; o produto usa vídeo nativo desde
+  o N5. Os provedores legados permanecem como oráculos até serem separados do produto no N8.
+- O fallback de render em software fica abaixo do tempo real nesta rota e picos de GPU em menus podem causar faltas
+  raras de áudio em 1440p/4K. Não houve defeito medido no gameplay Vulkan; otimizações de GPU e 4K ficam para depois
+  do N8 e o diagnóstico `BS_VK_LENTOS` permanece disponível.

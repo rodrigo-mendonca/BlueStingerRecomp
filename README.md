@@ -21,7 +21,7 @@ em português do Brasil por padrão, com inglês como alternativa (pacotes gerad
 | M0–M4 | Extrator, decodificador SH-4, gerador de C++, runtime e primeiro executável | concluídas | — |
 | N0 | Manifesto de hardware, fronteira jogo/SDK, interfaces nativas | concluída | 100 |
 | N1 | Sistema de arquivos nativo | concluída | 100 |
-| N2 | Tempo e eventos nativos | **em andamento** (retomado em 2026-10-23): o desempenho do gameplay foi medido; o que deixava o jogo abaixo do tempo real era o renderizador em software, e com o Vulkan padrão o gameplay leva ~7 ms por campo (tempo real: 16,7 ms). O tempo das cargas de som foi feito, e o tempo experimental foi conferido em sessões reais (estado por passo igual, fora de uma exceção documentada por LOAD do cartão). Faltam os critérios restantes e a promoção do experimental, ainda não recomendada | 60 |
+| N2 | Tempo e eventos nativos | **concluída funcionalmente** (2026-10-24): U1–U8 comprovados; tempo lógico experimental promovido a padrão na janela, com `--tempo nativo` como recuo e o headless estável para preservar referências e gravações antigas. N2c (retirada de ciclos/INTC/`BS_POLL`) abre o N8 | 100 |
 | N3 | Controles nativos (SDL3/XInput, remapeamento, perfis) | concluída | 100 |
 | N4 | Saves nativos (VMS/arquivos, importar/exportar) | concluída | 100 |
 | N5 | Filmes nativos (Media Foundation, legendas por mod) | concluída | 100 |

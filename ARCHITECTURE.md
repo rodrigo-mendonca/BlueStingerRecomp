@@ -594,9 +594,14 @@ Detalhes em `docs/N2-PLANO.md` e `docs/N2a-RELATORIO.md`.
 
 A entrega à CPU continua nos mesmos pontos: poll, acesso aos registradores e nível IRL.
 
-**Provedores** (`--tempo nativo|legado`):
+**Provedores** (`--tempo nativo|legado|experimental`):
 - legado: `runtime/cpu/time_legacy.cpp`, o cálculo preguiçoso de antes reunido num só arquivo;
-- nativo (padrão): `transitional/time_adapter`, com relógio e filas nativos.
+- nativo: `transitional/time_adapter`, com relógio e filas nativos, ainda movidos pelos ciclos de compatibilidade;
+- experimental: o mesmo adaptador com tempo lógico movido apenas em pontos de espera e esperas de hardware.
+
+Desde o fechamento funcional do N2 (2026-10-24), o experimental é o padrão **na janela** e `--tempo nativo` é o
+recuo. O headless continua no nativo estável para preservar as baterias, referências e gravações antigas até o N2c,
+na abertura do N8. Uma opção `--tempo` explícita sempre prevalece.
 
 Durante o N2a o progresso ainda vem dos ciclos estimados (`BS_CYCLES`/`BS_POLL`), que entram
 só como instante de compatibilidade: um tick por ciclo. Isso sai no N2b.
@@ -667,8 +672,9 @@ thread e o PC.
 
 ### Port nativo, N2b-2 experimental: tempo lógico sem ciclos (2026-10-17)
 
-Detalhes em `docs/N2b2-RELATORIO.md`. Atrás de opção: `--tempo experimental`. O padrão continua
-`--tempo nativo`, inalterado byte a byte.
+Detalhes em `docs/N2b2-RELATORIO.md` e `docs/N2-PLANO.md` seção 14. Nasceu atrás da opção
+`--tempo experimental` e foi promovido a padrão da janela em 2026-10-24, depois de U1–U8 e do H9; o headless e o
+recuo explícito continuam em `--tempo nativo`.
 
 **Tempo:** o provedor nativo, com `experimental`, tem um instante lógico próprio. Os ciclos
 estimados não o movem. Ele só anda quando o contexto corrente chega a um ponto de espera declarado

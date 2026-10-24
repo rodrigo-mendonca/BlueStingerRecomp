@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 concluído e aprovado (commit `e267149`). N1 (arquivos) concluído e aprovado (2026-10-15, commit único autorizado): ver "N1: sistema de arquivos nativo" e `docs/N1-RELATORIO.md`. N2 (tempo e eventos): plano aprovado como diretriz; **N2a concluído e aprovado** (2026-10-15, commit único autorizado): ver "N2a" e `docs/N2a-RELATORIO.md`. N2b: N2b-0/1 commitados (`18a5cc2`), investigação dos bloqueios (`246e6b3`), **N2b-2 experimental** (`--tempo experimental`, padrão inalterado) commitado em `8bfa94e`: ver "N2b-2 experimental" e `docs/N2b2-RELATORIO.md`. Cobertura de gameplay além da área 1 (gameplay assistido, roteiros por passo de jogo) sem commit: ver "Gameplay assistido" e `docs/N2b2-GAMEPLAY.md`. N3 (controles nativos, padrão) concluído (`b1c76ec`). **N4 (saves nativos, padrão) concluído** (2026-10-19), com a pendência formal do SAVE num save point real: ver "N4: regressão de fechamento e encerramento". **N5 (vídeos nativos, padrão) concluído** (2026-10-20) por testes dirigidos; a regressão integral foi ADIADA POR DECISÃO DO PROJETO: ver "N5: fechamento por testes dirigidos". **N6 (áudio nativo, padrão) concluído com promoção condicional** (2026-10-21, `f84f092`, integrado ao master em `326594c`): F e G concluídas, H1–H8 aprovados, **H9 (tempo real sem faltas de dados) pendente do desempenho do N2** (345 faltas na última medição); legendas en-US por padrão; ver "N6-H: áudio nativo promovido a padrão" e `docs/N6-PLANO.md` seção 20. N7 (Vulkan): **N7a concluído** (2026-10-21, captura do TA na IR de render provada idêntica ao software em gameplay; contratos das texturas HD): ver "N7a: captura do TA na IR de render" e `docs/N7-PLANO.md` seção 13. **N7b validado** (2026-10-22, backend Vulkan bit a bit igual ao software em gameplay; uma pendência de estabilidade na GPU AMD integrada, só no modo `comparar`): ver "N7b: backend Vulkan". Software segue padrão. **N7c em andamento**: legendas das falas na imagem do gameplay (aprovado com gravação real) e **menu interno de configurações funcional** (Esc/Back, jogo pausado entre VBlanks; gráficos, áudio, legendas, controles; persistência com confirmação de tela); ver "N7c: menu interno" e "N7c: legendas no gameplay". **Resolução interna até 4K com a apresentação direta pelo Vulkan (caminho B)** validada (modo original idêntico; a imagem maior não passa pela CPU; ver "N7c: apresentação direta pelo Vulkan, caminho B"). **Pós-processamento com shaders de mod validados** (correção de cor interna e o exemplo externo pelo menu; ver "N7c: pós-processamento e shaders de mod"). Próximo: tonemapping, nitidez, bloom e o segundo analógico/câmera livre. **Roadmap N0–N10 (2026-10-22):** N9 = Remasterização, N10 = mods (antigo N9); ver "Roadmap N0–N10". N2 retoma depois do N7. |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. N7 concluído com promoção condicional do Vulkan e limitações registradas. Próximo: regressão integral de entrada e N8. Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2561,6 +2561,28 @@ Detalhes e tabelas: `docs/N2-PLANO.md` seção 13.
   - `codex-20261023-184000` não vale como revisão: a cópia do repositório recusou o git (dono do diretório), o Codex
     não recebeu o diff e não emitiu achados. Por isso a revisão foi refeita com o material no prompt.
 
+### N2: conclusão funcional e promoção do tempo experimental (2026-10-24)
+
+Detalhes, critérios U1–U8 e limitações: `docs/N2-PLANO.md` seção 14.
+
+- **Defeito funcional corrigido:** a espera do DMA da música agora anda o instante lógico no experimental, entrega
+  VBlank/render/Maple/GD-ROM no caminho e tem guarda de término. Com isso, os lotes do driver preservam a ordem e a
+  carga não fica concentrada num campo. A exceção `d11-download-musica` foi removida.
+- **Padrão do produto:** janela em tempo experimental; `--tempo nativo` é o recuo. Headless continua no estável para
+  não invalidar baterias, referências e gravações antigas. `--tempo` explícito prevalece.
+- **Gravações:** novas sessões guardam o modo explicitamente; sessões antigas sem `--tempo` reproduzem em
+  `--tempo nativo`. O comparador sempre põe o modo pedido por último. As duas sessões do mantenedor passam nos dois
+  modos; no experimental, somente um passo intermediário depois de LOAD difere, pela regra fechada, e os saves são
+  iguais.
+- **U1–U8:** aprovados nas rotas cobertas. A rota ampliada inclui troca de sala, combate, SAVE e LOAD; o detector teve
+  0 violações, negativos foram detectados e arquivos/controles legados deram o mesmo estado e saves dos nativos.
+- **H9 experimental:** 3 execuções de 150 s na janela, 0 faltas de áudio; 4,06–4,10 ms por campo; pior campo 40–43 ms.
+- **Validação de fechamento:** unitários 306/306; sessões antigas em estável e experimental; evidências aprovadas de
+  `test_assistido` 28/28, `test_tempo` 34/35 com a única referência histórica explicada, U2–U5 e H9 reutilizadas.
+- **Limites não escondidos:** diferença isolada de um passo pós-LOAD; inventário U1 limitado às rotas cobertas;
+  diferença de TN só no Sofdec legado; fallback em software abaixo do tempo real; picos raros de GPU em menus a
+  1440p/4K. N2c e a ampliação para a campanha inteira entram no N8; otimizações opcionais ficam depois dele.
+
 ### N7c: câmera livre em ambientes fechados (2026-10-23)
 
 Detalhes, método e tabelas: `docs/N7-PLANO.md` 23.4.
@@ -2630,8 +2652,8 @@ e D14), `docs/RECOMPILER-UI.md` ("Futuro") e `CLAUDE.md` (regras permanentes). D
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
 viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. terminar o N7 (N7c) — **feito em 2026-10-23** (promoção condicional);
-2. retorno ao N2 — **em andamento desde 2026-10-23**;
-3. N8;
+2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
+3. N8 — próximo (N2c como primeira subetapa técnica);
 4. N9;
 5. N10.
 
@@ -2641,7 +2663,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 |---|---|---|
 | N0 Fundação | concluída | 100 |
 | N1 Arquivos | concluída | 100 |
-| N2 Tempo e eventos | **em andamento** (retomado em 2026-10-23): 11.2 resolvido com o Vulkan padrão, 11.1 feito (espera do DMA), A5 corrigido, áudio a 4K investigado (sem sincronização assíncrona), cobertura do experimental com sessões reais e lista fechada; falta U5, U6, U8, completar U7, a promoção do experimental (não recomendada ainda) e o N2c | 60 |
+| N2 Tempo e eventos | **concluída funcionalmente** (2026-10-24): U1–U8 comprovados; experimental padrão na janela, estável no headless e em gravações antigas; `--tempo nativo` é o recuo. N2c abre o N8 | 100 |
 | N3 Controles | concluída | 100 |
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
@@ -2651,7 +2673,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~69 % (onze etapas de peso igual).
+Progresso geral: ~73 % (onze etapas de peso igual).
 
 ### N7c: câmera livre e segundo analógico (2026-10-22; worktree n7-vulkan)
 
