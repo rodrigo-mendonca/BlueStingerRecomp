@@ -86,8 +86,8 @@ Ponto de partida: a tabela de nomes do player de falas (`0x8C157754`, N6 seção
 4. **Prévia** (`previa.py`): MP4 de tela preta com o áudio da cópia PCM e a legenda como faixa, mais o SRT ao lado,
    para revisar no VLC/mpv (fora do jogo e fora do Git).
 
-**Limite conhecido:** uma linha com confiança alta ainda pode estar errada. Exemplo: no NEWGAME, "What's up, Belliot?"
-(confiança 0,81, provavelmente "Hey, Eliot") não foi marcada. Por isso **nenhuma linha automática conta como revisada**.
+**Limite conhecido:** uma linha com confiança alta ainda pode estar errada. Exemplo: no NEWGAME, uma linha com o nome do
+protagonista transcrito errado (confiança 0,81) não foi marcada. Por isso **nenhuma linha automática conta como revisada**.
 
 ## 4. Formatos (os contratos do jogo, `native/localization`)
 

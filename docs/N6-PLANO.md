@@ -1130,8 +1130,8 @@ combate (sala RCG02/RCG03). Nas rotas `passo_heliporto`/`passo_combate`/`passo_s
 `e000env`) tocam **antes** da M2A (que começa no passo 7 337) e nenhuma outra música toca (só a M2A é carregada e tocada;
 GAME OVER e menus mudam só o volume da porta). `passo_cgate` não toca música.
 
-**A primeira cena com fala depois do início da M2A** é a do Dogs no fim do primeiro combate (`e003`: "That was close.
-Thanks for helping me... Dogs", pelas transcrições). Para chegar lá é preciso **vencer o primeiro monstro**:
+**A primeira cena com fala depois do início da M2A** é a do Dogs no fim do primeiro combate (`e003`, pelas
+transcrições). Para chegar lá é preciso **vencer o primeiro monstro**:
 - as rotas gravadas não chegam (a comentário "game over no passo 12 186" é de uma linha do tempo antiga: hoje a rota fica
   presa no menu de itens, porque o Small Hassy ainda não foi pego; o estado do jogo é o mesmo em todas as combinações de
   áudio, então **não** é efeito do áudio nativo);

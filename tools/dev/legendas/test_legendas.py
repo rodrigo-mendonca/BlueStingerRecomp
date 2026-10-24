@@ -54,8 +54,8 @@ class Decodificador(unittest.TestCase):
 class Regras(unittest.TestCase):
     def test_glossario_so_palavra_inteira(self):
         gl = gerar_mod.glossario()
-        t, trocas = gerar_mod.aplicar_glossario("This is Elliot Balad, EASER Troop.", gl)
-        self.assertEqual(t, "This is Eliot Ballade, ESER Troop.")
+        t, trocas = gerar_mod.aplicar_glossario("Elliot Balad and the EASER team.", gl)  # texto proprio do teste
+        self.assertEqual(t, "Eliot Ballade and the ESER team.")
         self.assertEqual(len(trocas), 2)
         t, _ = gerar_mod.aplicar_glossario("Elliotson and TEASER", gl)
         self.assertEqual(t, "Elliotson and TEASER")  # dentro de outra palavra: nao troca

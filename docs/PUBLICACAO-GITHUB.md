@@ -1,61 +1,60 @@
-# Publicação no GitHub: verificação e pendências
+# Publicação no GitHub: verificação e limpeza do histórico
 
-Situação em 2026-10-23. `master` está **33 commits à frente** de `origin/master` (aef3c0e); a verificação abaixo foi feita
-sobre os 25 primeiros e os 8 seguintes (Vulkan padrão, N2, câmera, legendas) só acrescentam código, ferramentas e
-documentação, sem dados do jogo (as legendas continuam fora do Git). Nenhum push foi feito; o
-push depende da autorização do mantenedor.
+## Publicação de 2026-10-23 (autorizada pelo mantenedor)
 
-## O que foi verificado nos commits locais
+`origin/master` estava em `aef3c0e`; o `master` local tinha **47 commits** depois dele, sem divergência (nada no remoto
+que não estivesse no local). A limpeza reescreveu **só esses 47 commits**: `aef3c0e` e o que já estava publicado não
+mudam, então o push é um avanço normal (sem force-push).
 
-| Verificação | Resultado |
+### Backup (antes de qualquer reescrita)
+
+`%LOCALAPPDATA%\BlueStingerRecomp\backups\publicacao-20261023\`: `repo-completo.bundle` (`git bundle --all`, conferido
+com `git bundle verify`), a lista dos refs, das worktrees e do stash, e cópias dos arquivos particulares
+(`known_versions.h`, `docs/DISTRIBUICAO-COMPILADOR.md`, `mods-padrao/`, `icone-local/`, com os hashes conferidos). O
+histórico anterior fica também no ramo **local** `backup/master-antes-publicacao` (`302cfa9`), que não é publicado.
+
+### O que foi encontrado nos 47 commits
+
+Varredura de todas as linhas adicionadas em cada commit contra as frases dos pacotes de legenda locais (en e pt-BR), mais
+caminhos proibidos (imagem do jogo, BIOS, saves, `game-data/`, `generated/`, `analysis/`, `reviews/`, pacotes de
+legenda, ícone da capa), segredos (tokens, chaves) e arquivos grandes:
+
+| Commit | Achado |
 |---|---|
-| Imagem do jogo, BIOS, `game-data/`, `generated/`, `analysis/`, `reviews/`, saves, capturas | nenhum arquivo nos commits |
-| Executáveis e bibliotecas (`.exe`, `.dll`) | nenhum |
-| Código de terceiros novo | só os cabeçalhos Vulkan-Headers 1.3.282 (Apache-2.0, licença em `third_party/vulkan`, registrado em `third_party/README.md`) |
-| Maior arquivo | `third_party/vulkan/vulkan/vulkan_core.h` (1,0 MB) |
-| Texto derivado das falas do jogo | **sim, no commit `2969913`** (ver abaixo); trechos de uma linha em `STATUS.md` e num unitário foram trocados por descrição ou texto próprio no fechamento do N7 |
-| Pacotes de legendas no estado atual (`HEAD`) | fora do Git desde `b098f7b` (`mods-padrao/*/` ignorado; só `mods-padrao/README.md`) |
-| Arquivos particulares do mantenedor | não commitados: `docs/DISTRIBUICAO-COMPILADOR.md` (alteração local), `tools/extractor/known_versions.h`, `_bs-extract.exe`, `tools/extractor/build/` |
+| `2969913` | os pacotes `mods-padrao/legendas-en/` (transcrições das falas, `.srt` dos filmes, `falas.en-US.toml`) |
+| `b1934df` | uma fala num unitário (`test_subtitle_overlay.cpp`) |
+| `7c9d9f7` | duas falas e um nome de personagem num unitário (`test_localization.cpp`) |
+| `8b73b3a` | um fragmento de fala num comentário de `tools/dev/legendas/sincronia.py` |
+| `f62a1a9`, `b1934df` | citações de falas no `STATUS.md` |
+| `075b43f`, `98206d3` | fragmentos de falas dos filmes em `sincronia.py` e `docs/LEGENDAS-PENDENCIAS.md` |
 
-## Bloqueio: o commit `2969913`
+Nada de imagem do jogo, BIOS, saves, segredos ou arquivo maior que 2 MB.
 
-`2969913 N7c: legendas em ingles como mod padrao` adicionou `mods-padrao/legendas-en/` com o texto inglês 0.1.0
-(transcrições das falas, `.srt` dos filmes, `falas.en-US.toml`). O `b098f7b` tirou esses arquivos do índice, mas eles
-continuam no histórico: um push os publicaria. Os direitos de redistribuição **não existem** para esse texto
-(`docs/LEGENDAS-PENDENCIAS.md`, seção "Direitos de redistribuição").
+### Reescrita (numa cópia do repositório)
 
-Também ficaram trechos curtos de fala em commits locais posteriores, já trocados no `HEAD`: duas frases de uma fala
-num unitário (`tests/unit/test_localization.cpp`, commit `7c9d9f7`) e um fragmento num comentário de
-`tools/dev/legendas/sincronia.py` (commit `8b73b3a`). Entram na mesma limpeza do histórico, se o mantenedor autorizar.
+`git filter-branch` numa clonagem local, só em `aef3c0e..master`:
+- `--index-filter`: tira `mods-padrao/legendas-en` e `mods-padrao/legendas-pt-br` de todos os commits (os pacotes no
+  disco continuam, ignorados pelo Git);
+- `--tree-filter`: troca cada citação pelo texto neutro que os commits seguintes já usavam (ou por uma descrição);
+- `--msg-filter`: tira o BOM do título de dois commits (os do menu).
 
-Há ainda trechos de uma linha já publicados em `origin/master` (`docs/LEGENDAS-EN-PLANO.md`, exemplos do erro de ASR)
-e um no unitário `test_subtitle_overlay.cpp` do commit `b1934df` (trocado no `HEAD`). São citações curtas de exemplo,
-não o pacote; ficam para a decisão do mantenedor.
+Conferências: a nova varredura dá **0 achados** nos 47 commits; nenhum título com BOM; cada commit muda os mesmos
+arquivos de antes (fora dos pacotes), salvo dois que só neutralizavam texto e ficaram sem essa parte; a árvore final só
+difere da anterior nos três arquivos de texto saneados. O `master` local foi levado ao resultado com `git reset --keep`
+(os dois arquivos particulares, com alteração local, ficaram intactos e conferidos pelo hash).
 
-### Procedimento proposto (NÃO executado; só com autorização do mantenedor)
+### Já publicados antes (não reescritos)
 
-Reescreve só os 25 commits locais (o que já está em `origin/master` não muda), tirando a pasta do pacote de todos eles:
+Três citações curtas já estavam em `origin/master` (`docs/N6-PLANO.md`, `docs/LEGENDAS-EN-PLANO.md`,
+`tools/dev/legendas/test_legendas.py`). Tirá-las do histórico publicado exigiria force-push, que não foi autorizado:
+foram trocadas por descrição ou texto próprio num commit novo. As outras ocorrências na varredura do histórico
+publicado são falsos positivos de caminho (`translator/analysis/`, `runtime/hle/bios.*`) ou as versões públicas de
+`known_versions.h` e `docs/DISTRIBUICAO-COMPILADOR.md` (as alterações particulares nunca foram commitadas).
 
-```powershell
-git branch backup/master-antes-publicacao master          # cópia do histórico atual
-git filter-branch --index-filter `
-  "git rm -r -q --cached --ignore-unmatch mods-padrao/legendas-en" -- origin/master..master
-# conferências: nada do pacote nos commits a publicar, e a árvore final igual à de antes
-git log --oneline origin/master..master -- mods-padrao/legendas-en          # vazio
-git diff backup/master-antes-publicacao master --stat                       # vazio
-```
+### Regras que continuam
 
-Cuidados:
-- a worktree `C:\Source\recomp-BStinger-n7` está no ramo `n7-vulkan`, que aponta para o mesmo commit do `master`:
-  depois da reescrita, mover o `n7-vulkan` para o novo `master` (ou removê-lo) para ele não republicar o histórico
-  antigo;
-- `backup/master-antes-n7` e `backup/master-antes-publicacao` são ramos **locais**: não fazer push deles;
-- o `filter-branch` deixa `refs/original/`; apagar só depois de conferir;
-- os pacotes no disco (`mods-padrao/legendas-en`, `legendas-pt-br`) não são tocados (estão ignorados).
-
-## Depois da reescrita
-
-1. Conferir de novo: `git log --diff-filter=A --name-only origin/master..master` sem `mods-padrao/legendas-*`.
-2. `git push origin master` (só `master`), com a autorização do mantenedor.
-3. Legendas: publicar só as ferramentas e o processo (`tools/dev/legendas/`, `mods-padrao/README.md`); os pacotes
-   continuam locais até haver autorização dos detentores dos direitos.
+- Os pacotes de legenda (`mods-padrao/*/`) e o ícone da capa (`icone-local/`) ficam fora do Git; a distribuição local
+  os leva (`make_builder.ps1 -LegendasLocais -IconeLocal`).
+- Ramos `backup/*` são locais: não publicar.
+- Antes de cada push: `python tools/dev/varre_publicacao.py origin/master..master` (sai com 1 se achar algo) e a
+  conferência dos arquivos particulares.
