@@ -2581,8 +2581,8 @@ Detalhes, critérios U1–U8 e limitações: `docs/N2-PLANO.md` seção 14.
   `test_assistido` 28/28, `test_tempo` 34/35 com a única referência histórica explicada, U2–U5 e H9 reutilizadas.
 - **Repetição final:** sessões estáveis com 7 915 + 7 496 passos, 0 diferenças e saves iguais; experimentais com só
   os passos 1703 e 1084 pós-LOAD diferentes, reconvergência imediata e saves iguais; pausa/retomada 6/6 na janela
-  padrão experimental; CTest Release 17/17 (14 aprovados, 3 skips; `real_disc` excluído pela alteração particular
-  incompleta de `known_versions.h`, preservada).
+  padrão experimental; CTest Release com 14 aprovados, 3 skips esperados e 0 falhas (17 casos; `real_disc` excluído
+  pela alteração particular incompleta de `known_versions.h`, preservada).
 - **Distribuições atualizadas:** Preview `5ce94b5-dirty` aprovada em 9/9; Builder aprovado em 22/22, incluindo
   Recompiler, Developer, compilação completa e incremental, rollback, 16 filmes e reuso pelo SHA-256. O sufixo
   `dirty` vem somente dos arquivos particulares preservados; nada foi publicado.
@@ -2660,7 +2660,7 @@ A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mo
 viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. terminar o N7 (N7c) — **feito em 2026-10-23** (promoção condicional);
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — próximo (N2c como primeira subetapa técnica);
+3. N8 — não iniciado; aguarda autorização explícita (N2c será a primeira subetapa técnica);
 4. N9;
 5. N10.
 
@@ -2676,7 +2676,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **concluída com promoção condicional** (2026-10-23): Vulkan padrão da janela com recuo para o software; N7a, N7b e N7c validadas; pendências abertas: AMD integrada (sem causa identificada), fog e volumes contra o Flycast; SSAO, 16:9 real e MSAA transferidos para o N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | não iniciada | 0 |
+| N8 Sem legado | não iniciada; aguarda autorização explícita | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

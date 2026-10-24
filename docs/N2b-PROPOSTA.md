@@ -10,6 +10,11 @@ investigação nas seções 8 a 12 (inventário detalhado em `docs/N2b-ESPERAS.m
 > experimental** (`--tempo experimental`). O P3 foi feito assim, com o padrão inalterado. Relatório:
 > `docs/N2b2-RELATORIO.md`.
 
+> **Fechamento em 2026-10-24:** U1–U8 foram cumpridos nos limites declarados na seção 10, e o
+> tempo experimental foi promovido a padrão na janela. As menções a bloqueios e pendências nas
+> seções 1–9 e 11–12 registram o estado histórico da investigação de 2026-10-16; o resultado final
+> e as limitações preservadas estão em `docs/N2-PLANO.md`, seção 14.
+
 ## 1. Conclusões consolidadas sobre a thread 3 (CRI)
 
 Tudo medido no roteiro NEW GAME (área 1, 8 000 VBlanks) e na exploração (16 000), com o build
@@ -512,4 +517,6 @@ Medida sequencial e alternada, 2 repetições, área 1, 3 000 VBlanks (ms de tra
   - não inclui o custo do próprio bloqueio;
   - a única medida com supressão (F) é mais lenta, por artefato da simulação.
 
-  O U5 continua pendente até medir o N2b-2 experimental com o predicado de fato proposto.
+  Na investigação P0/P1, o U5 ficou pendente até medir o N2b-2 experimental com o predicado de
+  fato proposto. Essa medição foi concluída no fechamento de 2026-10-24; ver a seção 10 e
+  `docs/N2-PLANO.md`, seção 14.2.

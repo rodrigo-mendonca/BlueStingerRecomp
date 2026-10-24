@@ -620,7 +620,7 @@ Achado já registrado no fechamento do N4; não é defeito do tempo.
 | Prova | Resultado |
 |---|---|
 | Unitários Release | 306/306 |
-| CTest Release dirigido | 17/17: 14 aprovados, 3 skips esperados; o `real_disc` ficou fora porque o `known_versions.h` particular está sintaticamente incompleto e foi preservado |
+| CTest Release dirigido | 14 aprovados, 3 skips esperados e 0 falhas (17 casos); o `real_disc` ficou fora porque o `known_versions.h` particular está sintaticamente incompleto e foi preservado |
 | Sessões antigas, estável | 7 915 + 7 496 passos; 0 diferenças, 0 faltantes, saves iguais |
 | Sessões antigas, experimental | 1 diferença isolada pós-LOAD em cada sessão (1703 e 1084), reconvergência no passo seguinte, saves iguais |
 | Padrões e recuo | janela sem `--tempo` = experimental; headless sem opção = nativo; `--tempo nativo` e `experimental` respeitados |
@@ -630,4 +630,5 @@ Achado já registrado no fechamento do N4; não é defeito do tempo.
 
 As provas longas já aprovadas foram reutilizadas: H9 experimental 3/3 sem faltas (150 s cada), `test_assistido`
 28/28, `test_tempo` 34/35 com a única referência histórica explicada e as baterias U1–U8 da seção 14.2. A regressão
-integral de nível 3 continua reservada para a entrada do N8, conforme a política do projeto.
+integral de nível 3 continua reservada para a entrada do N8, conforme a política do projeto. O N8 não foi iniciado e
+aguarda autorização explícita do mantenedor.
