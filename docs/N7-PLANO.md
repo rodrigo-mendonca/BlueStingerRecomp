@@ -1535,10 +1535,13 @@ Nada disso foi antecipado.
 
 ### 25.3 Pendências técnicas bloqueantes
 
-- **GPU AMD integrada:** perda intermitente do dispositivo (`VK_ERROR_DEVICE_LOST`) no modo `comparar`, sem causa
-  identificada; a hipótese de driver **não** está comprovada. Com o Vulkan padrão, a recuperação (recriação e depois o
-  software) protege o jogador; a apresentação direta não foi testada na AMD.
-- Fog e volumes modificadores contra o Flycast (antes do N8, que remove o software de referência).
+- **GPU AMD integrada:** perda intermitente do dispositivo (`VK_ERROR_DEVICE_LOST`) no modo `comparar`. A captura de
+  2026-10-24 pelo `VK_LAYER_LUNARG_crash_diagnostic`/`VK_EXT_device_fault` comprovou um `GPU fault` por `Invalid Read`,
+  mas ainda não identificou qual shader ou recurso originou o endereço inválido. A hipótese de driver **não** está
+  comprovada. Com o Vulkan padrão, a recuperação (recriação e depois o software) protege o jogador; a apresentação
+  direta não foi testada na AMD.
+- Fog e volumes modificadores contra o Flycast (antes do N8, que remove o software de referência). A rota de combate
+  confirma uso real dos dois a partir do render 1127; falta uma captura Flycast pareada e a implementação fiel.
 - Rotas além da de combate render a render.
 
 Esses itens não são tratados como implementados nem escondidos. A recuperação e o recuo da AMD protegem o jogador,
@@ -1559,6 +1562,45 @@ provas de nível 2 já aprovadas permanecem válidas — equivalência bit a bit
 apresentação direta, 720p–4K, Validation Layers, falhas injetadas, fallback, menu, pausa, legendas, câmera e
 pós-processamento —, mas não eliminam os bloqueios da seção 25.3. O N7 volta a **95%: funcional, porém não totalmente
 concluído**. N8, N9 e N10 continuam não iniciados e dependem de autorização explícita do mantenedor.
+
+### 25.6 Investigação dirigida das pendências (2026-10-24)
+
+**AMD integrada.** A rota A1 (`passo_combate`, 1200 VBlanks, `BS_RENDER_IR=comparar`) foi repetida dez vezes sem
+Validation Layers. Nove passaram com 583/583 renders idênticos; uma perdeu o dispositivo no render 470, depois que o
+render 469 produziu a imagem incorreta. A recuperação concluiu a sessão, mas não corrigiu a causa. Com a camada de
+diagnóstico de crash e as camadas implícitas desativadas, a falha reapareceu já no primeiro ensaio, desta vez durante a
+espera da cerca do render 370. O relatório do dispositivo AMD registrou:
+
+- `description: GPU fault`;
+- faixa de endereço `Invalid Read`;
+- fila gráfica/compute/transfer com a submissão incompleta;
+- nenhuma evidência suficiente para atribuir o defeito ao driver.
+
+A camada de crash informa que não consegue inserir checkpoints precisos dentro dos render passes legados usados pelo
+backend; por isso o dump não determina se a leitura saiu do shader de fragmento, do resolve compute, de uma textura ou
+de um storage buffer. As Validation Layers completas + sincronização, na mesma A1 e no executável novo, passaram com
+zero VUID/SYNC-HAZARD e zero recriações. Isso restringe a investigação, mas não contradiz o fault de GPU e não encerra a
+pendência.
+
+**Fog e modifier volumes.** O resumo da IR passou a contar cada modo de fog e o primeiro render de uso, sem alterar a
+imagem. Na rota completa de 9000 VBlanks (RTX 5080, `--render nativo`) houve 4484 renders, zero falhas Vulkan e:
+
+| Evidência | Resultado |
+|---|---:|
+| desenhos com fog por tabela | 2.758.908; primeiro no render 1127 |
+| desenhos com fog por vértice / `Table2` | 0 / 0 |
+| desenhos sem fog | 1.123.334 |
+| volumes modificadores | 76.287; primeiro no render 1127 |
+| triângulos de volumes / volumes sem fechamento | 2.109.830 / 1.170 |
+
+Portanto, fog por tabela e volumes são usados de verdade e não podem ser classificados como efeitos opcionais do N9.
+O repositório não contém uma captura gráfica Flycast pareada com o render 1127; sem essa referência não há base para
+implementar ou aprovar a semântica visual. A instrumentação localiza o cenário a extrair no próximo ensaio, mas não
+substitui o oráculo. N7 permanece em **95%**.
+
+Validação dirigida desta rodada: `bs_unit_tests` 306/306; rota NVIDIA 9000 VBlanks, 4484 renders e zero falhas; A1 AMD
+com Validation Layers 0 mensagens/0 recriações; A1 AMD sem camadas 9/10 sem perda e 1/10 com perda reproduzida. As
+provas anteriores de câmera, menus, áudio, legendas, N2, fallback e apresentação continuam válidas e não foram repetidas.
 
 ### 23.4 Câmera livre em ambientes fechados (2026-10-23, correção de jogabilidade)
 

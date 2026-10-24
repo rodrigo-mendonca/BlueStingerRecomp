@@ -2676,7 +2676,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
-| N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: causa do DEVICE_LOST intermitente na AMD ainda não eliminada; fog/volumes sem prova contra o Flycast; cobertura render a render concentrada na rota de combate. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
+| N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
 | N8 Sem legado | não iniciada; aguarda autorização explícita | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
@@ -3112,16 +3112,29 @@ ficam prontas).
 levava 514 s.
 
 **Pendência de estabilidade (AMD integrada, modo `comparar`).** A perda do dispositivo
-(`VK_ERROR_DEVICE_LOST`) acontece no envio do render 371 em quase todas as rotas de comparação.
+(`VK_ERROR_DEVICE_LOST`) é intermitente e pode ocorrer em renders diferentes conforme a sessão.
 - O render 370 sai com a imagem anterior, mesmo com a cerca e a fila ociosa acusando sucesso.
 - O mesmo render, gravado e reproduzido sozinho, dá na AMD a **mesma imagem da NVIDIA** (50
   repetições, sem falha).
 - Não aparece no modo nativo (2 rotas completas), com atraso entre quadros nem com o software
   sequencial, e não há reset (TDR) no log do sistema.
 
-Hipótese: falha do driver dependente do histórico da sessão. A recuperação recria o dispositivo e a
-rota termina com 1 quadro errado. Fica aberta até identificar a causa. As Validation Layers rodaram em 2026-10-22: depois
-de corrigido um hazard de sincronização sem relação com a falha, não há erros, e a perda continua (ver "N7c" → "AMD").
+A recuperação recria o dispositivo e a rota pode terminar com 1 quadro errado. Fica aberta até identificar a causa. As
+Validation Layers rodaram em 2026-10-22: depois de corrigido um hazard de sincronização sem relação com a falha, não há
+erros, e a perda continua (ver "N7c" → "AMD"). A hipótese de driver não está comprovada.
+
+**Reinvestigação de 2026-10-24.** Em dez A1 sem camadas, nove passaram com 583/583 renders idênticos e uma perdeu o
+dispositivo no render 470 (o render 469 ficou incorreto). Com `VK_LAYER_LUNARG_crash_diagnostic`, a primeira repetição
+falhou na espera da cerca do render 370; `VK_EXT_device_fault` registrou `GPU fault` e `Invalid Read`. Como a camada não
+instrumenta comandos dentro de render passes legados, o dump ainda não identifica o shader/recurso que fez a leitura.
+A1 com Validation Layers completas + sincronização passou novamente com zero mensagens e zero recriações. Resultado:
+falha real de acesso na GPU comprovada, causa de origem ainda aberta; fallback continua só mitigação.
+
+Na rota `passo_combate` de 9000 VBlanks, a nova telemetria de cobertura localizou o primeiro uso real de fog por tabela
+e de volumes modificadores no render 1127. Foram 2.758.908 desenhos com fog por tabela, nenhum com fog por vértice ou
+`Table2`, 76.287 volumes e 2.109.830 triângulos de volume. O controle NVIDIA concluiu 4484 renders sem falha. Não há no
+repositório uma captura Flycast pareada com esse render; fog e volumes continuam sem implementação fiel e sem aprovação
+visual. Evidências e limites completos: `docs/N7-PLANO.md`, seção 25.6.
 
 ### N7a: captura do TA na IR de render (2026-10-21; worktree n7-vulkan)
 
