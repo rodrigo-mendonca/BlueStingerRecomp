@@ -2579,6 +2579,13 @@ Detalhes, critérios U1–U8 e limitações: `docs/N2-PLANO.md` seção 14.
 - **H9 experimental:** 3 execuções de 150 s na janela, 0 faltas de áudio; 4,06–4,10 ms por campo; pior campo 40–43 ms.
 - **Validação de fechamento:** unitários 306/306; sessões antigas em estável e experimental; evidências aprovadas de
   `test_assistido` 28/28, `test_tempo` 34/35 com a única referência histórica explicada, U2–U5 e H9 reutilizadas.
+- **Repetição final:** sessões estáveis com 7 915 + 7 496 passos, 0 diferenças e saves iguais; experimentais com só
+  os passos 1703 e 1084 pós-LOAD diferentes, reconvergência imediata e saves iguais; pausa/retomada 6/6 na janela
+  padrão experimental; CTest Release 17/17 (14 aprovados, 3 skips; `real_disc` excluído pela alteração particular
+  incompleta de `known_versions.h`, preservada).
+- **Distribuições atualizadas:** Preview `5ce94b5-dirty` aprovada em 9/9; Builder aprovado em 22/22, incluindo
+  Recompiler, Developer, compilação completa e incremental, rollback, 16 filmes e reuso pelo SHA-256. O sufixo
+  `dirty` vem somente dos arquivos particulares preservados; nada foi publicado.
 - **Limites não escondidos:** diferença isolada de um passo pós-LOAD; inventário U1 limitado às rotas cobertas;
   diferença de TN só no Sofdec legado; fallback em software abaixo do tempo real; picos raros de GPU em menus a
   1440p/4K. N2c e a ampliação para a campanha inteira entram no N8; otimizações opcionais ficam depois dele.
@@ -2673,7 +2680,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
-Progresso geral: ~73 % (onze etapas de peso igual).
+Progresso geral: ~72 % (onze etapas de peso igual).
 
 ### N7c: câmera livre e segundo analógico (2026-10-22; worktree n7-vulkan)
 

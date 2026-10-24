@@ -614,3 +614,20 @@ Achado já registrado no fechamento do N4; não é defeito do tempo.
 - O fallback de render em software fica abaixo do tempo real nesta rota e picos de GPU em menus podem causar faltas
   raras de áudio em 1440p/4K. Não houve defeito medido no gameplay Vulkan; otimizações de GPU e 4K ficam para depois
   do N8 e o diagnóstico `BS_VK_LENTOS` permanece disponível.
+
+### 14.5 Validação de fechamento e distribuições (2026-10-24)
+
+| Prova | Resultado |
+|---|---|
+| Unitários Release | 306/306 |
+| CTest Release dirigido | 17/17: 14 aprovados, 3 skips esperados; o `real_disc` ficou fora porque o `known_versions.h` particular está sintaticamente incompleto e foi preservado |
+| Sessões antigas, estável | 7 915 + 7 496 passos; 0 diferenças, 0 faltantes, saves iguais |
+| Sessões antigas, experimental | 1 diferença isolada pós-LOAD em cada sessão (1703 e 1084), reconvergência no passo seguinte, saves iguais |
+| Padrões e recuo | janela sem `--tempo` = experimental; headless sem opção = nativo; `--tempo nativo` e `experimental` respeitados |
+| Pausa e retomada na janela padrão | `n7_menu_pausa.py`: 6/6; todos os logs no experimental e com VBlanks avançando após retomar |
+| Preview distribuída | `test_preview.ps1`: 9/9 |
+| Builder distribuído | `test_builder.ps1`: 22/22; Recompiler e Developer, três compilações, incremental, rollback, 16 filmes e reuso por SHA-256 |
+
+As provas longas já aprovadas foram reutilizadas: H9 experimental 3/3 sem faltas (150 s cada), `test_assistido`
+28/28, `test_tempo` 34/35 com a única referência histórica explicada e as baterias U1–U8 da seção 14.2. A regressão
+integral de nível 3 continua reservada para a entrada do N8, conforme a política do projeto.
