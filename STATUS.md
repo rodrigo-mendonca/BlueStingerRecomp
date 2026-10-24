@@ -2600,6 +2600,14 @@ Pedido do mantenedor: cinco defeitos vistos no jogo, ícone e cursor. Cada item 
 | Câmera Livre na troca de cenário | o desvio dos cortes somava o salto da vista da troca (~134°); a carga de sala (`gdfs::room_loads`) vira corte e zera o desvio, sem soltar o analógico | `tools/dev/n7_camera_transicao.py`: 105° → 0°; Original sem mudança (5 817 passos idênticos). `docs/N7-PLANO.md` 23.5 |
 | Legendas dos filmes (N5) | a ressincronização usava a energia, e a trilha dos filmes tem música o tempo todo: linhas esticadas até a seguinte e falas juntas. Os filmes passam a usar as palavras do ASR; no jogo, a legenda segue o áudio audível (monotônico: tirou uma piscada medida no NEWGAME) | `tools/dev/n5_legendas_filmes.py`: 5 de 6 filmes com defeito → 0, en e pt-BR; NEWGAME na janela, en e pt-BR: cada linha uma vez, 0 a +0,2 s depois da voz. `docs/LEGENDAS-PENDENCIAS.md` "Filmes" |
 
+**Dist (2026-10-23, `98206d3`; "-dirty" = os dois arquivos particulares, fora dos commits):** Preview e Builder
+remontados (Builder com `-LegendasLocais -IconeLocal`: uso local, não publicar). No executável distribuído (gerado pelo
+próprio Builder): ícone da capa embutido; `n7_menu_pausa` 6/6; `n7_cursor` aprovado (a primeira tentativa não conseguiu
+o foco do Windows para a janela de teste e a regra respondeu "sem foco"; a repetição obteve o foco e passou);
+`n7_camera_transicao` aprovado; pacotes 0.3.1/0.2.1 em `mods\video` com os 12 filmes×idiomas aprovados. O kit do
+Builder leva o ícone local e não leva o `known_versions.h` particular. Sem regressão do gameplay: Original idêntico em
+`passo_combate` (5 817 passos) e as legendas das falas idênticas byte a byte; sem baterias longas.
+
 Revisões do Codex: `codex-20261023-193911` (menu: 1 aceito, 1 rejeitado com evidência, o rótulo "ANALOGICO" nunca
 aparece), `codex-20261023-195145` (ícone e cursor: 3 aceitos), `codex-20261023-212005` (câmera e filmes: 6 aceitos, 1
 registrado como limite: o provedor legado de arquivos não conta as cargas de sala).
