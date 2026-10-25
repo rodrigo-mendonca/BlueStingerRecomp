@@ -403,6 +403,11 @@ Antes de trocar:
 
 ## 7. Critério final (operacional)
 
+**Ajuste de 2026-10-24 (D-N8-1, decisão do mantenedor):** o N8 cumpre a parte de hardware deste critério (sem ciclos,
+IRQ, módulos de hardware nem acesso alcançável a P4, SQ, VRAM, Holly ou AICA; provedores todos nativos). `Sh4Context`,
+RAM guest, `sh4_read/write`, despacho e o código gerado (o substrato AOT) saem no **N10**, com a elevação dos sistemas
+do jogo. `docs/N8-PLANO.md` seção 9.
+
 O executável do produto não tem:
 - `Sh4Context`, `sh4_read/write`, despacho por endereço, RAM guest, ciclos/IRQ ou módulo de
   hardware;

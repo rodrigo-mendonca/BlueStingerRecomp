@@ -1,6 +1,7 @@
 # N8 — Executável sem legado: plano de execução
 
-**Situação: planejamento concluído em 2026-10-24; N8 NÃO INICIADO.** Este documento não autoriza mudança funcional.
+**Situação: N8 INICIADO em 2026-10-24** (autorização do mantenedor, com as decisões D-N8-1 a D-N8-4 da seção 9). Ordem
+obrigatória N8.0 → N8.8; o andamento de cada subetapa fica na seção 10.
 O N2 está encerrado em 100%; o N7 permanece funcional em 95%, com duas pendências que não foram reinvestigadas aqui.
 O N2c foi transferido para a primeira subetapa técnica do N8.
 
@@ -277,4 +278,20 @@ como desnecessária às ferramentas.
 - **D-N8-4:** campanha completa como portão de fechamento, não de início. Recomendado: N8.0 captura o disponível; a
   matriz cresce por subetapa e é completa em N8.8.
 
-Até essas decisões e autorização explícita, N8 permanece em 0% e nenhuma subetapa técnica começa.
+**Decididas pelo mantenedor em 2026-10-24** (autorização do N8):
+1. **D-N8-1:** o N8 remove a simulação de hardware do Dreamcast e os provedores legados do produto; o substrato AOT
+   (código gerado, RAM guest, `Sh4Context`, `sh4_ops`, despacho e fibras) fica até o N10. A seção 7 do plano-mestre foi
+   ajustada.
+2. **D-N8-2:** a IR gráfica vem preferencialmente das **listas do Kamui em buffers nativos**, com interfaces
+   desacopladas (as APIs Kamui/Ninja nativas ficam para o N10).
+3. **D-N8-3:** o alvo legado de diagnóstico e validação fica **separado** e nunca entra na distribuição final.
+4. **D-N8-4:** a campanha completa é critério obrigatório de **encerramento** do N8.8, não pré-requisito do N8.0.
+
+O renderizador em software é preservado permanentemente como recuo do Vulkan.
+
+## 10. Andamento
+
+| Subetapa | Situação |
+|---|---|
+| N8.0 | em andamento; fechamento técnico em 2026-10-25, aguardando a aprovação do mantenedor: regressão nível 3, correções (SPIR-V, ícone, guardas das suítes), as 16 referências capturadas, validadas e reproduzíveis, com negativos (`docs/N8-0-REFERENCIAS.md` seção 8). Pendente de decisão: a fixação de áudio nas suítes históricas (A/B, `STATUS.md`) |
+| N8.1–N8.8 | não iniciadas (o N8.1 só com autorização explícita; diretrizes em `docs/N8-1-PREPARACAO.md` seção 4.1) |

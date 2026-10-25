@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. N8 não foi iniciado. Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) em andamento, fechamento técnico em 2026-10-25 aguardando aprovação; N8.1–N8.8 não iniciadas.** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2676,6 +2676,73 @@ passou a enumerar o núcleo temporal; DMAC/SQ e os módulos de PVR, Maple e GD-R
 Segunda revisão `codex-20261024-180905`: três achados médios aceitos; separou `sh4_intc` de Holly, tirou DMAC da
 remoção física do N8.1, alinhou a segunda definição do N2c e deixou D-N8-2 como portão somente do N8.7.
 
+### N8.0: portão e referências (2026-10-24/25; sem mudança funcional de jogo)
+
+Autorização do N8 e decisões D-N8-1 a D-N8-4 em 2026-10-24 (`docs/N8-PLANO.md` seção 9). Diretrizes do N8.1 aprovadas
+no mesmo dia, para depois do N8.0 (`docs/N8-1-PREPARACAO.md` seção 4.1). Nada do N8.1 foi implementado; `--tempo
+nativo`, `BS_POLL`, `BS_CYCLES`, INTC, TMU, CCN e o gerador não mudaram.
+
+**Regressão nível 3** (`tools/dev/regressao.ps1`, árvore `5ce94b5`, terminada em 2026-10-25 02:48, 16 942 s): 25
+etapas, 16 aprovadas e 9 reprovadas. Causas e destino:
+
+| Etapa | Causa | Destino |
+|---|---|---|
+| `ctest`, `ctest_disco` | o validador SPIR-V do pós-processamento formava `&w[i + 1]` numa instrução final sem operandos (`OpFunctionEnd`): assert de span no Debug | corrigido (`w.data() + i + 1`), teste do `OpFunctionEnd` final, `bs_render_tests` sem diálogos e com TIMEOUT; ctest Debug 18/18 com e sem disco |
+| `test_projeto` | RC2135: o `.rc` com o caminho acentuado do ícone | o `.ico` vai para o binary dir e o `.rc` o cita pelo nome; `tools/dev/icone_exe.py` confere o ícone dentro do exe (RT_GROUP_ICON/RT_ICON = `.ico`) no caminho acentuado; `test_projeto` 18/18, `test_builder` 22/22, `test_preview` 9/9 (a primeira execução reprovou só a `--version`, saída vazia logo depois do build, sem o código no detalhe; não reproduziu sozinha: provável tempo esgotado de 30 s, não comprovado) |
+| `test_controles` (K12; K13 abortado) | K13: `--video legado` passado ao executável de referência anterior ao N5, que imprimia o uso e saía; K12: roteiros convertidos de execuções com o áudio legado | K13 corrigido (autorizado): a referência sem `--video`, `--audio legado` só nos jobs do K13; K12: A/B abaixo |
+| `test_pd_nativo` (P3 conexão/limiares, P9 negativo) | o orçamento de VBlanks não tinha o filme NEWGAME nativo (27 146 VBlanks dentro do passo 1038): 43 execuções paravam no meio do filme e as comparações "iguais" passavam no vazio | +27 200 VBlanks (vídeo nativo mantido, autorizado); o mesmo motivo deixava a matriz no passo 2161 de 2249 (os passos 2161–2249 nunca eram comparados); limiares e conexão: 9 323 / 9 263 passos, 0 diferenças |
+| `test_n2b`, `test_cri`, `test_efeito`, `test_n2b2` | áudio nativo como padrão (A/B abaixo) | proposta de fixação mínima aguardando a decisão do mantenedor |
+
+**Guardas contra falso positivo** (autorizadas; `test_controles` K5, controle do K10, K11, K12, K13 e
+`test_pd_nativo`): uma comparação de igualdade só vale com as duas execuções completas: rc 0, o orçamento inteiro,
+sem linha `erro:`, deadlock contado ou interrupção nunca reconhecida; todo log do job com dados; quadros, traço e
+estado no último índice do roteiro; o roteiro presente; dois artefatos vazios nunca são iguais. Os contadores normais
+(`deadlock 0`, as faltas de progresso do modo sombra no `--tempo nativo`) não reprovam. Prova offline sobre as
+execuções gravadas: 44 aprovadas aceitas, 15 negativos (vazio, só cabeçalho, truncado, roteiro ausente) e as
+execuções truncadas da regressão rejeitados. Execução real com as guardas finais: `test_controles -Casos K11,K13`
+12/12 e `test_pd_nativo -Casos P3` 32/32 (antes, K5/K10/K11/K13 19/19 e o `test_pd_nativo` completo 81/86, as 5
+falhas da matriz pelo orçamento, corrigido e reexecutado). Os passos por VBlank com o vídeo nativo e o legado diferem (9 323 × 9 554
+na rota de limiares): contagens de passos entre os dois não provam equivalência passo a passo.
+
+**A/B do áudio** (mesmos executáveis, dados e referências; só `BS_AUDIO=legado`; nenhuma das 81 saídas do A/B com
+`[audio] nativo`):
+
+| Suíte | Nativo | Legado | 19–20/10 |
+|---|---|---|---|
+| `test_n2b` | 38/44 | 44/44 | 44/44 |
+| `test_cri` | 29/33 | 33/33 | 33/33 |
+| `test_efeito` | 16/17 | 17/17 | 17/17 |
+| `test_n2b2` | 13/17 | 17/17 | 17/17 |
+| `test_controles` K12 | 0/2 | 2/2 | aprovado |
+
+Primeira divergência por caso:
+- **específicos do legado:** C2, C5 e A1 (sem stream ADX nem escritas na AICA com o áudio nativo); N3b (constante de
+  alinhamento de 26 leituras medida no legado; o N3c passa); S4 (limiar de cobertura); K12, N11 e K13 (roteiros e
+  executáveis de referência do legado);
+- **rótulo ou limiar do teste, critério mantido:** N5 e N8b (no experimental com o áudio nativo a thread do CRI nasce
+  primeiro e vira a 1, não a 3; identificando a thread pela entrada, 99,94%); S2 (um episódio de espera aberto no fim
+  da rota, sem saída sem evento nem deadlock); B4 (só o provedor de arquivos muda uma fusão);
+- **diferença real em modo de diagnóstico (TMU parado):** B11 (VBlank 2114, uma IRQ `0x320` antes da `0x360`) e E6
+  (VBlank 2095, uma troca a mais para a thread do CRI). É a mesma limitação da hipótese D7 registrada em 19–20/10 com
+  o cartão e o controle nativos. **Pendência do N8.1** (medidores do CRI e TMU).
+
+Nenhuma regressão funcional do áudio nativo. **Pendente de decisão do mantenedor:** a fixação mínima do áudio legado
+(K12, N11, `test_cri`, `test_efeito`, e para `test_n2b`/`test_n2b2` execuções duplicadas só para S2, B4, B11, S4 e N3b
+com N5/N8b pela entrada, ou a suíte inteira). Nada disso foi aplicado.
+
+**Referências do N8.0** (`tools/dev/n8_referencias.py`, especificação e resultado em `docs/N8-0-REFERENCIAS.md`): o
+harness novo (validação por caso, comparação estrita de `(nível, SPC)` e da ordem `I/T/N/R/J` por intervalo de VBlank,
+exceções só explícitas e por diferença, cartão inicial bruto e normalizado, configuração única, conjunto dos 16) com
+41 testes unitários. Captura inválida anterior guardada em `analysis/n8/descartada/`. Piloto aprovado (0 diferenças
+contra ele mesmo, negativo acusado). **16 casos** capturados com um único executável (`exe_sha256 d05b9014…`), todos
+válidos; reprodutibilidade 0 diferenças em um caso por família nos dois modos; negativo `BS_RAM_MUTACAO` acusado.
+
+Revisão Codex `codex-20261025-081520` (6 achados, todos aceitos e corrigidos com teste ou prova): conjunto dos 16
+obrigatório numa captura completa; estado exatamente 1..N na ordem; cada exceção de SPC consumida por uma diferença;
+guardas das suítes com dados e último índice em todo artefato comparado; documentação sem exceção de posição (o
+comparador reprova todo deslocamento); esta seção. A prova da correção 4 achou dois defeitos dela própria (um `-1`
+literal que o PowerShell passa como texto; roteiro ausente aceitando), corrigidos antes de qualquer execução.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2683,7 +2750,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — não iniciado; aguarda autorização explícita (N2c será a primeira subetapa técnica);
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 em andamento; o N8.1 (N2c) só com autorização explícita;
 4. N9;
 5. N10.
 
@@ -2699,7 +2766,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | planejamento técnico concluído em 2026-10-24; **não iniciada**, aguarda decisões e autorização explícita; N2c abre a implementação | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 em andamento: fechamento técnico em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzíveis), aguardando aprovação; N8.1–N8.8 não iniciadas | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 
