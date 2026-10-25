@@ -82,6 +82,12 @@ $exe0 = Join-Path $res0 "BlueStinger\BlueStinger.exe"
 $okInst0 = $LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $exe0)
 $g0 = if ($okInst0) { RunCmd "`"$exe0`" --video legado --headless 10" } else { "" }
 Check "projeto so exportado: compila sem o CDI e a edicao aparece no jogo" ($okInst0 -and $g0 -match "\[edicao so exportar\] entrada do jogo") ""
+# icone dentro do executavel compilado em pasta acentuada (RC2135, 2026-10-25): o recurso lido do binario e igual ao
+# .ico que o projeto escolhe (icone-local/ do projeto, se o kit o trouxe; senao app/res)
+$icoP = Join-Path $proj0 "icone-local\bluestinger.ico"
+if (-not (Test-Path -LiteralPath $icoP)) { $icoP = Join-Path $proj0 "app\res\bluestinger.ico" }
+$ic = if ($okInst0) { python (Join-Path $repo "tools\dev\icone_exe.py") $exe0 $icoP 2>&1 | Out-String } else { "" }
+Check "icone no executavel (caminho acentuado)" ($okInst0 -and $LASTEXITCODE -eq 0 -and $ic -match "^ok") $ic.Trim()
 
 # 1. compilacao do CDI exportando o projeto
 $r = RunCmd "`"$cli`" --disc `"$cdi`" --out `"$out`" --sem-filmes --projeto `"$proj`""

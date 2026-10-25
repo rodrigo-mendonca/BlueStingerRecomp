@@ -54,7 +54,9 @@ if(BS_BUILD_GAME AND TARGET bs_generated)
     # o compilador de recursos nao acompanha o .ico: o hash dele no .rc gerado faz a troca do icone recompilar o recurso
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${BS_ICON}")
     file(SHA256 "${BS_ICON}" BS_ICON_HASH)
-    file(TO_CMAKE_PATH "${BS_ICON}" BS_ICON_RC)
+    # o .rc cita so o nome do icone, copiado para a pasta do build (que ja esta nos includes, /I do rc): o rc le o
+    # .rc gerado (UTF-8) na pagina de codigo ANSI, e um caminho absoluto com acento falhava (RC2135, 2026-10-25)
+    configure_file("${BS_ICON}" ${CMAKE_CURRENT_BINARY_DIR}/bluestinger.ico COPYONLY)
     configure_file(bluestinger.rc.in ${CMAKE_CURRENT_BINARY_DIR}/bluestinger.rc @ONLY)
     target_sources(bluestinger PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/bluestinger.rc)
   endif()

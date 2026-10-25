@@ -1,4 +1,5 @@
 // Recursos do executavel do jogo (Windows), gerado pelo CMake (app/CMakeLists.txt escolhe o icone). O primeiro icone e o
 // do arquivo no Explorer e, pelo SDL3 (sem icone definido pelo programa), o da janela e da barra de tarefas.
 // icone: sha256 @BS_ICON_HASH@
-1 ICON "@BS_ICON_RC@"
+// (copiado do icone escolhido para a pasta do build e achado pelo /I dela: nenhum caminho do usuario passa pelo rc)
+1 ICON "bluestinger.ico"
