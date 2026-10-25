@@ -40,6 +40,12 @@ BS_TEST(post_shader_validator) {
     std::string e;
     BS_CHECK(nr::validate_post_spirv(words(kPostColorFrag), &e));
     BS_CHECK(nr::validate_post_spirv(words(kPostExemploFrag), &e));
+    // regressao 2026-10-25 (N8.0, ctest Debug): o modulo termina numa instrucao sem operandos (OpFunctionEnd, 56)
+    // e o validador formava &w[size]; o span do Debug abortava. Tem de validar, e um modulo minimo tambem
+    BS_CHECK((words(kPostColorFrag).back() & 0xFFFFu) == 56u && (words(kPostColorFrag).back() >> 16) == 1u);
+    auto fim = words(kPostColorFrag);
+    fim.push_back((1u << 16) | 56u);  // outra instrucao sem operandos no fim: o resultado nao importa, so nao ler fora
+    (void)nr::validate_post_spirv(fim, &e);
     // corrompido e truncado
     auto bad = words(kPostColorFrag);
     bad[0] ^= 1;

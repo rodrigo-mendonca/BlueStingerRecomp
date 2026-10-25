@@ -87,7 +87,9 @@ bool validate_post_spirv(std::span<const uint32_t> w, std::string* error) {
         const uint32_t n = w[i] >> 16, op = w[i] & 0xFFFF;
         if (!n || i + n > w.size()) return bad(error, "instrucao truncada");
         if (n - 1 < min_operands(op)) return bad(error, "instrucao " + std::to_string(op) + " com operandos de menos");
-        const uint32_t* a = &w[i + 1];
+        // ponteiro, nao w[i + 1]: na ultima instrucao sem operandos (OpFunctionEnd) i + 1 == size, e o operator[]
+        // do span estoura no Debug; os operandos lidos ja foram limitados por min_operands acima
+        const uint32_t* a = w.data() + i + 1;
         std::string     s;
         switch (op) {
         case OpCapability:

@@ -144,7 +144,7 @@ endif()
 # Sem janelas modais (assert do CRT de Debug, abort, falha de acesso): o teste falha no stderr em vez de
 # esperar um clique e prender o ctest/regressao (tests/sem_dialogos.cpp).
 foreach(t bs_unit_tests bs_video_tests bs_ui_tests bs_audio_tests bs_localization_tests bs_real_disc_test bs_runtime_data_test bs_analysis_real_test
-          bs_fixture_gen bs_codegen_exec_0 bs_codegen_exec_1)
+          bs_fixture_gen bs_codegen_exec_0 bs_codegen_exec_1 bs_render_tests)
   target_sources(${t} PRIVATE sem_dialogos.cpp)
 endforeach()
 # A prova: falha de proposito (assert do vetor no Debug, abort no Release); passa so se a mensagem chegar a saida
@@ -158,6 +158,7 @@ set_tests_properties(sem_dialogos PROPERTIES TIMEOUT 60
 # so pega travamento. O preset do ctest da 900 s aos testes sem limite proprio.
 set_tests_properties(unit video ui PROPERTIES TIMEOUT 300)                   # (6,7 s / 2,7 s / 5,2 s)
 set_tests_properties(audio localization PROPERTIES TIMEOUT 300)                         # (< 1 s)
+set_tests_properties(render PROPERTIES TIMEOUT 300)                          # (4,4 s no Debug, 2026-10-25)
 set_tests_properties(real_disc codegen_exec_0 codegen_exec_1 n0_native_api n0_native_limpo PROPERTIES TIMEOUT 120)  # (< 0,2 s)
 set_tests_properties(analysis_real PROPERTIES TIMEOUT 300)                   # (2,9 s)
 set_tests_properties(runtime_data n0_fechamento PROPERTIES TIMEOUT 600)      # (23,8 s / 20,0 s)
