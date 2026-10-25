@@ -14,6 +14,8 @@
 #   B10 (mod de funcao de espera) esta no test_projeto.ps1 (caso 4b); B11 completo (medidores do
 #   CRI, consumidor artificial) e a ociosidade da thread 3 estao no test_cri.ps1
 #   (docs/N2b-BLOQUEIOS.md).
+#   Audio: o padrao (nativo), menos as duplicatas *_al com --audio legado que alimentam S2, B4 (fundidos), B11 e S4
+#   (A/B do N8.0, 2026-10-25, aprovado pelo mantenedor; ver Run)
 #   powershell -File tools/dist/test_n2b.ps1 [-Exe <exe>] [-ExeMods <exe com BS_MODS>] [-Data <data>]
 # saves legado: estas suites investigam o tempo (N2b) no caminho SEM cartao, onde as hipoteses foram
 # estabelecidas; com o cartao nativo (padrao desde o N4) o boot segue o codigo de cartao do jogo, cujo
@@ -48,7 +50,8 @@ function Check($name, [bool]$ok, $detail = "") {
 }
 
 # Uma execucao com todos os artefatos. $envs: variaveis extras (nome -> valor).
-function Run($tag, $tempo, $n, [hashtable]$envs = @{}, $arquivos = "nativo", $roteiro = "newgame_area1", $exe = $Exe) {
+# $audio: "" = o padrao (nativo); "legado" nas duplicatas que alimentam S2, B4 (fundidos), B11 e S4 (ver abaixo)
+function Run($tag, $tempo, $n, [hashtable]$envs = @{}, $arquivos = "nativo", $roteiro = "newgame_area1", $exe = $Exe, $audio = "") {
     $p = Join-Path $Saida $tag
     $all = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = (Join-Path $PSScriptRoot "roteiros\$roteiro.txt")
               BS_EVENT_TRACE = "${p}_ev.tsv"; BS_FILE_LOG = "${p}_fl.tsv"; BS_CLOCK_LOG = "${p}_cl.tsv"
@@ -59,7 +62,7 @@ function Run($tag, $tempo, $n, [hashtable]$envs = @{}, $arquivos = "nativo", $ro
     $log = "${p}_saida.txt"
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --video legado --headless $n --dump `"${p}_q.bmp`" > `"$log`" 2>&1`""
+            "/c `"`"$exe`" --data `"$Data`" --arquivos $arquivos --tempo $tempo --saves legado --video legado$(if ($audio) { " --audio $audio" }) --headless $n --dump `"${p}_q.bmp`" > `"$log`" 2>&1`""
         $null = $proc.Handle
         if (-not $proc.WaitForExit($LimiteSegundos * 1000)) { & taskkill /PID $proc.Id /T /F 2>&1 | Out-Null; $code = "tempo-limite" }
         else { $code = $proc.ExitCode }
@@ -140,17 +143,38 @@ $som2 = Run "sombra_2" "nativo" $VBlanks
 $expl = Run "sombra_exploracao" "nativo" $VBlanks @{} "nativo" "newgame_exploracao"
 $refL = Run "ref_arquivos_legado" "legado" $VBlanks @{} "legado"
 $somL = Run "sombra_arquivos_legado" "nativo" $VBlanks @{} "legado"
-foreach ($r in $ref, $somb, $som2, $expl, $refL, $somL) { Check "roteiro termina ($(Split-Path -Leaf $r.P))" ($r.Code -eq 0) "rc=$($r.Code)" }
+# audio legado (A/B do N8.0, 2026-10-25, aprovado pelo mantenedor): S2, B4 (fundidos), B11 e S4 foram estabelecidos e
+# calibrados com o audio legado (padrao de entao). Duplicatas com --audio legado alimentam esses casos; as execucoes
+# acima (audio nativo) seguem com todos os demais, e o resultado nativo desses quatro fica informado ([info]).
+$sombA = Run "sombra_al" "nativo" $VBlanks -audio "legado"
+$explA = Run "sombra_exploracao_al" "nativo" $VBlanks @{} "nativo" "newgame_exploracao" -audio "legado"
+$refA  = Run "ref_legado_al" "legado" $VBlanks -audio "legado"
+$refLA = Run "ref_arquivos_legado_al" "legado" $VBlanks @{} "legado" -audio "legado"
+$somLA = Run "sombra_arquivos_legado_al" "nativo" $VBlanks @{} "legado" -audio "legado"
+foreach ($r in $ref, $somb, $som2, $expl, $refL, $somL, $sombA, $explA, $refA, $refLA, $somLA) { Check "roteiro termina ($(Split-Path -Leaf $r.P))" ($r.Code -eq 0) "rc=$($r.Code)" }
 
 # ---- S1-S4 ----
+function S2($vb, $rd) {
+    return @{ V = [bool]($vb -and $vb.Ep -gt 0 -and $vb.Com -eq $vb.Ep -and $vb.Sem -eq 0)
+              R = [bool]($rd -and $rd.Ep -gt 0 -and $rd.Com -eq $rd.Ep -and $rd.Sem -eq 0 -and $rd.Max -lt $kTimeoutTicks) }
+}
+foreach ($r in $sombA, $explA) {
+    $lbl = Split-Path -Leaf $r.P
+    $vb = WaitInfo $r "8C064A2C"; $rd = WaitInfo $r "8C173086"; $s2 = S2 $vb $rd
+    Check "S2 espera do VBlank: toda saida com VBlank-In entregue no episodio (audio legado, $lbl)" $s2.V $(if ($vb) { $vb.Txt })
+    Check "S2 espera do render: toda saida com fim de render entregue, sem estouro (audio legado, $lbl)" $s2.R $(if ($rd) { $rd.Txt })
+}
 Check "S1 trace de ordem completo do modo sombra = legado (byte a byte)" (Same (Art $ref "EV") (Art $somb "EV"))
 Check "S1 idem com arquivos legado" (Same (Art $refL "EV") (Art $somL "EV"))
 foreach ($r in $somb, $expl) {
     $o = $r.Out; $lbl = Split-Path -Leaf $r.P
     # evento esperado entregue de fato (depois do assinante) no episodio de cada saida
     $vb = WaitInfo $r "8C064A2C"; $rd = WaitInfo $r "8C173086"
-    Check "S2 espera do VBlank: toda saida com VBlank-In entregue no episodio ($lbl)" ($vb -and $vb.Ep -gt 0 -and $vb.Com -eq $vb.Ep -and $vb.Sem -eq 0) $(if ($vb) { $vb.Txt })
-    Check "S2 espera do render: toda saida com fim de render entregue, sem estouro ($lbl)" ($rd -and $rd.Ep -gt 0 -and $rd.Com -eq $rd.Ep -and $rd.Sem -eq 0 -and $rd.Max -lt $kTimeoutTicks) $(if ($rd) { $rd.Txt })
+    $s2 = S2 $vb $rd
+    # a espera do render vale igual com o audio nativo (obrigatoria); a do VBlank fica informada: com o nativo a rota
+    # termina no meio de uma espera (um episodio aberto no fim), A/B do N8.0
+    Check "S2 espera do render: toda saida com fim de render entregue, sem estouro ($lbl)" $s2.R $(if ($rd) { $rd.Txt })
+    Write-Host "[info] S2 espera do VBlank com o audio nativo ($lbl): $(if ($s2.V) { 'ok' } else { 'difere' }); $(if ($vb) { $vb.Txt })"
     Check "B7 0 deadlocks nas esperas ($lbl)" ($vb -and $rd -and $vb.Dl -eq 0 -and $rd.Dl -eq 0)
     Check "B4 nenhum VBlank-In colapsado no modo sombra ($lbl)" ((Collapsed $r) -eq 0) "colapsados $(Collapsed $r)"
     $st = [regex]::Match($o, "faltas de progresso (\d+) \(limite (\d+)\)")
@@ -180,8 +204,9 @@ foreach ($pair in @(@($ref, $refL, "tempo legado"), @($somb, $somL, "modo sombra
 }
 Check "B4 arquivos legado: modo sombra = tempo legado (TN, CL, SL, quadro)" `
     ((Same (Art $refL "TN") (Art $somL "TN")) -and (Same (Art $refL "CL") (Art $somL "CL")) -and (Same (Art $refL "SL") (Art $somL "SL")) -and (Same (Art $refL "Q") (Art $somL "Q")))
-$fr = Fused $ref; $fs = Fused $somb; $frL = Fused $refL; $fsL = Fused $somL
-Check "B4 VBlanks fundidos iguais nos dois provedores e no legado" ($fr -ge 0 -and $fr -eq $fs -and $fr -eq $frL -and $fr -eq $fsL) "fundidos $fr / $fs / $frL / $fsL"
+$fr = Fused $refA; $fs = Fused $sombA; $frL = Fused $refLA; $fsL = Fused $somLA
+Check "B4 VBlanks fundidos iguais nos dois provedores e no legado (audio legado)" ($fr -ge 0 -and $fr -eq $fs -and $fr -eq $frL -and $fr -eq $fsL) "fundidos $fr / $fs / $frL / $fsL"
+Write-Host "[info] B4 fundidos com o audio nativo (tempo legado / sombra / arquivos legado: tempo legado / sombra): $(Fused $ref) / $(Fused $somb) / $(Fused $refL) / $(Fused $somL)"
 Check "B8 determinismo: duas execucoes do modo sombra iguais (TN, CL, CK, SL, quadro)" `
     ((Same (Art $somb "EV") (Art $som2 "EV")) -and (Same (Art $somb "CL") (Art $som2 "CL")) -and (Same (Art $somb "CK") (Art $som2 "CK")) -and (Same (Art $somb "SL") (Art $som2 "SL")) -and (Same (Art $somb "Q") (Art $som2 "Q")))
 
@@ -215,10 +240,15 @@ Neg "espera ignorada (B7)" @{ BS_TEMPO_MUTACAO = "sem_espera"; BS_PROGRESSO_LIMI
     param($m) [regex]::Match($m.Out, "faltas de progresso ([1-9]\d*)").Success }
 # B11 (parcial): os consumidores do TMU nao mudam a ordem logica com o TMU parado por quadro
 # (hipotese D7); o comparador acusa quando o relogio inteiro anda errado (relogio_degraus, acima)
+# Com o audio legado (A/B do N8.0); com o nativo a D7 nao vale num ponto (uma IRQ 0x320 antes da 0x360 no VBlank 2114),
+# pendencia do N8.1 (medidores do CRI e TMU), informada abaixo.
+$negRefA = Run "neg_ref_al" "nativo" $VBlanksNeg -audio "legado"
+function B11($ref0, $t) { return [bool]($ref0.Code -eq 0 -and $t.Code -eq 0 -and (Same (Art $ref0 "TN") (Art $t "TN")) -and (Same (Art $ref0 "CL") (Art $t "CL")) -and (Same (Art $ref0 "Q") (Art $t "Q"))) }
 foreach ($v in "quadro", "agendado") {
-    $t = Run "tmu_$v" "nativo" $VBlanksNeg @{ BS_TMU_DIAG = $v }
-    Check "B11 TMU parado ($v): ordem logica, leituras de arquivo e quadro iguais" `
-        ($t.Code -eq 0 -and (Same (Art $negRef "TN") (Art $t "TN")) -and (Same (Art $negRef "CL") (Art $t "CL")) -and (Same (Art $negRef "Q") (Art $t "Q")))
+    $t = Run "tmu_${v}_al" "nativo" $VBlanksNeg @{ BS_TMU_DIAG = $v } -audio "legado"
+    Check "B11 TMU parado ($v, audio legado): ordem logica, leituras de arquivo e quadro iguais" (B11 $negRefA $t) "rc=$($t.Code)"
+    $tn = Run "tmu_$v" "nativo" $VBlanksNeg @{ BS_TMU_DIAG = $v }
+    Write-Host "[info] B11 TMU parado ($v) com o audio nativo: $(if (B11 $negRef $tn) { 'iguais' } else { 'difere (pendencia D7 do N8.1)' })"
 }
 # B9: desempenho (trabalho medio por campo, 3 alternadas); negativo com "lento"
 function Work($r) { $m = [regex]::Match($r.Out, "media ([\d.]+) ms"); if ($m.Success) { [double]$m.Groups[1].Value } else { 1e9 } }
@@ -231,19 +261,27 @@ Check "negativo: lentidao (B9) detectada" ($slow -gt $ml * 1.05) ("lento {0:N2} 
 
 # S4: chamadas da thread 3 por VBlank (build com mods: o rastreio envolve a passada pelos slots)
 if (Test-Path -LiteralPath $ExeMods) {
-    function RunCalls($tag, $tempo, $envs = @{}) {
+    function RunCalls($tag, $tempo, $envs = @{}, $audio = "") {
         $e = @{ BS_CALL_TRACE = "$(Join-Path $Saida $tag)_calls.tsv;8C1586B8,8C174888" }
         foreach ($k in $envs.Keys) { $e[$k] = $envs[$k] }
-        Run $tag $tempo $VBlanksNeg $e "nativo" "newgame_area1" $ExeMods
+        Run $tag $tempo $VBlanksNeg $e "nativo" "newgame_area1" $ExeMods $audio
     }
-    $cl = RunCalls "s4_legado" "legado"
-    $cs = RunCalls "s4_sombra" "nativo"
-    $cm = RunCalls "s4_menos1" "nativo" @{ BS_CRI_DIAG = "menos1" }
+    # audio legado: a cobertura (VBlanks com passadas >= 2990) foi calibrada com os streams ADX do audio legado; com o
+    # nativo ha menos passadas do CRI (sem streams) e a cobertura cai, com as chamadas iguais entre os tempos (informado)
+    $cl = RunCalls "s4_legado_al" "legado" @{} "legado"
+    $cs = RunCalls "s4_sombra_al" "nativo" @{} "legado"
+    $cm = RunCalls "s4_menos1_al" "nativo" @{ BS_CRI_DIAG = "menos1" } "legado"
     $al = Art $cl "CALLS"; $as = Art $cs "CALLS"
     $passes = ($al | ForEach-Object { [int]($_.Split(' ')[1]) } | Measure-Object -Sum).Sum
-    Check "S4 chamadas por VBlank ao servidor do CRI e a rotina por ponteiro: sombra = legado" `
+    Check "S4 chamadas por VBlank ao servidor do CRI e a rotina por ponteiro: sombra = legado (audio legado)" `
         ($cl.Code -eq 0 -and $cs.Code -eq 0 -and $al.Count -ge $VBlanksNeg - 10 -and (Same $al $as)) "VBlanks $($al.Count), passadas $passes"
-    Check "negativo: uma passada a menos por VBlank (S4) detectada" ($cm.Code -eq 0 -and (Differ $as (Art $cm "CALLS")))
+    Check "negativo: uma passada a menos por VBlank (S4) detectada (audio legado)" ($cm.Code -eq 0 -and (Differ $as (Art $cm "CALLS")))
+    $cln = RunCalls "s4_legado" "legado"; $csn = RunCalls "s4_sombra" "nativo"
+    $nl = Art $cln "CALLS"; $ns = Art $csn "CALLS"
+    Write-Host "[info] S4 com o audio nativo: chamadas sombra $(if (Same $nl $ns) { '=' } else { '<>' }) legado; VBlanks com passadas $($nl.Count)"
+    # o negativo vale igual com o audio nativo (obrigatorio)
+    $cmn = RunCalls "s4_menos1" "nativo" @{ BS_CRI_DIAG = "menos1" }
+    Check "negativo: uma passada a menos por VBlank (S4) detectada" ($csn.Code -eq 0 -and $cmn.Code -eq 0 -and (Differ $ns (Art $cmn "CALLS")))
 } else { Write-Host "SKIP: S4 (sem build com mods: $ExeMods)" }
 
 $fail = @($results | Where-Object { -not $_.Ok }).Count

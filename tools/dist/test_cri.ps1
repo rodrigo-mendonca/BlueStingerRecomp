@@ -33,6 +33,9 @@
 # legado --saves legado = 33/33. Reavaliar no retorno ao N2.
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
 # desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
+# audio legado (A/B do N8.0, 2026-10-25, aprovado pelo mantenedor): o observavel central (streams ADX do CRI e
+# escritas da CPU na AICA) so existe com o audio legado; com o nativo nao ha stream e os negativos ficam vazios. O
+# audio nativo segue coberto pela bateria do N6 (n6_h.ps1, H9), test_tempo, test_assistido e test_pd_nativo.
 param(
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
@@ -90,7 +93,7 @@ foreach ($tag in $casos.Keys) {
     foreach ($e in $all.Keys) { Set-Item "env:$e" $all[$e] }
     try {
         $procs[$tag] = Start-Process -FilePath "cmd.exe" -PassThru -NoNewWindow -ArgumentList `
-            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --saves legado --controles legado --video legado --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
+            "/c `"`"$ExeMods`" --data `"$Data`" --tempo $($k.tempo) --saves legado --controles legado --video legado --audio legado --headless $($k.n) --dump `"${p}_q.bmp`" > `"${p}_saida.txt`" 2>&1`""
         $null = $procs[$tag].Handle
     } finally { foreach ($e in $all.Keys) { Set-Item "env:$e" "" } }
 }

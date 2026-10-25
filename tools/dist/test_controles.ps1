@@ -81,7 +81,8 @@ $jobs = [System.Collections.ArrayList]::new()
 # provedor legado, que deixou de ser o padrao no fim do N3. K13 roda sem a opcao (o padrao).
 # Todos com --video legado (escopo historico com o Sofdec; revisao Codex 2026-10-20: K1-K11 caiam no padrao nativo).
 # $video: "" = sem a opcao (o executavel de referencia do K13 e anterior ao N5 e nao a conhece; so tem o Sofdec, que e o
-# legado). $audio: "" = o padrao (nativo); "legado" so onde o caso compara com um executavel anterior ao N6 (K13).
+# legado). $audio: "" = o padrao (nativo); "legado" so onde o caso compara com um executavel anterior ao N6 (K13) ou
+# com roteiros convertidos de execucoes com o audio legado (K12).
 function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado", $saves = "", $video = "legado", $audio = "") {
     $p = Join-Path $Saida $tag
     $e = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $script; BS_FRAME_LOG = "$p.fr.tsv"; BS_FILE_LOG = "$p.fl.tsv" }
@@ -204,8 +205,10 @@ if ($want.K11) {
 if ($want.K12) {
     # saves legado: os roteiros por passo foram convertidos de execucoes sem cartao (o START do passo 95
     # fecha o "VMU not found"; com o cartao ele nao tem efeito e os quadros ficam iguais)
-    Job "k12_o_area1" $Exe "$rot\newgame_area1.txt" 7300 -saves "legado"; Job "k12_c_area1" $Exe "$rot\passo_newgame_area1.txt" 7300 -saves "legado"
-    Job "k12_o_expl" $Exe "$rot\newgame_exploracao.txt" 16000 -saves "legado"; Job "k12_c_expl" $Exe "$rot\passo_newgame_exploracao.txt" 16000 -saves "legado"
+    # audio legado: os roteiros por passo foram convertidos de execucoes com o audio legado (padrao de entao); com o
+    # nativo o mesmo START cai 2 VBlanks antes no passo 93 (A/B do N8.0, 2026-10-25, aprovado pelo mantenedor)
+    Job "k12_o_area1" $Exe "$rot\newgame_area1.txt" 7300 -saves "legado" -audio "legado"; Job "k12_c_area1" $Exe "$rot\passo_newgame_area1.txt" 7300 -saves "legado" -audio "legado"
+    Job "k12_o_expl" $Exe "$rot\newgame_exploracao.txt" 16000 -saves "legado" -audio "legado"; Job "k12_c_expl" $Exe "$rot\passo_newgame_exploracao.txt" 16000 -saves "legado" -audio "legado"
 }
 if ($want.K13) {
     if (-not (Test-Path -LiteralPath $ExeRef)) { Write-Host "ERRO: K13 exige o executavel de referencia (-ExeRef $ExeRef)"; exit 2 }

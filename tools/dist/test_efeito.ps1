@@ -26,6 +26,9 @@
 # legado --saves legado = 33/33. Reavaliar no retorno ao N2.
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
 # desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
+# audio legado (A/B do N8.0, 2026-10-25, aprovado pelo mantenedor): o observavel central (streams ADX do CRI e
+# escritas da CPU na AICA) so existe com o audio legado; com o nativo nao ha stream e os negativos ficam vazios. O
+# audio nativo segue coberto pela bateria do N6 (n6_h.ps1, H9), test_tempo, test_assistido e test_pd_nativo.
 param(
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-watch\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
@@ -35,7 +38,7 @@ param(
     # U7 (retorno ao N2, 2026-10-23): outra rota (ex.: roteiros\passo_heliporto.txt, troca de sala e combate) e os
     # provedores atuais ("--video legado", com cartao e controle nativos). O padrao e o estabelecido no N2b.
     [string]$Roteiro = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"),
-    [string]$Provedores = "--saves legado --controles legado --video legado"
+    [string]$Provedores = "--saves legado --controles legado --video legado --audio legado"
 )
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $ExeMods)) { Write-Host "SKIP: sem o build de investigacao BS_WRITE_WATCH ($ExeMods)"; exit 0 }

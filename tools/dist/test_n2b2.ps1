@@ -10,11 +10,11 @@
 #   N4  audio: a mesma sequencia de escritas da CPU na AICA ate o gameplay, sem as escritas de
 #       espera do stream (8 palavras zeradas por VBlank enquanto o video enche o buffer)
 #   N5  eventos: os padroes por VBlank (interrupcoes, trocas de thread, longjmp) do experimental
-#       existem no estavel (>= 99% dos VBlanks)
+#       existem no estavel (>= 99% dos VBlanks); a thread e identificada pela funcao de entrada
 #   N6  provedores de arquivos (B4, D9a): no experimental, legado = nativo VBlank a VBlank
 #       (quadros, leituras, audio) ate o gameplay
 #   N7  timeout (B5): render que nunca termina sai pelo timeout de 166 ms (TMU = instante logico)
-#   N8  liveness (B7), negativos: espera do VBlank nao declarada, thread 3 que nunca bloqueia e
+#   N8  liveness (B7), negativos: espera do VBlank nao declarada, thread do CRI que nunca bloqueia e
 #       espera sincrona que da volta viram erro com thread, PC e espera; o estavel com a mesma
 #       mutacao do hardware roda (controle)
 #   N9  detector da thread 3: bloquear depois de toda passada muda leituras ou quadros (o detector
@@ -25,6 +25,8 @@
 #   N12 desempenho (B9): trabalho medio por campo do experimental <= estavel x 1,05 (3 rodadas
 #       alternadas, sequenciais)
 #   N13 mods (B10): o build com mods no experimental = build sem mods (leituras e quadros)
+#   Audio: o padrao (nativo) em tudo, menos o N3b (duplicatas est_ex_al/exp_exd_al) e o lado novo do N11, com o audio
+#   legado (A/B do N8.0, 2026-10-25, aprovado pelo mantenedor; ver Caso)
 #   powershell -File tools/dist/test_n2b2.ps1 [-Exe <exe>] [-ExeMods <exe>] [-ExeAntigo <exe>] [-Data <data>]
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
 # desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
@@ -72,6 +74,7 @@ function Launch($c) {
     if ($c.controles) { $args2 += " --controles $($c.controles)" }
     if ($c.saves) { $args2 += " --saves $($c.saves)" }
     if ($c.saves -eq "legado") { $args2 += " --video legado" }  # escopo historico: Sofdec original (N5)
+    if ($c.audio) { $args2 += " --audio $($c.audio)" }
     try {
         $proc = Start-Process -FilePath "cmd.exe" -PassThru -WindowStyle Hidden -ArgumentList "/c `"`"$($c.exe)`" $args2 > `"${p}_saida.txt`" 2>&1`""
         $null = $proc.Handle
@@ -92,12 +95,15 @@ function RunBatch($casos) {
 # saves legado em todos os casos: a suite (N3/N3b quadros entre modos, N8b numero da thread do CRI) foi
 # estabelecida no caminho sem cartao; com o cartao nativo o codigo de cartao do jogo depende do tempo
 # (STATUS.md, fechamento do N4). Reavaliar no retorno ao N2.
-function Caso($tag, $exe, $tempo, $n, $roteiro, [hashtable]$env = @{}, [switch]$ev, [switch]$audioAll, $arquivos = "nativo", $controles = "", $saves = "legado") {
-    return @{ tag = $tag; exe = $exe; tempo = $tempo; n = $n; roteiro = $roteiro; env = $env; ev = [bool]$ev; audioAll = [bool]$audioAll; arquivos = $arquivos; controles = $controles; saves = $saves }
+# $audio: "" = o padrao (nativo); "legado" so nas execucoes do N3b e do N11 (A/B do N8.0, 2026-10-25, aprovado pelo
+# mantenedor): o alinhamento fixo do N3b foi medido com o audio legado e o N11 compara com um executavel anterior ao N6.
+function Caso($tag, $exe, $tempo, $n, $roteiro, [hashtable]$env = @{}, [switch]$ev, [switch]$audioAll, $arquivos = "nativo", $controles = "", $saves = "legado", $audio = "") {
+    return @{ tag = $tag; exe = $exe; tempo = $tempo; n = $n; roteiro = $roteiro; env = $env; ev = [bool]$ev; audioAll = [bool]$audioAll; arquivos = $arquivos; controles = $controles; saves = $saves; audio = $audio }
 }
 
 function ReadLines($f) { if (Test-Path -LiteralPath $f) { [IO.File]::ReadAllLines($f) } else { @() } }
-function Ended($r, $n) { return $r.Out -match "VBlanks: $n;" -and $r.Out -notmatch "(?m)^erro:" }
+# completa: rc 0, o orcamento inteiro e nenhuma linha "erro:" (o rc, revisao Codex 2026-10-25)
+function Ended($r, $n) { return $r.Code -eq 0 -and $r.Out -match "VBlanks: $n;" -and $r.Out -notmatch "(?m)^erro:" }
 function Err($r) { $m = [regex]::Match($r.Out, "(?m)^erro: .*$"); if ($m.Success) { $m.Value } else { "" } }
 # leituras sem o VBlank (arquivo, deslocamento, tamanho, SHA-256)
 function Reads($r) { ReadLines "$($r.P)_fl.tsv" | Select-Object -Skip 1 | ForEach-Object { ($_.Split("`t") | Select-Object -Skip 2) -join " " } }
@@ -125,15 +131,31 @@ function AudioWrites($r) {
     }
     return , $out
 }
-# padroes de eventos por VBlank (sem ciclos nem PC interrompido)
+# padroes de eventos por VBlank (sem ciclos nem PC interrompido). A thread e identificada pela funcao de entrada (do
+# evento N), nao pelo indice: o indice depende da ordem de criacao, que muda entre os modos com o audio nativo (no
+# experimental a thread do CRI, 8C158840, nasce primeiro; A/B do N8.0). A thread 0 (principal) nao tem evento N.
 function Signatures($r) {
     $cur = ""; $out = New-Object System.Collections.Generic.List[string]
+    $ent = @{ "00000000" = "principal" }
+    $id = { param($i) if ($ent.ContainsKey($i)) { $ent[$i] } else { "t$i" } }
     foreach ($l in [IO.File]::ReadLines("$($r.P)_ev.tsv")) {
         if ($l -notmatch '^\d') { continue }
         $f = $l.Split("`t")
-        if ($f[2] -eq "V") { $out.Add($cur); $cur = "" } elseif ($f[2] -eq "I") { $cur += " I$($f[3])" } else { $cur += " $($f[2])$($f[3])-$($f[4])" }
+        switch ($f[2]) {
+            "V" { $out.Add($cur); $cur = "" }
+            "I" { $cur += " I$($f[3])" }
+            "N" { $ent[$f[3]] = $f[4]; $cur += " N$($f[4])" }
+            "T" { $cur += " T$(& $id $f[3])-$(& $id $f[4])" }
+            "J" { $cur += " J$($f[3])-$(& $id $f[4])" }
+            default { $cur += " $($f[2])$($f[3])-$($f[4])" }
+        }
     }
     $out.Add($cur); return , $out
+}
+# indice da thread criada com a funcao de entrada $entry (evento N do trace), ou "" se nao ha
+function ThreadOf($evFile, $entry) {
+    foreach ($l in (ReadLines $evFile)) { $f = $l.Split("`t"); if ($f.Count -ge 5 -and $f[2] -eq "N" -and $f[4] -eq $entry) { return [string][Convert]::ToInt32($f[3], 16) } }
+    return ""
 }
 function Hash($f) { if (Test-Path -LiteralPath $f) { (Get-FileHash -LiteralPath $f).Hash } else { "ausente" } }
 
@@ -149,19 +171,23 @@ $lote1 = @(
     (Caso "exp_exd" $Exe "experimental" $VBlanksEx "newgame_exploracao_n2b2" -audioAll),
     (Caso "exp_lg" $Exe "experimental" $VBlanks "newgame_area1" -audioAll -arquivos "legado"),
     (Caso "exp_a1" $Exe "experimental" $VBlanks "newgame_area1" -audioAll),
-    (Caso "est_novo" $Exe "nativo" $VBlanks "newgame_area1" -ev -audioAll)
+    (Caso "est_novo" $Exe "nativo" $VBlanks "newgame_area1" -ev -audioAll),
+    # N3b com o audio legado (duplicatas de est_ex e exp_exd; as originais seguem no nativo para N2-N5)
+    (Caso "est_ex_al" $Exe "nativo" $VBlanksEx "newgame_exploracao" -audio "legado"),
+    (Caso "exp_exd_al" $Exe "experimental" $VBlanksEx "newgame_exploracao_n2b2" -audio "legado")
 )
 # (o executavel antigo nao tem --saves: e sem cartao por construcao, como o lado novo com --saves legado)
 # N11 compara com ciclos contra o executavel anterior ao N2b-2 (Maple com controle): o lado novo usa o
-# provedor legado de controles, porque no nativo o DMA do Maple termina ~9 600 ciclos antes (N3-2).
-if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev -saves ""), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" -ev -controles "legado" -saves "legado") }
+# provedor legado de controles, porque no nativo o DMA do Maple termina ~9 600 ciclos antes (N3-2), e o audio legado,
+# porque o antigo e anterior ao N6 (so tem o audio legado).
+if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev -saves ""), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" -ev -controles "legado" -saves "legado" -audio "legado") }
 if ($hasMods) { $lote1 += (Caso "exp_mods" $ExeMods "experimental" $VBlanks "newgame_area1") }
 $r = RunBatch $lote1
 
 # ---- lote 2: negativos ----
 $lote2 = @(
     (Caso "neg_sem_espera" $Exe "experimental" $VBlanksNeg "newgame_area1" @{ BS_TEMPO_MUTACAO = "sem_espera" }),
-    (Caso "neg_cri_nunca" $Exe "experimental" $VBlanksNeg "newgame_area1" @{ BS_TEMPO_MUTACAO = "cri_nunca_ocioso" }),
+    (Caso "neg_cri_nunca" $Exe "experimental" $VBlanksNeg "newgame_area1" @{ BS_TEMPO_MUTACAO = "cri_nunca_ocioso"; BS_EVENT_TRACE = (Join-Path $Saida "neg_cri_nunca_ev.tsv") }),
     (Caso "neg_ffst_exp" $Exe "experimental" $VBlanksNeg "newgame_area1" @{ BS_SB_MUTACAO = "ffst_ocupado" }),
     (Caso "neg_ffst_est" $Exe "nativo" $VBlanksNeg "newgame_area1" @{ BS_SB_MUTACAO = "ffst_ocupado" }),
     (Caso "neg_cri_sempre" $Exe "experimental" $VBlanks "newgame_area1" @{ BS_TEMPO_MUTACAO = "cri_sempre_ocioso" }),
@@ -218,18 +244,26 @@ function FramesSeq($r, $shift) {
     }
     return , $out
 }
-$se1 = FramesSeq $r.est_ex $kAlign; $sx1 = FramesSeq $r.exp_exd 0
-$ge = @($se1 | Where-Object { $_[0] -ge $kFrom }); $gx = @($sx1 | Where-Object { $_[0] -ge $kFrom })
-$hi = [math]::Min(($ge | ForEach-Object { $_[0] } | Measure-Object -Maximum).Maximum, ($gx | ForEach-Object { $_[0] } | Measure-Object -Maximum).Maximum)
-$outE = @($ge | Where-Object { $_[0] -le $hi -and ($_[0] -lt $kMenuOpen -or $_[0] -gt $kMenuClose) } | ForEach-Object { "$($_[0]) $($_[2])" })
-$outX = @($gx | Where-Object { $_[0] -le $hi -and ($_[0] -lt $kMenuOpen -or $_[0] -gt $kMenuClose) } | ForEach-Object { "$($_[0]) $($_[2])" })
-$inE = @($ge | Where-Object { $_[0] -ge $kMenuOpen -and $_[0] -le $kMenuClose }).Count
-$inX = @($gx | Where-Object { $_[0] -ge $kMenuOpen -and $_[0] -le $kMenuClose }).Count
-Check "N3b gameplay com entradas alinhadas: quadros iguais em cada ponto logico, fora o menu de itens" `
-    ((Ended $r.exp_exd $VBlanksEx) -and $outE.Count -gt 4000 -and (($outE -join "`n") -eq ($outX -join "`n"))) `
-    "trocas fora do menu: $($outE.Count) (leituras alinhadas $kFrom-$hi); no menu ($kMenuOpen-$kMenuClose): estavel $inE, experimental $inX"
+# O alinhamento de 26 leituras foi medido com o audio legado; com o nativo as cargas D11 do estavel duram outro tempo
+# (25 ate a leitura 5780, 27 depois; A/B do N8.0). O caso roda com o audio legado (est_ex_al, exp_exd_al); o par com o
+# audio nativo (est_ex, exp_exd) fica informado, e o N3c (mesmas leituras) segue nele.
+function AlignedFrames($est, $exp) {
+    $se1 = FramesSeq $est $kAlign; $sx1 = FramesSeq $exp 0
+    $ge = @($se1 | Where-Object { $_[0] -ge $kFrom }); $gx = @($sx1 | Where-Object { $_[0] -ge $kFrom })
+    $hi = [math]::Min(($ge | ForEach-Object { $_[0] } | Measure-Object -Maximum).Maximum, ($gx | ForEach-Object { $_[0] } | Measure-Object -Maximum).Maximum)
+    $outE = @($ge | Where-Object { $_[0] -le $hi -and ($_[0] -lt $kMenuOpen -or $_[0] -gt $kMenuClose) } | ForEach-Object { "$($_[0]) $($_[2])" })
+    $outX = @($gx | Where-Object { $_[0] -le $hi -and ($_[0] -lt $kMenuOpen -or $_[0] -gt $kMenuClose) } | ForEach-Object { "$($_[0]) $($_[2])" })
+    $inE = @($ge | Where-Object { $_[0] -ge $kMenuOpen -and $_[0] -le $kMenuClose }).Count
+    $inX = @($gx | Where-Object { $_[0] -ge $kMenuOpen -and $_[0] -le $kMenuClose }).Count
+    return @{ Ok = ((Ended $est $VBlanksEx) -and (Ended $exp $VBlanksEx) -and $outE.Count -gt 4000 -and (($outE -join "`n") -eq ($outX -join "`n")))
+              Txt = "trocas fora do menu: $($outE.Count) (leituras alinhadas $kFrom-$hi); no menu ($kMenuOpen-$kMenuClose): estavel $inE, experimental $inX" }
+}
+$n3b = AlignedFrames $r.est_ex_al $r.exp_exd_al
+Check "N3b gameplay com entradas alinhadas (audio legado): quadros iguais em cada ponto logico, fora o menu de itens" $n3b.Ok $n3b.Txt
+$n3bn = AlignedFrames $r.est_ex $r.exp_exd
+Write-Host "[info] N3b com o audio nativo (alinhamento fixo medido no legado): $(if ($n3bn.Ok) { 'iguais' } else { 'diferem' }); $($n3bn.Txt)"
 $re2 = Reads $r.exp_exd
-Check "N3c gameplay com entradas alinhadas: mesmas leituras" (($re -join "`n") -eq ($re2 -join "`n")) "$($re2.Count) leituras"
+Check "N3c gameplay com entradas alinhadas: mesmas leituras" ((Ended $r.exp_exd $VBlanksEx) -and $re2.Count -gt 0 -and (($re -join "`n") -eq ($re2 -join "`n"))) "$($re2.Count) leituras"
 
 # ---- N4: audio (rota inteira) ----
 $ae = AudioWrites $r.est_ex; $ax = AudioWrites $r.exp_ex; $ad = AudioWrites $r.exp_exd
@@ -250,7 +284,10 @@ $set = New-Object System.Collections.Generic.HashSet[string]
 foreach ($s in $se) { [void]$set.Add($s) }
 $inSet = @($sx | Where-Object { $set.Contains($_) }).Count
 $frac = if ($sx.Count) { $inSet / $sx.Count } else { 0 }
-Check "N5 eventos: padroes por VBlank do experimental existem no estavel (>= 99%)" ($frac -ge 0.99) ("{0:N2}% de {1} VBlanks; padroes distintos: estavel {2}, experimental {3}" -f (100 * $frac), $sx.Count, $set.Count, (@($sx | Sort-Object -Unique).Count))
+# as duas execucoes completas e os dois traces com todos os VBlanks (uma assinatura por VBlank + a do fim): trace vazio
+# ou truncado nao passa pela fracao (revisao Codex 2026-10-25)
+$n5Ok = (Ended $r.est_ex $VBlanksEx) -and (Ended $r.exp_ex $VBlanksEx) -and $se.Count -eq $VBlanksEx + 1 -and $sx.Count -eq $VBlanksEx + 1
+Check "N5 eventos: padroes por VBlank do experimental existem no estavel (>= 99%)" ($n5Ok -and $frac -ge 0.99) ("{0:N2}% de {1} VBlanks; padroes distintos: estavel {2}, experimental {3}; assinaturas: estavel {4}, experimental {5}" -f (100 * $frac), $sx.Count, $set.Count, (@($sx | Sort-Object -Unique).Count), $se.Count, $sx.Count)
 
 # ---- N6: provedores no experimental ----
 $fl = ReadLines "$($r.exp_lg.P)_fr.tsv" | Select-Object -Skip 1 | Where-Object { [int64]($_.Split("`t")[0]) -lt 5500 }
@@ -277,14 +314,19 @@ Check "N7 timeout (B5): render perdido sai pelo timeout de 166 ms logicos, sem t
 # ---- N8: liveness ----
 $e1 = Err $r.neg_sem_espera; $e2 = Err $r.neg_cri_nunca; $e3 = Err $r.neg_ffst_exp
 Check "N8a liveness: espera do VBlank nao declarada -> erro com thread e PC" ($e1 -match "falta de progresso" -and $e1 -match "thread corrente 0 em 8C064A2C") $e1.Substring(0, [math]::Min(160, $e1.Length))
-Check "N8b liveness: thread 3 que nunca bloqueia -> erro com a thread 3 e a espera 8C158860" ($e2 -match "falta de progresso" -and $e2 -match "thread 3 \d+ \(maior lote em [0-9A-F]{8}; ultima espera 8C158860\)") $e2.Substring(0, [math]::Min(160, $e2.Length))
+# a thread do CRI pela entrada (8C158840, evento N do trace): o indice depende da ordem de criacao (ver Signatures)
+$tCri = ThreadOf (Join-Path $Saida "neg_cri_nunca_ev.tsv") "8C158840"
+Check "N8b liveness: thread do CRI (entrada 8C158840) que nunca bloqueia -> erro com essa thread e a espera 8C158860" `
+    ($tCri -ne "" -and $e2 -match "falta de progresso" -and $e2 -match "thread $tCri \d+ \(maior lote em [0-9A-F]{8}; ultima espera 8C158860\)") "thread do CRI: $(if ($tCri) { $tCri } else { 'sem evento N' }); $($e2.Substring(0, [math]::Min(160, $e2.Length)))"
 Check "N8c espera sincrona que da volta -> erro explicito; estavel com a mesma mutacao roda" ($e3 -match "espera sincrona 8C0972(54|64)" -and (Ended $r.neg_ffst_est $VBlanksNeg)) $e3.Substring(0, [math]::Min(160, $e3.Length))
 $skips += "N8 espera sincrona do DMA ch2 (8C1C1DC6, BS_SB_MUTACAO=c2dst_ocupado): o laco nao e alcancado nesta rota (negativo vazio)"
 
 # ---- N9: detector da thread 3 ----
 $ra = Reads $r.exp_a1; $fa = ReadLines "$($r.exp_a1.P)_fr.tsv"
 $rs = Reads $r.neg_cri_sempre; $fs = ReadLines "$($r.neg_cri_sempre.P)_fr.tsv"
-Check "N9 detector necessario: bloquear depois de toda passada muda leituras ou quadros" ((($ra -join "`n") -ne ($rs -join "`n")) -or (($fa -join "`n") -ne ($fs -join "`n"))) $(Err $r.neg_cri_sempre)
+# as duas execucoes completas e com dados: um mutante sem artefatos nao conta como diferenca (revisao Codex 2026-10-25)
+$n9Ok = (Ended $r.exp_a1 $VBlanks) -and (Ended $r.neg_cri_sempre $VBlanks) -and $ra.Count -gt 0 -and $rs.Count -gt 0 -and $fa.Count -gt 1 -and $fs.Count -gt 1
+Check "N9 detector necessario: bloquear depois de toda passada muda leituras ou quadros" ($n9Ok -and ((($ra -join "`n") -ne ($rs -join "`n")) -or (($fa -join "`n") -ne ($fs -join "`n")))) "leituras $($ra.Count)/$($rs.Count), quadros $($fa.Count)/$($fs.Count); $(Err $r.neg_cri_sempre)"
 $rr = Reads $r.neg_cri_ram; $fr2 = ReadLines "$($r.neg_cri_ram.P)_fr.tsv"
 if ((($ra -join "`n") -eq ($rr -join "`n")) -and (($fa -join "`n") -eq ($fr2 -join "`n"))) {
     $skips += "N9 detector que ignora a RAM (cri_ignora_ram): sem diferenca observavel nesta rota (o componente de RAM e conservador aqui)"
