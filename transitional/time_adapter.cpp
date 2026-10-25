@@ -2,8 +2,10 @@
 
 #include "cri_idle.h"
 
+#include "cpu/sh4_intc.h"
 #include "cpu/sh4_runtime.h"
 #include "cpu/time_hooks.h"
+#include "debug/intc_trace.h"
 #include "platform/clock.h"
 #include "platform/event_queue.h"
 #include "platform/progress.h"
@@ -276,6 +278,7 @@ public:
         if (!exp_ && d && d->n2b2) return;  // modo estavel: as esperas do N2b-2 nao existem
         if (pc == kVblankWaitPc) {
             ++stats.gameSteps;
+            if (g_intc_trace) intc_trace_step(stats.gameSteps);
             if (g_stepObserver) g_stepObserver(stats.gameSteps, g_stepCtx);
         }
         progress(thread, polls, pc);
@@ -405,6 +408,7 @@ public:
                 exp_stats_.ticks += target - now, exp_stats_.hwWaitTicks += target - now;
             }
             ++c->polls;
+            sh4_irq_origin_hint(uint8_t(IntcSource::Hardware));  // diagnostico BS_INTC_TRACE
             sh4_service(c);  // entrega o que venceu (o tratador roda aninhado; a troca de thread suspende esta fibra)
             // termino garantido: atendimentos seguidos sem o relogio andar tem limite, mesmo que as filas mudem (eventos
             // distintos no mesmo instante sao poucos; kMaxDueNow fica muito acima). Revisoes Codex 2026-10-23 e -24.
@@ -699,6 +703,7 @@ public:
     void        wait_end(uint32_t pc, uint32_t thread, uint64_t polls) override {
         if (pc == kVblankWaitPc) {
             ++steps;
+            if (g_intc_trace) intc_trace_step(steps);
             if (g_stepObserver) g_stepObserver(steps, g_stepCtx);
         }
         l_.wait_end(pc, thread, polls);
@@ -776,7 +781,10 @@ bool hardware_wait(Sh4Context* c, uint64_t ticks) {
     while (c->cycles < end && !c->redirect) {
         c->cycles = std::min(end, std::max(c->cycles, c->next_event));
         ++c->polls;
-        if (c->cycles >= c->next_event) sh4_service(c);
+        if (c->cycles >= c->next_event) {
+            sh4_irq_origin_hint(uint8_t(IntcSource::Hardware));  // diagnostico BS_INTC_TRACE
+            sh4_service(c);
+        }
     }
     return true;
 }

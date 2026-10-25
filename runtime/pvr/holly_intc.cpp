@@ -10,6 +10,7 @@
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
 #include "debug/event_trace.h"
+#include "debug/intc_trace.h"
 
 #include "pvr/pvr_regs.h"
 #include "maple/maple.h"
@@ -47,6 +48,7 @@ void update(uint64_t now) {
     // por ciclos; nativo: fila de eventos), entregues aqui como antes
     const uint32_t due      = time_provider().holly_due(now);
     const bool     vblankIn = due & kDueVblankIn;
+    const uint32_t before   = reg(kIstNrm);  // N8.1: trace H (bits pedidos x acesos agora)
     if (due) ++g_events;
     if (vblankIn && (reg(kIstNrm) & kIstVblankIn)) ++g_vblankFused;
     if (vblankIn) reg(kIstNrm) |= kIstVblankIn;
@@ -65,6 +67,12 @@ void update(uint64_t now) {
         maple_dma_take();
     }
     g_last = now;
+    if (due && g_intc_trace) {
+        const uint32_t asked = (vblankIn ? kIstVblankIn : 0) | (due & kDueVblankOut ? kIstVblankOut : 0) |
+                               (due & kDueRender ? 0x7u : 0) | (due & kDueMaple ? kIstMapleDma : 0);
+        intc_trace_holly('H', IntcSource::Update, now, reg(kIstNrm) & ~before, asked, reg(kIstNrm), reg(0x005F6930),
+                         reg(0x005F6920), reg(0x005F6910));
+    }
     // host (apresentacao de quadros, ritmo): depois de atualizar o estado, porque o
     // gancho pode interromper a execucao (encerramento)
     if (vblankIn) pvr_video_vblank();
@@ -79,10 +87,17 @@ uint64_t holly_last_vblank_instant() { return g_vblankAt; }
 uint64_t holly_vblank_fused() { return g_vblankFused; }
 
 void holly_intc_raise(uint32_t bits) {
+    const uint32_t before = reg(kIstNrm);
     reg(kIstNrm) |= bits;
     ++g_events;
+    if (g_intc_trace)
+        intc_trace_holly('H', IntcSource::Raise, g_last, reg(kIstNrm) & ~before, bits, reg(kIstNrm), reg(0x005F6930),
+                         reg(0x005F6920), reg(0x005F6910));
 }
 uint64_t holly_event_count() { return g_events; }
+void     holly_intc_peek(uint32_t& istnrm, uint32_t& iml6nrm, uint32_t& iml4nrm, uint32_t& iml2nrm) {
+    istnrm = reg(kIstNrm), iml6nrm = reg(0x005F6930), iml4nrm = reg(0x005F6920), iml2nrm = reg(0x005F6910);
+}
 
 uint32_t holly_irl_level(uint64_t cycles) {
     update(cycles);
@@ -110,15 +125,21 @@ bool holly_intc_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     update(time_now(c));
     v = reg(p);
     if (g_clock_log && (p == kIstNrm || p == kIstExt || p == kIstErr)) clock_log_read(ClockRead::Ist, v);
+    if (g_intc_trace && (p == kIstNrm || p == kIstExt || p == kIstErr)) intc_trace_clock(IntcSource::Ist, v);
     return true;
 }
 
 bool holly_intc_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
-    update(time_now(c));
+    const uint64_t now = time_now(c);
+    update(now);
     if (p == kIstNrm || p == kIstExt || p == kIstErr) {
+        const uint32_t before = reg(p);
         reg(p) &= ~v;  // escrever 1 limpa
+        if (g_intc_trace)
+            intc_trace_holly('A', p == kIstNrm ? IntcSource::IstNrm : p == kIstExt ? IntcSource::IstExt : IntcSource::IstErr,
+                             now, before & v, v, reg(kIstNrm), reg(0x005F6930), reg(0x005F6920), reg(0x005F6910));
     } else {
         // Diagnostico: BS_PVR_DEBUG=1 registra mudancas das mascaras IML*
         static const bool debug = std::getenv("BS_PVR_DEBUG") != nullptr;

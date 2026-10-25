@@ -7,6 +7,7 @@
 #include "cpu/time_hooks.h"
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_threads.h"
+#include "debug/intc_trace.h"
 #include "debug/hw_probe.h"
 #include "gdrom/gdrom.h"
 #include "pvr/holly_intc.h"
@@ -102,7 +103,10 @@ void sh4_address_error(Sh4Context* c, uint32_t addr, bool write) {
     fatal(c, write ? "address error (escrita desalinhada)" : "address error (leitura desalinhada)", c->pc, addr);
 }
 
-void sh4_sleep(Sh4Context* c) { sh4_service(c); }
+void sh4_sleep(Sh4Context* c) {
+    sh4_irq_origin_hint(uint8_t(IntcSource::Sleep));
+    sh4_service(c);
+}
 
 void sh4_ldtlb(Sh4Context* c) { fatal(c, "ldtlb (MMU nao suportada)", c->pc, 0); }
 
@@ -125,6 +129,15 @@ void sh4_wait_end(Sh4Context* c, uint32_t pc) {
 }
 
 void sh4_service(Sh4Context* c) {
+    // diagnostico BS_INTC_TRACE: origem deste atendimento (le next_event antes de mudar); restaurada mesmo se uma excecao
+    // atravessar o atendimento
+    struct OriginScope {
+        IntcSource prev;
+        ~OriginScope() { sh4_irq_origin_leave(prev); }
+    } scope{sh4_irq_origin_enter(c)};
+    const bool       cad    = g_intc_trace && sh4_irq_origin_now() == uint8_t(IntcSource::Cadence);
+    const uint64_t   ev0 = cad ? holly_event_count() : 0, irq0 = cad ? sh4_irq_taken_count() : 0,
+                   blk0 = cad ? gdrom_event_count() : 0;
     c->next_event = c->cycles + kServiceQuantum;
     time_provider().progress(uint32_t(sh4_current_thread()), c->polls, c->pc);
     // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
@@ -134,6 +147,10 @@ void sh4_service(Sh4Context* c) {
     // interrupcoes bloqueadas (SR.BL); a entrega para a CPU continua em sh4_irq_check
     holly_intc_sync(time_now(c));
     sh4_irq_check(c);
+    if (cad) {  // diagnostico: o que este atendimento da cadencia mudou (o contador do tratador conta o aninhado)
+        const uint64_t ev = holly_event_count() - ev0, irq = sh4_irq_taken_count() - irq0, blk = gdrom_event_count() - blk0;
+        if (ev || irq || blk) intc_trace_service(IntcSource::Cadence, 0, uint32_t(ev), uint32_t(irq), blk);
+    }
 }
 
 } // namespace bs

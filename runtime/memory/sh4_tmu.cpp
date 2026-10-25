@@ -16,6 +16,7 @@
 #include "pvr/holly_intc.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
+#include "debug/intc_trace.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -143,6 +144,7 @@ bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
         else if (r == 4) {
             v = count(int(n), now);
             if (g_clock_log) clock_log_read(ClockRead::Tmu, v);
+            if (g_intc_trace) intc_trace_clock(IntcSource::Tmu, v);
         }
         else if (r == 8) {
             count(int(n), now);  // UNF atualizado

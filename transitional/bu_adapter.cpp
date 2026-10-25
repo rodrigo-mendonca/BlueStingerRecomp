@@ -5,6 +5,8 @@
 #include "mods/mod_api.h"
 #include "time_adapter.h"
 
+#include "debug/intc_trace.h"
+
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -100,6 +102,8 @@ void fServer(Sh4Context* c) {
         if (opLog && (e.op == kOpLoad || e.op == kOpSave))
             std::fprintf(opLog, "%llu\t%s\t%s\n", static_cast<unsigned long long>(time::game_steps()), e.op == kOpLoad ? "load" : "save",
                          e.a == uint32_t(kOk) ? "ok" : "falha"), std::fflush(opLog);
+        if (g_intc_trace && (e.op == kOpLoad || e.op == kOpSave))  // N8.1: L no eixo do BS_EVENT_TRACE
+            intc_trace_card(e.op == kOpLoad ? IntcSource::LoadEnd : IntcSource::SaveEnd, e.a, uint32_t(e.drive));
         s.m->release(e.drive);  // livre antes da conclusao: dentro dela o jogo consulta disk_info
         callGuest(c, s.cbDone, uint32_t(e.drive), e.op, e.a);
     }
@@ -136,6 +140,7 @@ void fLoad(Sh4Context* c) {
     if (!s.m || n.empty() || !nb) return call.ret(uint32_t(kBusy));
     const int32_t r = s.m->load(drive(c), n, c->r[7], *nb);
     if (r == kOk) s.loadDst[drive(c)] = c->r[6];
+    if (g_intc_trace) intc_trace_card(IntcSource::LoadReq, uint32_t(r), uint32_t(drive(c)));
     call.ret(uint32_t(r));
 }
 
@@ -150,7 +155,9 @@ void fSave(Sh4Context* c) {
     if (!s.m || n.empty() || blocks == 0 || blocks > ns::kCardBlocks) return call.ret(uint32_t(kBusy));
     std::vector<std::byte> img(size_t(blocks) * ns::kBlock);
     if (!call.memory().read(c->r[6], img)) return call.ret(uint32_t(kBusy));
-    call.ret(uint32_t(s.m->save(drive(c), n, std::move(img))));
+    const int32_t r = s.m->save(drive(c), n, std::move(img));
+    if (g_intc_trace) intc_trace_card(IntcSource::SaveReq, uint32_t(r), uint32_t(drive(c)));
+    call.ret(uint32_t(r));
 }
 
 void fStatus(Sh4Context* c) {

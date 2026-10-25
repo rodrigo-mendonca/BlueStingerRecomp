@@ -24,6 +24,7 @@
 #include "maple/maple.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
+#include "debug/intc_trace.h"
 
 #include "cpu/sh4_runtime.h"
 #include "input/input.h"
@@ -249,6 +250,7 @@ bool maple_read(Sh4Context* c, uint32_t a, uint32_t& v) {
         if (g_transitionArmed) g_transitionArmed = false, input_transition_tick();  // N3-0: transicao injetada
         v = (g_due && time_now(c) < g_due) ? 1 : 0;
         if (g_clock_log) clock_log_read(ClockRead::Mdst, v);
+        if (g_intc_trace) intc_trace_clock(IntcSource::Mdst, v);
     }
     return true;
 }

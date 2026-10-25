@@ -6,6 +6,7 @@
 #include "dc_regions.h"
 #include "debug/event_trace.h"
 #include "debug/hw_probe.h"
+#include "debug/intc_trace.h"
 #include "hwscan/boundary_io.h"
 #include "hwscan/closure.h"
 #include "hwscan/metrics.h"
@@ -351,6 +352,38 @@ BS_TEST(n0_event_trace_records_order) {
     const size_t i = d.find("1\t120\tI\t00000320\t8C010000");
     const size_t t = d.find("2\t130\tT\t00000000\t00000001");
     BS_CHECK(v != std::string::npos && i != std::string::npos && t != std::string::npos && v < i && i < t);
+}
+
+// N8.1 passo 0: o trace das fontes de interrupcao fica no eixo do BS_EVENT_TRACE (pos) e junta leituras seguidas da
+// mesma fonte so quando nada foi registrado no meio
+BS_TEST(n8_intc_trace_order_and_clock_runs) {
+    event_trace_init("bs_n8_ordem_teste.tsv");
+    intc_trace_init("bs_n8_intc_teste.tsv");
+    intc_trace_step(7);
+    intc_trace_clock(IntcSource::Tmu, 10);
+    intc_trace_clock(IntcSource::Tmu, 11);  // mesma linha: n = 2
+    event_trace(TraceEvent::VBlank, 100, 1);
+    intc_trace_clock(IntcSource::Tmu, 12);  // um evento no meio: linha nova, pos 1
+    intc_trace_holly('H', IntcSource::Update, 100, 0x8, 0x18, 0x18, 0x8, 0, 0);
+    intc_trace_clock(IntcSource::Tmu, 13);  // um H no meio: linha nova
+    intc_trace_clock(IntcSource::Spg, 5);   // outra fonte: linha nova
+    intc_trace_card(IntcSource::LoadEnd, 0, 1);
+    const std::string d = intc_trace_dump();
+    intc_trace_init("");
+    event_trace_init("");
+    BS_CHECK(!g_intc_trace);
+    const size_t a = d.find("0\t7\t0\t0\tC\tTMU\t0000000A\t0000000B\t00000000\t00000000\t00000000\t00000000\t2\n");
+    const size_t b = d.find("1\t7\t0\t0\tC\tTMU\t0000000C\t0000000C\t");
+    // n do H = origem do sh4_service em curso: 0 fora dele
+    const size_t h = d.find("1\t7\t0\t100\tH\tupdate\t00000008\t00000018\t00000018\t00000008\t00000000\t00000000\t0\n");
+    const size_t c = d.find("1\t7\t0\t0\tC\tTMU\t0000000D\t0000000D\t");
+    const size_t s = d.find("1\t7\t0\t0\tC\tSPG\t00000005\t");
+    const size_t l = d.find("1\t7\t0\t0\tL\tload_fim\t00000000\t00000001\t");
+    const bool all = a != std::string::npos && b != std::string::npos && h != std::string::npos &&
+                     c != std::string::npos && s != std::string::npos && l != std::string::npos;
+    if (!all) std::fprintf(stderr, "%s", d.c_str());
+    BS_CHECK(all);
+    BS_CHECK(a < b && b < h && h < c && c < s && s < l);
 }
 
 // Revisao Codex 2026-10-15 [ALTA]: funcao do SDK com endereco so em dado, possivel alvo de

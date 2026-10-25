@@ -8,8 +8,10 @@
 // (0x200 + (15 - nivel) * 0x20).
 #include "cpu/sh4_intc.h"
 #include "debug/event_trace.h"
+#include "debug/intc_trace.h"
 
 #include "cpu/sh4_runtime.h"
+#include "cpu/sh4_threads.h"
 #include "cpu/time_hooks.h"
 #include "pvr/holly_intc.h"
 
@@ -25,12 +27,26 @@ constexpr uint32_t kIntevt = 0xFF000028;
 uint16_t g_icr = 0, g_ipr[3] = {0, 0, 0};
 uint32_t g_intevt = 0;
 uint64_t g_taken  = 0;  // diagnostico (sh4_irq_taken_count)
+// diagnostico BS_INTC_TRACE: origem do sh4_service em curso, por thread do guest (cada fibra tem a sua pilha: uma troca de
+// thread dentro de um atendimento nao pode rotular as entregas da outra); profundidade 0 = fora de sh4_service
+struct Origin {
+    IntcSource src   = IntcSource::IrqCheck;
+    int        depth = 0;
+};
+constexpr int kOriginSlots = 8;
+Origin        g_origins[kOriginSlots];
+IntcSource    g_hint = IntcSource::Cadence;  // o proximo sh4_service vem de onde (sh4_irq_origin_hint)
+Origin&       origin() {
+    const int t = sh4_current_thread();
+    return g_origins[t >= 0 && t < kOriginSlots ? t : kOriginSlots - 1];
+}
 
 void take(Sh4Context* c, uint32_t intevt) {
     g_intevt     = intevt;
     ++g_taken;
-    if (g_event_trace) event_trace(TraceEvent::Irq, c->cycles, intevt, c->pc);
     const uint32_t sr = sh4_get_sr(*c);
+    if (g_intc_trace) intc_trace_delivery(origin().depth ? origin().src : IntcSource::IrqCheck, 0, intevt, c->pc, sr);
+    if (g_event_trace) event_trace(TraceEvent::Irq, c->cycles, intevt, c->pc);
     c->ssr       = sr;
     c->spc       = c->pc;
     c->sgr       = c->r[15];
@@ -71,7 +87,32 @@ bool deliverOne(Sh4Context* c) {
 
 uint64_t sh4_irq_taken_count() { return g_taken; }
 
+void sh4_irq_origin_hint(uint8_t origin) { g_hint = IntcSource(origin); }
+
+// Marca a origem das entregas feitas dentro de sh4_service (e restaura no fim: o tratador pode chamar outro).
+IntcSource sh4_irq_origin_enter(const Sh4Context* c) {
+    Origin&          o    = origin();
+    const IntcSource prev = o.src;
+    o.src                 = c->next_event == 0 ? IntcSource::Forced : g_hint;
+    g_hint                = IntcSource::Cadence;
+    ++o.depth;
+    return prev;
+}
+void sh4_irq_origin_leave(IntcSource prev) {
+    Origin& o = origin();
+    o.src     = prev;
+    if (o.depth) --o.depth;
+}
+uint8_t sh4_irq_origin_now() { return origin().depth ? uint8_t(origin().src) : 0; }
+
+// o trace H pergunta a origem por aqui (debug/ nao depende de cpu/)
+static const bool kOriginFn = (intc_trace_set_origin_fn(sh4_irq_origin_now), true);
+
 void sh4_intc_reset() {
+    // diagnostico: sessao nova comeca sem origem aberta (uma fibra apagada no encerramento nao desenrola o RAII de
+    // sh4_service; revisao Codex 2026-10-25)
+    for (Origin& o : g_origins) o = Origin{};
+    g_hint = IntcSource::Cadence;
     g_icr = 0;
     g_ipr[0] = g_ipr[1] = g_ipr[2] = 0;
     g_intevt = 0;

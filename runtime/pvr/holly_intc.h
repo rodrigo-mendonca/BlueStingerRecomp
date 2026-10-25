@@ -28,6 +28,8 @@ uint64_t holly_vblank_fused();
 // Eventos do Holly entregues (vencidos ou levantados), mesmo com a interrupcao mascarada:
 // diagnostico do N2b (epoca de eventos do BS_CRI_DIAG).
 uint64_t holly_event_count();
+// Registradores sem avaliar eventos (diagnostico BS_INTC_TRACE: nao chama o provedor de tempo).
+void holly_intc_peek(uint32_t& istnrm, uint32_t& iml6nrm, uint32_t& iml4nrm, uint32_t& iml2nrm);
 
 // Nivel IRL pedido ao SH-4 (6, 4, 2 ou 0): maior nivel cujas mascaras IMLn
 // (NRM/EXT/ERR) tem algum bit pendente em ISTNRM/ISTEXT/ISTERR.

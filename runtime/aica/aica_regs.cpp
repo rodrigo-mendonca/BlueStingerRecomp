@@ -10,6 +10,7 @@
 #include "aica/aica_regs.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
+#include "debug/intc_trace.h"
 #include "pvr/holly_intc.h"
 
 #include "cpu/sh4_mem.h"
@@ -225,6 +226,7 @@ bool aica_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     else if (p == kRtcEn && size == 4) v = 0;
     else return false;
     if (g_clock_log && (p == kRtcHi || p == kRtcLo)) clock_log_read(ClockRead::Rtc, v);
+    if (g_intc_trace && (p == kRtcHi || p == kRtcLo)) intc_trace_clock(IntcSource::Rtc, v);
     return true;
 }
 

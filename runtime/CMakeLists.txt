@@ -30,6 +30,7 @@ add_library(bs_runtime STATIC
   debug/snapshot.cpp
   debug/hw_probe.cpp
   debug/event_trace.cpp
+  debug/intc_trace.cpp
   debug/call_trace.cpp
   debug/file_log.cpp
   debug/clock_log.cpp

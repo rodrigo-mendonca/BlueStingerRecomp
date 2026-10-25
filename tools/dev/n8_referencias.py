@@ -16,7 +16,8 @@ saida do jogo; mais o manifesto (hashes do executavel e dos dados, commit, argum
     python tools/dev/n8_referencias.py capturar --exe <exe> --data <data> --saida <pasta> [--casos a,b] [--paralelo 4]
     python tools/dev/n8_referencias.py conferir --exe <exe> --ref <pasta> [--data <data>] [--casos a,b] [--paralelo 4]
                                                [--ambiente K=V ...] [--excecoes <arquivo.toml>]
-                                               (negativo: --ambiente BS_RAM_MUTACAO=3000:8C24FBCC)
+                                               (negativo: --ambiente BS_RAM_MUTACAO=3000:8C24FBCC; "{pasta}" no
+                                               valor vira a pasta do caso: --ambiente BS_INTC_TRACE={pasta}/intc.tsv)
     python tools/dev/n8_referencias.py validar --ref <pasta>     (so a validacao dos artefatos, sem rodar o jogo)
 
 Validacao (`validar_caso`, docs/N8-PLANO.md, especificacao do harness): cada caso tem a sua tabela de artefatos
@@ -77,7 +78,7 @@ ESPERADO = {
                                    cartao_ops={"load": 8, "save": 1}, saves_fim="sessao"),
 }
 # variaveis do ambiente que sao caminhos (diferem por caso); as outras BS_* tem de ser iguais em todos os casos
-_CAMINHOS = set(LOGS.values()) | {"BS_INPUT_SCRIPT"}
+_CAMINHOS = set(LOGS.values()) | {"BS_INPUT_SCRIPT", "BS_INTC_TRACE"}
 
 
 def base_do_caso(nome):
@@ -197,7 +198,8 @@ def executar(exe, data, nome, caso, pasta, extra_env=None, exe_sha=None):
     env.update({"BS_RELOGIO_FIXO": gv.RELOGIO, "BS_INPUT_SCRIPT": caso["roteiro"], "BS_STATE_PASSO_CADA": "1"})
     for art, var in LOGS.items():
         env[var] = os.path.join(pasta, art + ".tsv")
-    env.update(extra_env or {})  # conferir --ambiente (negativos: BS_RAM_MUTACAO etc.)
+    # conferir --ambiente (negativos: BS_RAM_MUTACAO etc.); "{pasta}" vira a pasta do caso (N8.1: BS_INTC_TRACE={pasta}/intc.tsv)
+    env.update({k: v.replace("{pasta}", pasta) for k, v in (extra_env or {}).items()})
     cmd = [exe, "--data", data, "--saves-pasta", saves] + caso["args"] + \
           ["--tempo", caso["tempo"], "--headless", str(caso["vblanks"]), "--dump", os.path.join(pasta, "quadro_final.bmp")]
     t0 = time.time()

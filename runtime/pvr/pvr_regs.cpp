@@ -18,6 +18,7 @@
 #include "pvr/pvr_regs.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
+#include "debug/intc_trace.h"
 
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_render.h"
@@ -163,6 +164,7 @@ bool pvr_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
         const bool field     = interlace && (((now + g_phase) / kFieldCycles) & 1);
         v = (s.line & 0x3FF) | (field ? 1u << 10 : 0) | (s.vsync ? 1u << 13 : 0);
         if (g_clock_log) clock_log_read(ClockRead::Spg, v);
+        if (g_intc_trace) intc_trace_clock(IntcSource::Spg, v);
         return true;
     }
     v = reg(p);
