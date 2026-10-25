@@ -25,7 +25,11 @@
 #   K12 roteiros por leitura convertidos para "indice passo": traco e quadros iguais aos originais
 #   K13 padrao inalterado: sem variaveis, quadros e leituras iguais ao executavel de referencia
 #       (-ExeRef, antes do N3-0; obrigatorio) em passo_cgate, passo_heliporto e newgame_area1 (indice
-#       por leitura); o traco ligado nao muda os quadros
+#       por leitura); o traco ligado nao muda os quadros. O lado novo com --video legado e --audio legado (a
+#       referencia e anterior ao N5/N6); a referencia sem --video (2026-10-25)
+#   Comparacoes de igualdade (K5, K10 controle, K11, K12, K13) so com as duas execucoes completas (Completa: rc,
+#   VBlanks, vivacidade, todo log com dados, quadros/traco/estado no ultimo indice do roteiro): dois tracos truncados
+#   ou vazios iguais reprovam
 #   powershell -File tools/dist/test_controles.ps1 [-Exe <release>] [-ExeMods <release com mods>]
 #       [-ExeRef <exe anterior>] [-Data <data>] [-Paralelo 8] [-Casos K1,K2,...] [-RotasK13 r1,r2]
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
@@ -76,23 +80,28 @@ $jobs = [System.Collections.ArrayList]::new()
 # K1-K12 leem o contrato do Maple (BS_PAD_CONTRATO) e trocam a funcao do controle: so existem no
 # provedor legado, que deixou de ser o padrao no fim do N3. K13 roda sem a opcao (o padrao).
 # Todos com --video legado (escopo historico com o Sofdec; revisao Codex 2026-10-20: K1-K11 caiam no padrao nativo).
-function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado", $saves = "") {
+# $video: "" = sem a opcao (o executavel de referencia do K13 e anterior ao N5 e nao a conhece; so tem o Sofdec, que e o
+# legado). $audio: "" = o padrao (nativo); "legado" so onde o caso compara com um executavel anterior ao N6 (K13).
+function Job($tag, $exe, $script, $n, $envs = @{}, $tempo = "nativo", [switch]$NoTrace, [switch]$Probe, $ctl = "legado", $saves = "", $video = "legado", $audio = "") {
     $p = Join-Path $Saida $tag
     $e = @{ BS_RELOGIO_FIXO = "1700000000"; BS_INPUT_SCRIPT = $script; BS_FRAME_LOG = "$p.fr.tsv"; BS_FILE_LOG = "$p.fl.tsv" }
     if (-not $NoTrace) { $e.BS_PAD_TRACE = "$p.trace.tsv" }
     if ($Probe) { $e.BS_PAD_CONTRATO = "$p.ct.tsv" }
     foreach ($k in $envs.Keys) { $e[$k] = $envs[$k] }
-    [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; P = $p; Ctl = $ctl; Saves = $saves })
+    [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; P = $p; Ctl = $ctl; Saves = $saves; Video = $video; Audio = $audio })
+    $script:meta[$tag] = @{ Script = $script; N = $n; Env = $e }
 }
+$procs = @{}; $meta = @{}
 function RunAll() {
     $running = @()
     foreach ($j in $script:jobs) {
         while (@($running | Where-Object { -not $_.HasExited }).Count -ge $Paralelo) { Start-Sleep -Milliseconds 500 }
         $cmd = ""
         foreach ($k in $j.Env.Keys) { $cmd += "set `"$k=$($j.Env[$k])`"&& " }
-        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" })$(if ($j.Saves) { " --saves $($j.Saves)" })$(" --video legado") --headless $($j.N) > `"$($j.P).out`" 2>&1"
+        $cmd += "`"$($j.Exe)`" --data `"$Data`" --tempo $($j.Tempo)$(if ($j.Ctl) { " --controles $($j.Ctl)" })$(if ($j.Saves) { " --saves $($j.Saves)" })$(if ($j.Video) { " --video $($j.Video)" })$(if ($j.Audio) { " --audio $($j.Audio)" }) --headless $($j.N) > `"$($j.P).out`" 2>&1"
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -WindowStyle Hidden -PassThru
         $null = $proc.Handle
+        $script:procs[$j.Tag] = $proc
         $running += $proc
     }
     $running | Wait-Process -Timeout 7200
@@ -105,7 +114,63 @@ function Ct($tag) {
 }
 function Out($tag) { $f = Join-Path $Saida "$tag.out"; if (Test-Path $f) { Get-Content $f -Raw } else { "" } }
 function Py([string[]]$a) { $o = python $tool @a 2>&1 | Out-String; return @{ Code = $LASTEXITCODE; Out = $o.Trim() } }
-function Same($a, $b) { (Get-FileHash (Join-Path $Saida $a)).Hash -eq (Get-FileHash (Join-Path $Saida $b)).Hash }
+# maior valor da coluna $col nas linhas de dados (as que comecam por digito; o cabecalho fica de fora); -1 = sem dados.
+# $col -1: so a presenca de dados (0)
+function MaxCol($f, [int]$col) {  # [int]: um -1 literal na chamada chega como texto "-1"
+    if (-not (Test-Path -LiteralPath $f)) { return -1 }
+    $max = -1
+    foreach ($l in [IO.File]::ReadLines($f)) {
+        if ($l.Length -eq 0 -or -not [char]::IsDigit($l[0])) { continue }
+        if ($col -lt 0) { return 0 }
+        $c = $l.Split("`t"); if ($c.Count -gt $col -and $c[$col] -match "^\d+$" -and [int64]$c[$col] -gt $max) { $max = [int64]$c[$col] }
+    }
+    return $max
+}
+function Same($a, $b) {
+    $pa = Join-Path $Saida $a; $pb = Join-Path $Saida $b
+    # ausente ou sem linhas de dados (vazio, so o cabecalho) nunca e igual
+    if ((MaxCol $pa -1) -lt 0 -or (MaxCol $pb -1) -lt 0) { return $false }
+    (Get-FileHash $pa).Hash -eq (Get-FileHash $pb).Hash
+}
+# Execucao completa (2026-10-25, N8.0): rc 0, o orcamento de VBlanks inteiro, sem falta de progresso/deadlock, todo
+# log do job com dados, e quadros, traco e estado no ultimo indice do roteiro (passo de jogo, ou leitura do controle no
+# roteiro por leitura). Uma comparacao de igualdade so vale com os dois lados completos: dois tracos truncados ou
+# vazios iguais nao aprovam (revisao Codex 2026-10-25).
+function Completa($tag) {
+    $m = $script:meta[$tag]; $pr = $script:procs[$tag]
+    if (-not $m -or -not $pr) { return "$tag sem execucao" }
+    if ($pr.ExitCode -ne 0) { return "$tag rc=$($pr.ExitCode)" }
+    $o = Out $tag
+    if ($o -notmatch "VBlanks: $($m.N);") { return "$tag nao chegou a $($m.N) VBlanks" }
+    # vivacidade: uma linha "erro:" (sh4_fatal; no experimental a guarda de falta de progresso e fatal e sai assim),
+    # um deadlock contado ou a interrupcao nunca reconhecida. No --tempo nativo, "[progresso] falta de progresso" e
+    # "faltas de progresso N" sao o relatorio do modo sombra (diagnostico, a execucao segue): durante o filme nativo ele
+    # conta 1-2 janelas por ciclos (tambem no test_saves e no n5_e001 aprovados); no experimental o mesmo filme da 0
+    $erros = @([regex]::Matches($o, "(?m)^erro:.*$") | ForEach-Object { $_.Value })
+    if ($erros) { return "$tag $($erros[0].Trim())" }
+    if ($o -match "deadlock [1-9]|interrupcao nunca reconhecida") { return "$tag guarda de vivacidade" }
+    if (-not (Test-Path -LiteralPath $m.Script -PathType Leaf)) { return "$tag sem o roteiro $($m.Script)" }  # sem ele, nada a alcancar
+    $cab = ""; $ult = 0
+    foreach ($l in [IO.File]::ReadLines($m.Script)) {
+        $t = $l.Split("#")[0].Trim(); if (-not $t) { continue }
+        if ($t -match "^indice") { $cab = $t; continue }
+        if ($t -match "^(\d+)\s") { $ult = [int64]$Matches[1] }
+    }
+    # todo log ligado no job tem linhas de dados; quadros, traco e estado chegam ao ultimo indice do roteiro (por passo:
+    # quadros col. 3, traco e estado col. 0; por leitura: quadros e traco col. 2, o estado e por passo e so precisa de
+    # dados). Indice por transicao injetada: sem coluna para alcancar, so os dados
+    $passo = $cab -eq "indice passo"; $trans = $cab -match "transicao"
+    foreach ($lg in @(@("BS_FRAME_LOG", $(if ($passo) { 3 } else { 2 }), "quadros"), @("BS_PAD_TRACE", $(if ($passo) { 0 } else { 2 }), "traco"),
+                      @("BS_STATE_PASSO", $(if ($passo) { 0 } else { -1 }), "estado"), @("BS_FILE_LOG", -1, "leituras de arquivo"))) {
+        $f = $m.Env[$lg[0]]; if (-not $f) { continue }
+        $col = if ($trans) { -1 } else { $lg[1] }
+        $max = MaxCol $f $col
+        if ($max -lt 0) { return "$tag sem dados no log de $($lg[2])" }
+        if ($col -ge 0 -and $max -lt $ult) { return "$tag parou em $max de $ult ($($lg[2]), $(if ($passo) { 'passos' } else { 'leituras' }))" }
+    }
+    return ""
+}
+function Completas([string[]]$tags) { @($tags | ForEach-Object { Completa $_ } | Where-Object { $_ }) }
 $S = $Saida
 $assistidos = @("passo_cgate", "passo_heliporto", "passo_combate", "passo_load_opcoes")
 
@@ -147,12 +212,15 @@ if ($want.K13) {
     $ExeRef = (Resolve-Path $ExeRef).Path
     foreach ($r in $RotasK13) {
         $n = if ($r -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r.txt" }
-        # saves legado: a referencia e anterior ao N4 (sem cartao: "VMU not found"); o K13 confere os controles
-        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace -ctl "" -saves "legado"
-        Job "k13_ref_$r" $ExeRef "$rot\$r.txt" $n -NoTrace -ctl ""
+        # saves legado: a referencia e anterior ao N4 (sem cartao: "VMU not found"); o K13 confere os controles.
+        # A referencia e anterior ao N5 e ao N6: sem --video (so tem o Sofdec) e com o audio legado de entao; o lado
+        # novo fixa --video legado e --audio legado para comparar o mesmo cenario (prova de 2026-10-25: com o audio
+        # legado, quadros e leituras identicos aos da referencia; com o nativo, diferem). Mesmo roteiro, --tempo e relogio.
+        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace -ctl "" -saves "legado" -audio "legado"
+        Job "k13_ref_$r" $ExeRef "$rot\$r.txt" $n -NoTrace -ctl "" -video ""
     }
     $r0 = $RotasK13[0]  # traco ligado: na primeira rota
-    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) -ctl "" -saves "legado"
+    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) -ctl "" -saves "legado" -audio "legado"
 }
 RunAll
 
@@ -183,9 +251,10 @@ if ($want.K4) {
     }
 }
 if ($want.K5) {
-    $r = Py "compara", "$S\k5.trace.tsv", "$S\k5b.trace.tsv", "--com-tempo"; Check "K5 determinismo do release (duas execucoes)" ($r.Code -eq 0 -and (Same "k5.fr.tsv" "k5b.fr.tsv")) ($r.Out -split "`n")[0]
-    $r = Py "compara", "$S\k6.trace.tsv", "$S\k6b.trace.tsv", "--com-tempo"; Check "K5 determinismo do build com mods (duas execucoes)" ($r.Code -eq 0 -and (Same "k6.fr.tsv" "k6b.fr.tsv")) ($r.Out -split "`n")[0]
-    $r = Py "compara", "$S\k5.trace.tsv", "$S\k6.trace.tsv", "--com-tempo"; Check "K5 paridade release x mods" ($r.Code -eq 0 -and (Same "k5.fr.tsv" "k6.fr.tsv")) ($r.Out -split "`n")[0]
+    $inc = Completas "k5", "k5b", "k6", "k6b"; if ($inc) { Check "K5 execucoes completas" $false ($inc -join "; ") }
+    $r = Py "compara", "$S\k5.trace.tsv", "$S\k5b.trace.tsv", "--com-tempo"; Check "K5 determinismo do release (duas execucoes)" (-not $inc -and $r.Code -eq 0 -and (Same "k5.fr.tsv" "k5b.fr.tsv")) ($r.Out -split "`n")[0]
+    $r = Py "compara", "$S\k6.trace.tsv", "$S\k6b.trace.tsv", "--com-tempo"; Check "K5 determinismo do build com mods (duas execucoes)" (-not $inc -and $r.Code -eq 0 -and (Same "k6.fr.tsv" "k6b.fr.tsv")) ($r.Out -split "`n")[0]
+    $r = Py "compara", "$S\k5.trace.tsv", "$S\k6.trace.tsv", "--com-tempo"; Check "K5 paridade release x mods" (-not $inc -and $r.Code -eq 0 -and (Same "k5.fr.tsv" "k6.fr.tsv")) ($r.Out -split "`n")[0]
 }
 if ($want.K6) {
     $r = Py "limiares", "$S\k6.trace.tsv", "$S\limiares.tsv"; $c = Ct "k6"
@@ -203,7 +272,8 @@ if ($want.K10) {
     $r = Py "compara", "$S\k7.trace.tsv", "$S\k10_ab.trace.tsv"; Check "K10 negativo acusado: A/B trocados" ($r.Code -ne 0) ($r.Out -split "`n")[0]
     $r = Py "compara", "$S\k6.trace.tsv", "$S\k10_passo.trace.tsv"; Check "K10 negativo acusado: amostra um passo adiantada" ($r.Code -ne 0) ($r.Out -split "`n")[0]
     $r = Py "compara", "$S\k10_vb.trace.tsv", "$S\k10_vbm.trace.tsv"; Check "K10 negativo acusado: amostra no VBlank-In (transicao injetada)" ($r.Code -ne 0) ($r.Out -split "`n")[0]
-    $r = Py "compara", "$S\k6.trace.tsv", "$S\k10_vbpasso.trace.tsv", "--com-tempo"; Check "K10 controle: VBlank-In com roteiro por passo da o mesmo traco" ($r.Code -eq 0) ($r.Out -split "`n")[0]
+    $inc = Completas "k6", "k10_vbpasso"
+    $r = Py "compara", "$S\k6.trace.tsv", "$S\k10_vbpasso.trace.tsv", "--com-tempo"; Check "K10 controle: VBlank-In com roteiro por passo da o mesmo traco" (-not $inc -and $r.Code -eq 0) ((@(($r.Out -split "`n")[0]) + $inc) -join "; ")
 }
 if ($want.K11) {
     foreach ($r in $assistidos) {
@@ -211,20 +281,24 @@ if ($want.K11) {
         $fr  = Same "k11_$r.fr.tsv" "k11m_$r.fr.tsv"
         $c0  = Ct "k11_$r"; $c1 = Ct "k11m_$r"
         $stq = Same "k11_$r.st.tsv" "k11m_$r.st.tsv"
-        Check "K11 campos nao usados: $r" ($cmp.Code -eq 0 -and $fr -and $stq) "quadros $(if ($fr) { 'iguais' } else { 'DIFERENTES' }), estado por passo $(if ($stq) { 'igual' } else { 'DIFERENTE' }); $(($cmp.Out -split "`n")[0])"
+        $inc = Completas "k11_$r", "k11m_$r"
+        Check "K11 campos nao usados: $r" (-not $inc -and $cmp.Code -eq 0 -and $fr -and $stq) "quadros $(if ($fr) { 'iguais' } else { 'DIFERENTES' }), estado por passo $(if ($stq) { 'igual' } else { 'DIFERENTE' }); $(($cmp.Out -split "`n")[0])$(if ($inc) { '; INCOMPLETA: ' + ($inc -join '; ') })"
         Check "K11 contrato na rota: $r" ($c0.divergencias -eq "0" -and $c1.divergencias -eq "0" -and $c0.teclado -eq "0" -and (Out "k11_$r") -notmatch "erro:") "chamadas $($c0.chamadas)"
     }
 }
 if ($want.K12) {
     foreach ($k in "area1", "expl") {
         $cmp = Py "compara", "$S\k12_o_$k.trace.tsv", "$S\k12_c_$k.trace.tsv", "--com-tempo"
-        Check "K12 roteiro convertido igual ao original: $k" ($cmp.Code -eq 0 -and (Same "k12_o_$k.fr.tsv" "k12_c_$k.fr.tsv")) (($cmp.Out -split "`n")[0])
+        $inc = Completas "k12_o_$k", "k12_c_$k"
+        Check "K12 roteiro convertido igual ao original: $k" (-not $inc -and $cmp.Code -eq 0 -and (Same "k12_o_$k.fr.tsv" "k12_c_$k.fr.tsv")) ((@(($cmp.Out -split "`n")[0]) + $inc) -join "; ")
     }
 }
 if ($want.K13) {
-    Check "K13 traco ligado nao muda os quadros" (Same "k13_novo_$($RotasK13[0]).fr.tsv" "k13_traco.fr.tsv") $RotasK13[0]
+    $inc = Completas "k13_novo_$($RotasK13[0])", "k13_traco"
+    Check "K13 traco ligado nao muda os quadros" (-not $inc -and (Same "k13_novo_$($RotasK13[0]).fr.tsv" "k13_traco.fr.tsv")) ((@($RotasK13[0]) + $inc) -join "; ")
     foreach ($r in $RotasK13) {
-        Check "K13 padrao inalterado (quadros e leituras = referencia): $r" ((Same "k13_novo_$r.fr.tsv" "k13_ref_$r.fr.tsv") -and (Same "k13_novo_$r.fl.tsv" "k13_ref_$r.fl.tsv")) $ExeRef
+        $inc = Completas "k13_novo_$r", "k13_ref_$r"
+        Check "K13 padrao inalterado (quadros e leituras = referencia): $r" (-not $inc -and (Same "k13_novo_$r.fr.tsv" "k13_ref_$r.fr.tsv") -and (Same "k13_novo_$r.fl.tsv" "k13_ref_$r.fl.tsv")) ((@($ExeRef) + $inc) -join "; ")
     }
 }
 $fail = @($results | Where-Object { -not $_.Ok }).Count

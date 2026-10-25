@@ -63,15 +63,22 @@ function Check($name, [bool]$ok, $detail = "") {
     $script:results += [pscustomobject]@{ Caso = $name; Ok = $ok }
     Write-Host ("[{0}] {1} {2}" -f ($(if ($ok) { "ok" } else { "FALHA" })), $name, $detail)
 }
+# Video nativo (padrao do produto desde o N5): o filme NEWGAME (452,8 s, 27 146 VBlanks) toca dentro do passo 1038, que
+# fica parado durante o filme. Toda rota que passa por ele recebe o orcamento do filme (como o test_saves). Sem isso as
+# execucoes paravam no meio do filme e as comparacoes passavam no vazio (regressao do N8.0, 2026-10-25). Os passos por
+# VBlank mudam com o filme nativo (9 323 contra 9 554 com o Sofdec na rota de limiares): a contagem de passos de uma
+# execucao com o video legado nao prova equivalencia passo a passo com uma do nativo; aqui os dois lados sao nativos.
+$FilmeNativo = 27200
 function VBlanksFor($file) {
     $last = 0
     foreach ($l in [IO.File]::ReadLines($file)) { $t = $l.Split("#")[0].Trim(); if ($t -match "^(\d+)\s") { $last = [int64]$Matches[1] } }
-    return [int64]($last * 2 + 3000)
+    return [int64]($last * 2 + 3000 + $FilmeNativo)
 }
 
 # --- execucoes (paralelas, no maximo $Paralelo); prefixo P: P_fr, P_fl, P_st, P_au, P_trace, P_fech ---
 $jobs = [System.Collections.ArrayList]::new()
 $procs = @{}  # tag -> processo (codigo de saida, revisao Codex)
+$meta = @{}   # tag -> roteiro, VBlanks e termino esperado (Completa)
 function ExitOk($tag) { $p = $script:procs[$tag]; return $p -and $p.HasExited -and $p.ExitCode -eq 0 -and (Test-Path (Join-Path $S "${tag}_trace.tsv")) -and (Get-Item (Join-Path $S "${tag}_trace.tsv")).Length -gt 0 }
 function Diverges($x) { return $x.Out -match "diferentes (\d+)" -and [int]$Matches[1] -gt 0 }
 function Job($tag, $exe, $script, $n, $controles, $tempo = "nativo", $envs = @{}, [switch]$Dump) {
@@ -82,6 +89,10 @@ function Job($tag, $exe, $script, $n, $controles, $tempo = "nativo", $envs = @{}
     if ($Dump) { $e.BS_RAM_DUMP = "$($n - 1):${p}_ram.bin" }
     foreach ($k in $envs.Keys) { $e[$k] = $envs[$k] }
     [void]$script:jobs.Add(@{ Tag = $tag; Exe = $exe; N = $n; Env = $e; Tempo = $tempo; Ctl = $controles; P = $p })
+    # termino esperado: o soft reset sai pela syscall do menu do BIOS; os negativos (a mutacao muda o percurso) rodam o
+    # orcamento inteiro sem exigir o fim do roteiro; os demais tem de chegar ao ultimo passo do roteiro
+    $fim = if ($tag -like "c_softreset_*") { "softreset" } elseif (($tag -like "neg_*" -and $tag -ne "neg_old_host") -or $tag -eq "r_perfil_outro") { "negativo" } else { "roteiro" }
+    $script:meta[$tag] = @{ Script = $(if ($e.BS_CONTROLE_FISICO) { $e.BS_CONTROLE_FISICO } else { $script }); N = $n; Fim = $fim; Env = $e }
 }
 function RunAll() {
     $running = @()
@@ -104,8 +115,72 @@ function Fech($tag) {
     return $h
 }
 function Py($tool, [string[]]$a) { $o = python $tool @a 2>&1 | Out-String; return @{ Code = $LASTEXITCODE; Out = $o.Trim() } }
-function Same($a, $b) { (Get-FileHash (Join-Path $S $a)).Hash -eq (Get-FileHash (Join-Path $S $b)).Hash }
-function TraceDiff($a, $b) { Py $traco @("compara", (Join-Path $S "${a}_trace.tsv"), (Join-Path $S "${b}_trace.tsv"), "--com-tempo") }
+# maior valor da coluna $col nas linhas de dados (as que comecam por digito; o cabecalho fica de fora); -1 = sem dados.
+# $col -1: so a presenca de dados (0)
+function MaxCol($f, [int]$col) {  # [int]: um -1 literal na chamada chega como texto "-1"
+    if (-not (Test-Path -LiteralPath $f)) { return -1 }
+    $max = -1
+    foreach ($l in [IO.File]::ReadLines($f)) {
+        if ($l.Length -eq 0 -or -not [char]::IsDigit($l[0])) { continue }
+        if ($col -lt 0) { return 0 }
+        $c = $l.Split("`t"); if ($c.Count -gt $col -and $c[$col] -match "^\d+$" -and [int64]$c[$col] -gt $max) { $max = [int64]$c[$col] }
+    }
+    return $max
+}
+function Same($a, $b) {
+    $pa = Join-Path $S $a; $pb = Join-Path $S $b
+    # ausente ou sem linhas de dados (vazio, so o cabecalho) nunca e igual
+    if ((MaxCol $pa -1) -lt 0 -or (MaxCol $pb -1) -lt 0) { return $false }
+    (Get-FileHash $pa).Hash -eq (Get-FileHash $pb).Hash
+}
+# Execucao completa (2026-10-25, N8.0): rc 0, sem falta de progresso/deadlock, quadros, traco, estado e leituras de
+# arquivo com dados, e o termino esperado (quadros, traco e estado no ultimo indice do roteiro; o orcamento inteiro nos
+# negativos; a syscall do BIOS no soft reset). Dois tracos vazios ou truncados iguais nao aprovam (revisao Codex
+# 2026-10-25). "" = completa.
+function Completa($tag) {
+    $m = $script:meta[$tag]; $pr = $script:procs[$tag]
+    if (-not $m -or -not $pr) { return "$tag sem execucao" }
+    $o = if (Test-Path (Join-Path $S "${tag}_saida.txt")) { Get-Content (Join-Path $S "${tag}_saida.txt") -Raw } else { "" }
+    # vivacidade: uma linha "erro:" (sh4_fatal; no experimental a guarda de falta de progresso e fatal e sai assim),
+    # um deadlock contado ou a interrupcao nunca reconhecida. No --tempo nativo, "[progresso] falta de progresso" e
+    # "faltas de progresso N" sao o relatorio do modo sombra (diagnostico, a execucao segue): durante o filme nativo ele
+    # conta 1-2 janelas por ciclos (tambem no test_saves e no n5_e001 aprovados); no experimental o mesmo filme da 0
+    $erros = @([regex]::Matches($o, "(?m)^erro:.*$") | ForEach-Object { $_.Value } | Where-Object { -not ($m.Fim -eq "softreset" -and $_ -match "PC=8C001008") })
+    if ($erros) { return "$tag $($erros[0].Trim())" }
+    if ($o -match "deadlock [1-9]|interrupcao nunca reconhecida") { return "$tag guarda de vivacidade" }
+    $logs = @(@("BS_FRAME_LOG", 3, 2, "quadros"), @("BS_PAD_TRACE", 0, 2, "traco"), @("BS_STATE_PASSO", 0, -1, "estado"),
+              @("BS_FILE_LOG", -1, -1, "leituras de arquivo"))  # chave, coluna do passo, coluna da leitura, nome
+    foreach ($lg in $logs) { $f = $m.Env[$lg[0]]; if ($f -and (MaxCol $f -1) -lt 0) { return "$tag sem dados no log de $($lg[3])" } }
+    if ($m.Fim -eq "softreset") { if ($o -match "syscall do BIOS ainda nao implementada em PC=8C001008") { return "" } else { return "$tag sem a syscall do menu do BIOS" } }
+    if ($pr.ExitCode -ne 0) { return "$tag rc=$($pr.ExitCode)" }
+    if ($o -notmatch "VBlanks: $($m.N);") { return "$tag nao chegou a $($m.N) VBlanks" }
+    if ($m.Fim -eq "negativo") { return "" }
+    if (-not (Test-Path -LiteralPath $m.Script -PathType Leaf)) { return "$tag sem o roteiro $($m.Script)" }  # sem ele, nada a alcancar
+    $cab = ""; $ult = 0
+    foreach ($l in [IO.File]::ReadLines($m.Script)) {
+        $t = $l.Split("#")[0].Trim(); if (-not $t) { continue }
+        if ($t -match "^indice") { $cab = $t; continue }
+        if ($t -match "^(\d+)\s") { $ult = [int64]$Matches[1] }
+    }
+    if ($cab -match "transicao") { return "" }  # indice por transicao injetada: sem coluna para alcancar
+    # por passo: quadros col. 3, traco e estado col. 0; por leitura: quadros e traco col. 2 (o estado e por passo)
+    $passo = $cab -eq "indice passo"
+    foreach ($lg in $logs) {
+        $f = $m.Env[$lg[0]]; $col = if ($passo) { $lg[1] } else { $lg[2] }
+        if (-not $f -or $col -lt 0) { continue }
+        $max = MaxCol $f $col
+        if ($max -lt $ult) { return "$tag parou em $max de $ult ($($lg[3]), $(if ($passo) { 'passos' } else { 'leituras' }))" }
+    }
+    return ""
+}
+$incompletas = @{}
+function Inc([string[]]$tags) { @($tags | ForEach-Object { $script:incompletas[$_] } | Where-Object { $_ }) }
+# toda comparacao de traco passa pela guarda: um lado incompleto nunca da "iguais" nem "diverge"
+function TraceDiff($a, $b) {
+    $i = Inc $a, $b
+    if ($i) { return @{ Code = 99; Out = "INCOMPLETA: " + ($i -join "; ") } }
+    Py $traco @("compara", (Join-Path $S "${a}_trace.tsv"), (Join-Path $S "${b}_trace.tsv"), "--com-tempo")
+}
 function Pair($a, $b) {  # compara_modos + traco com tempo
     $m = Py $compara @((Join-Path $S $a), (Join-Path $S $b))
     $t = TraceDiff $a $b
@@ -120,6 +195,7 @@ $closureZero = @("f_8C15C4E6", "f_8C15C24C", "f_8C15C3D4", "f_8C15C490", "f_8C15
 function ClosureOk($tag) {
     $f = Fech $tag
     if ($f.Count -eq 0) { return @{ Ok = $false; Det = "sem ${tag}_fech.tsv" } }
+    if (Inc $tag) { return @{ Ok = $false; Det = "INCOMPLETA: " + ((Inc $tag) -join "; ") } }
     $bad = @($closureZero | Where-Object { $f[$_] -ne "0" })
     $okTrig = $f["pd_disparos_efetivos"] -eq $f["maple_dmas"] -and [int64]$f["maple_dmas"] -gt 0
     $okInit = [int64]$f["f_8C15C1A2"] -eq 24 * ([int64]$f["f_8C15C10C"] + [int64]$f["f_8C15C686"]) -and $f["f_8C15C10C"] -eq "1"
@@ -134,10 +210,10 @@ $rotas = @("passo_cgate", "passo_heliporto", "passo_combate", "passo_load_opcoes
 $tempos = @("nativo", "experimental")
 $cen = @(@("conexao", "$S\passo_conexao.txt", (VBlanksFor "$S\passo_conexao.txt")), @("boot", "$S\pad_conexao_boot.txt", 1500),
          @("softreset", "$S\pad_softreset.txt", 1500), @("limiares", "$S\passo_limiares.txt", (VBlanksFor "$S\passo_limiares.txt")),
-         @("matriz", "$S\pad_matriz.txt", 5200), @("transicao", "$S\pad_transicao.txt", 2500))
+         @("matriz", "$S\pad_matriz.txt", (5200 + $FilmeNativo)), @("transicao", "$S\pad_transicao.txt", 2500))
 if ($want.P1 -or $want.P2 -or $want.P7) {
     foreach ($r in $rotas) {
-        $n = if ($r -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r.txt" }
+        $n = if ($r -eq "newgame_area1") { 7300 + $FilmeNativo } else { VBlanksFor "$rot\$r.txt" }
         foreach ($t in $tempos) {
             $dump = $want.P7 -and $t -eq "nativo"
             Job "${r}_${t}_leg" $Exe "$rot\$r.txt" $n "legado" $t -Dump:$dump
@@ -195,6 +271,8 @@ if ($want.P10) { Job "padrao" $Exe "$S\passo_limiares.txt" $nLim ""; Job "padrao
 $t0 = Get-Date
 RunAll
 Write-Host ("execucoes: {0:n0} s" -f ((Get-Date) - $t0).TotalSeconds)
+foreach ($tag in $meta.Keys) { $x = Completa $tag; if ($x) { $incompletas[$tag] = $x } }
+Check "execucoes completas (rc, vivacidade, traco, ultimo passo do roteiro)" ($incompletas.Count -eq 0) "$($meta.Count) execucoes$(if ($incompletas.Count) { '; ' + (($incompletas.Values | Sort-Object) -join '; ') })"
 
 if ($want.P1) {
     foreach ($r in $rotas) { foreach ($t in $tempos) { $x = Pair "${r}_${t}_leg" "${r}_${t}_nat"; Check "P1 legado = nativo: $r ($t)" $x.Ok $x.Det } }
@@ -219,18 +297,18 @@ if ($want.P3) {
         }
     }
     $nat = "c_conexao_nativo_nat_trace.tsv"
-    $k = Py $traco @("conexao", (Join-Path $S $nat), (Join-Path $S "conexao.tsv")); Check "P3 conferencia conexao (pad_traco) no nativo" ($k.Code -eq 0) (($k.Out -split "`n")[-1])
-    $k = Py $traco @("boot", (Join-Path $S "c_boot_nativo_nat_trace.tsv")); Check "P3 conferencia porta vazia desde o boot no nativo" ($k.Code -eq 0) (($k.Out -split "`n")[-1])
+    $k = Py $traco @("conexao", (Join-Path $S $nat), (Join-Path $S "conexao.tsv")); Check "P3 conferencia conexao (pad_traco) no nativo" ($k.Code -eq 0 -and -not (Inc "c_conexao_nativo_nat")) (($k.Out -split "`n")[-1])
+    $k = Py $traco @("boot", (Join-Path $S "c_boot_nativo_nat_trace.tsv")); Check "P3 conferencia porta vazia desde o boot no nativo" ($k.Code -eq 0 -and -not (Inc "c_boot_nativo_nat")) (($k.Out -split "`n")[-1])
     foreach ($t in $tempos) {
         foreach ($m in "leg", "nat") {
             $k = Py $traco @("softreset", (Join-Path $S "c_softreset_${t}_${m}_trace.tsv"), (Join-Path $S "c_softreset_${t}_${m}_saida.txt"), (Join-Path $S "c_softcontrole_${t}_${m}_saida.txt"))
-            Check "P3 conferencia soft reset (pad_traco) $m ($t)" ($k.Code -eq 0) (($k.Out -split "`n")[-1])
+            Check "P3 conferencia soft reset (pad_traco) $m ($t)" ($k.Code -eq 0 -and -not (Inc "c_softreset_${t}_${m}", "c_softcontrole_${t}_${m}")) (($k.Out -split "`n")[-1])
         }
     }
-    $k = Py $traco @("limiares", (Join-Path $S "c_limiares_nativo_nat_trace.tsv"), (Join-Path $S "limiares.tsv")); Check "P3 conferencia limiares no nativo" ($k.Code -eq 0) (($k.Out -split "`n")[-1])
+    $k = Py $traco @("limiares", (Join-Path $S "c_limiares_nativo_nat_trace.tsv"), (Join-Path $S "limiares.tsv")); Check "P3 conferencia limiares no nativo" ($k.Code -eq 0 -and -not (Inc "c_limiares_nativo_nat")) (($k.Out -split "`n")[-1])
 }
 if ($want.P4) {
-    Check "P4 determinismo do nativo (duas execucoes)" ((Same "c_limiares_nativo_nat_fr.tsv" "det_nat_fr.tsv") -and (Same "c_limiares_nativo_nat_trace.tsv" "det_nat_trace.tsv")) ""
+    Check "P4 determinismo do nativo (duas execucoes)" (-not (Inc "c_limiares_nativo_nat", "det_nat") -and (Same "c_limiares_nativo_nat_fr.tsv" "det_nat_fr.tsv") -and (Same "c_limiares_nativo_nat_trace.tsv" "det_nat_trace.tsv")) ""
 }
 if ($want.P5) {
     $x = TraceDiff "c_limiares_nativo_nat" "mods_nat"
@@ -241,7 +319,7 @@ if ($want.P6) {
         $x = TraceDiff "c_limiares_nativo_nat" "neg_$m"; Check "P6 negativo acusado: $m" ((ExitOk "neg_$m") -and (Diverges $x)) (($x.Out -split "`n")[0])
     }
     $x = TraceDiff "c_boot_nativo_nat" "neg_presenca_imediata"; Check "P6 negativo acusado: presenca_imediata" ((ExitOk "neg_presenca_imediata") -and (Diverges $x)) (($x.Out -split "`n")[0])
-    $x = ClosureOk "neg_maple"; Check "P6 negativo acusado: maple (retorno ao Maple)" (-not $x.Ok) $x.Det
+    $x = ClosureOk "neg_maple"; Check "P6 negativo acusado: maple (retorno ao Maple)" (-not $x.Ok -and -not (Inc "neg_maple")) $x.Det
     $x = TraceDiff "c_limiares_nativo_nat" "neg_old_host"; Check "P6 controle old_host: o jogo nao reescreve on nas rotas (traco igual)" ($x.Code -eq 0) (($x.Out -split "`n")[0])
 }
 if ($want.P7) {
@@ -249,7 +327,7 @@ if ($want.P7) {
         $leg = [IO.File]::ReadAllBytes((Join-Path $S "${r}_nativo_leg_ram.bin")); $nat = [IO.File]::ReadAllBytes((Join-Path $S "${r}_nativo_nat_ram.bin"))
         $free = $true; for ($i = 0x4000; $i -lt 0x4100; $i++) { if ($leg[$i] -ne 0xFF) { $free = $false } }
         $same = $true; for ($i = 0; $i -lt 0x78; $i++) { if ($leg[0x2CFFA8 + $i] -ne $nat[0x4000 + $i]) { $same = $false } }
-        Check "P7 area nativa: livre no legado e info = buffer da per do legado: $r" ($free -and $same) "livre $free, info igual $same"
+        Check "P7 area nativa: livre no legado e info = buffer da per do legado: $r" ($free -and $same -and -not (Inc "${r}_nativo_leg", "${r}_nativo_nat")) "livre $free, info igual $same"
         Remove-Item (Join-Path $S "${r}_nativo_leg_ram.bin"), (Join-Path $S "${r}_nativo_nat_ram.bin")
     }
 }
