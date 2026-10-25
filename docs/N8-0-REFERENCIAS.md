@@ -250,10 +250,11 @@ com dados, logs até o fim, cartão inicial e do fim conforme a seção 3, confi
 | sessao-20261021-140145 | 7 915 | 97 610 / 65 967 | 8 `load ok`, 1 `save ok` |
 | sessao-20261021-145006 | 7 496 | 102 026 / 69 041 | 12 `load ok`, 1 `save ok` |
 
-**Reprodutibilidade** (o mesmo executável): `conferir` estrito de um caso por família, nos dois modos
+**Reprodutibilidade** (o mesmo executável): `conferir` estrito dos **16 casos**, primeiro um por família nos dois modos
 (`passo_newgame_area1_experimental`, `passo_load_opcoes_nativo`, `passo_load_slot1_nativo`,
-`sessao-20261021-145006_experimental`): **0 diferenças** em todos os artefatos, inclusive `eventos` (SPC e ordem por
-VBlank) e `relogios`. **Negativo** com `BS_RAM_MUTACAO=3000:8C24FBCC`: acusado nos dois casos (`passo_load_opcoes_nativo`:
+`sessao-20261021-145006_experimental`) e depois os 12 restantes (pedido do mantenedor: nenhuma referência vale como
+evidência definitiva para remover componentes legados sem reprodução independente): **0 diferenças** em todos os
+artefatos, inclusive `eventos` (SPC e ordem por VBlank) e `relogios`. **Negativo** com `BS_RAM_MUTACAO=3000:8C24FBCC`: acusado nos dois casos (`passo_load_opcoes_nativo`:
 estado a partir do passo 1481; a sessão `145006`: save `BLUESTIN.002` do fim, estado a partir do passo 1492 e quadros).
 
 **Cobertura que as referências não dão** (registrada, não presumida):

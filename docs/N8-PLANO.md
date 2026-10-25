@@ -293,5 +293,5 @@ O renderizador em software é preservado permanentemente como recuo do Vulkan.
 
 | Subetapa | Situação |
 |---|---|
-| N8.0 | em andamento; fechamento técnico em 2026-10-25, aguardando a aprovação do mantenedor: regressão nível 3, correções (SPIR-V, ícone, guardas das suítes), as 16 referências capturadas, validadas e reproduzíveis, com negativos (`docs/N8-0-REFERENCIAS.md` seção 8). Pendente de decisão: a fixação de áudio nas suítes históricas (A/B, `STATUS.md`) |
+| N8.0 | **concluída em 2026-10-25**: regressão nível 3, correções (SPIR-V, ícone, guardas das suítes), as 16 referências capturadas, validadas e reproduzidas uma a uma (0 diferenças), com negativos (`docs/N8-0-REFERENCIAS.md` seção 8); fixação do áudio legado nas suítes históricas decidida pelo mantenedor (opção b), com as suítes aprovadas (K12 2/2, `test_cri` 33/33, `test_efeito` 17/17, `test_n2b2` 17/17, `test_n2b` 52/52), com a cobertura nativa mapeada (`STATUS.md`) |
 | N8.1–N8.8 | não iniciadas (o N8.1 só com autorização explícita; diretrizes em `docs/N8-1-PREPARACAO.md` seção 4.1) |

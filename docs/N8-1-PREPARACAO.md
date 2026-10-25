@@ -123,6 +123,10 @@ equivalência.
 - com o TMU parado (diagnóstico) e o áudio nativo, a hipótese D7 não vale em dois pontos: no `test_n2b` B11 uma IRQ
   `0x320` antes da `0x360` no VBlank 2114 e no `test_efeito` E6 uma troca a mais para a thread do CRI no VBlank 2095.
   Fica para os medidores do CRI e o TMU deste N8.1.
+- fixação aprovada (opção b, 2026-10-25): `test_cri` e `test_efeito` rodam inteiros com o áudio legado. A
+  equivalência por passada do bloqueio do CRI (C3/E3) com o **áudio nativo** é requisito da validação dos slots do CRI
+  neste N8.1, não herdada dessas suítes. As propostas S2n e S4n (testes nativos, `STATUS.md`, N8.0) aguardam o
+  mantenedor.
 
 ## 5. Ferramentas prontas para o N8.1
 
