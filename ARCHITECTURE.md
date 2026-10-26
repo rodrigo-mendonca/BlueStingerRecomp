@@ -747,6 +747,13 @@ Planejamento técnico concluído em 2026-10-24.
   O tempo lógico não depende dos ciclos (prova `BS_CICLOS_RUIDO`). O estável por ciclos e os modelos ficam para o
   estável e o recuo até o N8.2 (D-N8.1-A).
 
+- **N8.2** concluído em 2026-10-26 (`docs/N8-2-SEPARACAO.md`):
+  - o runtime é montado por papéis (bibliotecas de objetos `bs_rt_*`);
+  - o build de **validação** (`BS_VALIDACAO`, preset `msvc-validacao`, Debug, `mods`/`watch`) é o único com as
+    mutações e sondas de teste; o **produto** (`msvc-release`, Builder) tem stubs que as recusam;
+  - os dados do jogo (`bs_disc_data`) ficam separados da leitura de imagens (`bs_disc`, ferramentas);
+  - a catraca `n8_produto_papeis` confere o manifesto contra o mapa do linker.
+
 O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
 - **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico
   (`time_now()` devolve o instante lógico), sem usar os ciclos estimados como base.

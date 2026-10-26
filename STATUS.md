@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2–N8.8 não iniciadas (o N8.2 só com autorização explícita).** Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) concluído em 2026-10-26; N8.3–N8.8 não iniciadas (o N8.3 só com autorização explícita).** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2918,6 +2918,66 @@ ARCHITECTURE dizia que PVR/Maple/GD-ROM deixam de agendar tempo (agendam no rel�
 
 **N8.1 concluído.** O N8.2 só com autorização explícita.
 
+### N8.2: separação do produto e da validação (2026-10-26)
+
+Autorizado pelo mantenedor em 2026-10-26, só o N8.2. Detalhes e inventário em `docs/N8-2-SEPARACAO.md`.
+
+Decisões do mantenedor:
+- o tempo estável (`--tempo nativo`) e a instrumentação das referências ficam no produto e na validação
+  (compartilhados): a CLI e o headless não mudam, e as 16 referências conferem o próprio exe do produto;
+- só as mutações e sondas exclusivas de teste saem do produto.
+
+**Separação:**
+- `bs_runtime` montado de bibliotecas de objetos por papel: `aot`, `nativo`, `simulacao`, `estavel`, `diagnostico` e
+  `validacao` (ou `validacao_stubs`), com os mesmos objetos no produto;
+- opção `BS_VALIDACAO` e preset `msvc-validacao`. O produto (`msvc-release` e o Builder) tem stubs que recusam
+  `BS_CICLOS_RUIDO`, `BS_HW_PROBE` e `BS_CRI_DIAG` (saída 2, nunca no vazio); o Debug e as pastas `mods`/`watch` são
+  de validação;
+- `bs_disc_data` (produto) separado do `bs_disc` (leitor de CDI e extrator, ferramentas).
+
+**Catraca `n8_produto_papeis`** (ctest):
+- papéis;
+- o manifesto completo contra o mapa do linker (38 objetos no produto, 40 na validação; só `snapshot` fora, sem
+  chamador);
+- o mapa do mesmo link;
+- o comportamento.
+
+Os negativos (configuração cruzada, objeto ausente, mapa velho) reprovam. A `test_preview` confere a recusa das três
+variáveis na Preview.
+
+**Prova de que nada mudou:**
+- produto: 16/16 com as 179 exceções e nenhuma nova;
+- o `BS_INTC_TRACE` byte a byte igual ao build final do N8.1 nos 16 casos;
+- ruído de ciclos no build de validação: experimental 8/8, estável 0/8 (controle).
+
+| Teste | Resultado |
+|---|---|
+| unitários | 314/314 nas duas configurações |
+| `test_n8_nativo` | 26/26 |
+| `test_n2b2` | 17/17 (N12: experimental 15,43 ms × estável 17,96 ms) |
+| `test_assistido` | 28/28 |
+
+Revisão Codex `codex-20261026-115837`: 1 achado baixo aceito (a catraca amostrava objetos e não ligava o mapa ao exe:
+agora o manifesto completo e a data do mapa).
+
+**Validação final** (2026-10-26; Builder e Preview refeitos):
+
+| Teste | Resultado |
+|---|---|
+| ctest Debug (validação) | 19/19, com e sem disco (inclui `n8_produto_papeis`) |
+| `test_builder` | 22/22 |
+| `test_projeto` | 18/18 |
+| `test_preview` | 12/12 (as 3 recusas novas) |
+| H9 na janela | 0 faltas, 0 erros, 0 perdas |
+
+Tamanho: o exe do produto tem 19 248 128 bytes; o de validação, como a Preview anterior, 19 274 240 (26 KB das
+mutações e sondas). O pacote do Builder tem 40,9 MB.
+
+Hashes: produto (`msvc-release`) `3D17F679…`; validação `76D1CD9A…`; Preview `CC370D56…` (`3f203f5` + N8.2); a Preview
+anterior (`9ecdeb7`) fica em `dist\BlueStinger-Preview.anterior` para o rollback.
+
+**N8.2 concluído.** O N8.3 só com autorização explícita.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2925,7 +2985,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26; o N8.2 só com autorização explícita;
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c) e N8.2 concluídos em 2026-10-26; o N8.3 só com autorização explícita;
 4. N9;
 5. N10.
 
@@ -2941,7 +3001,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2–N8.8 não iniciadas | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3–N8.8 não iniciadas | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

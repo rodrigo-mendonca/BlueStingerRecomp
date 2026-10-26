@@ -30,7 +30,12 @@ cmake --preset msvc-debug
 cmake --build --preset msvc-debug
 ctest --preset msvc-debug                       # unitários (sem dados do jogo)
 $env:BS_DISC_IMAGE="ISO/Blue Stinger.cdi"; ctest --preset msvc-debug   # + teste com a imagem real
+cmake --preset msvc-validacao; cmake --build --preset msvc-validacao    # N8.2: build de validacao (Release)
 ```
+
+N8.2 (`docs/N8-2-SEPARACAO.md`): `msvc-release` e o Builder fazem o **produto**; `msvc-debug`, `msvc-validacao` e as
+pastas `mods`/`watch` sao de **validacao** (`-DBS_VALIDACAO=ON`). So a validacao tem `BS_CICLOS_RUIDO`, `BS_HW_PROBE`
+e `BS_CRI_DIAG`; o produto recusa essas variaveis (saida 2). Tempo estavel e instrumentacao das referencias nos dois.
 
 Ferramentas:
 - `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:
