@@ -141,6 +141,20 @@ if(TARGET bluestinger AND MSVC)
                    -P ${CMAKE_CURRENT_SOURCE_DIR}/n0/check_product_map.cmake)
 endif()
 
+# N8.2: papeis do runtime, objetos no mapa do linker e recusa das variaveis de validacao no produto
+if(TARGET bluestinger AND MSVC)
+  if(BS_VALIDACAO)
+    set(_bs_validacao ON)
+  else()
+    set(_bs_validacao OFF)
+  endif()
+  add_test(NAME n8_produto_papeis
+           COMMAND ${CMAKE_COMMAND} -DPAPEIS=${CMAKE_BINARY_DIR}/runtime_papeis.txt -DMANIFESTO=${CMAKE_BINARY_DIR}/runtime_manifesto.tsv
+                   -DMAP=$<TARGET_FILE_DIR:bluestinger>/bluestinger.map -DEXE=$<TARGET_FILE:bluestinger>
+                   -DVALIDACAO=${_bs_validacao} -P ${CMAKE_CURRENT_SOURCE_DIR}/n8/check_papeis.cmake)
+  set_tests_properties(n8_produto_papeis PROPERTIES TIMEOUT 120)
+endif()
+
 # Sem janelas modais (assert do CRT de Debug, abort, falha de acesso): o teste falha no stderr em vez de
 # esperar um clique e prender o ctest/regressao (tests/sem_dialogos.cpp).
 foreach(t bs_unit_tests bs_video_tests bs_ui_tests bs_audio_tests bs_localization_tests bs_real_disc_test bs_runtime_data_test bs_analysis_real_test

@@ -81,6 +81,13 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 # 1. versao
 $r = Run $exe "--version" $cwd 30000
 Check "versao" ($r.Code -eq 0 -and $r.Out -match "Blue Stinger \(recompilado\)") $r.Out.Trim()
+# N8.2 (D-N8-3): a Preview e o produto: as mutacoes e sondas exclusivas de teste so existem no build de validacao e a
+# variavel e recusada (nunca ignorada: um teste nao pode passar no vazio com este executavel)
+foreach ($v in "BS_CICLOS_RUIDO", "BS_HW_PROBE", "BS_CRI_DIAG") {
+    Set-Item "env:$v" "1"
+    try { $r = Run $exe "--version" $cwd 30000 } finally { Remove-Item "env:$v" }
+    Check "produto recusa $v (so no build de validacao)" ($r.Code -eq 2 -and $r.Err -match "so existe no build de validacao") ($r.Err.Trim())
+}
 
 # 2. dados conferidos (SHA-256 de todos os arquivos)
 $r = Run $exe "--verify-data" $cwd
