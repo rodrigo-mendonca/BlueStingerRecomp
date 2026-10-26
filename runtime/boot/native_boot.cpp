@@ -25,6 +25,7 @@
 #include "memory/sh4_port.h"
 #include "memory/sh4_sq.h"
 #include "memory/sh4_tmu.h"
+#include "memory/sys_logical.h"
 #include "memory/tmu_logical.h"
 #include "pvr/holly_intc.h"
 #include "pvr/holly_sb.h"
@@ -91,6 +92,7 @@ void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     sh4_ccn_reset();
     sh4_tmu_reset();
     tmu_logical_reset();
+    sys_logical_reset();
     uint8_t* ram = c.ram;
     std::memset(ram, 0, 16u << 20);
     std::memset(ram, 0xFF, 0x8000);  // area do sistema

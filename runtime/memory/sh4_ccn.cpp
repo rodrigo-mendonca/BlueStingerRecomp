@@ -15,13 +15,16 @@ constexpr uint32_t kCcrWriteOnly = (1u << 11) | (1u << 3);  // ICI, OCI
 uint32_t g_ccr = 0;
 
 bool isCacheArray(uint32_t a) { return a >= 0xF0000000 && a < 0xF8000000; }
+// CCR tambem pela area 7 (1F00001C; manual SH7750 4.2; revisao Codex 2026-10-26)
+bool isCcr(uint32_t a) { return a == kCcr || a == (kCcr & 0x1FFFFFFF); }
 
 } // namespace
 
 void sh4_ccn_reset() { g_ccr = 0; }
+void sh4_ccn_adopt(uint32_t ccr) { g_ccr = ccr; }
 
 bool sh4_ccn_read(uint32_t a, unsigned size, uint32_t& v) {
-    if (a == kCcr && size == 4) {
+    if (isCcr(a) && size == 4) {
         v = g_ccr;
         return true;
     }
@@ -33,7 +36,7 @@ bool sh4_ccn_read(uint32_t a, unsigned size, uint32_t& v) {
 }
 
 bool sh4_ccn_write(uint32_t a, unsigned size, uint32_t v) {
-    if (a == kCcr && size == 4) {
+    if (isCcr(a) && size == 4) {
         g_ccr = v & ~kCcrWriteOnly;
         return true;
     }

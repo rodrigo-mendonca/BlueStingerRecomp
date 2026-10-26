@@ -9,6 +9,7 @@
 #include "platform/clock.h"
 #include "platform/event_queue.h"
 #include "platform/progress.h"
+#include "memory/sys_logical.h"
 #include "memory/tmu_logical.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
@@ -378,6 +379,9 @@ public:
             out += b;
             std::snprintf(b, sizeof b, "[n8.1] tmu logico: acessos atendidos %llu, fora do contrato (entregues ao modelo) %llu\n",
                           ull(tmu_logical_served()), ull(tmu_logical_fallbacks()));
+            out += b;
+            std::snprintf(b, sizeof b, "[n8.1] ccn e cabo logicos: acessos atendidos %llu, fora do contrato (entregues ao modelo) %llu\n",
+                          ull(sys_logical_served()), ull(sys_logical_fallbacks()));
             out += b;
             if (e.hwWaits) {
                 std::snprintf(b, sizeof b, "[n2b2] esperas do hardware (DMA): %llu, %llu avancos, %.2f campos\n", ull(e.hwWaits),

@@ -36,6 +36,7 @@ uint16_t outputMask() {
 void       sh4_port_set_cable(VideoCable c) { g_cable = c; }
 VideoCable sh4_port_cable() { return g_cable; }
 void       sh4_port_reset() { g_pctra = 0; g_pdtra = 0; }
+void       sh4_port_adopt(uint32_t pctra, uint16_t pdtra) { g_pctra = pctra, g_pdtra = pdtra; }
 
 bool sh4_port_read(uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);

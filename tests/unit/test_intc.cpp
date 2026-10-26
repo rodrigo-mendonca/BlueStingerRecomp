@@ -8,6 +8,9 @@
 #include "cpu/time_hooks.h"
 #include "memory/sh4_tmu.h"
 #include "memory/tmu_logical.h"
+#include "memory/sh4_ccn.h"
+#include "memory/sh4_port.h"
+#include "memory/sys_logical.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 
@@ -305,4 +308,57 @@ BS_TEST(n8_tmu_logical_sequences_match_the_model) {
     }
     sh4_tmu_reset();
     tmu_logical_reset();
+}
+
+// N8.1: CCR, arrays do cache e PDTRA no tempo logico (memory/sys_logical) = os modelos, inclusive depois de sair do
+// contrato (PCTRA, CCR com 16 bits, array com 8 bits, espelho da area 7) e entre duas sessoes (revisao Codex 2026-10-26)
+namespace {
+std::vector<uint32_t> sysRun() {
+    std::vector<uint8_t> ram(16u << 20);
+    Sh4Context           c{};
+    c.ram = ram.data();
+    sh4_ccn_reset();
+    sh4_port_reset();
+    sys_logical_reset();
+    std::vector<uint32_t> out;
+    sh4_write32(&c, 0xFF00001C, 0x0000090D);   // CCR com ICI e OCI: so leem 0
+    out.push_back(sh4_read32(&c, 0xFF00001C));
+    sh4_write32(&c, 0xF4001234, 0xDEADBEEF);   // array de enderecos do OC: sem efeito
+    out.push_back(sh4_read32(&c, 0xF4001234));
+    out.push_back(sh4_read16(&c, 0xFF800030));  // PDTRA: o cabo nos pinos 8-9
+    sh4_write32(&c, 0xFF80002C, 0x00000005);   // PCTRA: pinos 0 e 1 saida (fora do contrato)
+    sh4_write16(&c, 0xFF800030, 0x0003);
+    out.push_back(sh4_read16(&c, 0xFF800030));
+    out.push_back(sh4_read32(&c, 0xFF80002C));
+    out.push_back(sh4_read8(&c, 0xF4000010));  // array com 8 bits (fora do contrato)
+    out.push_back(sh4_read16(&c, 0xFF00001C) | 0x10000u);  // CCR com 16 bits (fora do contrato)
+    sh4_write32(&c, 0x1F00001C, 0x00000021);   // CCR pelo espelho da area 7
+    out.push_back(sh4_read32(&c, 0xFF00001C));
+    // sessao nova: estado inicial de novo nos dois caminhos
+    sh4_ccn_reset();
+    sh4_port_reset();
+    sys_logical_reset();
+    out.push_back(sh4_read32(&c, 0xFF00001C));
+    out.push_back(sh4_read16(&c, 0xFF800030));
+    return out;
+}
+} // namespace
+
+BS_TEST(n8_ccn_and_cable_logical_match_the_models) {
+    const uint64_t s0 = sys_logical_served(), f0 = sys_logical_fallbacks();
+    const auto     model = sysRun();  // tempo estavel: so os modelos
+    BS_CHECK(sys_logical_served() == s0 && sys_logical_fallbacks() == f0);
+    LogicalSpy spy;
+    time_set_provider(&spy);
+    const auto logical = sysRun();
+    time_set_provider(nullptr);
+    BS_CHECK(logical == model);
+    BS_CHECK(model[0] == 0x00000105 && model[1] == 0 && model[2] == 0x0300 && model[7] == 0x21);  // composto = 3
+    BS_CHECK(model[8] == 0 && model[9] == 0x0300);  // reset da sessao
+    const uint64_t s1 = sys_logical_served(), f1 = sys_logical_fallbacks();
+    BS_CHECK(s1 > s0 && f1 > f0);
+    sys_logical_reset();  // os contadores atravessam sessoes (diagnostico do processo)
+    BS_CHECK(sys_logical_served() == s1 && sys_logical_fallbacks() == f1);
+    sh4_ccn_reset();
+    sh4_port_reset();
 }

@@ -11,6 +11,8 @@ enum class VideoCable : uint32_t { Vga = 0, Rgb = 2, Composite = 3 };
 void       sh4_port_set_cable(VideoCable c);
 VideoCable sh4_port_cable();
 void       sh4_port_reset();
+// N8.1: o servico do tempo logico (memory/sys_logical) entrega PCTRA e PDTRA ao modelo fora do contrato.
+void       sh4_port_adopt(uint32_t pctra, uint16_t pdtra);
 
 // true se `a` e um registrador da porta (o acesso foi tratado).
 bool sh4_port_read(uint32_t a, unsigned size, uint32_t& v);

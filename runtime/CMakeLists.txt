@@ -8,6 +8,7 @@ add_library(bs_runtime STATIC
   memory/sh4_port.cpp
   memory/sh4_tmu.cpp
   memory/tmu_logical.cpp
+  memory/sys_logical.cpp
   memory/sh4_ccn.cpp
   memory/sh4_sq.cpp
   memory/sh4_dmac.cpp
