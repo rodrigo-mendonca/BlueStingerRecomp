@@ -1,7 +1,7 @@
 # N8.1 (N2c) — preparação técnica
 
-**Situação (2026-10-25): levantamento somente leitura, durante o N8.0. Nada implementado.** O N8.1 começa depois da
-aprovação do N8.0 e de autorização explícita. Referências: `docs/N8-PLANO.md` (L3–L8 e a seção 5), `docs/N2-PLANO.md`
+**Situação (2026-10-25): N8.1 autorizado e em andamento** (andamento na seção 7). As seções 1–6 são o levantamento
+feito durante o N8.0. Referências: `docs/N8-PLANO.md` (L3–L8 e a seção 5), `docs/N2-PLANO.md`
 14, `docs/N8-0-REFERENCIAS.md` (referências e comparador). As diretrizes aprovadas em 2026-10-24 estão na seção 4.1; o
 relatório técnico completo, na seção 6.
 
@@ -296,3 +296,87 @@ Assim a semântica de `--tempo nativo` não muda sem a sua aprovação.
    o contrato no N8.1.
 4. **Medidores do CRI** que leem o TCNT0 direto: slot de cada um ou leitura na fronteira de memória. Recomendação: slot
    (fronteira estreita, catraca simples).
+
+## 7. Andamento (execução do N8.1)
+
+Autorização do mantenedor em 2026-10-25: só o N8.1; `--tempo nativo`, o padrão do headless, as macros do gerador e
+as referências do N8.0 não mudam.
+
+### 7.1 S2n e S4n (referência pré-migração)
+
+`tools/dev/n8_nativo.py` (29 testes sem o jogo) e `tools/dist/test_n8_nativo.ps1`, com o áudio nativo:
+- **S2n**, espera do VBlank `8C064A2C` pelo trace de progresso:
+  - cada episódio fechado pelo VBlank-In;
+  - 0 saídas sem evento ou liberadas por outro evento;
+  - no máximo um episódio aberto, e só se a execução termina dentro dele;
+  - trace e execução completos.
+  
+  Roda nos dois modos de tempo e em duas rotas, com negativo (`sem_espera`) e determinismo.
+- **S4n**, servidor do CRI pelo `BS_CALL_TRACE`:
+  - tempo legado = modo sombra linha a linha, 2 008 064 chamadas;
+  - negativo `menos1` com trace completo e menos chamadas;
+  - a sequência do experimental fica como referência.
+- **Referência** em `analysis/n8/pre-n8-1` (local): 17/17 na captura e depois de cada mudança.
+
+### 7.2 Instrumentação observacional (`BS_INTC_TRACE`)
+
+`runtime/debug/intc_trace.*`, num fluxo separado, no eixo de ordem do `BS_EVENT_TRACE` (`pos`):
+
+| Tipo | Registra |
+|---|---|
+| H | bits do `ISTNRM` acesos (`update`/`raise`), com a origem do atendimento |
+| A | bits limpos |
+| C | leituras de relógio, agrupadas |
+| L | operações do cartão |
+| E | origem de cada entrega |
+| S | atendimento da cadência com efeito |
+
+Resumo por `tools/dev/n8_intc.py`.
+
+**Prova de que não muda nada:** as 16 referências do N8.0 iguais com o trace desligado e ligado.
+
+**Medida, nos 8 casos experimentais:** 0 entregas e 0 efeitos pelo quantum de ciclos; toda entrega vem de atendimento
+forçado (espera que andou o instante, DMA), de `ldc sr` ou da espera do hardware. No estável, o quantum responde por
+14 000–39 000 entregas por caso.
+
+### 7.3 Cadência B (D-N8.1-A preservada)
+
+**Tempo lógico (`--tempo experimental`):**
+- `sh4_service` só roda quando pedido:
+  - `next_event = 0` pela espera que andou o instante e pelo fim do DMA ch2 (como antes);
+  - `sh4_irq_wakeup` quando `holly_intc_raise` ou uma escrita de `IML*` deixa um nível entregável (`SR.BL = 0`,
+    nível > `SR.IMASK`, sem avaliar eventos);
+  - `wakeIfDue` para evento agendado no instante atual.
+- A vivacidade (D8) vai por um tick a cada `kProgressTick` = 4 096 polls (`next_poll`, macro `BS_POLL_KIND`), que só
+  chama `progress()`.
+
+**Tempo estável e legado:** o quantum de ciclos continua (`cycle_cadence()`). O contexto da sessão é registrado no boot
+e zerado no reset.
+
+**Correção aprovada (`timed_wait`, espera do hardware no experimental):**
+- o `c->pc` é restaurado para o retorno da espera antes de cada atendimento;
+- antes, o SPC das entregas seguintes era um `c->pc` velho de código aninhado;
+- o retorno é o endereço depois do `jsr` do download da música: `8C15DE72` no boot, `8C02A582` nas trocas.
+
+**Resultado contra as 16 referências do N8.0:**
+- estável: 8/8 idêntico;
+- experimental: idêntico fora de 179 SPCs, todos nessas esperas, em `config/n8_1_excecoes_spc.toml`.
+
+Cada uma das 179 exceções é conferida por `tools/dev/n8_excecoes_cadencia.py` (7 testes negativos sem o jogo), que
+aborta em qualquer outra diferença:
+1. só o SPC muda, na mesma posição e com o mesmo INTEVT, e o par de SPCs é um dos provados pelo disassembly;
+2. a primeira entrega da mesma espera já tinha o SPC novo na referência. Entre as duas não há `T`, `J` nem `N`, e toda
+   entrega no caminho tem origem `hardware` no `BS_INTC_TRACE` da execução nova (revisão Codex);
+3. os eventos seguintes até a próxima I/V são iguais (81 com o mesmo `rte` desviado para `8C17DE4C`, 98 sem nenhum),
+   sem troca de thread nem longjmp;
+4. o primeiro estado gravado depois é igual.
+
+O gerador não compara o caso inteiro: isso é do `n8_referencias.py`, com a lista gerada.
+
+O SPC só passa pelo tratador `8C1982F4` em `stc.l spc` (`8C19831C`) e `ldc.l spc` (`8C19845A`), antes do `rte`
+(`8C198462`).
+
+**Prova de independência dos ciclos:** `BS_CICLOS_RUIDO=5000` (`runtime/debug/cycle_noise.cpp`) soma ruído ao contador
+a cada atendimento e a cada tick:
+- experimental: 8/8 iguais, com as mesmas 179 exceções;
+- estável: 0/8 iguais (controle: o ruído muda o tempo dele).

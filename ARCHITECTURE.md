@@ -312,6 +312,12 @@ runtime/
 - **Poll central** (`sh4_service`): avança a leitura do GD-ROM em curso, sincroniza os
   eventos do Holly/SPG (VBlank anda mesmo com SR.BL, porque o vídeo não depende da
   máscara da CPU) e só então tenta entregar interrupções.
+  - **Tempo estável e legado:** roda a cada quantum de ciclos estimados (`kServiceQuantum`).
+  - **Tempo lógico (N8.1, cadência B):** roda só quando pedido. Os pedidos vêm da espera que andou o instante, do
+    fim do DMA, de um nível do Holly que ficou entregável (`sh4_irq_wakeup`) e de evento agendado no instante atual.
+    A guarda de vivacidade vai por um tick a cada `kProgressTick` polls (`next_poll`), sem ciclos.
+  - A espera do hardware restaura o ponto de retomada antes de cada atendimento, para o SPC ser confiável.
+  - Detalhes em `docs/N8-1-PREPARACAO.md` seção 7.
 - **Rasterizador e o host**: o render roda num ambiente de ponto flutuante fixo (MXCSR
   padrão), isolado do FPSCR do SH-4 que o runtime aplica à thread do jogo. A resolução de
   autosort/punch-through agrupa fragmentos por pixel e resolve as linhas em paralelo
@@ -729,9 +735,15 @@ roadmap e nada é implementado antes da etapa autorizada.
 - sem mods, os recursos originais (convertidos pelo Builder a partir do CDI do usuário) são a
   referência de fidelidade.
 
-### N8 (planejado): corte da simulação do produto
+### N8: corte da simulação do produto
 
-Planejamento técnico concluído em 2026-10-24; **N8 não iniciado** e depende de autorização explícita. O inventário,
+Planejamento técnico concluído em 2026-10-24.
+- **N8.0** (portão e referências) concluído em 2026-10-25.
+- **N8.1** (N2c) em andamento desde 2026-10-25 (`docs/N8-1-PREPARACAO.md` seção 7):
+  - verificações nativas S2n/S4n;
+  - instrumentação `BS_INTC_TRACE`;
+  - cadência B no tempo lógico. Com ela, o tempo lógico não depende dos ciclos estimados (prova `BS_CICLOS_RUIDO`);
+    o estável continua por ciclos (D-N8.1-A). O inventário,
 os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`. O N2c é a primeira subetapa técnica: troca ciclos,
 `BS_POLL`, `sh4_intc`, TMU, CCN e portas por entrega nativa de eventos antes de qualquer outro corte. DMAC/SQ e os
 módulos de Holly/PVR, Maple e GD-ROM deixam de medir/agendar tempo nessa etapa, mas seu transporte só sai nos cortes

@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1–N8.8 não iniciadas (o N8.1 só com autorização explícita).** Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) em andamento desde 2026-10-25 (S2n/S4n, instrumentação, cadência B); N8.2–N8.8 não iniciadas.** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2805,6 +2805,72 @@ guardas das suítes com dados e último índice em todo artefato comparado; docu
 comparador reprova todo deslocamento); esta seção. A prova da correção 4 achou dois defeitos dela própria (um `-1`
 literal que o PowerShell passa como texto; roteiro ausente aceitando), corrigidos antes de qualquer execução.
 
+### N8.1: fim da simulação de tempo (N2c), em andamento (2026-10-25)
+
+Autorizado pelo mantenedor em 2026-10-25, só o N8.1. Detalhes em `docs/N8-1-PREPARACAO.md` seção 7.
+
+Continuam como estão:
+- `--tempo nativo`, o padrão do headless e as gravações antigas (D-N8.1-A);
+- o gerador e as macros;
+- as referências do N8.0.
+
+**S2n e S4n** (commit `5964379`):
+- `tools/dev/n8_nativo.py` (29 testes) e `tools/dist/test_n8_nativo.ps1`;
+- referência pré-migração em `analysis/n8/pre-n8-1`, 17/17;
+- S2n: 0 saídas sem evento na espera do VBlank, nos dois modos;
+- S4n: 2 008 064 chamadas do CRI iguais entre o tempo legado e o modo sombra, negativo acusado.
+
+**Instrumentação `BS_INTC_TRACE`** (commit `b571ab3`; tipos H/A/C/L/E/S, num fluxo separado, no eixo de ordem do
+`BS_EVENT_TRACE`):
+- as 16 referências do N8.0 ficam iguais com o trace desligado e ligado;
+- no experimental, 0 entregas e 0 efeitos pelo quantum de ciclos nos 8 casos;
+- revisão Codex `codex-20261025-162709`:
+
+| Achado | Decisão |
+|---|---|
+| S4n: negativo truncado aceito | aceito: o negativo exige trace completo e menos chamadas |
+| registro S com efeitos de outras fibras | aceito como documentação: o registro só pode contar a mais, então S = 0 continua prova |
+| origem aberta depois de fibra apagada | aceito: zerada no reset |
+| trace de chamadas sem marcador de fim | rejeitado: um rodapé quebraria a leitura do `test_n2b`; as duas execuções terminam com rc 0 e flush, e são comparadas entre si e com a referência |
+
+- duas leituras de ciclos na instrumentação subiram a catraca `tempo.consumidores.ciclos` (0 → 2, ctest Debug): tiradas;
+  catraca de volta a 0.
+
+**Cadência B** (no tempo lógico):
+- o atendimento só roda quando pedido, e a vivacidade vai por um tick a cada 4 096 polls;
+- o estável continua pelo quantum de ciclos;
+- correção aprovada: a espera do hardware restaura o ponto de retomada antes de cada atendimento.
+
+Contra as 16 referências:
+- estável: 8/8 idêntico;
+- experimental: idêntico fora de 179 SPCs, todos nas esperas do hardware;
+- as 179 estão em `config/n8_1_excecoes_spc.toml`, uma por diferença e conferidas uma a uma por
+  `tools/dev/n8_excecoes_cadencia.py` (7 testes negativos).
+
+Opção "com correção" aprovada pelo mantenedor em 2026-10-25, com a condição de cada uma ser provada inofensiva:
+- mesma espera, sem `T`/`J`/`N` no caminho, todas as entregas com origem `hardware`;
+- eventos seguintes iguais (81 com o mesmo `rte` desviado para `8C17DE4C`, 98 sem nenhum);
+- o primeiro estado depois igual;
+- o SPC só passa por `stc.l`/`ldc.l spc` no tratador `8C1982F4` antes do `rte`.
+
+Prova de independência dos ciclos (`BS_CICLOS_RUIDO=5000`): experimental 8/8 iguais com as mesmas 179; estável 0/8
+(controle).
+
+| Teste | Resultado |
+|---|---|
+| unitários | 309/309 (2 testes novos da cadência B) |
+| ctest Debug | 18/18, com e sem disco |
+| `test_n2b2` | 17/17: N8a/b/c pela checagem nova; N12 experimental 21,31 ms × estável 25,10 ms |
+| `test_n8_nativo` | 17/17: S2n e S4n iguais a referencia pre-migracao |
+| `test_assistido` | 28/28 (experimental x estavel por passo nas 4 rotas) |
+
+Revisões Codex:
+- `codex-20261025-185027`: 2 achados baixos aceitos, com o contexto registrado no boot e testes unitários do protocolo;
+- `codex-20261025-202021`: 1 achado baixo aceito, a "mesma espera" provada pela origem `hardware` e a ausência de
+  `T`/`J`/`N`, com o texto do gerador separado do que o comparador prova.
+
+**Falta no N8.1:** TMU e medidores do CRI, ponte INTC/INTEVT, CCN não gráfico e cabo.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2812,7 +2878,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; o N8.1 (N2c) só com autorização explícita;
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c) em andamento;
 4. N9;
 5. N10.
 
@@ -2828,7 +2894,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1–N8.8 não iniciadas | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 em andamento (S2n/S4n, instrumentação, cadência B); N8.2–N8.8 não iniciadas | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

@@ -294,4 +294,5 @@ O renderizador em software é preservado permanentemente como recuo do Vulkan.
 | Subetapa | Situação |
 |---|---|
 | N8.0 | **concluída em 2026-10-25**: regressão nível 3, correções (SPIR-V, ícone, guardas das suítes), as 16 referências capturadas, validadas e reproduzidas uma a uma (0 diferenças), com negativos (`docs/N8-0-REFERENCIAS.md` seção 8); fixação do áudio legado nas suítes históricas decidida pelo mantenedor (opção b), com as suítes aprovadas (K12 2/2, `test_cri` 33/33, `test_efeito` 17/17, `test_n2b2` 17/17, `test_n2b` 52/52), com a cobertura nativa mapeada (`STATUS.md`) |
-| N8.1–N8.8 | não iniciadas (o N8.1 só com autorização explícita; diretrizes em `docs/N8-1-PREPARACAO.md` seção 4.1) |
+| N8.1 | **em andamento** (autorizado em 2026-10-25), andamento em `docs/N8-1-PREPARACAO.md` seção 7. Feito: S2n/S4n com referência pré-migração; instrumentação `BS_INTC_TRACE` (16/16 iguais); cadência B no tempo lógico, com o estável intacto e 179 exceções de SPC aprovadas e conferidas uma a uma. Faltam TMU e medidores do CRI, ponte INTC/INTEVT, CCN não gráfico e cabo |
+| N8.2–N8.8 | não iniciadas |
