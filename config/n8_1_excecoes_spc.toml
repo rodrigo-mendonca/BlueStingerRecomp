@@ -1,0 +1,1616 @@
+# N8.1, cadencia B (docs/N8-1-PREPARACAO.md): excecoes de SPC contra as 16 referencias do N8.0, uma por diferenca
+# (docs/N8-0-REFERENCIAS.md secao 5), com a evidencia de cada uma conferida por tools/dev/n8_excecoes_cadencia.py. APROVADA pelo mantenedor
+# em 2026-10-25 a solucao "com correcao" (a espera do hardware restaura o ponto de retomada antes de cada
+# atendimento). O SPC so passa pelo tratador 8C1982F4 em stc.l spc,@-r15 (8C19831C) e ldc.l @r15+,spc (8C19845A)
+# antes do rte em 8C198462; um rte desviado aparece como R no trace e e conferido abaixo. Nenhuma vale no estavel.
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42659
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278945: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42660
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278947: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42660
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278948: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42661
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278950: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42661
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278952: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42662
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278954: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42662
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278956: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42663
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278958: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42663
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278960: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42664
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278962: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_cgate_experimental"
+vblank = 42664
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278964: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42659
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278945: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42660
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278947: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42660
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278948: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42661
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278950: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42661
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278952: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42662
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278954: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42662
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278956: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42663
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278958: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42663
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278960: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42664
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278962: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_combate_experimental"
+vblank = 42664
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278964: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42659
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278945: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42660
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278947: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42660
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278948: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42661
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278950: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42661
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278952: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42662
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278954: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42662
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278956: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42663
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278958: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42663
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278960: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42664
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278962: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_heliporto_experimental"
+vblank = 42664
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 278944)"
+evidencia = "exe 2B82F22E, evento 278964: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 278944) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 7337; estado do passo 7338 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_opcoes_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3520
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24633: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3521
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24635: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3521
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24637: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3522
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24639: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3522
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24641: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3523
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24643: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3523
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24645: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3524
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24647: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3524
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24649: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3525
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24651: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_load_slot1_experimental"
+vblank = 3525
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24653: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "passo_newgame_area1_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3520
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24633: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3521
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24635: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3521
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24637: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3522
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24639: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3522
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24641: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3523
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24643: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3523
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24645: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3524
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24647: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3524
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24649: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3525
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24651: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-140145_experimental"
+vblank = 3525
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 24632)"
+evidencia = "exe 2B82F22E, evento 24653: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 24632) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1754; estado do passo 1755 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 4
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 6: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 4
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 8: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 5
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 10: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 5
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 12: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 14: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 16: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 7
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 18: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 7
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 20: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 8
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 22: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 8
+intevt = "00000360"
+spc_ref = "8C17DF0C"
+spc_novo = "8C15DE72"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C17DF0C, era um c->pc velho: retomada do BS_POLL_RET depois do jsr em 8C17DF08 (poll do quantum de ciclos dentro do tratador anterior; dependia dos ciclos). O novo e o retorno da chamada (8C15DE6E: jsr @r3 (download da musica no boot), delay slot 8C15DE70), o mesmo SPC da primeira entrega desta espera na referencia (evento 4)"
+evidencia = "exe 2B82F22E, evento 24: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 4) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 0; estado do passo 1 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2282
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15967: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2283
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15969: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2283
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15971: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2284
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15973: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2284
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15975: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2285
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15977: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2285
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15979: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2286
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15981: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2286
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15983: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2287
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15985: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 2287
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 15966)"
+evidencia = "exe 2B82F22E, evento 15987: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 15966) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 1135; estado do passo 1136 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6766
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45170: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6767
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45172: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6767
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45174: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6768
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45176: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6768
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45178: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6769
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45180: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6769
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45182: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6770
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45184: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6770
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45186: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6771
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45188: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 6771
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 45169)"
+evidencia = "exe 2B82F22E, evento 45190: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 45169) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 2861; estado do passo 2862 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10648
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70485: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10649
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70487: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10649
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70489: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10650
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70491: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10650
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70493: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10651
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70495: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10651
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70497: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10652
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70499: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10652
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70501: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10653
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70503: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 10653
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 70484)"
+evidencia = "exe 2B82F22E, evento 70505: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 70484) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 4558; estado do passo 4559 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14633
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96570: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14634
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96572: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14634
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96573: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14635
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96575: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14635
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96577: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14636
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96579: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14636
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96581: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14637
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96583: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14637
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96585: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14638
+intevt = "00000320"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96587: eventos seguintes ate a proxima I/V iguais na referencia e na nova (R 8C17DE4C), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
+
+[[spc]]
+caso = "sessao-20261021-145006_experimental"
+vblank = 14638
+intevt = "00000360"
+spc_ref = "8C1983D2"
+spc_novo = "8C02A582"
+justificativa = "entrega dentro da espera do hardware (timed_wait do slot nativo do download da musica): o SPC da referencia, 8C1983D2, era um c->pc velho: retomada do BS_IRQ_CHECK do ldc r1,sr em 8C1983D0 (codigo aninhado). O novo e o retorno da chamada (8C02A57E: jsr @r3 (download da musica nas trocas), delay slot 8C02A580), o mesmo SPC da primeira entrega desta espera na referencia (evento 96569)"
+evidencia = "exe 2B82F22E, evento 96589: eventos seguintes ate a proxima I/V iguais na referencia e na nova (nenhum), sem T nem J; esta entrega e a primeira da espera (evento 96569) tem origem hardware no BS_INTC_TRACE, sem T, J nem N entre elas; passo de jogo 6548; estado do passo 6549 (o primeiro gravado no VBlank ou depois) igual. O resto do caso (estado, saves, quadros, leituras, audio, legendas, cartao, relogios) e conferido pelo n8_referencias.py com esta lista"
