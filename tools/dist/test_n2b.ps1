@@ -24,7 +24,8 @@
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
 # desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\BlueStinger.exe"),
+    # N8.3: --arquivos legado (modelo HLE do GD-ROM) so existe no build de validacao; o produto o recusa
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$VBlanks = 8000,

@@ -33,6 +33,8 @@
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
+    # N8.3: --arquivos legado (modelo HLE do GD-ROM) so existe no build de validacao (caso exp_lg do N6)
+    [string]$ExeValidacao = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeAntigo = (Join-Path $PSScriptRoot "..\..\analysis\rollback-antes-n2b2\exe\bluestinger-release.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$VBlanksEx = 16000,
@@ -169,7 +171,7 @@ $lote1 = @(
     (Caso "exp_ex" $Exe "experimental" $VBlanksEx "newgame_exploracao" -ev -audioAll),
     (Caso "exp_ex2" $Exe "experimental" $VBlanksEx "newgame_exploracao" -ev),
     (Caso "exp_exd" $Exe "experimental" $VBlanksEx "newgame_exploracao_n2b2" -audioAll),
-    (Caso "exp_lg" $Exe "experimental" $VBlanks "newgame_area1" -audioAll -arquivos "legado"),
+    (Caso "exp_lg" $ExeValidacao "experimental" $VBlanks "newgame_area1" -audioAll -arquivos "legado"),
     (Caso "exp_a1" $Exe "experimental" $VBlanks "newgame_area1" -audioAll),
     (Caso "est_novo" $Exe "nativo" $VBlanks "newgame_area1" -ev -audioAll),
     # N3b com o audio legado (duplicatas de est_ex e exp_exd; as originais seguem no nativo para N2-N5)

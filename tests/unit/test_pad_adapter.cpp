@@ -6,7 +6,7 @@
 
 #include "cpu/sh4_context.h"
 #include "cpu/sh4_runtime.h"
-#include "hle/bios.h"
+#include "system/system_area.h"
 #include "input/input.h"
 #include "input_bridge.h"
 #include "pad_adapter.h"

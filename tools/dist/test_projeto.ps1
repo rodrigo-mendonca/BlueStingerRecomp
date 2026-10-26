@@ -170,14 +170,15 @@ try {
     $msg = ($g2 -split "`n" | Where-Object { $_ -match "falta de progresso:" } | Select-Object -First 1)
     Check "B10 mod de espera sem a primitiva: falta de progresso com thread e PC" `
         ($g2 -match "VBlanks: 2300;" -and $msg -match "thread 0 \d+ \(maior lote em 8C064A26\)" -and $msg -match "bs::mods::wait") $msg
-    # 5. mod maior que o original: o provedor nativo de arquivos (N1) aceita; o legado (setores
-    #    de tamanho fixo) recusa com mensagem clara; mod sem recurso correspondente: erro claro
+    # 5. mod maior que o original: o provedor nativo de arquivos (N1) aceita; o legado (setores de tamanho fixo) saiu do
+    #    produto no N8.3: o executavel exportado o recusa com mensagem clara (a recusa do legado a um mod maior que o
+    #    original continua provada no RuntimeDisc, runtime_data_asset_overrides); mod sem recurso correspondente: erro claro
     $installedAsset = Join-Path $out ("BlueStinger\mods\assets\" + $assetRel.Replace('/', '\'))
     [IO.File]::WriteAllBytes($installedAsset, (New-Object byte[] ($assetSize + 4096)))
     $g = RunCmd "`"$exe`" --video legado --headless 10"
     Check "mod maior que o original: aceito no provedor nativo" ($LASTEXITCODE -eq 0 -and $g -match [regex]::Escape("($assetSize -> $($assetSize + 4096) bytes)")) (($g -split "`n" | Where-Object { $_ -match "erro|recurso" } | Select-Object -First 1))
     $g = RunCmd "`"$exe`" --arquivos legado --video legado --headless 10"
-    Check "mod maior que o original: mensagem clara no legado" ($LASTEXITCODE -ne 0 -and $g -match "maior que o original") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
+    Check "provedor legado de arquivos: recusado no produto (N8.3)" ($LASTEXITCODE -eq 2 -and $g -match "--arquivos legado .*so existe no build de validacao") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
     $bogus = Join-Path $out "BlueStinger\mods\assets\BSDATA\NAO_EXISTE.BIN"
     [IO.File]::WriteAllText($bogus, "x")
     $g = RunCmd "`"$exe`" --video legado --headless 10"

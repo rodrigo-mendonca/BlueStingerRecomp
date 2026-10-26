@@ -311,3 +311,57 @@ BS_TEST(game_host_reports_errors) {
         BS_CHECK(h.error().find("teste: erro fatal") != std::string::npos);
     }
 }
+
+namespace {
+
+// N8.3: jogo falso que chama as syscalls pelos vetores, como os stubs do SDK (SYSINFO ID, GET_DRV_STAT do GD-ROM,
+// leitura e escrita da flash na particao 2), e guarda o que viu.
+struct SysSeen {
+    uint32_t sysinfo = 0, drv = 0, flashBefore = 0, flashAfter = 0;
+    bool     ran = false;
+} g_sys;
+uint32_t viaVector(Sh4Context* c, uint32_t vec, uint32_t r7, uint32_t r4 = 0, uint32_t r5 = 0, uint32_t r6 = 0) {
+    c->r[4] = r4, c->r[5] = r5, c->r[6] = r6, c->r[7] = r7;
+    c->pr = c->ret_expect = 0x8C010100;
+    sh4_dispatch(c, 0, sh4_read32(c, vec));
+    return c->r[0];
+}
+void fakeSyscalls(Sh4Context* c) {
+    g_sys.sysinfo = viaVector(c, 0x8C0000B0, 3);
+    viaVector(c, 0x8C0000BC, 4, 0x8C200000);
+    g_sys.drv = sh4_read32(c, 0x8C200004);
+    viaVector(c, 0x8C0000B8, 1, 0x1C000, 0x8C200010, 1);
+    g_sys.flashBefore = sh4_read8(c, 0x8C200010);
+    sh4_write8(c, 0x8C200020, 0x3C);
+    viaVector(c, 0x8C0000B8, 2, 0x1C000, 0x8C200020, 1);
+    viaVector(c, 0x8C0000B8, 1, 0x1C000, 0x8C200010, 1);
+    g_sys.flashAfter = sh4_read8(c, 0x8C200010);
+    g_sys.ran        = true;
+}
+
+} // namespace
+
+// Provedor das syscalls pelo GameHost (revisao Codex N8.3): o nativo (produto) e, so na validacao, o modelo HLE, com a
+// flash em branco a cada sessao nos dois; no produto o HLE e recusado com erro explicito.
+BS_TEST(game_host_system_provider_per_session) {
+    for (const SystemProvider p : {SystemProvider::Native, SystemProvider::Hle, SystemProvider::Hle}) {
+        g_sys = {};
+        GameOptions o = fakeOptions(fakeSyscalls);
+        o.system      = p;
+        GameHost h;
+        h.start(o);
+        h.join();
+#if BS_VALIDACAO
+        BS_CHECK(g_sys.ran && h.error().find("retornou") != std::string::npos);
+        BS_CHECK(g_sys.sysinfo == 0x8C000068 && g_sys.drv == 0x80);
+        BS_CHECK(g_sys.flashBefore == 0xFF && g_sys.flashAfter == 0x3C);  // em branco: a sessao anterior nao sobra
+#else
+        if (p == SystemProvider::Native) {
+            BS_CHECK(g_sys.ran && g_sys.sysinfo == 0x8C000068 && g_sys.drv == 0x80);
+            BS_CHECK(g_sys.flashBefore == 0xFF && g_sys.flashAfter == 0x3C);
+        } else {
+            BS_CHECK(!g_sys.ran && h.error().find("so existe no build de validacao") != std::string::npos);
+        }
+#endif
+    }
+}

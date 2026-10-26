@@ -7,7 +7,8 @@
 #   P8  o modo legado (rollback) termina o roteiro sem erro.
 #   powershell -File tools/dist/test_arquivos.ps1 [-Exe <bluestinger.exe>] [-Data <data>] [-VBlanks 8000]
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.3: --arquivos legado (modelo HLE do GD-ROM) so existe no build de validacao; o produto o recusa
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$VBlanks = 8000,
     [string]$Saida = (Join-Path $env:TEMP "bs-arquivos-teste")
