@@ -7,6 +7,7 @@
 // SH-4 recebe como interrupcoes IRL de prioridade 6/4/2 e INTEVT 0x320/0x360/0x3A0
 // (0x200 + (15 - nivel) * 0x20).
 #include "cpu/sh4_intc.h"
+#include "cpu/irq_bridge.h"
 #include "debug/event_trace.h"
 #include "debug/intc_trace.h"
 
@@ -88,7 +89,15 @@ bool deliverOne(Sh4Context* c) {
 
 } // namespace
 
-uint64_t sh4_irq_taken_count() { return g_taken; }
+uint64_t sh4_irq_taken_count() { return g_taken + irq_bridge_taken(); }  // N8.1: e as da ponte do tempo logico
+
+IntcSource sh4_irq_delivery_origin() { return origin().depth ? origin().src : IntcSource::IrqCheck; }
+
+void sh4_intc_adopt(uint16_t icr, const uint16_t ipr[3], uint32_t intevt) {
+    g_icr = icr;
+    g_ipr[0] = ipr[0], g_ipr[1] = ipr[1], g_ipr[2] = ipr[2];
+    g_intevt = intevt;
+}
 
 void sh4_irq_origin_hint(uint8_t origin) { g_hint = IntcSource(origin); }
 
@@ -137,6 +146,10 @@ void sh4_request_service() {
 
 void sh4_irq_check(Sh4Context* c) {
     g_ctxLast = c;
+    if (irq_bridge_active()) {  // N8.1: no tempo logico a entrega e da ponte (cpu/irq_bridge.h)
+        irq_bridge_check(c);
+        return;
+    }
     // Depois do rte do tratador, uma fonte ainda pendente (ou outra) e aceita antes da
     // instrucao em SPC (manual SH7750, 19.6): por isso reavalia ate nao haver nada.
     for (int n = 0; deliverOne(c); ++n)

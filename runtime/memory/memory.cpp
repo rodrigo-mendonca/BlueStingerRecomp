@@ -12,6 +12,7 @@
 #include "memory/sh4_dmac.h"
 #include "memory/sh4_port.h"
 #include "memory/sh4_tmu.h"
+#include "cpu/irq_bridge.h"
 #include "memory/sys_logical.h"
 #include "memory/tmu_logical.h"
 #include "memory/effect_counters.h"
@@ -192,6 +193,7 @@ bool hwRead(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
            holly_intc_read(c, a, size, v) ||     // 0x005F6900 (antes do system block)
            holly_sb_read(c, a, size, v) ||       // 0x005F6800
            aica_reg_read(c, a, size, v) ||       // 0x00702C00, RTC
+           irq_bridge_read(a, size, v) ||        // P4: INTEVT, ICR/IPR no tempo logico (N8.1: ponte)
            sh4_intc_read(a, size, v) ||          // P4: ICR/IPR, INTEVT
            sys_logical_read(a, size, v) ||       // P4: CCR, arrays do cache e PDTRA no tempo logico (N8.1)
            sh4_port_read(a, size, v) ||          // P4: PCTRA/PDTRA
@@ -212,6 +214,7 @@ bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
            holly_intc_write(c, a, size, v) ||
            holly_sb_write(c, a, size, v) ||
            aica_reg_write(c, a, size, v) ||
+           irq_bridge_write(a, size, v) ||
            sh4_intc_write(a, size, v) ||
            sys_logical_write(a, size, v) ||
            sh4_port_write(a, size, v) ||

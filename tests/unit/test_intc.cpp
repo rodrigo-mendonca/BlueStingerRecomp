@@ -11,6 +11,7 @@
 #include "memory/sh4_ccn.h"
 #include "memory/sh4_port.h"
 #include "memory/sys_logical.h"
+#include "cpu/irq_bridge.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 
@@ -361,4 +362,89 @@ BS_TEST(n8_ccn_and_cable_logical_match_the_models) {
     BS_CHECK(sys_logical_served() == s1 && sys_logical_fallbacks() == f1);
     sh4_ccn_reset();
     sh4_port_reset();
+}
+
+// N8.1: a ponte de interrupcoes do tempo logico (cpu/irq_bridge) entrega como o modelo: o tratador ve o mesmo SR, SSR,
+// SPC, SGR, INTEVT e banco; mascarada ou bloqueada, nada; fora do contrato (leitura de IPR) o modelo assume.
+namespace {
+Seen irqOnce(bool logical) {
+    IrqFixture f;
+    LogicalSpy spy;
+    if (logical) time_set_provider(&spy);
+    irq_bridge_reset();
+    sh4_set_sr(f.c, 0x40000000);
+    f.c.r[0] = 0x11111111, f.c.rbank[0] = 0x22222222, f.c.r[15] = 0x8C00F3A0, f.c.pc = 0x8C08BBB4;
+    f.c.ret_expect = 0x8C000000;
+    holly_intc_raise(kIstVblankIn);  // a mesma fonte nos dois (o espiao nao agenda VBlank)
+    sh4_irq_check(&f.c);
+    const Seen s = g_seen;
+    sh4_set_sr(f.c, 0x40000060);  // IMASK 6: nada
+    sh4_irq_check(&f.c);
+    BS_CHECK(g_seen.calls == s.calls);
+    time_set_provider(nullptr);
+    return s;
+}
+} // namespace
+
+BS_TEST(n8_irq_bridge_delivers_like_the_model) {
+    const uint64_t t0 = sh4_irq_taken_count(), b0 = irq_bridge_taken();
+    const Seen     m  = irqOnce(false);
+    BS_CHECK(irq_bridge_taken() == b0);  // no estavel a ponte nao entrega
+    const Seen l = irqOnce(true);
+    BS_CHECK(irq_bridge_taken() == b0 + 1 && sh4_irq_taken_count() == t0 + 2);
+    BS_CHECK(m.calls == 1 && l.calls == 1);
+    BS_CHECK(l.sr == m.sr && l.ssr == m.ssr && l.spc == m.spc && l.sgr == m.sgr && l.intevt == m.intevt && l.r0 == m.r0);
+    BS_CHECK(l.intevt == 0x320 && l.spc == 0x8C08BBB4);
+    // fora do contrato: leitura de IPRA (16 bits) entrega o estado ao modelo
+    {
+        IrqFixture f;
+        LogicalSpy spy;
+        time_set_provider(&spy);
+        irq_bridge_reset();
+        sh4_write16(&f.c, 0xFFD00004, 0x1234);  // IPRA: no contrato (escrita)
+        const uint64_t fb = irq_bridge_fallbacks();
+        BS_CHECK(sh4_read16(&f.c, 0xFFD00004) == 0x1234);
+        BS_CHECK(irq_bridge_fallbacks() == fb + 1 && !irq_bridge_active());
+        time_set_provider(nullptr);
+        irq_bridge_reset();
+        sh4_intc_reset();
+    }
+}
+
+// Revisao Codex 2026-10-26: o primeiro tratador sai do contrato (le IPRA) e reconhece o nivel 6; o nivel 4 ainda
+// pendente tem de ser entregue pelo modelo, e o segundo tratador le INTEVT = 0x360.
+namespace {
+std::vector<uint32_t> g_intevts;
+void handlerOut(Sh4Context* c) {
+    g_intevts.push_back(sh4_read32(c, 0xFF000028));
+    if (g_intevts.size() == 1) {
+        (void)sh4_read16(c, 0xFFD00004);           // fora do contrato: entrega ao modelo
+        sh4_write32(c, 0xA05F6900, kIstVblankIn);  // reconhece o nivel 6
+    } else {
+        sh4_write32(c, 0xA05F6900, 1u << 12);      // reconhece o nivel 4
+    }
+    sh4_set_sr(*c, c->ssr);
+}
+const Sh4FuncEntry kTableOut[] = {{(kVbr + 0x600) & 0x1FFFFFFF, handlerOut}};
+} // namespace
+
+BS_TEST(n8_irq_bridge_hands_over_inside_a_handler) {
+    IrqFixture f;  // IML6NRM = VBlank-In
+    LogicalSpy spy;
+    time_set_provider(&spy);
+    irq_bridge_reset();
+    sh4_set_function_table(kTableOut, 1);
+    g_intevts.clear();
+    sh4_write32(&f.c, 0xA05F6920, 1u << 12);  // IML4NRM = fim do DMA do Maple
+    holly_intc_raise(kIstVblankIn);
+    holly_intc_raise(1u << 12);
+    sh4_set_sr(f.c, 0x40000000);
+    f.c.pc = 0x8C08BBB4, f.c.ret_expect = 0x8C000000;
+    sh4_irq_check(&f.c);
+    BS_CHECK(g_intevts.size() == 2 && g_intevts[0] == 0x320 && g_intevts[1] == 0x360);
+    BS_CHECK(!irq_bridge_active());
+    time_set_provider(nullptr);
+    sh4_set_function_table(kTable, 1);
+    irq_bridge_reset();
+    sh4_intc_reset();
 }

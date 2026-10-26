@@ -9,6 +9,7 @@
 #include "platform/clock.h"
 #include "platform/event_queue.h"
 #include "platform/progress.h"
+#include "cpu/irq_bridge.h"
 #include "memory/sys_logical.h"
 #include "memory/tmu_logical.h"
 #include "pvr/holly_intc.h"
@@ -382,6 +383,10 @@ public:
             out += b;
             std::snprintf(b, sizeof b, "[n8.1] ccn e cabo logicos: acessos atendidos %llu, fora do contrato (entregues ao modelo) %llu\n",
                           ull(sys_logical_served()), ull(sys_logical_fallbacks()));
+            out += b;
+            std::snprintf(b, sizeof b, "[n8.1] ponte de interrupcoes: entregas %llu, registradores atendidos %llu, fora do "
+                                       "contrato (entregues ao modelo) %llu\n",
+                          ull(irq_bridge_taken()), ull(irq_bridge_served()), ull(irq_bridge_fallbacks()));
             out += b;
             if (e.hwWaits) {
                 std::snprintf(b, sizeof b, "[n2b2] esperas do hardware (DMA): %llu, %llu avancos, %.2f campos\n", ull(e.hwWaits),

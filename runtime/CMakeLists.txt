@@ -2,6 +2,7 @@ add_library(bs_runtime STATIC
   cpu/sh4_context.cpp
   cpu/sh4_runtime.cpp
   cpu/sh4_intc.cpp
+  cpu/irq_bridge.cpp
   cpu/sh4_threads.cpp
   cpu/time_legacy.cpp
   memory/memory.cpp

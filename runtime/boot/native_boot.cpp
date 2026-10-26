@@ -11,6 +11,7 @@
 #include "boot/native_boot.h"
 
 #include "aica/aica_regs.h"
+#include "cpu/irq_bridge.h"
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
@@ -86,6 +87,7 @@ void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     gdrom_reset();
     aica_regs_reset();
     sh4_intc_reset();
+    irq_bridge_reset();
     sh4_port_reset();
     sh4_sq_reset();
     sh4_dmac_reset();

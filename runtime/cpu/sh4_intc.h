@@ -28,6 +28,11 @@ void sh4_irq_bind(Sh4Context* c);  // contexto da sessao (boot); sh4_intc_reset 
 // Interrupcoes aceitas desde o inicio do processo (diagnostico N2b: epoca de eventos).
 uint64_t sh4_irq_taken_count();
 
+// N8.1: a ponte do tempo logico (cpu/irq_bridge.h) usa a origem da entrega para o registro E e entrega o estado dos
+// registradores ao modelo fora do contrato.
+IntcSource sh4_irq_delivery_origin();
+void       sh4_intc_adopt(uint16_t icr, const uint16_t ipr[3], uint32_t intevt);
+
 // Diagnostico BS_INTC_TRACE (N8.1): de onde vem a entrega (registro E). sh4_service marca a cadencia ou o atendimento
 // forcado (next_event = 0); quem chama sh4_service por outro motivo avisa antes (espera do hardware, sleep). Fora de
 // sh4_service, a entrega e a do BS_IRQ_CHECK (ldc ...,sr). So observa: nada aqui muda a entrega.
