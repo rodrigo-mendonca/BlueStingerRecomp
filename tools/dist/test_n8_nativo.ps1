@@ -8,6 +8,8 @@
 #   S4n sequencia do servidor do CRI (8C1586B8 e a rotina por ponteiro 8C174888): tempo legado = modo sombra linha a
 #       linha (funcao, chamador, r4-r7, r0, pr, VBlank), execucoes completas e trace ate o ultimo VBlank; negativo
 #       BS_CRI_DIAG=menos1 detectado. Precisa do build com mods (-ExeMods)
+#   T   TMU logico (N8.1): todo acesso dentro do contrato; o timeout de 166 ms do render pelo TMU vence com o render
+#       perdido e nao vence com BS_TMU_MUTACAO=parado (negativo)
 #   D   determinismo: duas execucoes experimentais com o mesmo trace de progresso
 #   R   referencia pre-migracao (-Referencia): as assinaturas de cada S2n, do S4n e da sequencia do CRI no experimental
 #       iguais as gravadas antes do N8.1 (-Capturar grava; a pasta fica fora do git, em analysis/)
@@ -69,7 +71,11 @@ $casos = @(
     (Caso "s4n_leg" $ExeMods "legado" $VBlanksS4 "newgame_area1" -calls),
     (Caso "s4n_nat" $ExeMods "nativo" $VBlanksS4 "newgame_area1" -calls),
     (Caso "s4n_neg" $ExeMods "nativo" $VBlanksS4 "newgame_area1" @{ BS_CRI_DIAG = "menos1" } -calls),
-    (Caso "s4n_exp" $ExeMods "experimental" $VBlanksS4 "newgame_area1" -calls)
+    (Caso "s4n_exp" $ExeMods "experimental" $VBlanksS4 "newgame_area1" -calls),
+    # T (N8.1, TMU logico): o timeout de 166 ms da espera do render vem do TMU; com o render perdido ele tem de vencer, e
+    # com o TMU logico parado (BS_TMU_MUTACAO=parado) nao pode vencer
+    (Caso "tmu_render" $Exe "experimental" $VBlanks "newgame_area1" @{ BS_TEMPO_MUTACAO = "render_perdido" }),
+    (Caso "tmu_parado" $Exe "experimental" $VBlanks "newgame_area1" @{ BS_TEMPO_MUTACAO = "render_perdido"; BS_TMU_MUTACAO = "parado" })
 )
 $runs = @{}
 foreach ($s in @($casos | ForEach-Object { Launch $_ })) {
@@ -77,7 +83,22 @@ foreach ($s in @($casos | ForEach-Object { Launch $_ })) {
     else { $code = $s.Proc.ExitCode }
     $runs[$s.C.tag] = @{ P = $s.P; Code = $code; N = $s.C.n }
 }
-foreach ($t in $runs.Keys | Sort-Object) { if ($t -ne "s2n_neg") { Check "execucao termina ($t)" ($runs[$t].Code -eq 0) "rc=$($runs[$t].Code)" } }
+foreach ($t in $runs.Keys | Sort-Object) { if ($t -ne "s2n_neg" -and $t -ne "tmu_parado") { Check "execucao termina ($t)" ($runs[$t].Code -eq 0) "rc=$($runs[$t].Code)" } }
+
+# T: TMU logico. Todo acesso dentro do contrato (0 entregues ao modelo) nas execucoes experimentais; o timeout pelo TMU
+# vence com o render perdido e nao vence com o TMU parado
+function SaidaDe($t) { Get-Content -Raw -LiteralPath "$($runs[$t].P)_saida.txt" -ErrorAction SilentlyContinue }
+foreach ($t in @($casos | Where-Object { $_.tempo -eq "experimental" } | ForEach-Object { $_.tag } | Sort-Object)) {  # pelo modo, nao pelo nome
+    $m = [regex]::Match((SaidaDe $t), "tmu logico: acessos atendidos (\d+), fora do contrato \(entregues ao modelo\) (\d+)")
+    Check "T TMU logico: acessos dentro do contrato ($t)" ($m.Success -and [uint64]$m.Groups[1].Value -gt 0 -and $m.Groups[2].Value -eq "0") $m.Value
+}
+function RenderSem($t) {
+    $m = [regex]::Match((SaidaDe $t), "espera 8C173086:.*evento esperado RenderDone: com (\d+), sem (\d+)")
+    if ($m.Success) { [int]$m.Groups[2].Value } else { -1 }
+}
+$sr = RenderSem "tmu_render"; $sp = RenderSem "tmu_parado"
+Check "T timeout pelo TMU logico: render perdido sai pelo timeout" ($runs.tmu_render.Code -eq 0 -and $sr -ge 1) "saidas sem o fim de render: $sr"
+Check "negativo: TMU logico parado -> o timeout nao vence" ($sp -eq 0 -or ($runs.tmu_parado.Code -ne 0 -and $sp -lt 1)) "saidas sem o fim de render: $sp; rc=$($runs.tmu_parado.Code)"
 
 # conferencia pelo n8_nativo.py; com -Capturar grava o json na referencia, senao compara com ela
 $refDir = $Referencia

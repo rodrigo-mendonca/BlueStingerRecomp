@@ -12,6 +12,7 @@
 #include "memory/sh4_dmac.h"
 #include "memory/sh4_port.h"
 #include "memory/sh4_tmu.h"
+#include "memory/tmu_logical.h"
 #include "memory/effect_counters.h"
 #include "memory/sh4_sq.h"
 #include "pvr/holly_intc.h"
@@ -192,7 +193,8 @@ bool hwRead(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
            aica_reg_read(c, a, size, v) ||       // 0x00702C00, RTC
            sh4_intc_read(a, size, v) ||          // P4: ICR/IPR, INTEVT
            sh4_port_read(a, size, v) ||          // P4: PCTRA/PDTRA
-           sh4_tmu_read(c, a, size, v) ||        // P4: TMU
+           tmu_logical_read(c, a, size, v) ||    // P4: TMU no tempo logico (N8.1: servico nativo, contrato do jogo)
+           sh4_tmu_read(c, a, size, v) ||        // P4: TMU (tempo estavel e legado; fora do contrato)
            sh4_sq_read(a, size, v) ||            // P4: store queues, QACR
            sh4_dmac_read(a, size, v) ||          // P4: DMAC
            sh4_ccn_read(a, size, v);             // P4: CCR, arrays de cache
@@ -210,6 +212,7 @@ bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
            aica_reg_write(c, a, size, v) ||
            sh4_intc_write(a, size, v) ||
            sh4_port_write(a, size, v) ||
+           tmu_logical_write(c, a, size, v) ||
            sh4_tmu_write(c, a, size, v) ||
            sh4_sq_write(a, size, v) ||
            sh4_dmac_write(a, size, v) ||

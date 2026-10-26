@@ -6,6 +6,8 @@
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 #include "cpu/time_hooks.h"
+#include "memory/sh4_tmu.h"
+#include "memory/tmu_logical.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 
@@ -188,4 +190,119 @@ BS_TEST(n8_cadence_b_stable_time_keeps_the_cycle_quantum) {
     sh4_service(&f.c);
     BS_CHECK(f.c.next_event == 1000 + kServiceQuantum);
     sh4_intc_reset();
+}
+
+// N8.1: o servico do TMU no tempo logico (memory/tmu_logical) da o mesmo TCNT0 que o modelo para o contrato do jogo
+// (inicializacao de 8C15D17C) e entrega o estado ao modelo no primeiro acesso fora dele.
+namespace {
+void tmuInit(Sh4Context& c) {  // a sequencia de 8C15D17C
+    sh4_write8(&c, 0xFFD80000, 0);
+    sh4_write8(&c, 0xFFD80004, sh4_read8(&c, 0xFFD80004) & 0xFE);
+    sh4_write16(&c, 0xFFD80010, 2);
+    sh4_write32(&c, 0xFFD80008, 0xFFFFFFFF);
+    sh4_write32(&c, 0xFFD8000C, 0xFFFFFFFF);
+    sh4_write8(&c, 0xFFD80004, sh4_read8(&c, 0xFFD80004) | 1);
+}
+} // namespace
+
+BS_TEST(n8_tmu_logical_matches_the_model_and_hands_over_outside_the_contract) {
+    std::vector<uint8_t> ram(16u << 20);
+    // o modelo (tempo estavel: provedor legado, quantum de ciclos)
+    Sh4Context m{};
+    m.ram = ram.data();
+    sh4_tmu_reset();
+    tmu_logical_reset();
+    m.cycles = 1000;
+    tmuInit(m);
+    const uint64_t served0 = tmu_logical_served();
+    std::vector<uint32_t> model;
+    for (uint64_t t : {1000ull, 1255ull, 1256ull, 1000 + 256 * 777ull, 1000 + 256 * 123456ull})
+        m.cycles = t, model.push_back(sh4_read32(&m, 0xFFD8000C));
+    BS_CHECK(tmu_logical_served() == served0);  // no estavel o servico nao atende
+    // o servico (tempo logico), mesma sequencia e mesmos instantes
+    LogicalSpy spy;
+    time_set_provider(&spy);
+    Sh4Context c{};
+    c.ram = ram.data();
+    sh4_tmu_reset();
+    tmu_logical_reset();
+    c.cycles = 1000;
+    tmuInit(c);
+    std::vector<uint32_t> logical;
+    for (uint64_t t : {1000ull, 1255ull, 1256ull, 1000 + 256 * 777ull, 1000 + 256 * 123456ull})
+        c.cycles = t, logical.push_back(sh4_read32(&c, 0xFFD8000C));
+    BS_CHECK(logical == model);
+    BS_CHECK(logical[2] == 0xFFFFFFFEu && logical[3] == 0xFFFFFFFFu - 777);
+    BS_CHECK(tmu_logical_served() > served0 && tmu_logical_fallbacks() == 0);
+    // fora do contrato (leitura do TCR0): o modelo assume com o mesmo canal 0, e o TCNT0 continua sem salto
+    c.cycles = 1000 + 256 * 200000ull;
+    BS_CHECK(sh4_read16(&c, 0xFFD80010) == 2);
+    BS_CHECK(tmu_logical_fallbacks() == 1);
+    c.cycles = 1000 + 256 * 200001ull;
+    BS_CHECK(sh4_read32(&c, 0xFFD8000C) == 0xFFFFFFFFu - 200001);
+    BS_CHECK(tmu_logical_fallbacks() == 2);
+    time_set_provider(nullptr);
+    sh4_tmu_reset();
+    tmu_logical_reset();
+}
+
+// Revisao Codex 2026-10-25: servico x modelo numa sequencia com underflow e recarga, TCR regravado depois do avanco
+// (limpa UNF), parada e reinicio por TSTR, entrega ao modelo por uma escrita fora do contrato, espelho da area 7 e
+// reset entre sessoes. Toda leitura tem de ser a mesma nos dois.
+namespace {
+struct TmuOp {
+    uint64_t t;
+    char     op;  // r/w = leitura/escrita; i = inicializacao (8C15D17C); x = reset de sessao
+    uint32_t a;
+    unsigned size;
+    uint32_t v;
+};
+std::vector<uint32_t> tmuRun(const std::vector<TmuOp>& ops) {
+    std::vector<uint8_t> ram(16u << 20);
+    Sh4Context           c{};
+    c.ram = ram.data();
+    sh4_tmu_reset();
+    tmu_logical_reset();
+    std::vector<uint32_t> out;
+    for (const TmuOp& o : ops) {
+        c.cycles = o.t;
+        if (o.op == 'i') tmuInit(c);
+        else if (o.op == 'x') sh4_tmu_reset(), tmu_logical_reset();
+        else if (o.op == 'w')
+            o.size == 1 ? sh4_write8(&c, o.a, uint8_t(o.v)) : o.size == 2 ? sh4_write16(&c, o.a, uint16_t(o.v)) : sh4_write32(&c, o.a, o.v);
+        else out.push_back(o.size == 1 ? sh4_read8(&c, o.a) : o.size == 2 ? sh4_read16(&c, o.a) : sh4_read32(&c, o.a));
+    }
+    return out;
+}
+} // namespace
+
+BS_TEST(n8_tmu_logical_sequences_match_the_model) {
+    constexpr uint64_t K = 256, W = 0x100000000ull * K;  // um tick do canal; uma volta inteira do TCNT0
+    const std::vector<std::vector<TmuOp>> seqs = {
+        // underflow e recarga, sem sair do contrato
+        {{100, 'i'}, {100 + W - K, 'r', 0xFFD8000C, 4}, {100 + W, 'r', 0xFFD8000C, 4}, {100 + W + 5 * K, 'r', 0xFFD8000C, 4},
+         {100 + 3 * W + 7 * K, 'r', 0xFFD8000C, 4}},
+        // TCR0 regravado com o mesmo divisor depois do avanco e do underflow (rebase; UNF limpo), depois TSTR para e volta
+        {{0, 'i'}, {W + 9 * K, 'r', 0xFFD8000C, 4}, {W + 10 * K, 'w', 0xFFD80010, 2, 2}, {W + 30 * K, 'r', 0xFFD8000C, 4},
+         {W + 31 * K, 'w', 0xFFD80004, 1, 0}, {W + 900 * K, 'r', 0xFFD8000C, 4}, {W + 901 * K, 'r', 0xFFD80004, 1},
+         {W + 902 * K, 'w', 0xFFD80004, 1, 1}, {W + 1000 * K, 'r', 0xFFD8000C, 4}},
+        // escrita fora do contrato (outro divisor): o modelo assume no meio, sem salto
+        {{0, 'i'}, {50 * K, 'r', 0xFFD8000C, 4}, {60 * K, 'w', 0xFFD80010, 2, 3}, {60 * K + 1024 * 7, 'r', 0xFFD8000C, 4},
+         {60 * K + 1024 * 9, 'r', 0xFFD80010, 2}},
+        // espelho da area 7: o mesmo TMU (entregue ao modelo, mesmo estado)
+        {{0, 'i'}, {70 * K, 'r', 0x1FD8000C, 4}, {80 * K, 'r', 0xFFD8000C, 4}, {90 * K, 'r', 0x1FD80004, 1}},
+        // duas sessoes: o reset volta ao estado inicial nos dois
+        {{0, 'i'}, {40 * K, 'r', 0xFFD8000C, 4}, {41 * K, 'x'}, {50 * K, 'r', 0xFFD8000C, 4}, {60 * K, 'i'},
+         {70 * K, 'r', 0xFFD8000C, 4}},
+    };
+    LogicalSpy spy;
+    for (size_t i = 0; i < seqs.size(); ++i) {
+        const auto model = tmuRun(seqs[i]);  // tempo estavel: so o modelo
+        time_set_provider(&spy);
+        const auto logical = tmuRun(seqs[i]);  // tempo logico: servico (e o modelo depois da entrega)
+        time_set_provider(nullptr);
+        BS_CHECK(!model.empty() && logical == model);
+    }
+    sh4_tmu_reset();
+    tmu_logical_reset();
 }

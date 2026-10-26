@@ -9,6 +9,7 @@
 #include "platform/clock.h"
 #include "platform/event_queue.h"
 #include "platform/progress.h"
+#include "memory/tmu_logical.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 
@@ -374,6 +375,9 @@ public:
                           "%llu, com outro efeito %llu; paginas escritas comparadas %llu\n",
                           ull(s.visits), ull(e.criBlocks), ull(s.eventDuring), ull(s.effectRam), ull(s.effectOther),
                           ull(s.dirtyPages));
+            out += b;
+            std::snprintf(b, sizeof b, "[n8.1] tmu logico: acessos atendidos %llu, fora do contrato (entregues ao modelo) %llu\n",
+                          ull(tmu_logical_served()), ull(tmu_logical_fallbacks()));
             out += b;
             if (e.hwWaits) {
                 std::snprintf(b, sizeof b, "[n2b2] esperas do hardware (DMA): %llu, %llu avancos, %.2f campos\n", ull(e.hwWaits),

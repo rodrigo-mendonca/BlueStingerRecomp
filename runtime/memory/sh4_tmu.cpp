@@ -79,6 +79,8 @@ void rebase(int n, uint64_t now) {
 }
 
 bool inRange(uint32_t a) { return a >= kTocr && a <= kTcpr2 + 3; }
+// area 7 (0x1FD80000) e o mesmo TMU que o P4 (manual SH7750, tabela 12.2; revisao Codex 2026-10-25)
+uint32_t canonTmu(uint32_t a) { return (a >= 0x1FD80000 && a <= 0x1FD8002F) ? a | 0xE0000000 : a; }
 
 void warnTpsc(int n, uint32_t tcr) {
     static bool warned[3];
@@ -89,6 +91,16 @@ void warnTpsc(int n, uint32_t tcr) {
 }
 
 } // namespace
+
+void sh4_tmu_adopt(uint8_t tocr, uint8_t tstr, uint32_t tcor0, uint32_t tcr0, uint32_t base0, uint64_t baseAt0) {
+    sh4_tmu_reset();
+    g_tocr          = tocr;
+    g_tstr          = tstr;
+    g_ch[0].tcor    = tcor0;
+    g_ch[0].tcr     = tcr0;
+    g_ch[0].base    = base0;
+    g_ch[0].baseCycle = baseAt0;
+}
 
 void sh4_tmu_reset() {
     for (auto& ch : g_ch) ch = Channel{};
@@ -132,6 +144,7 @@ uint64_t tmuNow(Sh4Context* c) {
 }
 
 bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
+    a = canonTmu(a);
     if (!inRange(a)) return false;
     const uint64_t now = tmuNow(c);
     if (a == kTocr) v = g_tocr;
@@ -158,6 +171,7 @@ bool sh4_tmu_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
 
 bool sh4_tmu_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     (void)size;
+    a = canonTmu(a);
     if (!inRange(a)) return false;
     const uint64_t now = time_now(c);
     if (a == kTocr) {
