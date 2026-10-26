@@ -8,14 +8,16 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "environment": { "VSLANG": "1033" }
     },
-    { "name": "msvc-debug",    "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl", "BS_MSVC_DEPS_JSON": "ON" } },
+    { "name": "msvc-debug",    "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl", "BS_MSVC_DEPS_JSON": "ON", "BS_VALIDACAO": "ON" } },
     { "name": "msvc-release",  "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_C_COMPILER": "cl",       "CMAKE_CXX_COMPILER": "cl", "BS_MSVC_DEPS_JSON": "ON" } },
-    { "name": "clang-debug",   "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl" } },
+    { "name": "msvc-validacao", "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_C_COMPILER": "cl",      "CMAKE_CXX_COMPILER": "cl", "BS_MSVC_DEPS_JSON": "ON", "BS_VALIDACAO": "ON", "BS_BUILD_GAME": "ON" } },
+    { "name": "clang-debug",   "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug",   "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl", "BS_VALIDACAO": "ON" } },
     { "name": "clang-release", "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_C_COMPILER": "clang-cl", "CMAKE_CXX_COMPILER": "clang-cl" } }
   ],
   "buildPresets": [
     { "name": "msvc-debug",    "configurePreset": "msvc-debug" },
     { "name": "msvc-release",  "configurePreset": "msvc-release" },
+    { "name": "msvc-validacao", "configurePreset": "msvc-validacao" },
     { "name": "clang-debug",   "configurePreset": "clang-debug" },
     { "name": "clang-release", "configurePreset": "clang-release" }
   ],

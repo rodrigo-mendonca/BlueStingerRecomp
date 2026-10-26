@@ -306,6 +306,8 @@ BS_TEST(n0_probe_merge_feeds_closure) {
     BS_CHECK(threw);
 }
 
+// N8.2: a sonda so existe no build de validacao (BS_VALIDACAO); no produto o stub nao registra nada
+#if BS_VALIDACAO
 namespace {
 void probeCallee(Sh4Context* c) {
     BS_FN_ENTER(0x8C000200);
@@ -338,6 +340,13 @@ BS_TEST(n0_probe_attributes_accesses_through_bs_call) {
     BS_CHECK(dump.find("w\t0x8C000100\t0xE0000024\t4\tstore_queue\t2") != std::string::npos);
     BS_CHECK(c.cur_fn == 0x8C000100);
 }
+#else
+BS_TEST(n8_product_has_no_hardware_probe) {
+    hw_probe_init("bs_n0_probe_teste.tsv");  // stub: nao liga nada
+    hw_probe_access(nullptr, 0xA05F8008, 4, ProbeKind::Write);
+    BS_CHECK(!g_hw_probe && hw_probe_dump().empty() && !hw_probe_flush());
+}
+#endif
 
 // Trace de ordem: eventos na ordem em que acontecem, com ciclos e argumentos.
 BS_TEST(n0_event_trace_records_order) {

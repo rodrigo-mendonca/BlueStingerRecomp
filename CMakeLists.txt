@@ -17,6 +17,17 @@ option(BS_WRITE_WATCH "Diagnostico: registro de efeitos de escrita" OFF)
 if(BS_WRITE_WATCH)
   add_compile_definitions(BS_WRITE_WATCH=1)
 endif()
+# N8.2 (D-N8-3): build de validacao. So nele entram as mutacoes e sondas exclusivas de teste (ruido de ciclos, sonda de
+# hardware do N0, diagnostico do CRI: runtime/debug); no produto e no Builder elas viram recusa explicita
+# (runtime/debug/validacao_stubs.cpp). A instrumentacao das referencias e o tempo estavel ficam nos dois (mantenedor,
+# 2026-10-26; docs/N8-2-SEPARACAO.md).
+option(BS_VALIDACAO "Build de validacao (N8.2): mutacoes e sondas exclusivas de teste" OFF)
+if(BS_WRITE_WATCH AND NOT BS_VALIDACAO)
+  message(FATAL_ERROR "BS_WRITE_WATCH e diagnostico de investigacao: so com -DBS_VALIDACAO=ON")
+endif()
+if(BS_VALIDACAO)
+  add_compile_definitions(BS_VALIDACAO=1)
+endif()
 set(BS_MODS_DIR "" CACHE PATH "Pasta com os mods (.cpp) do projeto editavel")
 
 if(MSVC)
