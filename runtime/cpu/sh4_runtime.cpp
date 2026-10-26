@@ -7,6 +7,7 @@
 #include "cpu/time_hooks.h"
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_threads.h"
+#include "debug/cycle_noise.h"
 #include "debug/intc_trace.h"
 #include "debug/hw_probe.h"
 #include "gdrom/gdrom.h"
@@ -128,6 +129,16 @@ void sh4_wait_end(Sh4Context* c, uint32_t pc) {
     time_provider().wait_end(pc, uint32_t(sh4_current_thread()), c->polls);
 }
 
+void sh4_progress_tick(Sh4Context* c) {
+    cycle_noise(c);  // mutacao BS_CICLOS_RUIDO (desligada: um teste)
+    if (time_provider().cycle_cadence()) {
+        c->next_poll = ~0ull;
+        return;
+    }
+    c->next_poll = c->polls + kProgressTick;
+    time_provider().progress(uint32_t(sh4_current_thread()), c->polls, c->pc);
+}
+
 void sh4_service(Sh4Context* c) {
     // diagnostico BS_INTC_TRACE: origem deste atendimento (le next_event antes de mudar); restaurada mesmo se uma excecao
     // atravessar o atendimento
@@ -138,7 +149,13 @@ void sh4_service(Sh4Context* c) {
     const bool       cad    = g_intc_trace && sh4_irq_origin_now() == uint8_t(IntcSource::Cadence);
     const uint64_t   ev0 = cad ? holly_event_count() : 0, irq0 = cad ? sh4_irq_taken_count() : 0,
                    blk0 = cad ? gdrom_event_count() : 0;
-    c->next_event = c->cycles + kServiceQuantum;
+    cycle_noise(c);  // mutacao BS_CICLOS_RUIDO (desligada: um teste)
+    if (time_provider().cycle_cadence()) {  // tempo estavel e legado: a cada quantum de ciclos estimados
+        c->next_event = c->cycles + kServiceQuantum;
+    } else {  // N8.1, cadencia B (tempo logico): o proximo atendimento e pedido; a vivacidade vai pelos polls
+        c->next_event = ~0ull;
+        c->next_poll  = c->polls + kProgressTick;
+    }
     time_provider().progress(uint32_t(sh4_current_thread()), c->polls, c->pc);
     // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
     // sem depender de nova syscall (revisao Codex 2026-10-14)

@@ -15,7 +15,9 @@
     } while (0)
 // Ciclos estimados de um trecho linear.
 #define BS_CYCLES(n) (c->cycles += (n))
-// Ponto de checagem de eventos (back-edges): interrupcoes, VBlank, timers.
+// Ponto de checagem de eventos (back-edges): interrupcoes, VBlank, timers. No tempo estavel o atendimento vem pelo
+// quantum de ciclos; no tempo logico (N8.1, cadencia B) so quando pedido (next_event = 0: espera que andou o instante,
+// nivel entregavel, fim de DMA) e a guarda de vivacidade a cada kProgressTick polls (next_poll), sem ciclos.
 // `resume` e o endereco SH-4 onde a execucao continua (vira SPC se houver interrupcao).
 // BS_POLL fica nos back-edges; BS_POLL_RET, no retorno de chamada (BS_CALL). Os dois fazem o
 // mesmo; so o diagnostico do N2b (build BS_WRITE_WATCH) distingue voltas de laco de retornos.
@@ -24,14 +26,17 @@
 #else
 #define BS_WW_POLL(resume, ret) ((void)0)
 #endif
-#define BS_POLL_KIND(resume, ret)             \
-    do {                                      \
-        ++c->polls;                           \
-        BS_WW_POLL(resume, ret);              \
-        if (c->cycles >= c->next_event) {     \
-            c->pc = (resume);                 \
-            ::bs::sh4_service(c);             \
-        }                                     \
+#define BS_POLL_KIND(resume, ret)              \
+    do {                                       \
+        ++c->polls;                            \
+        BS_WW_POLL(resume, ret);               \
+        if (c->cycles >= c->next_event) {      \
+            c->pc = (resume);                  \
+            ::bs::sh4_service(c);              \
+        } else if (c->polls >= c->next_poll) { \
+            c->pc = (resume);                  \
+            ::bs::sh4_progress_tick(c);        \
+        }                                      \
     } while (0)
 #define BS_POLL(resume) BS_POLL_KIND(resume, false)
 #define BS_POLL_RET(resume) BS_POLL_KIND(resume, true)

@@ -36,6 +36,9 @@ struct Origin {
 constexpr int kOriginSlots = 8;
 Origin        g_origins[kOriginSlots];
 IntcSource    g_hint = IntcSource::Cadence;  // o proximo sh4_service vem de onde (sh4_irq_origin_hint)
+// N8.1 (cadencia B): o contexto da CPU (um so por sessao; sh4_irq_bind no boot, renovado por sh4_irq_check e zerado
+// no reset: o contexto de uma sessao encerrada nao pode ser escrito)
+Sh4Context* g_ctxLast = nullptr;
 Origin&       origin() {
     const int t = sh4_current_thread();
     return g_origins[t >= 0 && t < kOriginSlots ? t : kOriginSlots - 1];
@@ -112,13 +115,28 @@ void sh4_intc_reset() {
     // diagnostico: sessao nova comeca sem origem aberta (uma fibra apagada no encerramento nao desenrola o RAII de
     // sh4_service; revisao Codex 2026-10-25)
     for (Origin& o : g_origins) o = Origin{};
-    g_hint = IntcSource::Cadence;
+    g_hint    = IntcSource::Cadence;
+    g_ctxLast = nullptr;
     g_icr = 0;
     g_ipr[0] = g_ipr[1] = g_ipr[2] = 0;
     g_intevt = 0;
 }
 
+void sh4_irq_bind(Sh4Context* c) { g_ctxLast = c; }
+
+void sh4_irq_wakeup() {
+    Sh4Context* c = g_ctxLast;
+    if (!c || time_provider().cycle_cadence()) return;
+    const uint32_t sr = sh4_get_sr(*c);
+    if (!(sr & kSrBL) && holly_irl_level_peek() > ((sr & kSrImask) >> 4)) c->next_event = 0;
+}
+
+void sh4_request_service() {
+    if (g_ctxLast && !time_provider().cycle_cadence()) g_ctxLast->next_event = 0;
+}
+
 void sh4_irq_check(Sh4Context* c) {
+    g_ctxLast = c;
     // Depois do rte do tratador, uma fonte ainda pendente (ou outra) e aceita antes da
     // instrucao em SPC (manual SH7750, 19.6): por isso reavalia ate nao haver nada.
     for (int n = 0; deliverOne(c); ++n)

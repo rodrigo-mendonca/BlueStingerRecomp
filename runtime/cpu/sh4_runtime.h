@@ -54,6 +54,10 @@ void sh4_ldtlb(Sh4Context* c);
 void sh4_sq_flush(Sh4Context* c, uint32_t addr);  // pref em 0xE0000000-0xE3FFFFFF
 constexpr uint64_t kServiceQuantum = 2000;          // ciclos entre polls (~10 us a 200 MHz)
 void sh4_service(Sh4Context* c);                   // eventos/interrupcoes pendentes
+// N8.1 (cadencia B): no tempo logico, a checagem de vivacidade (D8) a cada kProgressTick polls, sem entrega nem
+// evento (o que pode ser entregue pede atendimento: sh4_irq_wakeup). No tempo estavel nao roda (next_poll = ~0).
+constexpr uint64_t kProgressTick = 4096;
+void sh4_progress_tick(Sh4Context* c);
 // N2b-1 (modo sombra): back-edge de um ponto de espera declarado (BS_WAIT) e saida do laco.
 void sh4_wait_point(Sh4Context* c, uint32_t pc);
 void sh4_wait_end(Sh4Context* c, uint32_t pc);

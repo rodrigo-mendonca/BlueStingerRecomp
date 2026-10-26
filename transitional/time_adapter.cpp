@@ -168,6 +168,7 @@ public:
         cancel(display_, render_);
         if (!due) return;
         render_ = post(display_, nt::EventKind::RenderDone, due + (delayRender_ ? kMutationDelay : 0));
+        wakeIfDue(due);
         if (trace_)  // N2b-0: medida da conclusao do render (inicio, fim agendado)
             std::fprintf(trace_, "%llu\tRenderStart\t%llu\t%llu\t-\n", static_cast<unsigned long long>(traceSeq_++),
                          static_cast<unsigned long long>(due), static_cast<unsigned long long>(clock_->now().ticks));
@@ -175,12 +176,14 @@ public:
     void maple_scheduled(uint64_t due) override {
         cancel(display_, maple_);
         maple_ = post(display_, nt::EventKind::InputDone, due);
+        wakeIfDue(due);
     }
     void maple_cancel() override { cancel(display_, maple_); }
 
     void disc_scheduled(uint64_t due) override {
         cancel(disc_, discEv_);
         discEv_ = post(disc_, nt::EventKind::FileDone, due);
+        wakeIfDue(due);
     }
     bool disc_due(uint64_t now) override {
         advance(now);
@@ -296,6 +299,8 @@ public:
         return experimentalWait(c, pc, thread, d ? d->kind : WaitKind::Event, d ? d->what : "espera sem declaracao de tipo");
     }
 
+    bool cycle_cadence() const override { return !exp_; }
+
     bool holly_pending(uint64_t now) override {
         if (!exp_) return false;
         const auto next = display_.next_due();
@@ -394,9 +399,10 @@ public:
     // os ciclos. Antes o experimental devolvia na hora e os dois lotes do driver de som de uma troca de musica caiam no
     // mesmo tick (sem o fade de entrada do original). So um longjmp (c->redirect) encerra a espera.
     void timed_wait(Sh4Context* c, uint64_t ticks) {
-        const uint64_t end = clock_->now().ticks + ticks;
-        c->pc              = c->pr;
-        uint32_t stuck     = 0;
+        const uint64_t end    = clock_->now().ticks + ticks;
+        const uint32_t resume = c->pr;  // ponto de retomada da espera: o retorno da chamada ao slot nativo
+        uint32_t       stuck  = 0;
+        c->pc                 = resume;
         while (clock_->now().ticks < end && !c->redirect) {
             const uint64_t now    = clock_->now().ticks;
             uint64_t       target = end;
@@ -408,6 +414,10 @@ public:
                 exp_stats_.ticks += target - now, exp_stats_.hwWaitTicks += target - now;
             }
             ++c->polls;
+            // N8.1: o SPC de toda entrega daqui e o retorno da espera. O tratador anterior (aninhado) e a outra thread
+            // mexem em c->pc; antes o valor velho so era trocado por um poll do quantum de ciclos dentro deles (SPC
+            // dependente dos ciclos)
+            c->pc = resume;
             sh4_irq_origin_hint(uint8_t(IntcSource::Hardware));  // diagnostico BS_INTC_TRACE
             sh4_service(c);  // entrega o que venceu (o tratador roda aninhado; a troca de thread suspende esta fibra)
             // termino garantido: atendimentos seguidos sem o relogio andar tem limite, mesmo que as filas mudem (eventos
@@ -486,6 +496,12 @@ private:
         if (target - now > exp_stats_.maxStep) exp_stats_.maxStep = target - now;
         ++exp_stats_.byWait[pc];
         return true;
+    }
+
+    // N8.1 (cadencia B): evento agendado para o instante atual (o tempo logico nao anda ate a proxima espera) pede o
+    // atendimento no proximo poll, que antes vinha do quantum de ciclos
+    void wakeIfDue(uint64_t due) {
+        if (exp_ && due <= clock_->now().ticks) sh4_request_service();
     }
 
     void start(uint64_t now) {

@@ -34,6 +34,8 @@ void holly_intc_peek(uint32_t& istnrm, uint32_t& iml6nrm, uint32_t& iml4nrm, uin
 // Nivel IRL pedido ao SH-4 (6, 4, 2 ou 0): maior nivel cujas mascaras IMLn
 // (NRM/EXT/ERR) tem algum bit pendente em ISTNRM/ISTEXT/ISTERR.
 uint32_t holly_irl_level(uint64_t cycles);
+// O mesmo nivel sem avaliar eventos (nao chama o provedor de tempo): sh4_irq_wakeup (N8.1).
+uint32_t holly_irl_level_peek();
 
 // true se `a` e um registrador do controlador (o acesso foi tratado).
 bool holly_intc_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v);

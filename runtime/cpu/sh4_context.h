@@ -42,6 +42,7 @@ struct Sh4Context {
     uint64_t cycles;      // contador estimado
     uint64_t next_event;  // quando sh4_service() deve rodar
     uint64_t polls;       // pontos de controle executados (BS_POLL): trabalho estrutural, nao tempo (N2b, D8)
+    uint64_t next_poll;   // N8.1 (cadencia B, tempo logico): poll da proxima checagem de vivacidade (~0: nenhuma)
     uint32_t ret_expect;  // endereco de retorno esperado pelo chamador (verificacao de rts)
     uint32_t ret_sp;      // R15 do chamador nesse ponto: identifica a thread do guest (sh4_threads)
     uint32_t redirect;    // longjmp pendente: ponto de reentrada (retorno de setjmp) a alcancar

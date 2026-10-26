@@ -5,6 +5,7 @@
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
+#include "cpu/time_hooks.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 
@@ -113,4 +114,78 @@ BS_TEST(aica_rtc_counts_emulated_seconds_and_accepts_enabled_writes) {
     sh4_write32(&c, 0xA0710000, 0x2000);
     BS_CHECK(rtc() == 0x10000000);
     BS_CHECK(aica_rtc_host_now() > 0x80000000u);  // depois de 2018 na epoca de 1950
+}
+
+// N8.1, cadencia B (tempo logico): quem deixa um nivel entregavel fora de um atendimento pede o atendimento no
+// proximo poll (next_event = 0); no tempo estavel nada muda (o quantum de ciclos continua). Revisao Codex 2026-10-25.
+namespace {
+struct LogicalSpy : TimeProvider {
+    const char* name() const override { return "logico"; }
+    void        reset(uint64_t) override {}
+    uint64_t    clock(uint64_t cycles) override { return cycles; }
+    uint32_t    holly_due(uint64_t) override { return 0; }
+    void        spg_changed() override {}
+    void        render_scheduled(uint64_t) override {}
+    void        maple_scheduled(uint64_t) override {}
+    void        maple_cancel() override {}
+    void        disc_scheduled(uint64_t) override {}
+    bool        disc_due(uint64_t) override { return false; }
+    void        disc_cancel() override {}
+    uint32_t    rtc_seconds(uint64_t) override { return 0; }
+    void        rtc_set(uint32_t, uint64_t) override {}
+    bool        cycle_cadence() const override { return false; }
+    uint64_t    progress_calls = 0;
+    void        progress(uint32_t, uint64_t, uint32_t) override { ++progress_calls; }
+};
+} // namespace
+
+BS_TEST(n8_cadence_b_wakeup_requests_service_only_when_deliverable) {
+    IrqFixture f;  // IML6NRM = VBlank-In
+    LogicalSpy spy;
+    time_set_provider(&spy);
+    sh4_irq_bind(&f.c);
+    sh4_set_sr(f.c, 0x400000F0);  // IMASK 15: mascarado pelo SR
+    f.c.next_event = ~0ull;
+    holly_intc_raise(kIstVblankIn);
+    BS_CHECK(f.c.next_event == ~0ull);  // nada entregavel: nenhum pedido
+    sh4_write32(&f.c, 0xA05F6930, 0);      // IML6NRM = 0
+    sh4_set_sr(f.c, 0x40000000);           // IMASK 0 (no jogo o ldc sr passa pelo BS_IRQ_CHECK)
+    BS_CHECK(f.c.next_event == ~0ull);
+    sh4_write32(&f.c, 0xA05F6930, kIstVblankIn);  // a mascara deixa o nivel 6 entregavel
+    BS_CHECK(f.c.next_event == 0);
+    f.c.next_event = ~0ull;
+    sh4_write32(&f.c, 0xA05F6900, kIstVblankIn);  // reconhece
+    holly_intc_raise(kIstVblankIn);               // fonte nova ja entregavel
+    BS_CHECK(f.c.next_event == 0);
+    f.c.next_event = ~0ull;
+    sh4_request_service();
+    BS_CHECK(f.c.next_event == 0);
+    // vivacidade: tick a cada kProgressTick polls, so o progresso
+    f.c.polls = 10, f.c.next_poll = 0;
+    sh4_progress_tick(&f.c);
+    BS_CHECK(f.c.next_poll == 10 + kProgressTick && spy.progress_calls == 1 && g_seen.calls == 0);
+    // reset: o contexto da sessao anterior nao e mais escrito
+    sh4_intc_reset();
+    f.c.next_event = ~0ull;
+    holly_intc_raise(kIstVblankIn);
+    sh4_request_service();
+    BS_CHECK(f.c.next_event == ~0ull);
+    time_set_provider(nullptr);
+}
+
+BS_TEST(n8_cadence_b_stable_time_keeps_the_cycle_quantum) {
+    IrqFixture f;  // provedor legado (cadencia por ciclos)
+    sh4_irq_bind(&f.c);
+    sh4_set_sr(f.c, 0x40000000);
+    f.c.next_event = ~0ull;
+    holly_intc_raise(kIstVblankIn);
+    sh4_request_service();
+    BS_CHECK(f.c.next_event == ~0ull);  // no estavel nada pede atendimento: o quantum continua
+    f.c.next_poll = 0;
+    sh4_progress_tick(&f.c);
+    BS_CHECK(f.c.next_poll == ~0ull);  // contexto zerado: o tick so se desliga
+    f.c.cycles = 1000, f.c.next_event = 0, f.c.pc = 0x8C010000;
+    sh4_service(&f.c);
+    BS_CHECK(f.c.next_event == 1000 + kServiceQuantum);
+    sh4_intc_reset();
 }

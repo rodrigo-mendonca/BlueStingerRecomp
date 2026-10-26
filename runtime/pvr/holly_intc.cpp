@@ -7,6 +7,7 @@
 // Os eventos sao avaliados nos pontos de sempre (acesso, poll, nivel IRL): o provedor de tempo
 // (cpu/time_hooks.h) diz o que venceu desde o ultimo ponto.
 #include "pvr/holly_intc.h"
+#include "cpu/sh4_intc.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
 #include "debug/event_trace.h"
@@ -90,6 +91,7 @@ void holly_intc_raise(uint32_t bits) {
     const uint32_t before = reg(kIstNrm);
     reg(kIstNrm) |= bits;
     ++g_events;
+    sh4_irq_wakeup();  // N8.1, cadencia B (no tempo estavel nao faz nada)
     if (g_intc_trace)
         intc_trace_holly('H', IntcSource::Raise, g_last, reg(kIstNrm) & ~before, bits, reg(kIstNrm), reg(0x005F6930),
                          reg(0x005F6920), reg(0x005F6910));
@@ -101,6 +103,10 @@ void     holly_intc_peek(uint32_t& istnrm, uint32_t& iml6nrm, uint32_t& iml4nrm,
 
 uint32_t holly_irl_level(uint64_t cycles) {
     update(cycles);
+    return holly_irl_level_peek();
+}
+
+uint32_t holly_irl_level_peek() {
     const uint32_t nrm = reg(kIstNrm), ext = reg(kIstExt), err = reg(kIstErr);
     // IML6NRM 0x005F6930, IML4NRM 0x005F6920, IML2NRM 0x005F6910; EXT +4, ERR +8
     for (uint32_t level : {6u, 4u, 2u}) {
@@ -145,6 +151,7 @@ bool holly_intc_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         static const bool debug = std::getenv("BS_PVR_DEBUG") != nullptr;
         if (debug && reg(p) != v) std::fprintf(stderr, "[intc] %08X = %08X\n", p, v);
         reg(p) = v;
+        sh4_irq_wakeup();  // N8.1, cadencia B: mascara nova pode deixar um nivel entregavel
     }
     return true;
 }

@@ -70,6 +70,9 @@ public:
         wait_point(pc, thread, c->polls);
         return false;
     }
+    // N8.1: o atendimento (eventos, entrega de interrupcoes) segue o quantum de ciclos estimados (tempo estavel e
+    // legado). false: tempo logico, cadencia B (atendimento pedido; ver sh4_gen.h e sh4_irq_wakeup).
+    virtual bool cycle_cadence() const { return true; }
     // Ha evento do Holly vencido ate `now` ainda nao entregue? So acontece no tempo experimental,
     // em que o instante fica parado entre dois atendimentos.
     virtual bool holly_pending(uint64_t now) {
