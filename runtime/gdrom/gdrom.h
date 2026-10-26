@@ -1,7 +1,10 @@
 #pragma once
 // Unidade de GD-ROM vista pelas syscalls do BIOS (HLE). Os comandos sao executados
 // de forma sincrona em GDROM_EXEC_SERVER; os setores vem de uma fonte de disco.
+// N8.3: modelo de validacao e das ferramentas (bs_runtime_hle); o produto usa o servico nativo
+// (system/syscall_service), que reproduz o perfil instantaneo deste modelo no contrato do jogo.
 #include "cpu/sh4_context.h"
+#include "system/syscall_service.h"
 
 #include <memory>
 #include <vector>
@@ -35,6 +38,8 @@ uint64_t gdrom_state_hash();
 void gdrom_set_timing(bool reios);
 // Avanca uma leitura por DMA em andamento ate o instante atual (chamado pelo poll central).
 void gdrom_poll(Sh4Context* c);
+// Este modelo como provedor da fachada sys_disc_* (poll central, cri_idle, diagnostico do CRI): sys_disc_use.
+const SysDiscBackend* gdrom_disc_backend();
 
 // Syscall GDROM (r6 = 0): `func` = r7, argumentos r4/r5. Grava r0 so nas funcoes que
 // devolvem valor (EXEC_SERVER, INIT_SYSTEM e RESET deixam r0 como estava).

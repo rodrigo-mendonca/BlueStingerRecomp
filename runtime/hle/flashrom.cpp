@@ -10,6 +10,7 @@
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 
+#include <algorithm>
 #include <fstream>
 #include <vector>
 
@@ -37,6 +38,8 @@ bool flashrom_load(const std::filesystem::path& path) {
 }
 
 uint8_t* flashrom_data() { return g_flash.data(); }
+
+void flashrom_reset() { std::fill(g_flash.begin(), g_flash.end(), uint8_t(0xFF)); }
 
 void flashrom_syscall(Sh4Context* c) {
     uint32_t&      r0 = c->r[0];

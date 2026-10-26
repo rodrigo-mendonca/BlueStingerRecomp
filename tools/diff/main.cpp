@@ -178,8 +178,11 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
             std::fprintf(stderr, "aviso: sem %s (registradores do PVR partem de zero)\n", pvr.string().c_str());
         }
     }
-    // Syscalls do BIOS: os vetores do snapshot (reios) ja apontam para 0x8C001000+.
-    if (!nativeImage) bios_hle_install(&c, false);
+    // Syscalls do BIOS: o modelo HLE (N8.3: o bs-diff compara com o oraculo; o servico nativo e do jogo). Os vetores do
+    // snapshot (reios) ja apontam para 0x8C001000+; no boot nativo, o boot os grava (os mesmos enderecos).
+    gdrom_reset();
+    bios_hle_install(&c, false);
+    sys_disc_use(gdrom_disc_backend());
     // Disco: BS_DISC_IMAGE (a mesma imagem que o Flycast usou para gerar o snapshot).
     if (const char* disc = std::getenv("BS_DISC_IMAGE")) gdrom_set_disc(open_disc_image(disc));
     // Entrada: so roteiro (deterministico) ou nenhuma. Entrada ao vivo (BS_INPUT=host)

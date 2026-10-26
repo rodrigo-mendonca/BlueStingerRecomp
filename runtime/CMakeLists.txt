@@ -14,16 +14,18 @@ add_library(bs_rt_aot OBJECT
 )
 list(APPEND BS_RT_PAPEIS aot)
 
-# servicos nativos do tempo logico (N8.1): ponte de interrupcoes, TMU, CCN nao grafico e cabo
+# servicos nativos: tempo logico (N8.1: ponte de interrupcoes, TMU, CCN nao grafico e cabo) e syscalls do sistema
+# (N8.3: GD-ROM, flash e sysinfo no contrato do jogo, sem BIOS, drive nem flash simulados)
 add_library(bs_rt_nativo OBJECT
   cpu/irq_bridge.cpp
   memory/tmu_logical.cpp
   memory/sys_logical.cpp
+  system/syscall_service.cpp
 )
 list(APPEND BS_RT_PAPEIS nativo)
 
-# simulacao do Dreamcast ainda no caminho do produto (compartilhada ate os cortes N8.3-N8.7): GD-ROM, BIOS/flash HLE,
-# boot, Maple e entrada, AICA, PVR/Holly/TA/VRAM, store queues e DMAC
+# simulacao do Dreamcast ainda no caminho do produto (compartilhada ate os cortes N8.4-N8.7): boot (estado de entrada
+# medido), Maple e entrada, AICA, PVR/Holly/TA/VRAM, store queues e DMAC
 add_library(bs_rt_simulacao OBJECT
   memory/sh4_sq.cpp
   memory/sh4_dmac.cpp
@@ -39,10 +41,6 @@ add_library(bs_rt_simulacao OBJECT
   input/input.cpp
   boot/native_boot.cpp
   aica/aica_regs.cpp
-  hle/bios.cpp
-  hle/flashrom.cpp
-  gdrom/gdrom.cpp
-  gdrom/data_source.cpp
 )
 list(APPEND BS_RT_PAPEIS simulacao)
 
@@ -77,8 +75,16 @@ else()
   list(APPEND BS_RT_PAPEIS validacao_stubs)
 endif()
 
+# N8.3: modelo HLE do BIOS, do drive de GD-ROM e da flash (o provedor legado de arquivos por setores, --flash e o tempo
+# reios). Fora do bs_runtime: o produto nao o liga; a validacao (bs_app_core com BS_VALIDACAO) e as ferramentas
+# (bs_runtime_cdi: Builder, bs-diff, testes com o CDI) sim.
+add_library(bs_rt_hle OBJECT hle/bios.cpp hle/flashrom.cpp gdrom/gdrom.cpp gdrom/data_source.cpp)
+if(BS_VALIDACAO)
+  list(APPEND BS_RT_PAPEIS hle)
+endif()
+
 set(BS_RT_OBJ bs_rt_aot bs_rt_nativo bs_rt_simulacao bs_rt_estavel bs_rt_diagnostico bs_rt_validacao)
-foreach(o ${BS_RT_OBJ})
+foreach(o ${BS_RT_OBJ} bs_rt_hle)
   target_include_directories(${o} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   # dados do jogo (RuntimeDisc, IP.BIN, descrambler) e o mapa de regioes; o leitor de CDI fica fora (bs_disc)
   target_link_libraries(${o} PUBLIC bs_disc_data PRIVATE xinput bs_dcmap)
@@ -93,7 +99,11 @@ string(REPLACE ";" "\n" BS_RT_PAPEIS_TXT "${BS_RT_PAPEIS}")
 file(WRITE ${CMAKE_BINARY_DIR}/runtime_papeis.txt "${BS_RT_PAPEIS_TXT}\n")
 # manifesto canonico papel<TAB>fonte, das mesmas listas dos alvos (catraca n8_produto_papeis; revisao Codex 2026-10-26)
 set(_manifesto "")
-foreach(o ${BS_RT_OBJ})
+set(_manifesto_obj ${BS_RT_OBJ})
+if(BS_VALIDACAO)
+  list(APPEND _manifesto_obj bs_rt_hle)  # o executavel de validacao liga o modelo HLE
+endif()
+foreach(o ${_manifesto_obj})
   string(REPLACE "bs_rt_" "" _papel "${o}")
   if(_papel STREQUAL "validacao" AND NOT BS_VALIDACAO)
     set(_papel "validacao_stubs")
@@ -107,7 +117,11 @@ file(WRITE ${CMAKE_BINARY_DIR}/runtime_manifesto.tsv "${_manifesto}")
 
 # Leitura direta do CDI (setores e boot), fora do produto: Builder, bs-diff e testes com a
 # imagem real. O executavel do jogo nao liga este alvo (teste n0_produto_sem_cdi).
+add_library(bs_runtime_hle STATIC $<TARGET_OBJECTS:bs_rt_hle>)
+target_include_directories(bs_runtime_hle PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(bs_runtime_hle PUBLIC bs_runtime)
+
 add_library(bs_runtime_cdi STATIC gdrom/image_source.cpp boot/disc_boot.cpp)
-target_link_libraries(bs_runtime_cdi PUBLIC bs_runtime bs_disc)
+target_link_libraries(bs_runtime_cdi PUBLIC bs_runtime bs_runtime_hle bs_disc)
 
 # O executavel do jogo (BS_BUILD_GAME) fica em app/: o runtime nao depende de SDL3.

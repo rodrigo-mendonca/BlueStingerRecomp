@@ -56,6 +56,11 @@ struct GameStats {
 // rollback).
 enum class FilesProvider { Native, Legacy };
 
+// Provedor das syscalls do sistema (N8.3, docs/N8-3-BOOT.md): nativo (o unico do produto) = o servico nativo com o
+// contrato do jogo (system/syscall_service); HLE = o modelo do BIOS, do drive e da flash (hle/bios, gdrom/gdrom,
+// hle/flashrom), so no build de validacao (--sistema hle; implicito com --arquivos legado, --flash e BS_GDROM_TIMING).
+enum class SystemProvider { Native, Hle };
+
 // Provedor de tempo e eventos (N2a, docs/N2-PLANO.md): nativo (padrao) = relogio logico e fila
 // de eventos de native/; legado = calculo preguicoso por ciclos (referencia e rollback);
 // experimental (N2b-2, docs/N2b2-RELATORIO.md) = o tempo logico deixa de vir dos ciclos e so anda
@@ -99,7 +104,8 @@ enum class RenderProvider { Software, Native };
 struct GameOptions {
     // dados do jogo preparados pelo Builder (pasta data/ da instalacao); o jogo nao le o CDI
     std::filesystem::path data;
-    std::filesystem::path flash;  // flash de 128 KB opcional (sem: apagada, 0xFF)
+    std::filesystem::path flash;  // flash de 128 KB opcional, so com o modelo HLE (sem: apagada, 0xFF)
+    SystemProvider        system = SystemProvider::Native;
     std::filesystem::path modAssets;  // mods de arquivos (mods\assets), opcional
     FilesProvider         files = FilesProvider::Native;
     TimeProviderKind      time  = TimeProviderKind::Native;

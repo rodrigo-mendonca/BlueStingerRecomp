@@ -4,9 +4,14 @@
 #include "disc/disc_image.h"
 #include "cpu/sh4_runtime.h"
 #include "cpu/sh4_threads.h"
-#include "gdrom/gdrom.h"
+#include "system/syscall_service.h"
+#include "runtime_data.h"
+#if BS_VALIDACAO
 #include "gdrom/data_source.h"
+#include "gdrom/gdrom.h"
+#include "hle/bios.h"
 #include "hle/flashrom.h"
+#endif
 #include "debug/call_trace.h"
 #include "debug/cri_diag.h"
 #include "bu_adapter.h"
@@ -789,12 +794,26 @@ void GameHost::threadMain() {
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);
         else boot_prepare(c, boot_read_data(opt_.data), rtcAtBoot());
-        // GD-ROM HLE (legado): com o provedor nativo, so inicializacao e estado do drive; os
-        // mods valem pelo provedor nativo (de qualquer tamanho), nao pelos setores
-        if (!opt_.data.empty())
-            gdrom_set_disc(open_runtime_data(opt_.data, files_ ? std::filesystem::path() : opt_.modAssets));
-        if (!opt_.flash.empty() && !flashrom_load(opt_.flash))
-            throw std::runtime_error("flash invalida (esperado 128 KB): " + disc::pathText(opt_.flash));
+        // N8.3: as syscalls do sistema vao para o servico nativo (o boot o instala); as leituras de setor (no jogo, so
+        // os metadados do volume no boot) vem dos dados do jogo. Os mods valem pelo provedor nativo de arquivos.
+        if (opt_.system == SystemProvider::Hle) {
+#if BS_VALIDACAO
+            // modelo HLE (validacao): BIOS, drive e flash simulados, como antes do N8.3; com o provedor legado de
+            // arquivos, os mods valem pelos setores
+            gdrom_reset();
+            flashrom_reset();  // volatil por sessao, como o servico nativo (revisao Codex); --flash carrega depois
+            bios_hle_install(&c, true);
+            sys_disc_use(gdrom_disc_backend());
+            if (!opt_.data.empty())
+                gdrom_set_disc(open_runtime_data(opt_.data, files_ ? std::filesystem::path() : opt_.modAssets));
+            if (!opt_.flash.empty() && !flashrom_load(opt_.flash))
+                throw std::runtime_error("flash invalida (esperado 128 KB): " + disc::pathText(opt_.flash));
+#else
+            throw std::runtime_error("o modelo HLE do sistema (BIOS, GD-ROM e flash) so existe no build de validacao");
+#endif
+        } else if (!opt_.data.empty()) {
+            syscall_service_set_data(std::make_unique<disc::RuntimeDisc>(opt_.data));
+        }
         epoch_       = std::chrono::steady_clock::now();
         epochVblank_ = 0;
         workStart_ = rateStart_ = epoch_;
@@ -811,7 +830,11 @@ void GameHost::threadMain() {
     if (traceOn()) std::fprintf(stderr, "[host] execucao encerrada (%s); liberando fibras\n", err.empty() ? "ok" : err.c_str());
     if (!sh4_threads_shutdown() && err.empty()) err = "falha ao liberar as fibras das threads do guest";
     if (traceOn()) std::fprintf(stderr, "[host] fibras liberadas\n");
-    gdrom_set_disc(nullptr);  // fecha a imagem de disco
+    syscall_service_set_data(nullptr);  // fecha os dados do jogo
+#if BS_VALIDACAO
+    gdrom_set_disc(nullptr);  // fecha a imagem de disco do modelo HLE
+#endif
+    sys_disc_use(nullptr);
     std::fputs(cri_diag_summary().c_str(), stderr);
     transitional::pad::probe_finish();
     transitional::pad::closure_finish(transitional::pad::installed());

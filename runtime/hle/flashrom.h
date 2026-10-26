@@ -12,6 +12,8 @@ constexpr uint32_t kFlashSize = 128u << 10;
 // partições sem cabecalho. TODO(M4): gerar a configuracao de sistema padrao para o
 // boot nativo (hoje so o bs-diff carrega uma imagem: a mesma do Flycast).
 bool     flashrom_load(const std::filesystem::path& path);
+// Flash em branco (0xFF): o inicio de cada sessao com o modelo (N8.3, revisao Codex: volatil como o servico nativo).
+void     flashrom_reset();
 uint8_t* flashrom_data();
 
 // r7 = funcao (0 INFO, 1 READ, 2 WRITE, 3 DELETE), argumentos em r4-r6; grava r0.

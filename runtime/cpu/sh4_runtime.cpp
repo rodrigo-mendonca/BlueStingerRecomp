@@ -10,7 +10,7 @@
 #include "debug/cycle_noise.h"
 #include "debug/intc_trace.h"
 #include "debug/hw_probe.h"
-#include "gdrom/gdrom.h"
+#include "system/syscall_service.h"
 #include "pvr/holly_intc.h"
 
 #include <algorithm>
@@ -148,7 +148,7 @@ void sh4_service(Sh4Context* c) {
     } scope{sh4_irq_origin_enter(c)};
     const bool       cad    = g_intc_trace && sh4_irq_origin_now() == uint8_t(IntcSource::Cadence);
     const uint64_t   ev0 = cad ? holly_event_count() : 0, irq0 = cad ? sh4_irq_taken_count() : 0,
-                   blk0 = cad ? gdrom_event_count() : 0;
+                   blk0 = cad ? sys_disc_event_count() : 0;
     cycle_noise(c);  // mutacao BS_CICLOS_RUIDO (desligada: um teste)
     if (time_provider().cycle_cadence()) {  // tempo estavel e legado: a cada quantum de ciclos estimados
         c->next_event = c->cycles + kServiceQuantum;
@@ -159,13 +159,13 @@ void sh4_service(Sh4Context* c) {
     time_provider().progress(uint32_t(sh4_current_thread()), c->polls, c->pc);
     // transferencia do GD-ROM em andamento (perfil de tempo reios): avanca com o tempo,
     // sem depender de nova syscall (revisao Codex 2026-10-14)
-    gdrom_poll(c);
+    sys_disc_poll(c);
     // eventos do Holly/SPG (VBlank: video e ritmo do host) avancam com o tempo mesmo com
     // interrupcoes bloqueadas (SR.BL); a entrega para a CPU continua em sh4_irq_check
     holly_intc_sync(time_now(c));
     sh4_irq_check(c);
     if (cad) {  // diagnostico: o que este atendimento da cadencia mudou (o contador do tratador conta o aninhado)
-        const uint64_t ev = holly_event_count() - ev0, irq = sh4_irq_taken_count() - irq0, blk = gdrom_event_count() - blk0;
+        const uint64_t ev = holly_event_count() - ev0, irq = sh4_irq_taken_count() - irq0, blk = sys_disc_event_count() - blk0;
         if (ev || irq || blk) intc_trace_service(IntcSource::Cadence, 0, uint32_t(ev), uint32_t(irq), blk);
     }
 }

@@ -92,6 +92,8 @@ struct Args {
     bool     version    = false;
     bool     verifyData = false;
     bs::FilesProvider files = bs::FilesProvider::Native;  // --arquivos nativo|legado (N1)
+    bs::SystemProvider system = bs::SystemProvider::Native;  // --sistema nativo|hle (N8.3; hle so na validacao)
+    bool               systemSet = false;
     bs::TimeProviderKind time = bs::TimeProviderKind::Native;  // --tempo nativo|legado|experimental (N2a/N2b-2)
     bool                 timeSet = false;  // --tempo dado (senao: experimental na janela, estavel no headless)
     bs::ControlsProvider controls = bs::ControlsProvider::Native;  // --controles nativo|legado (N3; legado = fallback)
@@ -148,6 +150,12 @@ bool parseArgs(Args& a) {
         else if (s == L"--arquivos" && (v = next())) {
             if (*v == L"nativo") a.files = bs::FilesProvider::Native;
             else if (*v == L"legado") a.files = bs::FilesProvider::Legacy;
+            else return false;
+        }
+        else if (s == L"--sistema" && (v = next())) {
+            a.systemSet = true;
+            if (*v == L"nativo") a.system = bs::SystemProvider::Native;
+            else if (*v == L"hle") a.system = bs::SystemProvider::Hle;
             else return false;
         }
         else if (s == L"--tempo" && (v = next())) {
@@ -241,6 +249,12 @@ bool parseArgs(Args& a) {
     }
     a.renderExplicit = a.render >= 0 || (std::getenv("BS_RENDER") && *std::getenv("BS_RENDER"));
     if (a.render < 0) a.render = vk ? 1 : 0;
+    // N8.3: o provedor legado de arquivos (setores), a flash de arquivo e o tempo reios do drive so existem no modelo HLE
+    const char* gdTiming = std::getenv("BS_GDROM_TIMING");
+    if (a.files == bs::FilesProvider::Legacy || !a.flash.empty() || (gdTiming && *gdTiming)) {
+        if (a.systemSet && a.system == bs::SystemProvider::Native) return false;
+        a.system = bs::SystemProvider::Hle;
+    }
     if (!a.timeSet) a.time = kTimeExperimentalWindowDefault && !a.headless ? bs::TimeProviderKind::Experimental : bs::TimeProviderKind::Native;
     if (!a.effectsSet) a.audioEffects = native ? bs::AudioEffectsProvider::Native : bs::AudioEffectsProvider::Legacy;
     if (!a.voicesSet) a.audioVoices = native ? bs::AudioVoicesProvider::Native : bs::AudioVoicesProvider::Legacy;
@@ -1376,6 +1390,7 @@ bs::GameOptions gameOptions(const Args& a) {
     opt.modAssets         = exeDir() / L"mods" / L"assets";  // mods de arquivos (opcional)
     opt.flash             = a.flash;
     opt.files             = a.files;
+    opt.system            = a.system;
     opt.time              = a.time;
     opt.controls          = a.controls;
     opt.saves             = a.saves;
@@ -1401,7 +1416,9 @@ const char* kUsage =
     "     bluestinger [--data <pasta>] --headless <vblanks> [--dump <arquivo.bmp>] [--dump-every N --capture <dir>]\n"
     "     bluestinger [--data <pasta>] --verify-data\n"
     "     bluestinger --version\n"
-    "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo)\n"
+    "     --arquivos nativo|legado: provedor dos arquivos do jogo (padrao: nativo; legado so no build de validacao)\n"
+    "     --sistema nativo|hle: syscalls do sistema (padrao: nativo = servico nativo; hle = BIOS, GD-ROM e flash\n"
+    "       simulados, so no build de validacao, implicito com --arquivos legado, --flash e BS_GDROM_TIMING)\n"
     "     --tempo nativo|legado|experimental: provedor de tempo e eventos (padrao na janela: experimental =\n"
     "       tempo logico sem ciclos estimados, N2b-2; padrao no --headless: nativo = o estavel, por ciclos, e o\n"
     "       recuo; legado so para comparacao ate o N8)\n"
@@ -1754,6 +1771,21 @@ int main(int, char**) {
         nativeBox(kUsage, MB_ICONINFORMATION);
         return 2;
     }
+    // N8.3 (docs/N8-3-BOOT.md): o modelo HLE do sistema e o que depende dele sairam do produto: pedido explicito, recusa
+    // explicita (nunca um recuo silencioso para o servico nativo)
+#if !BS_VALIDACAO
+    if (a.system == bs::SystemProvider::Hle) {
+        const char* what = a.files == bs::FilesProvider::Legacy ? "--arquivos legado"
+                           : !a.flash.empty()                   ? "--flash"
+                           : a.systemSet                        ? "--sistema hle"
+                                                                : "BS_GDROM_TIMING";
+        std::fprintf(stderr,
+                     "erro: %s (modelo HLE do BIOS, do GD-ROM e da flash) so existe no build de validacao "
+                     "(-DBS_VALIDACAO=ON, preset msvc-validacao); o produto usa o servico nativo do sistema (N8.3)\n",
+                     what);
+        return 2;
+    }
+#endif
     if (a.version) {
         std::printf("Blue Stinger (recompilado) %s, compilado em %s\n", BS_VERSION, BS_BUILD_DATE);
         return 0;

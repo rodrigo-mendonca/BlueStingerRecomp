@@ -18,8 +18,7 @@
 #include "disc/ip_bin.h"
 #include "disc/iso9660.h"
 #include "disc/scramble.h"
-#include "hle/bios.h"
-#include "gdrom/gdrom.h"
+#include "system/syscall_service.h"
 #include "known_versions.h"
 #include "memory/sh4_ccn.h"
 #include "memory/sh4_dmac.h"
@@ -78,13 +77,13 @@ BootFiles boot_read_data(const std::filesystem::path& dir) {
 void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     // Todo o hardware modelado volta ao reset: uma segunda sessao no mesmo processo nao
     // herda VRAM, interrupcoes pendentes, tempo do SPG, Maple, GD-ROM etc. (revisao Codex
-    // 2026-10-14). A imagem de disco e a flash sao configuradas por quem chama.
+    // 2026-10-14). Os dados do jogo para as leituras de setor sao configurados por quem chama.
     vram_reset();
     pvr_regs_reset();
     ta_reset();
     holly_intc_reset(0);
     holly_sb_reset();  // inclui o Maple
-    gdrom_reset();
+    syscall_service_reset();  // N8.3: pedidos do drive e flash em branco (o modelo HLE e da validacao)
     aica_regs_reset();
     sh4_intc_reset();
     irq_bridge_reset();
@@ -127,7 +126,7 @@ void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     for (const auto& r : kBiosPvrState) pvr[r[0] / 4] = r[1];
     pvr_regs_load(pvr.data());
     aica_rtc_set(rtcSeconds, 0);
-    bios_hle_install(&c, true);
+    syscall_service_install(&c);  // N8.3: vetores das syscalls -> servico nativo
 }
 
 uint32_t boot_rtc_now() {

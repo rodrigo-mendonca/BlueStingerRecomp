@@ -3,7 +3,7 @@
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_threads.h"
-#include "gdrom/gdrom.h"
+#include "system/syscall_service.h"
 #include "memory/effect_counters.h"
 #include "memory/sh4_tmu.h"
 #include "memory/tmu_logical.h"
@@ -35,7 +35,7 @@ uint64_t epoch() {
     // pelo hash de uma tupla de contadores monotonicos
     uint64_t h = 1469598103934665603ull;
     for (uint64_t v : {sh4_irq_taken_count(), sh4_thread_switch_count(), holly_vblank_count(), holly_event_count(),
-                       gdrom_event_count()})
+                       sys_disc_event_count()})
         h = (h ^ v) * 1099511628211ull;
     return h;
 }
@@ -97,7 +97,7 @@ bool IdleDetector::ramChanged(uint32_t spLo, uint32_t spHi) {
 
 bool IdleDetector::idle(const Sh4Context* c) {
     ++stats_.visits;
-    const uint64_t e = epoch(), gd = gdrom_state_hash(), tmu = sh4_tmu_state_hash() * 31 + tmu_logical_state_hash();  // N8.1: o TMU logico tambem
+    const uint64_t e = epoch(), gd = sys_disc_state_hash(), tmu = sh4_tmu_state_hash() * 31 + tmu_logical_state_hash();  // N8.1: o TMU logico tambem
     const EffectCounters fx = g_effects;
     if (!primed_) {
         std::memcpy(shadow_.data(), ram_, bytes_);

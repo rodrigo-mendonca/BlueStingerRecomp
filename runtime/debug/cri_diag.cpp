@@ -8,7 +8,7 @@
 #include "debug/event_trace.h"
 #include "cpu/write_watch.h"
 #include "pvr/vram.h"
-#include "gdrom/gdrom.h"
+#include "system/syscall_service.h"
 #include "memory/sh4_tmu.h"
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
@@ -159,7 +159,7 @@ MgrSnap snap(Sh4Context* c) {
 // entregue (inclusive com a interrupcao mascarada, como nas subpassadas do CRI).
 uint64_t epoch() {
     return sh4_irq_taken_count() * 1000003ull + sh4_thread_switch_count() * 7919ull + holly_vblank_count() * 131ull +
-           holly_event_count() * 17ull + gdrom_event_count();
+           holly_event_count() * 17ull + sys_disc_event_count();
 }
 
 void wMgr(Sh4Context* c) {
@@ -370,7 +370,7 @@ void effectPass(Sh4Context* c, uint32_t mw, uint32_t adx) {
         sh4_wait_point(c, 0x8C158860);
         return;
     }
-    const uint64_t gd0 = gdrom_state_hash(), tm0 = sh4_tmu_state_hash();
+    const uint64_t gd0 = sys_disc_state_hash(), tm0 = sh4_tmu_state_hash();
     g_ww               = WriteWatch{};
     g_ww.spLo = (c->r[15] - 0x4000) & kRamMask, g_ww.spHi = c->r[15] & kRamMask;
     g_ww.exLo[0] = kMeterLo & kRamMask, g_ww.exHi[0] = kMeterHi & kRamMask;
@@ -384,7 +384,7 @@ void effectPass(Sh4Context* c, uint32_t mw, uint32_t adx) {
     g_ww.on               = false;
     const WriteWatch& w   = g_ww;
     const uint64_t    net = ww_net_changes(c->ram);  // mudanca liquida na RAM (fim x inicio)
-    const bool gdc      = gdrom_state_hash() != gd0;
+    const bool gdc      = sys_disc_state_hash() != gd0;
     const bool tmc      = sh4_tmu_state_hash() != tm0;  // p.ex. UNF aceso por leitura do TCNT
     const bool evDuring = epoch() != e0;
     bool       effect   = net || w.hwWrites || w.hostWrites || w.sqFlushes || gdc || tmc;

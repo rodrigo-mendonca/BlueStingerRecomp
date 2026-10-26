@@ -6,6 +6,10 @@ add_library(bs_app_core STATIC game_host.cpp assist.cpp
 target_include_directories(bs_app_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(bs_app_core PUBLIC bs_runtime bs_transitional bs_video_adapter bs_sound_adapter bs_native_localization
                       bs_native_video PRIVATE d2d1 dwrite windowscodecs ole32)
+# N8.3: o modelo HLE do sistema (BIOS, GD-ROM e flash) so no build de validacao; o produto usa o servico nativo
+if(BS_VALIDACAO)
+  target_link_libraries(bs_app_core PUBLIC bs_runtime_hle)
+endif()
 
 # Executavel nativo: so com o codigo gerado (do executavel do proprio usuario) e a pedido.
 # O SDL3 (zlib) fica restrito a este alvo: o runtime e as ferramentas nao dependem dele.

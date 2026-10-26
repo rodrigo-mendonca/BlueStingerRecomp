@@ -192,6 +192,10 @@ void gdrom_reset() {
 }
 void gdrom_set_timing(bool reios) { g_timingOverride = reios ? 1 : 0; }
 void gdrom_poll(Sh4Context* c) { advance(c); }
+const SysDiscBackend* gdrom_disc_backend() {
+    static const SysDiscBackend b{gdrom_poll, gdrom_state_hash, gdrom_event_count};
+    return &b;
+}
 
 void gdrom_syscall(Sh4Context* c, uint32_t func, uint32_t r4, uint32_t r5) {
     uint32_t& r0 = c->r[0];

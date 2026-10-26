@@ -15,12 +15,12 @@
 namespace bs {
 namespace {
 
-constexpr uint32_t kSysinfo  = 0x8C001000;
-constexpr uint32_t kRomfont  = 0x8C001002;
-constexpr uint32_t kFlashrom = 0x8C001004;
-constexpr uint32_t kGdrom    = 0x8C001006;
-constexpr uint32_t kMisc     = 0x8C001008;
-constexpr uint32_t kGdrom2   = 0x8C0010F0;
+constexpr uint32_t kSysinfo  = kSyscallSysinfo;
+constexpr uint32_t kRomfont  = kSyscallRomfont;
+constexpr uint32_t kFlashrom = kSyscallFlashrom;
+constexpr uint32_t kGdrom    = kSyscallGdrom;
+constexpr uint32_t kMisc     = kSyscallMisc;
+constexpr uint32_t kGdrom2   = kSyscallGdrom2;
 
 // Diagnostico: BS_HLE_LOG=1 registra cada syscall (no jogo, o GD-ROM e consultado a cada
 // quadro: ligado sempre, o log pesava no ritmo do executavel).
@@ -44,7 +44,6 @@ void ret(Sh4Context* c, uint32_t entry) {
 // SYSINFO (r7): 0 INIT grava em 0x8C000068 o ID do sistema (flash 0x1A056, 8 bytes) e as
 // propriedades (flash 0x1A000, 5 bytes), o resto zerado; 2 ICON (r4 = icone) -> 704 ou -1;
 // 3 ID -> ponteiro para 0x8C000068.
-constexpr uint32_t kSysinfoData = 0x8C000068;
 
 void sysinfo(Sh4Context* c) {
     log("SYSINFO", c);

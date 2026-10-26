@@ -9,6 +9,7 @@
 // real (DMA em andamento, Maple) aparece aqui antes de virar divergencia.
 #include "pvr/holly_sb.h"
 
+#include "cpu/sh4_runtime.h"
 #include "maple/maple.h"
 #include "memory/sh4_dmac.h"
 #include "pvr/holly_intc.h"
@@ -33,6 +34,26 @@ bool                            g_c2dstWritten = false;  // BS_SB_MUTACAO=c2dst_
 
 uint32_t canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 
+// N8.3 (docs/N8-3-BOOT.md): nao ha drive de GD-ROM nem DMA do G1 (o jogo le pelas syscalls, servico nativo). Os
+// registradores do drive (0x005F7000-0x005F70FF) nunca sao acessados (sonda do N0 e as referencias); do G1
+// (0x005F7400-0x005F74FF), so a tabela de inicializacao do SDK (8C08BD74, tabela 8C0B8FB4) escreve GDST = 0 (DMA
+// parado), aceita como registrador inerte. Qualquer outro acesso e um componente removido: erro explicito.
+constexpr uint32_t kGdBase = 0x005F7000, kGdEnd = 0x005F7100, kG1Base = 0x005F7400, kG1End = 0x005F7500;
+constexpr uint32_t kG1Gdst = 0x005F7418;
+
+bool removedRange(Sh4Context* c, uint32_t p, unsigned size, bool write, uint32_t v) {
+    const bool gd = p >= kGdBase && p < kGdEnd, g1 = p >= kG1Base && p < kG1End;
+    if (!gd && !g1) return false;
+    if (g1 && write && size == 4 && p == kG1Gdst && v == 0) return false;  // DMA parado (tabela do SDK)
+    static char msg[192];
+    std::snprintf(msg, sizeof msg,
+                  "%s de %u bytes em %08X (%s): componente removido do produto no N8.3 (sem drive de GD-ROM nem DMA "
+                  "do G1; os dados vem das syscalls)",
+                  write ? "escrita" : "leitura", size, p, gd ? "registradores do GD-ROM" : "DMA do G1");
+    std::fprintf(stderr, "[sb] %s\n", msg);
+    sh4_fatal(c, msg, c->pc, v);
+}
+
 } // namespace
 
 void holly_sb_reset() {
@@ -43,6 +64,7 @@ void holly_sb_reset() {
 
 bool holly_sb_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);
+    if (removedRange(c, p, size, false, 0)) return true;
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     if (maple_read(c, a, v)) return true;
     if (p == kSbRev) {
@@ -78,6 +100,7 @@ bool holly_sb_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
 
 bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
+    if (removedRange(c, p, size, true, v)) return true;
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     if (maple_write(c, a, v)) return true;
     if (p != kSbRev) g_regs[(p - kBase) / 4] = v;

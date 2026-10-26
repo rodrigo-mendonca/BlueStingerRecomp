@@ -5,7 +5,7 @@
 #include "pad_contract.h"
 
 #include "cpu/sh4_runtime.h"
-#include "hle/bios.h"
+#include "system/system_area.h"
 #include "maple/maple.h"
 #include "mods/mod_api.h"
 
