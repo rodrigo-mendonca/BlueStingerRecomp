@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) em andamento desde 2026-10-25 (S2n/S4n, instrumentação, cadência B); N8.2–N8.8 não iniciadas.** Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2–N8.8 não iniciadas (o N8.2 só com autorização explícita).** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2805,7 +2805,7 @@ guardas das suítes com dados e último índice em todo artefato comparado; docu
 comparador reprova todo deslocamento); esta seção. A prova da correção 4 achou dois defeitos dela própria (um `-1`
 literal que o PowerShell passa como texto; roteiro ausente aceitando), corrigidos antes de qualquer execução.
 
-### N8.1: fim da simulação de tempo (N2c), em andamento (2026-10-25)
+### N8.1: fim da simulação de tempo (N2c), concluído (2026-10-25/26)
 
 Autorizado pelo mantenedor em 2026-10-25, só o N8.1. Detalhes em `docs/N8-1-PREPARACAO.md` seção 7.
 
@@ -2869,7 +2869,54 @@ Revisões Codex:
 - `codex-20261025-202021`: 1 achado baixo aceito, a "mesma espera" provada pela origem `hardware` e a ausência de
   `T`/`J`/`N`, com o texto do gerador separado do que o comparador prova.
 
-**Falta no N8.1:** TMU e medidores do CRI, ponte INTC/INTEVT, CCN não gráfico e cabo.
+**TMU, CCN não gráfico, cabo e INTC no tempo lógico** (2026-10-25/26):
+- interceptação MMIO aprovada pelo mantenedor; detalhes em `docs/N8-1-PREPARACAO.md` 7.4–7.7;
+- o código recompilado do CRI e o gerador não mudam, e o estável continua nos modelos.
+
+| Grupo | Commit | Prova |
+|---|---|---|
+| TMU (`memory/tmu_logical`) | `1abbf6a` | 16/16 com as 179; leituras do TMU iguais nos 16 casos; 0 fora do contrato; ruído 8/8; negativo do TMU parado |
+| CCN e cabo (`memory/sys_logical`) | `c182541` | 16/16 com as 179; 1 036 acessos e 0 fora do contrato por caso experimental; ruído 8/8 |
+| ponte de interrupções (`cpu/irq_bridge`) | `9ecdeb7` | 16/16 com as 179; `BS_INTC_TRACE` inteiro igual ao do build anterior nos 16; entregas = as do N8.0; 0 fora do contrato; ruído 8/8 |
+
+Revisões Codex com os achados aceitos e corrigidos com teste:
+- `codex-20261025-224651` (TMU): o espelho da área 7 e os testes de underflow, rebase, entrega e reset;
+- `codex-20261026-000604` (CCN e cabo): o espelho do CCR no modelo, os tamanhos dos arrays e o reset e os contadores;
+- `codex-20261026-011016` (ponte), médio: uma entrega ao modelo dentro de um tratador deixaria a IRQ seguinte com o
+  INTEVT antigo. Corrigido, com teste.
+
+Unitários 314/314; ctest Debug 18/18 com e sem disco.
+
+**Encerramento:** no tempo lógico (padrão da janela), o caminho de execução não depende dos ciclos (prova do ruído) e
+não alcança os modelos do TMU, INTC, CCN não gráfico nem da porta.
+
+**Ficam por decisão do mantenedor (D-N8.1-A/B) até o N8.2:**
+- o estável por ciclos (`--tempo nativo`, padrão do headless, gravações antigas);
+- os modelos `sh4_intc`/`sh4_tmu`/`sh4_ccn`/`sh4_port`/`time_legacy`, que servem o estável e são o recuo fora do
+  contrato;
+- as macros do gerador.
+
+**Pendências:**
+- B11/E6, a D7 com o TMU parado (diagnóstico do estável), vai para o N8.2 com o alvo de validação;
+- a instrução de leitura do TMU no código do guest sai com o gerador.
+
+Revisão Codex final do N8.1 inteiro (`codex-20261026-093724`, base `45826af`): 2 achados de documentação, aceitos e
+corrigidos. O plano dizia que o `--tempo nativo` ficaria sem ciclos "após o N8.1" (é após o N8.2, D-N8.1-A); a
+ARCHITECTURE dizia que PVR/Maple/GD-ROM deixam de agendar tempo (agendam no relógio lógico). Nenhum achado no código.
+
+**Validação final** (exe final, 2026-10-26; Preview e Builder refeitos porque o runtime mudou):
+
+| Teste | Resultado |
+|---|---|
+| `test_n8_nativo` | 26/26 |
+| `test_n2b2` | 17/17 (N12: experimental 15,33 ms × estável 18,10 ms por campo) |
+| `test_assistido` | 28/28 |
+| `test_builder` | 22/22 |
+| `test_projeto` | 18/18 |
+| `test_preview` | 9/9 (Preview `9ecdeb7`) |
+| H9 na janela (tempo lógico, Vulkan) | 0 faltas, 0 erros, 0 perdas em 8 978 blocos |
+
+**N8.1 concluído.** O N8.2 só com autorização explícita.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
@@ -2878,7 +2925,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c) em andamento;
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26; o N8.2 só com autorização explícita;
 4. N9;
 5. N10.
 
@@ -2894,7 +2941,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 em andamento (S2n/S4n, instrumentação, cadência B); N8.2–N8.8 não iniciadas | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2–N8.8 não iniciadas | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

@@ -380,3 +380,86 @@ O SPC só passa pelo tratador `8C1982F4` em `stc.l spc` (`8C19831C`) e `ldc.l sp
 a cada atendimento e a cada tick:
 - experimental: 8/8 iguais, com as mesmas 179 exceções;
 - estável: 0/8 iguais (controle: o ruído muda o tempo dele).
+
+### 7.4 TMU no tempo lógico (interceptação MMIO, aprovada em 2026-10-25)
+
+**Levantamento** (manifesto `bs-hwscan` estático e sonda dinâmica):
+- 6 leituras do `TCNT0` no código; 5 alcançadas:
+  - `8C15D1A2` devolve `0xFFFFFFFF − TCNT0`: 27 M leituras na rota;
+  - os 4 medidores do CRI marcam instantes dentro de funções grandes da biblioteca: início em `8C18BCAA` e `8C1C4DE6`,
+    fim em `8C1C51D2` e `8C1C5438`, que gravam `início − TCNT0`.
+- O canal 0 é configurado uma vez no boot por `8C15D17C`: P/64, `TCOR0 = TCNT0 = 0xFFFFFFFF`, partida.
+- Os canais 1 e 2 (`8C15D300`, `TCR2`) nunca são alcançados.
+
+**Opções:**
+
+| Opção | Por que não |
+|---|---|
+| slot nativo para `8C15D1A2` | exige `[native] slots`, regenerar e mudar a configuração embutida no Builder |
+| leitura tipada emitida pelo gerador | muda o gerador |
+| reimplementar o CRI | vetado pelo mantenedor |
+
+**Escolha: interceptação MMIO** (`runtime/memory/tmu_logical.*`):
+- no tempo lógico, o serviço atende o contrato do boot sobre o instante lógico, com a mesma semântica do modelo (base,
+  rebase em TSTR e TCR, UNF);
+- fora do contrato (outro canal, divisor ou registrador; espelho da área 7), o estado vai para o `sh4_tmu`
+  (`sh4_tmu_adopt`) e o acesso é contado;
+- o detector de ociosidade da thread 3 inclui o estado do serviço;
+- mutação `BS_TMU_MUTACAO=parado`.
+
+**Prova:**
+- as 16 referências iguais com as 179 exceções e nenhuma nova;
+- as leituras do TMU iguais em todos os 16 casos (registros C);
+- 0 fora do contrato; ruído de ciclos 8/8;
+- negativo: com o TMU parado, o timeout de 166 ms do render não vence.
+
+**Limitação:** a instrução de leitura continua no código do guest. Sai com o gerador, no N8.2 ou depois.
+
+### 7.5 CCN não gráfico e porta do cabo
+
+O mesmo padrão, em `runtime/memory/sys_logical.*`:
+- **CCR:** ICI e OCI sempre leem 0.
+- **Arrays do cache:** leitura 0 e escrita sem efeito, só 32 bits. Pelo disassembly (`8C17B830`–`8C17B842`), o valor
+  lido só forma o endereço do `ocbi` seguinte, sem efeito no host, e a saída do laço não depende dele.
+- **PDTRA:** o cabo nos pinos 8–9, com o `PCTRA` em 0.
+- **Fora do contrato:** vai para o `sh4_ccn`/`sh4_port` (`*_adopt`).
+- **Fica para o N8.7:** QACR (store queues) e DMAC.
+
+**Prova:** as 16 iguais com as 179; 1 036 acessos e 0 fora do contrato em cada caso experimental; ruído 8/8.
+
+### 7.6 Ponte de interrupções (contrato de `8C00FA00`)
+
+`runtime/cpu/irq_bridge.*`. No tempo lógico, `sh4_irq_check` (a entrada do código gerado) desvia para a ponte, que
+repete o contrato:
+- `SR.BL`/`IMASK` × nível IRL do Holly;
+- `INTEVT`, `SSR`/`SPC`/`SGR`, `SR |= MD|RB|BL`;
+- tratador aninhado com o `rte` conferido e a reavaliação depois do `rte`;
+- os mesmos registros E e I.
+
+A ponte atende o `INTEVT` e o `ICR`/`IPR` do boot (escritos uma vez, nunca lidos).
+- **Fora do contrato:** o estado vai para o `sh4_intc` (`sh4_intc_adopt`). Dentro de um tratador, o modelo reavalia e
+  entrega o resto (revisão Codex).
+- **Contador:** `sh4_irq_taken_count` soma as entregas da ponte.
+
+**Prova:**
+- as 16 referências iguais com as 179;
+- o `BS_INTC_TRACE` inteiro igual ao do build anterior em todos os 16 casos;
+- as entregas da ponte iguais às entregas do N8.0 em cada caso experimental;
+- 0 fora do contrato; ruído 8/8.
+
+### 7.7 Encerramento e limites
+
+**No tempo lógico** (padrão da janela e do produto), o caminho de execução:
+- não depende dos ciclos estimados: o ruído de ciclos não muda nada nas 8 referências experimentais;
+- não alcança o modelo do TMU, do INTC, do CCN não gráfico nem da porta: 0 acessos fora do contrato em todas as rotas.
+
+**Ficam, por decisão do mantenedor (D-N8.1-A e D-N8.1-B):**
+- o `--tempo nativo` estável por ciclos, o padrão do headless e as gravações antigas;
+- os modelos `sh4_intc`, `sh4_tmu`, `sh4_ccn`, `sh4_port` e `time_legacy`, que servem o estável e são o recuo
+  quando o jogo sai do contrato;
+- a remoção física e a separação do alvo de validação ficam para o N8.2;
+- as macros `BS_CYCLES`/`BS_POLL` continuam definidas; `BS_POLL` é ponto de entrega e de vivacidade. O gerador só
+  muda depois da equivalência provada.
+
+**Pendência herdada do N8.0:** B11/E6 (hipótese D7 com o TMU parado e o áudio nativo). Só existe no modo de diagnóstico
+do estável (`BS_TMU_DIAG`), que o N8.1 não mudou; fica registrada para o N8.2, junto com o alvo de validação.

@@ -739,15 +739,18 @@ roadmap e nada é implementado antes da etapa autorizada.
 
 Planejamento técnico concluído em 2026-10-24.
 - **N8.0** (portão e referências) concluído em 2026-10-25.
-- **N8.1** (N2c) em andamento desde 2026-10-25 (`docs/N8-1-PREPARACAO.md` seção 7):
-  - verificações nativas S2n/S4n;
-  - instrumentação `BS_INTC_TRACE`;
-  - cadência B no tempo lógico. Com ela, o tempo lógico não depende dos ciclos estimados (prova `BS_CICLOS_RUIDO`);
-    o estável continua por ciclos (D-N8.1-A). O inventário,
-os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`. O N2c é a primeira subetapa técnica: troca ciclos,
-`BS_POLL`, `sh4_intc`, TMU, CCN e portas por entrega nativa de eventos antes de qualquer outro corte. DMAC/SQ e os
-módulos de Holly/PVR, Maple e GD-ROM deixam de medir/agendar tempo nessa etapa, mas seu transporte só sai nos cortes
-específicos posteriores.
+- **N8.1** (N2c) concluído em 2026-10-26 (`docs/N8-1-PREPARACAO.md` seção 7). No tempo lógico (padrão da janela):
+  - cadência B: o atendimento é pedido, sem o quantum de ciclos;
+  - TMU (`memory/tmu_logical`), CCN não gráfico e cabo (`memory/sys_logical`) e a ponte de interrupções
+    (`cpu/irq_bridge`, contrato de `8C00FA00`) servem o jogo pelo contrato observado. Fora dele, os modelos assumem.
+  
+  O tempo lógico não depende dos ciclos (prova `BS_CICLOS_RUIDO`). O estável por ciclos e os modelos ficam para o
+  estável e o recuo até o N8.2 (D-N8.1-A).
+
+O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
+- **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico
+  (`time_now()` devolve o instante lógico), sem usar os ciclos estimados como base.
+- **Depois:** o transporte deles e o de DMAC/SQ só sai nos cortes específicos posteriores.
 
 O produto e o alvo de validação terão limites diferentes: o produto deixa de ligar hardware Dreamcast e providers
 legados; o alvo de validação preserva simulação, sondas e comparadores enquanto forem necessários. Builder, Recompiler,

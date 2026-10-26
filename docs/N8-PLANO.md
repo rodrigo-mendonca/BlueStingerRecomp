@@ -89,7 +89,7 @@ no exe. N8 deve retirar essa aresta do produto sem retirar `bs_disc` das ferrame
 |---|---|
 | opções `legado` de arquivos/controles/saves/vídeo/áudio/tempo | sair do produto; permanecer só em validation enquanto úteis |
 | `--tempo experimental` | caminho normal da janela; nome pode ficar temporariamente por compatibilidade CLI |
-| `--tempo nativo` | fallback estável/sessões antigas; deve ficar sem ciclos após N8.1 |
+| `--tempo nativo` | fallback estável/sessões antigas; continua por ciclos até o N8.2 (D-N8.1-A, mantenedor 2026-10-24), quando o estável por ciclos vai para o alvo de validação; no produto o tempo lógico já não usa ciclos desde o N8.1 |
 | `--render software` | preservar permanentemente como backend da IR nativa |
 | `BS_BUILD_TOOLS`, `BS_BUILD_TESTS`, `BS_WRITE_WATCH`, `BS_HW_PROBE` | preservar; diagnósticos fora do produto Release |
 | `BS_MODS`/`BS_MODS_DIR` | preservar para projeto editável/N10 |
@@ -294,5 +294,5 @@ O renderizador em software é preservado permanentemente como recuo do Vulkan.
 | Subetapa | Situação |
 |---|---|
 | N8.0 | **concluída em 2026-10-25**: regressão nível 3, correções (SPIR-V, ícone, guardas das suítes), as 16 referências capturadas, validadas e reproduzidas uma a uma (0 diferenças), com negativos (`docs/N8-0-REFERENCIAS.md` seção 8); fixação do áudio legado nas suítes históricas decidida pelo mantenedor (opção b), com as suítes aprovadas (K12 2/2, `test_cri` 33/33, `test_efeito` 17/17, `test_n2b2` 17/17, `test_n2b` 52/52), com a cobertura nativa mapeada (`STATUS.md`) |
-| N8.1 | **em andamento** (autorizado em 2026-10-25), andamento em `docs/N8-1-PREPARACAO.md` seção 7. Feito: S2n/S4n com referência pré-migração; instrumentação `BS_INTC_TRACE` (16/16 iguais); cadência B no tempo lógico, com o estável intacto e 179 exceções de SPC aprovadas e conferidas uma a uma. Faltam TMU e medidores do CRI, ponte INTC/INTEVT, CCN não gráfico e cabo |
+| N8.1 | **concluída em 2026-10-26** (`docs/N8-1-PREPARACAO.md` seção 7): S2n/S4n; `BS_INTC_TRACE`; cadência B (179 exceções de SPC aprovadas e conferidas uma a uma); TMU, CCN não gráfico, cabo e ponte de interrupções no tempo lógico por interceptação localizada (16/16 sem exceções novas, 0 fora do contrato, independente do ruído de ciclos). O estável por ciclos e os modelos ficam até o N8.2 (D-N8.1-A/B) |
 | N8.2–N8.8 | não iniciadas |
