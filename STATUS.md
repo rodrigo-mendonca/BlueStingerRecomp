@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) concluído em 2026-10-26; N8.3–N8.8 não iniciadas (o N8.3 só com autorização explícita).** Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) e N8.3 (boot, BIOS, flash e GD-ROM fora do produto) concluídos em 2026-10-26; N8.4–N8.8 não iniciadas (o N8.4 só com autorização explícita).** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -2978,6 +2978,78 @@ anterior (`9ecdeb7`) fica em `dist\BlueStinger-Preview.anterior` para o rollback
 
 **N8.2 concluído.** O N8.3 só com autorização explícita.
 
+### N8.3: boot, BIOS, flash e GD-ROM (2026-10-26)
+
+Autorizado pelo mantenedor em 2026-10-26, só o N8.3. Inventário, opções, arquitetura e resultados em `docs/N8-3-BOOT.md`.
+
+**Inventário** (só leitura, sonda e `BS_HLE_LOG`): o jogo depende do BIOS, do drive e da flash só pelas syscalls:
+- 21 stubs do SDK, sem acesso a registrador do drive nem à ROM ou à flash;
+- no G1, só a escrita `GDST = 0` da tabela do SDK;
+- o uso real é GD-ROM (INIT, versão e 2 leituras de 1 setor no boot), a flash na partição 2 e o SYSINFO ID.
+
+**Decisões do mantenedor:**
+- opção A: serviço nativo na fronteira das syscalls, sem regenerar, com o AOT e a RAM guest intactos;
+- flash volátil: em branco a cada sessão;
+- o HLE na validação e nas ferramentas.
+
+**Removido do produto:**
+- o BIOS HLE (`hle/bios`), a flash de 128 KB (`hle/flashrom`), o modelo do drive (`gdrom/gdrom`: fila, TOC, PIO, tempo
+  reios) e a fonte de setores (`gdrom/data_source`);
+- o `--arquivos legado`, o `--flash` e o `BS_GDROM_TIMING`;
+- o produto recusa as três opções com saída 2 e mensagem.
+
+**No lugar:**
+- `system/syscall_service` (papel `nativo`), nos mesmos endereços e só no contrato medido;
+- fora do contrato, erro explícito e contado;
+- setor ilegível, erro claro;
+- os registradores do drive e o G1 fora da tabela do SDK, erro explícito;
+- o modelo vira `bs_runtime_hle`, ligado pela validação (`--sistema hle`) e pelas ferramentas (o `bs-diff` sempre).
+
+**Fica, com justificativa:**
+- a imagem da área do sistema (RAM inicial comparada);
+- o estado do PVR na entrada (N8.7);
+- o `sh4_register_hle` (mecanismo genérico);
+- a escrita `GDST = 0` (código recompilado).
+
+**Equivalência:**
+- produto: 16/16 com as 179 exceções e nenhuma nova;
+- validação com o modelo: 16/16;
+- o exe final só difere do conferido nos carimbos do link.
+
+Revisão Codex `codex-20261026-142421`: 3 achados, todos aceitos e corrigidos:
+- (média) a flash do modelo não voltava ao branco entre sessões;
+- (baixa) a contagem da catraca não era exata;
+- (baixa) faltava um teste integrado da seleção do HLE.
+
+| Teste | Resultado |
+|---|---|
+| unitários | 323/323 nas duas configurações (9 novos) |
+| ctest Debug (validação) | 19/19, com e sem disco |
+| catraca `n8_produto_papeis` | produto 35 objetos sem o HLE, validação 41; negativo cruzado reprova |
+| `test_n8_nativo` | 26/26 |
+| `test_n2b2` | 17/17 (N12: experimental 16,01 ms × estável 18,67 ms) |
+| `test_assistido` | 28/28 |
+| `test_arquivos`, `test_tempo` (validação) | 6/6, 35/35 |
+| `test_builder` | 22/22 |
+| `test_projeto` | 18/18 |
+| `test_preview` | 12/12 |
+| H9 na janela | 0 faltas, 0 erros, 0 perdas |
+
+**Tamanhos:**
+- produto: 19 247 104 bytes (N8.2: 19 248 128);
+- validação: 19 282 432;
+- pacote do Builder: 44 MB.
+
+**Hashes:**
+- produto `3B3BCA39…`;
+- validação `A0C488DF…`;
+- Preview `5D8BD6FE…`;
+- rollback: a Preview do N8.2 (`CC370D56…`) em `dist\BlueStinger-Preview.anterior`.
+
+O `controles.toml` e as legendas foram preservados.
+
+**N8.3 concluído.** O N8.4 só com autorização explícita.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -2985,7 +3057,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c) e N8.2 concluídos em 2026-10-26; o N8.3 só com autorização explícita;
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c), N8.2 e N8.3 concluídos em 2026-10-26; o N8.4 só com autorização explícita;
 4. N9;
 5. N10.
 
@@ -3001,7 +3073,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3–N8.8 não iniciadas | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4–N8.8 não iniciadas | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

@@ -36,6 +36,9 @@ cmake --preset msvc-validacao; cmake --build --preset msvc-validacao    # N8.2: 
 N8.2 (`docs/N8-2-SEPARACAO.md`): `msvc-release` e o Builder fazem o **produto**; `msvc-debug`, `msvc-validacao` e as
 pastas `mods`/`watch` sao de **validacao** (`-DBS_VALIDACAO=ON`). So a validacao tem `BS_CICLOS_RUIDO`, `BS_HW_PROBE`
 e `BS_CRI_DIAG`; o produto recusa essas variaveis (saida 2). Tempo estavel e instrumentacao das referencias nos dois.
+N8.3 (`docs/N8-3-BOOT.md`): o produto atende as syscalls pelo servico nativo (`runtime/system/syscall_service`); o
+modelo HLE (BIOS, GD-ROM, flash: `bs_runtime_hle`) so na validacao, com `--sistema hle` (implicito com `--arquivos
+legado`, `--flash`, `BS_GDROM_TIMING`), e nas ferramentas. As suites com `--arquivos legado` usam `build\msvc-validacao`.
 
 Ferramentas:
 - `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:

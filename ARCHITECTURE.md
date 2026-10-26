@@ -227,11 +227,14 @@ Endereço de carga e entry point: `0x8C010000` (P1, cacheável).
   (`sh4_check_code`). Usado para os vetores de exceção do Katana em VBR. O pool
   nunca é embutido (`inline_pool_constants = false`): o jogo grava em palavras do
   pool.
-- **HLE do BIOS e disco** (M4, `hle/`, `gdrom/`): vetores de syscall em
+- **Syscalls do sistema** (M4; N8.3, `docs/N8-3-BOOT.md`): os vetores de syscall em
   `0x8C0000B0+` apontam para `0x8C001000+`, onde há funções nativas registradas no
-  despacho (`sh4_register_hle`). O GD-ROM lê setores por `DiscSource`; a fonte
-  inicial é o CDI do usuário (`gdrom/image_source.cpp`), e `game-data/`, GDI e CHD
-  entram como novas fontes sem mudar o runtime.
+  despacho (`sh4_register_hle`):
+  - no produto, o serviço nativo `system/syscall_service`, só com o contrato do jogo (GD-ROM: INIT, versão e leitura
+    de setores dos dados; flash: partição 2 volátil; sysinfo: ID);
+  - fora do contrato, erro explícito;
+  - o modelo HLE (M4, `hle/`, `gdrom/`: BIOS, drive com `DiscSource` e flash) fica só na validação e nas ferramentas
+    (o CDI do usuário por `gdrom/image_source.cpp`).
 - **Overrides**: funções em `runtime/game/overrides/*.cpp` com o mesmo símbolo
   (`f_8C0xxxxx`) têm prioridade, como no N64Recomp, porque o código gerado vai
   numa biblioteca estática. Uso: substituir rotinas de espera ativa, cópias de
@@ -249,9 +252,10 @@ runtime/
   core/      laço principal, scheduler de eventos por ciclo, log, config, savestate (debug)
   cpu/       contexto SH-4, helpers (div0/div1, mac, fpu), poll de interrupção, INTC
   memory/    mapa de 29 bits, RAM 16 MB, espelhos, store queues (sq0/sq1 → TA/RAM), DMAC (ch2 → TA)
-  hle/       syscalls de BIOS (vetores em 0x8C0000B0..E0: SYSINFO, ROMFONT, FLASHROM, GDROM, MISC),
-             estado de boot pós-BIOS (registradores, IP.BIN em 0x8C008000)
-  gdrom/     GD-ROM via HLE das syscalls GDROM, lendo game-data/ (arquivo por LBA via manifest)
+  system/    N8.3: serviço nativo das syscalls (contrato do jogo) e a área do sistema (vetores, sysinfo)
+  hle/       modelo HLE das syscalls de BIOS (SYSINFO, ROMFONT, FLASHROM, GDROM, MISC): validação e ferramentas
+  gdrom/     modelo do drive de GD-ROM (fonte de setores, TOC, tempo reios): validação e ferramentas
+  boot/      boot nativo: estado de entrada medido (área do sistema, IP.BIN em 0x8C008000, registradores)
   pvr/       registradores PVR/TA, parser de listas do TA, conversão de texturas (twiddled, VQ,
              paletas, ARGB1555/4444/565/YUV422), renderer Vulkan
   aica/      registradores AICA, 64 canais, DSP, ARM7 (ver D4), saída via SDL3 audio
@@ -341,8 +345,8 @@ executável não aceita mais imagem de disco; lê a pasta `data\` ao lado dele.
   disc_meta.bin   (IP.BIN), descritores, diretórios, sobras não nulas do último setor
 ```
 
-- **Camada própria** (`tools/extractor/runtime_data`, `runtime/gdrom/data_source`): o
-  GD-ROM HLE continua igual e pede setores a um `DiscSource`. O `RuntimeDisc` reconstrói
+- **Camada própria** (`tools/extractor/runtime_data`): o serviço nativo das syscalls (N8.3) e, na validação, o modelo
+  do GD-ROM (`runtime/gdrom/data_source`) pedem setores ao `RuntimeDisc`. Ele reconstrói
   cada setor de dados: setor de sistema, senão o trecho do arquivo que o cobre (zeros
   depois do fim), senão zeros. Assim o comportamento do jogo é preservado sem a
   estrutura física do disco: não há faixas brutas, subcódigo nem setores de 2 336 bytes.
@@ -578,7 +582,8 @@ Detalhes em `docs/N1-PLANO.md` e `docs/N1-RELATORIO.md`.
   `data\disc` e `mods\assets`, sem setores).
 - As funções da API são chamadas pelo slot em todos os builds (`[native] slots`), e o provedor
   é escolhido em execução: `--arquivos nativo` (padrão) | `legado` (referência e rollback).
-- Ainda legados: inicialização do gdFs, estado do drive, boot e GD-ROM HLE.
+- Ainda legados até o N8.3: inicialização do gdFs, estado do drive, boot e GD-ROM HLE. No N8.3 o estado do drive e as
+  leituras do boot passaram ao serviço nativo das syscalls; o `--arquivos legado` ficou só na validação.
 
 ### Port nativo, N2a: relógio lógico e fila de eventos (2026-10-15)
 
@@ -753,6 +758,13 @@ Planejamento técnico concluído em 2026-10-24.
     mutações e sondas de teste; o **produto** (`msvc-release`, Builder) tem stubs que as recusam;
   - os dados do jogo (`bs_disc_data`) ficam separados da leitura de imagens (`bs_disc`, ferramentas);
   - a catraca `n8_produto_papeis` confere o manifesto contra o mapa do linker.
+- **N8.3** (`docs/N8-3-BOOT.md`):
+  - o produto não liga BIOS, drive de GD-ROM nem flash simulados;
+  - as syscalls do jogo vão ao serviço nativo `system/syscall_service`, nos mesmos endereços e só no contrato medido;
+  - fora do contrato, erro explícito;
+  - os registradores do drive e o G1 (exceto a escrita `GDST = 0` da tabela do SDK) também são erro explícito;
+  - o modelo HLE (`bs_runtime_hle`) fica na validação (`--sistema hle`, `--arquivos legado`, `--flash`,
+    `BS_GDROM_TIMING`) e nas ferramentas.
 
 O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
 - **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico
