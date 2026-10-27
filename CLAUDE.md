@@ -39,6 +39,9 @@ e `BS_CRI_DIAG`; o produto recusa essas variaveis (saida 2). Tempo estavel e ins
 N8.3 (`docs/N8-3-BOOT.md`): o produto atende as syscalls pelo servico nativo (`runtime/system/syscall_service`); o
 modelo HLE (BIOS, GD-ROM, flash: `bs_runtime_hle`) so na validacao, com `--sistema hle` (implicito com `--arquivos
 legado`, `--flash`, `BS_GDROM_TIMING`), e nas ferramentas. As suites com `--arquivos legado` usam `build\msvc-validacao`.
+N8.4 (`docs/N8-4-PERIFERICOS.md`): barramento sem dispositivos (`runtime/system/maple_bus`); o modelo do Maple, `--controles
+legado` e `--saves legado` so na validacao (presets `msvc-validacao`, `msvc-release-mods`, `msvc-release-watch`); as suites
+do legado conferem o exe com `tools/dist/valida_exe.ps1`.
 
 Ferramentas:
 - `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:

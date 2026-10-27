@@ -765,6 +765,12 @@ Planejamento técnico concluído em 2026-10-24.
   - os registradores do drive e o G1 (exceto a escrita `GDST = 0` da tabela do SDK) também são erro explícito;
   - o modelo HLE (`bs_runtime_hle`) fica na validação (`--sistema hle`, `--arquivos legado`, `--flash`,
     `BS_GDROM_TIMING`) e nas ferramentas.
+- **N8.4** (`docs/N8-4-PERIFERICOS.md`):
+  - o barramento de periféricos do produto é o serviço sem dispositivos `system/maple_bus` (fachada `periph_*`): a
+    sondagem da camada per com o mesmo efeito do modelo sem controle;
+  - o modelo do Maple (`runtime/maple`), a ponte `input_bridge::install` e `--controles/--saves legado` ficam na
+    validação;
+  - o soft reset (MISC r4 = 1) encerra a sessão pelo gancho do host.
 
 O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
 - **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico
