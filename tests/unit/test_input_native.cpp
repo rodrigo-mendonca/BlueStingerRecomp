@@ -2,6 +2,8 @@
 // (transitional/input_bridge.h).
 #include "test.h"
 
+#include "maple/maple.h"
+
 #include "cpu/sh4_mem.h"
 #include "input/input.h"
 #include "input_bridge.h"
@@ -20,6 +22,12 @@ namespace ni = bs::native::input;
 namespace ib = bs::transitional::input_bridge;
 
 namespace {
+
+// N8.4: o barramento do produto e o servico sem dispositivos; estes testes exercitam o modelo do Maple (validacao)
+struct ModelBus {
+    ModelBus() { periph_use(maple_bus_backend()); }
+    ~ModelBus() { periph_use(nullptr); }
+};
 
 bool bound(const std::vector<ni::Binding>& v, const std::string& control, uint32_t button) {
     for (const auto& b : v)
@@ -369,6 +377,7 @@ BS_TEST(input_native_xinput_fallback) {
 
 // Fonte de teste exclusiva e a ponte: o Maple le a amostra do InputSystem pela fonte do runtime,
 // com o numero da leitura; roteiro -> estado logico -> estado do Maple sem perda.
+#if BS_VALIDACAO  // N8.4: a ponte para o Maple e o modelo so existem na validacao
 BS_TEST(input_native_bridge_and_test_source) {
     ni::InputSystem sys;
     sys.key("Z", true);  // ignorado com fonte de teste
@@ -385,11 +394,14 @@ BS_TEST(input_native_bridge_and_test_source) {
     ib::install(nullptr);
     BS_CHECK(input_source() == nullptr);
 }
+#endif
 
 // Revisao Codex 2026-10-18: o latch so no GET_CONDITION. Num DMA com DEVICE_INFO e GET_CONDITION
 // para a porta A, uma amostra (as consultas ao XInput so acontecem no latch); a presenca dos outros
 // comandos vem de connected(), que nao amostra. Nomes de botoes do SDL3 fixado no TOML.
+#if BS_VALIDACAO  // N8.4: a ponte para o Maple e o modelo so existem na validacao
 BS_TEST(input_native_latch_only_on_get_condition) {
+    ModelBus bus;
     std::vector<uint8_t> ram(16u << 20);
     Sh4Context           c{};
     c.ram = ram.data();
@@ -431,6 +443,7 @@ BS_TEST(input_native_latch_only_on_get_condition) {
     BS_CHECK(ni::ActionMap::parse("[controle]\nA = \"misc2\"\nB = \"misc6\"\nX = \"paddle1\"\n", &err));
     BS_CHECK(!ni::ActionMap::parse("[controle]\nA = \"misc7\"\n", &err));
 }
+#endif
 
 // N3-3: perfis por GUID de dispositivo. O perfil herda do [controle] e substitui so as acoes que
 // lista; controle sem perfil (GUID desconhecido ou vazio) usa o [controle]; zona morta por perfil;

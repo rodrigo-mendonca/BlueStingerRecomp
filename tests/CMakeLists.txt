@@ -39,6 +39,7 @@ add_executable(bs_unit_tests
   unit/test_bu_machine.cpp
   unit/test_pad_adapter.cpp
   unit/test_n83_sistema.cpp   # N8.3: servico nativo das syscalls do sistema
+  unit/test_n84_perifericos.cpp   # N8.4: barramento de perifericos sem dispositivos
   unit/xmm_probe.asm   # XMM6-XMM15 atraves de trocas de fibra (MASM)
 )
 target_link_libraries(bs_unit_tests PRIVATE bs_translator bs_runtime bs_disc bs_app_core bs_builder_core bs_hwscan bs_transitional)

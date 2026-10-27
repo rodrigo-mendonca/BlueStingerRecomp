@@ -44,6 +44,7 @@ param(
     [int]$LimiteSegundos = 2400,
     [string]$Saida = (Join-Path $env:TEMP "bs-cri-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $ExeMods  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $ExeMods)) { Write-Host "SKIP: sem build com mods ($ExeMods)"; exit 0 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "SKIP: dados ausentes ($Data)"; exit 0 }

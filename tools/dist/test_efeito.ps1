@@ -40,6 +40,7 @@ param(
     [string]$Roteiro = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"),
     [string]$Provedores = "--saves legado --controles legado --video legado --audio legado"
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $ExeMods  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $ExeMods)) { Write-Host "SKIP: sem o build de investigacao BS_WRITE_WATCH ($ExeMods)"; exit 0 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "SKIP: dados ausentes ($Data)"; exit 0 }

@@ -31,7 +31,8 @@
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
 # desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.4: --controles legado e --saves legado (modelo do Maple) so existem no build de validacao; o codigo nativo nele e o do produto
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     # N8.3: --arquivos legado (modelo HLE do GD-ROM) so existe no build de validacao (caso exp_lg do N6)
     [string]$ExeValidacao = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
@@ -43,6 +44,7 @@ param(
     [int]$LimiteSegundos = 1800,
     [string]$Saida = (Join-Path $env:TEMP "bs-n2b2-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $Exe; Assert-Validacao $ExeMods; Assert-Validacao $ExeValidacao  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $Exe)) { Write-Host "SKIP: executavel ausente ($Exe)"; exit 0 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "SKIP: dados ausentes ($Data)"; exit 0 }

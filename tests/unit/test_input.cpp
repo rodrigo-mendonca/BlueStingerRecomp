@@ -16,6 +16,12 @@ using namespace bs;
 
 namespace {
 
+// N8.4: o barramento do produto e o servico sem dispositivos; estes testes exercitam o modelo do Maple (validacao)
+struct ModelBus {
+    ModelBus() { periph_use(maple_bus_backend()); }
+    ~ModelBus() { periph_use(nullptr); }
+};
+
 template <class F> bool throws(F&& fn) {
     try {
         fn();
@@ -121,6 +127,7 @@ BS_TEST(input_exact_values_presence_and_transition_index) {
 // O Maple pede a condicao do controle da porta A: com roteiro, a 2a leitura (seq 1) ja
 // ve START apertado (bit 3 em 0 no barramento, que e ativo em 0).
 BS_TEST(input_script_drives_maple_get_condition) {
+    ModelBus bus;
     std::vector<uint8_t> ram(16u << 20);
     Sh4Context           c{};
     c.ram = ram.data();
@@ -186,6 +193,7 @@ struct MapleInputHw {
 // bits 0-11, ativos em 0), e a ordem dos bytes: botoes, R, L, X, Y, X2, Y2
 // (mc.pp.se/dc/controller.html; revisao Codex 2026-10-14).
 BS_TEST(input_maple_serializes_every_button_and_axis) {
+    ModelBus bus;
     MapleInputHw h;
     const char* names[12] = {"C", "B", "A", "START", "UP", "DOWN", "LEFT", "RIGHT", "Z", "Y", "X", "D"};
     std::string script;
@@ -216,6 +224,7 @@ BS_TEST(input_maple_serializes_every_button_and_axis) {
 // Descritor da porta A dirigido ao endereco do dispositivo principal da porta B (0x60):
 // ninguem responde.
 BS_TEST(maple_main_device_only_at_own_port_address) {
+    ModelBus bus;
     MapleInputHw h;
     sh4_write32(&h.c, 0xA05F6C14, 1);
     sh4_write32(&h.c, 0xA05F6C04, 0x0C100000);
@@ -229,6 +238,7 @@ BS_TEST(maple_main_device_only_at_own_port_address) {
 // N3-0: um estado DESCONECTADO deixa a porta A vazia (DEVICE_INFO e GET_CONDITION sem resposta);
 // ao reconectar, a porta responde de novo.
 BS_TEST(maple_scripted_presence_empties_port) {
+    ModelBus bus;
     MapleInputHw h;
     maple_reset();
     auto  owned = std::make_unique<FixedInput>();
@@ -254,6 +264,7 @@ BS_TEST(maple_scripted_presence_empties_port) {
 // N3-0: a transicao injetada avanca uma vez por VBlank-In, no primeiro acesso ao MDST (o tratador
 // do SDK le o MDST antes de disparar o DMA); sem VBlank-In, ler o MDST nao avanca nada.
 BS_TEST(maple_transition_ticks_on_first_mdst_read_after_vblank) {
+    ModelBus bus;
     MapleInputHw h;
     maple_reset();
     const uint64_t base = input_transition_index();

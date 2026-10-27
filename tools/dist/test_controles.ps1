@@ -35,7 +35,8 @@
 # video legado: estabelecida com o Sofdec original; o filme nativo (N5) dura o tempo real do filme e
 # desloca os artefatos por VBlank depois de cada filme (a logica por passo e a mesma).
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.4: --controles legado e --saves legado (modelo do Maple) so existem no build de validacao; o codigo nativo nele e o do produto
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$ExeRef = (Join-Path $PSScriptRoot "..\..\analysis\rollback-antes-n3\exe\bluestinger-release.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
@@ -44,6 +45,7 @@ param(
     [string[]]$RotasK13 = @("passo_cgate", "passo_heliporto", "newgame_area1"),  # roteiros de tools/dist/roteiros
     [string]$Saida = (Join-Path $env:TEMP "bs-controles-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $Exe; Assert-Validacao $ExeMods  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 # com -File, "K1,K2" chega como um texto so
 $Casos = @($Casos | ForEach-Object { $_ -split "," } | Where-Object { $_ }); $RotasK13 = @($RotasK13 | ForEach-Object { $_ -split "," } | Where-Object { $_ })

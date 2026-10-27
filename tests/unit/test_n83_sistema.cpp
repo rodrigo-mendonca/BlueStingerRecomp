@@ -365,3 +365,26 @@ BS_TEST(n83_native_boot_installs_service_per_session) {
     sh4_dispatch(&c2, 0, sh4_read32(&c2, kBiosVecFlashrom));
     BS_CHECK(c2.r[0] == 0 && sh4_read8(&c2, 0x8C230000) == 0xFF);  // flash volatil: em branco
 }
+
+// N8.4: o soft reset (MISC r4 = 1, stub 8C15E9C4) pede o menu do sistema: com o gancho do host, a sessao termina (o gancho
+// nao volta) e a chamada e contada; sem gancho, ou com outro r4, continua erro explicito.
+namespace {
+struct MenuExit {};
+[[noreturn]] void menuHook(Sh4Context*) { throw MenuExit{}; }
+} // namespace
+BS_TEST(n84_system_menu_ends_session_only_through_host_hook) {
+    Sys s;
+    syscall_service_set_menu_hook(menuHook);
+    bool ended = false;
+    try {
+        s.call(kBiosVecMisc, 0, 1);
+    } catch (const MenuExit&) {
+        ended = true;
+    }
+    BS_CHECK(ended && syscall_service_counts().menuExit == 1 && syscall_service_counts().refused == 0);
+    std::string msg = expectFatal([&] { s.call(kBiosVecMisc, 0, 2); });  // outro pedido do MISC
+    BS_CHECK(msg.find("componente removido do produto") != std::string::npos);
+    syscall_service_set_menu_hook(nullptr);
+    msg = expectFatal([&] { s.call(kBiosVecMisc, 0, 1); });  // sem host: erro, nunca silencio
+    BS_CHECK(msg.find("componente removido do produto") != std::string::npos && syscall_service_counts().menuExit == 1);
+}

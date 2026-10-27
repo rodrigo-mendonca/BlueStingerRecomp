@@ -30,13 +30,15 @@
 #      sem controle) e traco com tempo, quadros, leituras, estado e audio iguais aos do --controles nativo
 #   powershell -File tools/dist/test_pd_nativo.ps1 [-Exe <release>] [-ExeMods <mods>] [-Casos P1,P2,...] [-Paralelo 8]
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.4: --controles legado e --saves legado (modelo do Maple) so existem no build de validacao; o codigo nativo nele e o do produto
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$Paralelo = 8,
     [string[]]$Casos = @("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"),
     [string]$Saida = (Join-Path $env:TEMP "bs-pd-nativo-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $Exe  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 $Casos = @($Casos | ForEach-Object { $_ -split "," } | Where-Object { $_ })
 # sem artefatos a suite nao prova nada: erro, nunca sucesso (revisao Codex 2026-10-18)
@@ -151,7 +153,8 @@ function Completa($tag) {
     $logs = @(@("BS_FRAME_LOG", 3, 2, "quadros"), @("BS_PAD_TRACE", 0, 2, "traco"), @("BS_STATE_PASSO", 0, -1, "estado"),
               @("BS_FILE_LOG", -1, -1, "leituras de arquivo"))  # chave, coluna do passo, coluna da leitura, nome
     foreach ($lg in $logs) { $f = $m.Env[$lg[0]]; if ($f -and (MaxCol $f -1) -lt 0) { return "$tag sem dados no log de $($lg[3])" } }
-    if ($m.Fim -eq "softreset") { if ($o -match "syscall do BIOS ainda nao implementada em PC=8C001008") { return "" } else { return "$tag sem a syscall do menu do BIOS" } }
+    # N8.4: o menu do sistema (MISC r4 = 1) encerra a sessao sem erro, com a mensagem do servico nativo
+    if ($m.Fim -eq "softreset") { if ($o -match "\[sistema\] o jogo pediu o menu do sistema" -and $pr.ExitCode -eq 0) { return "" } else { return "$tag sem a syscall do menu do sistema (rc=$($pr.ExitCode))" } }
     if ($pr.ExitCode -ne 0) { return "$tag rc=$($pr.ExitCode)" }
     if ($o -notmatch "VBlanks: $($m.N);") { return "$tag nao chegou a $($m.N) VBlanks" }
     if ($m.Fim -eq "negativo") { return "" }

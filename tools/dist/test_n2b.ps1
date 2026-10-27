@@ -33,6 +33,7 @@ param(
     [int]$LimiteSegundos = 900,
     [string]$Saida = (Join-Path $env:TEMP "bs-n2b-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $Exe; Assert-Validacao $ExeMods  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $Exe)) { Write-Host "SKIP: executavel ausente ($Exe)"; exit 0 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "SKIP: dados ausentes ($Data)"; exit 0 }

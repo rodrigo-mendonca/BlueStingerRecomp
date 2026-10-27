@@ -14,6 +14,12 @@ using namespace bs;
 
 namespace {
 
+// N8.4: o barramento do produto e o servico sem dispositivos; estes testes exercitam o modelo do Maple (validacao)
+struct ModelBus {
+    ModelBus() { periph_use(maple_bus_backend()); }
+    ~ModelBus() { periph_use(nullptr); }
+};
+
 struct MapleHw {
     std::vector<uint8_t> ram = std::vector<uint8_t>(16u << 20);
     Sh4Context           c{};
@@ -35,6 +41,7 @@ struct MapleHw {
 
 // Porta A: informacao do dispositivo (controle); porta B: ninguem responde.
 BS_TEST(maple_devinfo_port_a_and_empty_port_b) {
+    ModelBus bus;
     MapleHw h;
     h.w(0x0C100000, 0x00000000);              // porta 0, 0 palavras de dados
     h.w(0x0C100004, 0x0C200000);              // buffer de recepcao
@@ -53,6 +60,7 @@ BS_TEST(maple_devinfo_port_a_and_empty_port_b) {
 
 // Condicao do controle: botoes ativos em 0, analogicos no centro.
 BS_TEST(maple_get_condition_reports_controller_state) {
+    ModelBus bus;
     MapleHw h;
     MapleControllerState s;
     s.buttons = 0xFFFF & ~0x0008u;  // START
@@ -70,6 +78,7 @@ BS_TEST(maple_get_condition_reports_controller_state) {
 
 // Unidade de expansao (VMU) ausente: sem resposta; funcao nao suportada: FE.
 BS_TEST(maple_absent_subunit_and_unsupported_function) {
+    ModelBus bus;
     MapleHw h;
     h.w(0x0C100000, 0x00000001);
     h.w(0x0C100004, 0x0C200000);
@@ -86,6 +95,7 @@ BS_TEST(maple_absent_subunit_and_unsupported_function) {
 
 // SB_MDST le 1 enquanto o DMA corre; no fim, 0 e ISTNRM bit 12.
 BS_TEST(maple_dma_busy_until_completion_interrupt) {
+    ModelBus bus;
     MapleHw h;
     h.w(0x0C100000, 0x80000000);
     h.w(0x0C100004, 0x0C200000);
@@ -100,6 +110,7 @@ BS_TEST(maple_dma_busy_until_completion_interrupt) {
 
 // Sem SB_MDEN o inicio e ignorado.
 BS_TEST(maple_start_ignored_when_disabled) {
+    ModelBus bus;
     MapleHw h;
     sh4_write32(&h.c, 0xA05F6C14, 0);
     h.w(0x0C100000, 0x80000000);
@@ -111,6 +122,7 @@ BS_TEST(maple_start_ignored_when_disabled) {
 
 // O DMA segue os descritores ate o bit LAST, mesmo com mais de 8 (revisao Codex 2026-10-14).
 BS_TEST(maple_follows_descriptors_until_last) {
+    ModelBus bus;
     MapleHw h;
     uint32_t a = 0x0C100000;
     for (uint32_t n = 0; n < 10; ++n) {

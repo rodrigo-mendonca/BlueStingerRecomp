@@ -25,12 +25,15 @@
 #   powershell -File tools/dist/test_saves.ps1 [-Exe <release>] [-ExeMods <mods>] [-Data <data>] [-Casos S1,...]
 param(
     [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.4: o S5 (--saves legado, a bu original sem VMU) so existe no build de validacao
+    [string]$ExeValidacao = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [string]$VmuFlycast = "",
     [string]$PosFlycast = "",
     [string]$Saida = (Join-Path $env:TEMP "bs-saves-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $ExeValidacao; Assert-Validacao $ExeMods  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 foreach ($x in @($Exe, $ExeMods)) { if (-not (Test-Path -LiteralPath $x)) { Write-Host "SKIP: executavel ausente ($x)"; exit 0 } }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "SKIP: dados ausentes ($Data)"; exit 0 }
@@ -109,7 +112,7 @@ $s10 = Copy-Save "s10"; $b10 = Join-Path $s10 "card0\BLUESTIN.000.bsv"; $bytes =
 $cases = @(
     (Start-Case "s3" $Exe "passo_load_slot1.txt" 4700 "--saves nativo --saves-pasta `"$s3`""),
     (Start-Case "s4" $Exe "passo_load_slot1.txt" 4700 "--saves nativo --saves-pasta `"$s4`""),
-    (Start-Case "s5" $Exe "passo_load_slot1.txt" 4700 "--saves legado --saves-pasta `"$s5\naocriar`""),
+    (Start-Case "s5" $ExeValidacao "passo_load_slot1.txt" 4700 "--saves legado --saves-pasta `"$s5\naocriar`""),
     (Start-Case "s6" $Exe "passo_load_slot1.txt" 4700 "--saves-pasta `"$s6`""),
     (Start-Case "s7" $Exe "passo_load_slot1.txt" 4700 "--saves nativo --saves-pasta `"$s7`""),
     (Start-Case "s8" $Exe "passo_load_slot1.txt" 4700 "--saves nativo --saves-pasta `"$s8`""),

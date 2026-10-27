@@ -15,7 +15,8 @@
 #       iguais as gravadas antes do N8.1 (-Capturar grava; a pasta fica fora do git, em analysis/)
 #   powershell -File tools/dist/test_n8_nativo.ps1 [-Exe <exe>] [-ExeMods <exe>] [-Referencia <pasta>] [-Capturar]
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.4: --controles legado e --saves legado (modelo do Maple) so existem no build de validacao; o codigo nativo nele e o do produto
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$ExeMods = (Join-Path $PSScriptRoot "..\..\build\msvc-release-mods\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [string]$Referencia = (Join-Path $PSScriptRoot "..\..\analysis\n8\pre-n8-1"),
@@ -25,6 +26,7 @@ param(
     [int]$LimiteSegundos = 1800,
     [string]$Saida = (Join-Path $env:TEMP "bs-n8-nativo-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $Exe; Assert-Validacao $ExeMods  # N8.4: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 foreach ($x in $Exe, $ExeMods) { if (-not (Test-Path -LiteralPath $x)) { Write-Host "ERRO: executavel ausente ($x)"; exit 2 } }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "ERRO: dados ausentes ($Data)"; exit 2 }

@@ -151,8 +151,8 @@ Sh4FuncEntry g_table[2];
 
 GameOptions fakeOptions(Sh4Func entry, bool withThread = false) {
     GameOptions o;
-    o.controls = ControlsProvider::Legacy;  // jogo falso: sem o SDK pd para o provedor nativo
-    o.saves    = SavesProvider::Legacy;     // nem a bu
+    o.controls = ControlsProvider::None;  // jogo falso: sem o SDK pd para o provedor nativo
+    o.saves    = SavesProvider::None;     // nem a bu
     o.video    = VideoProvider::Legacy;     // nem o MW (Sofdec) para os filmes nativos
     o.registerFunctions = [entry, withThread] {
         g_table[0] = {0x0C010000, entry};

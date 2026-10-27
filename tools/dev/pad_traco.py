@@ -157,9 +157,9 @@ def softreset(trace, out, control_out):
         text = f.read()
     with open(control_out, encoding="utf-8", errors="replace") as f:
         control = f.read()
-    sig = "syscall do BIOS ainda nao implementada em PC=8C001008"
+    sig = "[sistema] o jogo pediu o menu do sistema"  # N8.4: o servico nativo encerra a sessao (MISC r4 = 1)
     checks = [(f"A+B+X+Y segurados no ultimo passo ({last})", held and 40 <= last <= 43),
-              ("START com A+B+X+Y: o jogo chama o menu do BIOS (syscall 8C001008, sem HLE)", sig in text),
+              ("START com A+B+X+Y: o jogo chama o menu do sistema (syscall MISC 8C001008)", sig in text),
               ("controle sem START: sem a syscall", sig not in control and "VBlanks:" in control)]
     for name, ok in checks:
         print(("ok " if ok else "FALHA ") + name)
