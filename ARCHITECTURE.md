@@ -771,6 +771,8 @@ Planejamento técnico concluído em 2026-10-24.
   - o modelo do Maple (`runtime/maple`), a ponte `input_bridge::install` e `--controles/--saves legado` ficam na
     validação;
   - o soft reset (MISC r4 = 1) encerra a sessão pelo gancho do host.
+- **N8.5** (`docs/N8-5-FILMES.md`): os filmes do produto são só os nativos. O `--video legado` (Sofdec) e o conversor
+  YUV do TA (`ta_yuv_removed`) são erro explícito no produto. Da biblioteca Sofdec recompilada, só a init roda.
 
 O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
 - **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico

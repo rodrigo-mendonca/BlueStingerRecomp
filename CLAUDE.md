@@ -42,6 +42,8 @@ legado`, `--flash`, `BS_GDROM_TIMING`), e nas ferramentas. As suites com `--arqu
 N8.4 (`docs/N8-4-PERIFERICOS.md`): barramento sem dispositivos (`runtime/system/maple_bus`); o modelo do Maple, `--controles
 legado` e `--saves legado` so na validacao (presets `msvc-validacao`, `msvc-release-mods`, `msvc-release-watch`); as suites
 do legado conferem o exe com `tools/dist/valida_exe.ps1`.
+N8.5 (`docs/N8-5-FILMES.md`): `--video legado` (Sofdec) e o conversor YUV so na validacao; `test_assistido`, `test_ordem`
+e `n5_e001` usam o exe de validacao; `test_gameplay` usa o filme nativo e o roteiro `passo_newgame_area1`.
 
 Ferramentas:
 - `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:
