@@ -21,6 +21,8 @@
 # Uma prova sem pre-requisito (dados, save g1, oraculo, ffmpeg, ASan, build com mods) REPROVA a bateria; -Parcial aceita
 # o skip (execucao de desenvolvimento, nao vale para a promocao). O ambiente BS_* de quem chama e retirado durante a
 # bateria (BS_SEM_DSP, BS_AUDIO etc. mudariam os casos) e devolvido no fim.
+#   N8.5: os casos que usam --video legado (H4, H5, H6) ou outros provedores legados exigem o -Exe do build de validacao
+#   (o produto os recusa, saida 2); o H9 (tudo nativo) roda na Preview.
 #   powershell -File tools/dev/n6_h.ps1 -Exe <bluestinger.exe> [-Casos H1,H5] [-Parcial] [-Build <dir>] [-BuildAsan <dir>]
 #              [-ExeMods <exe com mods>] [-OraculoMusica <tsv>] [-SaveG1 <BLUESTIN.000>]
 param(

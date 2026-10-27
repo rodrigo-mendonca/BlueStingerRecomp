@@ -350,6 +350,7 @@ BS_TEST(gdrom_toc_high_density_area_is_empty_for_cd) {
     BS_CHECK(sh4_read32(&h.c, toc) == 0xFFFFFFFF && sh4_read32(&h.c, toc + 101 * 4) == 0xFFFFFFFF);
 }
 
+#if BS_VALIDACAO  // N8.5: o conversor YUV so serve o filme legado (validacao); no produto, test_n85_filmes
 // Conversor YUV: 2x1 macroblocos YUV420 numa textura de 32x16 (UYVY linear na VRAM, caminho
 // de 64 bits); TA_YUV_TEX_CNT conta; o ultimo macrobloco acende ISTNRM bit 6 e recomeca.
 // Modo uma-textura-por-macrobloco com entrada YUV422. Escrever TA_YUV_TEX_BASE recomeca.
@@ -410,6 +411,7 @@ BS_TEST(ta_yuv_converter_macroblocks_to_vram) {
     BS_CHECK(word64(base + 512 + (11 * 16 + 10) * 2) == expect(11, 10));  // metade de baixo, Y direito
     BS_CHECK(word64(base + (15 * 16 + 14) * 2) == expect(15, 14));        // 1a textura, ultima linha
 }
+#endif
 
 // Textura YUV422 linear: pares de pixels na mesma palavra; cores pelos coeficientes do PowerVR2.
 BS_TEST(texture_yuv422_linear) {

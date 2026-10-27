@@ -14,7 +14,8 @@
 # Verificacoes (V1-V9, abaixo). O NEWGAME (ctl=00) nao e convertido aqui: no nativo fica ausente e o
 # estado de ausente e o PENDENTE do O1b (hipotese 4, como o Flycast observou).
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.5: compara o filme nativo com o --video legado (Sofdec), que so existe no build de validacao
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$Probe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\builder\bs-video-probe.exe"),
     [string]$Preview = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [string]$Saida = (Join-Path $env:TEMP "bs-n5-e001"),
@@ -23,6 +24,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $repo "tools\dist\valida_exe.ps1"); Assert-Validacao $Exe  # N8.5 (revisao Codex): o lado legado exige a validacao
 foreach ($f in $Exe, $Probe, (Join-Path $Preview "disc.manifest")) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "ERRO: falta $f"; exit 2 }
 }
@@ -80,7 +82,8 @@ Check "V2 E001 aberto pelo recurso convertido (ID 3 pelo manifesto)" $start.Succ
 $okSync = $fim.Success -and [math]::Abs([int]$fim.Groups[1].Value - 13700) -le 100 -and ([int]$fim.Groups[2].Value + [int]$fim.Groups[3].Value) -ge 404
 Check "V3 sincronia: fim natural no tempo do filme, quadros exibidos + pulados ~ 411" $okSync $(if ($fim.Success) { "$($fim.Groups[1].Value) ms, $($fim.Groups[2].Value) quadros, $($fim.Groups[3].Value) pulados, passo $($fim.Groups[4].Value)" })
 $sum = [regex]::Match($nat.Out, "\[video\] nativo: create (\d+) \(falhas (\d+)\).*chamadas de outros players (\d+), entrada exposta ao servidor (\d+)")
-Check "V4 nenhum Sofdec no filme nativo: entrada nunca exposta ao servidor do MW" ($sum.Success -and $sum.Groups[4].Value -eq "0" -and $sum.Groups[2].Value -eq "0") $sum.Value
+# N8.5 (revisao Codex): tambem nenhuma chamada encaminhada ao MW original (handle de outro player)
+Check "V4 nenhum Sofdec no filme nativo: entrada nunca exposta ao servidor do MW nem chamada encaminhada ao original" ($sum.Success -and $sum.Groups[4].Value -eq "0" -and $sum.Groups[3].Value -eq "0" -and $sum.Groups[2].Value -eq "0") $sum.Value
 $sfdLeg = @(Get-Content -LiteralPath "$($leg.P)_fl.tsv" | Where-Object { $_ -match "E001\.SFD" }).Count
 $sfdNat = @(Get-Content -LiteralPath "$($nat.P)_fl.tsv" | Where-Object { $_ -match "E001\.SFD" }).Count
 Check "V5 o nativo nao le o E001.SFD do disco (o legado le)" ($sfdLeg -gt 0 -and $sfdNat -eq 0) "leituras do SFD: legado $sfdLeg, nativo $sfdNat"

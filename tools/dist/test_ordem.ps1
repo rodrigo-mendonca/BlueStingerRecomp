@@ -4,11 +4,13 @@
 # mais propriedades estruturais. O trace aceito fica em -Saida como referencia para o N2.
 #   powershell -File tools/dist/test_ordem.ps1 [-Exe <bluestinger.exe>] [-Data <data>] [-VBlanks 3000]
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # N8.5: --video legado (o Sofdec original: os roteiros por passo destas suites foram gravados com ele) so existe no build de validacao
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [int]$VBlanks = 3000,
     [string]$Saida = (Join-Path $env:TEMP "bs-ordem-teste")
 )
+. (Join-Path $PSScriptRoot "valida_exe.ps1"); Assert-Validacao $Exe  # N8.5: o exe precisa ser de validacao
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $Exe)) { Write-Host "SKIP: executavel ausente ($Exe)"; exit 0 }
 if (-not (Test-Path -LiteralPath (Join-Path $Data "disc.manifest"))) { Write-Host "SKIP: dados ausentes ($Data)"; exit 0 }

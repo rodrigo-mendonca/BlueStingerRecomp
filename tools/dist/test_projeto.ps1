@@ -80,7 +80,7 @@ $t = $t.Replace("#include `"funcs.h`"`n", "#include `"funcs.h`"`n#include <cstdi
 $r = RunCmd "`"$cli`" --de-projeto `"$proj0`" --out `"$res0`" --sem-filmes"
 $exe0 = Join-Path $res0 "BlueStinger\BlueStinger.exe"
 $okInst0 = $LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $exe0)
-$g0 = if ($okInst0) { RunCmd "`"$exe0`" --video legado --headless 10" } else { "" }
+$g0 = if ($okInst0) { RunCmd "`"$exe0`" --headless 10" } else { "" }
 Check "projeto so exportado: compila sem o CDI e a edicao aparece no jogo" ($okInst0 -and $g0 -match "\[edicao so exportar\] entrada do jogo") ""
 # icone dentro do executavel compilado em pasta acentuada (RC2135, 2026-10-25): o recurso lido do binario e igual ao
 # .ico que o projeto escolhe (icone-local/ do projeto, se o kit o trouxe; senao app/res)
@@ -150,19 +150,20 @@ Rename-Item -LiteralPath $cdi -NewName "imagem ç.cdi.fora"
 try {
     $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`" --sem-filmes"
     Check "recompila do projeto sem o CDI" ($LASTEXITCODE -eq 0 -and $r -match "instalado:") (($r -split "`n" | Where-Object { $_ -match "falhou" } | Select-Object -First 1))
-    # 4. efeitos no jogo instalado (roteiro ate o NEW GAME)
+    # 4. efeitos no jogo instalado (roteiro ate o NEW GAME; N8.5: o filme nativo, o unico do produto; sem os MP4 do --sem-filmes
+    #    ele fica sem recurso e o jogo segue)
     $env:BS_INPUT_SCRIPT = Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"
-    $g = RunCmd "`"$exe`" --video legado --headless 2300"
+    $g = RunCmd "`"$exe`" --headless 2300"
     $env:BS_INPUT_SCRIPT = ""
-    Check "mod em C++ ativo (replace)" ($g -match "\[mods\] iniciando exemplo_contador" -and $g -match "\[mod exemplo\] primeira chamada de 8C194580") ""
+    Check "mod em C++ ativo (replace)" ($g -match "\[mods\] iniciando exemplo_contador" -and $g -match "\[mod exemplo\] primeira chamada de 8C08B544") ""
     Check "alteracao no C++ gerado ativa" ($g -match "\[edicao controlada\] entrada do jogo") ""
     Check "mod de arquivo carregado" ($g -match [regex]::Escape("[mods] recurso substituido: $($assetRel.ToUpper())") -and $g -match "VBlanks: 2300;") $assetRel
     # 4b. B10: mod de funcao de espera, com e sem a primitiva (modo sombra: a falta e acusada)
     $env:BS_INPUT_SCRIPT = Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"
     $env:BS_TESTE_ESPERA = "primitiva"
-    $g = RunCmd "`"$exe`" --video legado --headless 2300"
+    $g = RunCmd "`"$exe`" --headless 2300"
     $env:BS_TESTE_ESPERA = "sem"
-    $g2 = RunCmd "`"$exe`" --video legado --headless 2300"
+    $g2 = RunCmd "`"$exe`" --headless 2300"
     $env:BS_TESTE_ESPERA = ""; $env:BS_INPUT_SCRIPT = ""
     $ep = [regex]::Match($g, "\[progresso\] espera 8C064A2C: episodios (\d+).*evento esperado VBlankIn: com (\d+), sem (\d+)")
     Check "B10 mod de espera com a primitiva: roda, espera declarada, sem falta de progresso" `
@@ -175,20 +176,20 @@ try {
     #    original continua provada no RuntimeDisc, runtime_data_asset_overrides); mod sem recurso correspondente: erro claro
     $installedAsset = Join-Path $out ("BlueStinger\mods\assets\" + $assetRel.Replace('/', '\'))
     [IO.File]::WriteAllBytes($installedAsset, (New-Object byte[] ($assetSize + 4096)))
-    $g = RunCmd "`"$exe`" --video legado --headless 10"
+    $g = RunCmd "`"$exe`" --headless 10"
     Check "mod maior que o original: aceito no provedor nativo" ($LASTEXITCODE -eq 0 -and $g -match [regex]::Escape("($assetSize -> $($assetSize + 4096) bytes)")) (($g -split "`n" | Where-Object { $_ -match "erro|recurso" } | Select-Object -First 1))
-    $g = RunCmd "`"$exe`" --arquivos legado --video legado --headless 10"
+    $g = RunCmd "`"$exe`" --arquivos legado --headless 10"
     Check "provedor legado de arquivos: recusado no produto (N8.3)" ($LASTEXITCODE -eq 2 -and $g -match "--arquivos legado .*so existe no build de validacao") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
     $bogus = Join-Path $out "BlueStinger\mods\assets\BSDATA\NAO_EXISTE.BIN"
     [IO.File]::WriteAllText($bogus, "x")
-    $g = RunCmd "`"$exe`" --video legado --headless 10"
+    $g = RunCmd "`"$exe`" --headless 10"
     Check "mod sem recurso correspondente: mensagem clara" ($LASTEXITCODE -ne 0 -and $g -match "NAO_EXISTE.BIN: nao substitui nenhum recurso") (($g -split "`n" | Where-Object { $_ -match "erro" } | Select-Object -First 1))
     Remove-Item -LiteralPath $bogus
     # 5b. remover o mod e recompilar: o efeito some (o cache espelha mods/, nada sobra la)
     Remove-Item -LiteralPath (Join-Path $proj "mods\exemplo_contador.cpp")
     $r = RunCmd "`"$cli`" --de-projeto `"$proj`" --out `"$out`" --sem-filmes"
     $env:BS_INPUT_SCRIPT = Join-Path $PSScriptRoot "roteiros\newgame_area1.txt"
-    $g = RunCmd "`"$exe`" --video legado --headless 2300"
+    $g = RunCmd "`"$exe`" --headless 2300"
     $env:BS_INPUT_SCRIPT = ""
     Check "mod removido: efeito some apos recompilar" ($r -match "instalado:" -and $g -notmatch "exemplo_contador" -and $g -match "\[edicao controlada\]" -and $g -match "VBlanks: 2300;") ""
     Copy-Item -LiteralPath (Join-Path $proj "mods\exemplos\exemplo_contador.cpp") -Destination (Join-Path $proj "mods\exemplo_contador.cpp")

@@ -153,7 +153,7 @@ GameOptions fakeOptions(Sh4Func entry, bool withThread = false) {
     GameOptions o;
     o.controls = ControlsProvider::None;  // jogo falso: sem o SDK pd para o provedor nativo
     o.saves    = SavesProvider::None;     // nem a bu
-    o.video    = VideoProvider::Legacy;     // nem o MW (Sofdec) para os filmes nativos
+    o.video    = VideoProvider::None;     // nem o MW (Sofdec) para os filmes nativos
     o.registerFunctions = [entry, withThread] {
         g_table[0] = {0x0C010000, entry};
         g_table[1] = {0x0C020000, fakeThread};
@@ -297,6 +297,19 @@ BS_TEST(boot_prepare_resets_hardware_between_sessions) {
 }
 
 // Erros: a entrada retorna, ou o guest para com erro fatal.
+#if !BS_VALIDACAO
+// N8.5 (revisao Codex): no produto o GameHost recusa o filme legado (Sofdec), mesmo pedido pela API (a linha de comando
+// ja o recusa com saida 2): erro da sessao, o jogo nao comeca.
+BS_TEST(game_host_product_refuses_legacy_video) {
+    GameOptions o = fakeOptions(fakeReturns);
+    o.video       = VideoProvider::Legacy;
+    GameHost h;
+    h.start(o);
+    h.join();
+    BS_CHECK(h.error().find("filme legado (Sofdec, --video legado) so existe no build de validacao") != std::string::npos);
+}
+#endif
+
 BS_TEST(game_host_reports_errors) {
     {
         GameHost h;
