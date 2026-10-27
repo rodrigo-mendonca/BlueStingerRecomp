@@ -87,7 +87,9 @@ enum class SavesProvider { Legacy, Native, None };
 // Provedor dos filmes (N5, docs/N5-PLANO.md): nativo (padrao desde o fim do N5) = as entradas MW da
 // funcao de video do jogo atendidas por transitional/video_adapter (MP4 do Builder em data\video,
 // Media Foundation e XAudio2; mods em mods\video); legado (fallback temporario) = Sofdec original.
-enum class VideoProvider { Legacy, Native };
+// N8.5: Legacy (Sofdec original) so existe no build de validacao; None = sem adaptador, so para os jogos falsos dos
+// testes (sem o MW); a linha de comando nao o oferece.
+enum class VideoProvider { Legacy, Native, None };
 
 // Provedor dos efeitos sonoros (N6 fase D, docs/N6-PLANO.md secao 14): legado (padrao ate a prova de equivalencia)
 // = o SDK de som original na AICA emulada; nativo = as 5 entradas do SDK atendidas por transitional/sound_adapter

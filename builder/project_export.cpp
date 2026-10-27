@@ -109,7 +109,7 @@ com cuidado.
    (veja `mapa_funcoes.tsv` e os exemplos em `mods/exemplos/`):
 
        #include "mods/mod_api.h"
-       BS_MOD(meu_mod) { bs::mods::replace(0x8C194580, minha_funcao); }
+       BS_MOD(meu_mod) { bs::mods::replace(0x8C08B544, minha_funcao); }
 
    `bs::mods::call_original(endereco, c)` chama a função original de dentro do mod.
 2. **Recursos:** um arquivo em `mods/assets/<caminho do disco>` substitui o do disco (por exemplo
@@ -147,8 +147,9 @@ Esta pasta e sua: o Builder nunca a sobrescreve.
 )";
 
 const char* const kExampleMod = R"(// Exemplo (nao compilado: copie para mods\ para usar).
-// Conta quantas vezes o jogo chama a funcao 0x8C194580 (um metodo "return 0" de uma tabela
-// de metodos usada no inicio da partida) e mantem o comportamento original.
+// Conta quantas vezes o jogo chama a funcao 0x8C08B544 (a funcao de video do jogo: o NEW GAME a chama com o ID do
+// filme) e mantem o comportamento original. N8.5: o alvo antigo (0x8C194580) era um metodo da biblioteca de filmes
+// original (Sofdec), que o produto nao usa mais.
 #include "mods/mod_api.h"
 
 #include <cstdio>
@@ -157,12 +158,12 @@ namespace {
 unsigned g_chamadas = 0;
 
 void contar(bs::Sh4Context* c) {
-    if (++g_chamadas == 1) std::fprintf(stderr, "[mod exemplo] primeira chamada de 8C194580\n");
-    bs::mods::call_original(0x8C194580, c);
+    if (++g_chamadas == 1) std::fprintf(stderr, "[mod exemplo] primeira chamada de 8C08B544\n");
+    bs::mods::call_original(0x8C08B544, c);
 }
 } // namespace
 
-BS_MOD(exemplo_contador) { bs::mods::replace(0x8C194580, contar); }
+BS_MOD(exemplo_contador) { bs::mods::replace(0x8C08B544, contar); }
 )";
 
 const char* const kBuildCmd = R"CMD(@echo off

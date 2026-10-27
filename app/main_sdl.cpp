@@ -1435,7 +1435,7 @@ const char* kUsage =
     "     --saves-importar <arquivo.vms> | --saves-exportar <arquivo.vms> [--saves-nome BLUESTIN.00n]:\n"
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
     "     --video nativo|legado: filmes (padrao: nativo = MP4 do Builder em data\\video, mods em mods\\video;\n"
-    "       legado = Sofdec original, fallback temporario)\n"
+    "       legado = Sofdec original, so no build de validacao)\n"
     "     --render nativo|software: renderizador (padrao na janela: nativo = Vulkan, com recuo para o software sem\n"
     "       Vulkan ou se o dispositivo falhar; padrao no --headless: software = rasterizador de referencia, e --render\n"
     "       nativo o troca pelo Vulkan nas baterias; BS_RENDER muda o padrao;\n"
@@ -1812,6 +1812,13 @@ int main(int, char**) {
                          what);
             return 2;
         }
+    }
+    // N8.5 (docs/N8-5-FILMES.md): o filme legado (Sofdec original e o conversor YUV)
+    if (a.video == bs::VideoProvider::Legacy) {
+        std::fprintf(stderr,
+                     "erro: --video legado (filme legado: Sofdec original e o conversor YUV do PVR) so existe no build "
+                     "de validacao (-DBS_VALIDACAO=ON, preset msvc-validacao); o produto usa os filmes nativos (N8.5)\n");
+        return 2;
     }
 #endif
     if (a.version) {

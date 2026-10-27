@@ -144,8 +144,23 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
         for (int i = 0; i < 8; ++i) std::memcpy(vram_data() + vram_offset64(off + 4 * i), &data[i], 4);
         return true;
     }
+#if !BS_VALIDACAO
+    // N8.5 (docs/N8-5-FILMES.md): o conversor YUV so serve o filme legado (Sofdec); no produto os filmes sao nativos e o
+    // jogo nunca o usa (sonda e referencias). Um macrobloco aqui e um componente removido: erro explicito.
+    ta_yuv_removed(c, "macrobloco no conversor YUV do TA", p);
+#endif
     ta_yuv_write(c, data);
     return true;
+}
+
+[[noreturn]] void ta_yuv_removed(Sh4Context* c, const char* what, uint32_t where) {
+    static char msg[224];
+    std::snprintf(msg, sizeof msg,
+                  "%s (%08X): o filme legado (Sofdec) e o conversor YUV foram removidos do produto no N8.5 (os filmes "
+                  "sao nativos; o legado so existe no build de validacao)",
+                  what, where);
+    std::fprintf(stderr, "[ta] %s\n", msg);
+    sh4_fatal(c, msg, c->pc, where);
 }
 
 // --- conversor YUV (0x10800000): macroblocos YUV420/YUV422 -> textura YUV422 (UYVY) na

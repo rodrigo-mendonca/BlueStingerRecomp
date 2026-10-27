@@ -152,6 +152,9 @@ bool pvr_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
         return true;
     }
     if (p == kTaYuvTexCnt) {
+#if !BS_VALIDACAO
+        ta_yuv_removed(c, "leitura de TA_YUV_TEX_CNT", p);  // N8.5: so o filme legado le
+#endif
         v = ta_yuv_count();
         return true;
     }
@@ -286,6 +289,9 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const bool readOnly = p == kSpgStatus || p == kId || p == kRevision || p == kTaYuvTexCnt;
     if (!command && !readOnly) g_regs[(p - kBase) / 4] = v;
     if (p == kSpgLoad || p == kSpgVblankInt) time_provider().spg_changed();  // nova temporizacao do SPG
+#if !BS_VALIDACAO
+    if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_removed(c, "escrita no conversor YUV do TA", p);  // N8.5
+#endif
     if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_reset(reg(kTaYuvTexBase), reg(kTaYuvTexCtrl));
     return true;
 }

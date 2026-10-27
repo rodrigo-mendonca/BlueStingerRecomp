@@ -29,5 +29,7 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data);
 void     ta_yuv_reset(uint32_t base, uint32_t ctrl);
 void     ta_yuv_write(Sh4Context* c, const uint32_t* data);  // 32 bytes de macrobloco
 uint32_t ta_yuv_count();
+// N8.5: no produto (sem BS_VALIDACAO) o conversor YUV e um componente removido: erro explicito (so o filme legado o usa).
+[[noreturn]] void ta_yuv_removed(Sh4Context* c, const char* what, uint32_t where);
 
 } // namespace bs

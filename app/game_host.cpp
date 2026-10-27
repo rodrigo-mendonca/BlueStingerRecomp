@@ -695,7 +695,12 @@ void GameHost::threadMain() {
             transitional::gdfs::check_sizes(*files_);
             transitional::gdfs::install(transitional::boundary_registry(), *files_);
         }
-        // N5: filmes pelo provedor nativo (MP4 do Builder em data\video, mods em mods\video)
+        // N5: filmes pelo provedor nativo (MP4 do Builder em data\video, mods em mods\video). N8.5: o Sofdec original
+        // (--video legado) so existe no build de validacao.
+#if !BS_VALIDACAO
+        if (opt_.video == VideoProvider::Legacy)
+            throw std::runtime_error("o filme legado (Sofdec, --video legado) so existe no build de validacao");
+#endif
         if (opt_.video == VideoProvider::Native) {
             transitional::video::MwCoreOptions vo;
             vo.catalog      = {opt_.data / L"video", opt_.modVideo};
