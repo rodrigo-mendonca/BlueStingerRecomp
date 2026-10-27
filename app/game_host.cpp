@@ -35,7 +35,10 @@
 #include "mods/mod_api.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_video.h"
+#include "system/maple_bus.h"
+#if BS_VALIDACAO
 #include "maple/maple.h"
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -59,6 +62,10 @@ void onFatal(Sh4Context*, const char* what, uint32_t pc, uint32_t extra) {
     std::snprintf(b, sizeof(b), "%s em PC=%08X (valor %08X)", what, pc, extra);
     throw FatalError(b);
 }
+
+// N8.4: o soft reset (A+B+X+Y+START) pede o menu do sistema (MISC r4 = 1): no console o jogo sai para o menu do BIOS;
+// aqui a sessao termina sem erro (o servico nativo registra a mensagem). Nao e recuo: o pedido tem esse significado.
+[[noreturn]] void onSystemMenu(Sh4Context*) { throw StopRequest{}; }
 
 // Diagnostico: BS_APP_TRACE=1 registra as etapas do encerramento.
 // Hora do sistema no boot (RTC, segundos desde 1950). Jogo normal: hora local do host. Testes
@@ -97,7 +104,7 @@ const uint8_t* g_padRam   = nullptr;
 
 // Leituras do controle da porta A: no legado, os GET_CONDITION respondidos pelo Maple; no
 // --controles nativo (N3-2), as leituras do modelo do pd nativo (mesmo indice).
-uint64_t controllerReads() { return transitional::pad::installed() ? transitional::pad::reads() : maple_cond_seq(0); }
+uint64_t controllerReads() { return transitional::pad::installed() ? transitional::pad::reads() : periph_cond_seq(0); }
 
 // Diagnostico BS_RAM_WATCH=<arquivo>:<end>[,<end>...] (N5, START durante os filmes): a cada VBlank, as
 // palavras de 32 bits vigiadas que mudaram (vblank, passo, leituras do controle, endereco, valor). Durante
@@ -435,7 +442,7 @@ void GameHost::applyRequests() {
 // atende pedidos de parada.
 void GameHost::vblank() {
     const uint64_t n   = vblanks_.fetch_add(1) + 1;
-    maple_vblank_in();  // N3-0: indice "vblank" dos roteiros e negativo do ponto de amostragem
+    periph_vblank_in();  // N3-0: indice "vblank" dos roteiros e negativo do ponto de amostragem
     applyRequests();  // N7c: pedidos do menu (volumes, idioma das legendas, renderizador)
     transitional::free_camera::vblank(n);  // N7c: um passo da camera livre (nada no modo Original)
     transitional::sound::vblank(n);  // N6: tempo logico do mixer nativo (nada se os provedores sao o legado)
@@ -612,14 +619,27 @@ void GameHost::threadMain() {
         bs::cri_diag_install();    // diagnostico BS_CRI_DIAG (N2b-0; desligado por padrao)
         transitional::pad::probe_install();  // teste de contrato BS_PAD_CONTRATO (N3-0; desligado por padrao)
         transitional::pad::closure_install();  // prova de fechamento BS_PAD_FECHAMENTO (N3-2; desligado por padrao)
-        // N3-2: controles pelo provedor nativo do SDK pd; o Maple fica sem controle (a camada per
-        // continua, para a VMU ate o N4). A mutacao "maple" (negativo) deixa o controle no Maple.
+        // N3-2: controles pelo provedor nativo do SDK pd; a camada per continua a sondar as portas.
+        // N8.4: no produto o barramento e o servico sem dispositivos (system/maple_bus). O modelo do Maple (controle no
+        // barramento: --controles legado, a bu original: --saves legado, o negativo "maple") so existe na validacao.
+        const char*    mv  = std::getenv("BS_PAD_NATIVO_MUTACAO");
+        const uint32_t mut = transitional::pad::parse_mutations(mv ? mv : "");
+        const bool     mapleModel = opt_.controls == ControlsProvider::Legacy || opt_.saves == SavesProvider::Legacy ||
+                                (opt_.controls == ControlsProvider::Native && (mut & transitional::pad::kNatMaple));
+        if (mapleModel) {
+#if BS_VALIDACAO
+            periph_use(maple_bus_backend());
+            maple_set_controller_present(opt_.controls == ControlsProvider::Legacy || (mut & transitional::pad::kNatMaple));
+#else
+            throw std::runtime_error("o modelo do Maple (--controles legado, --saves legado, BS_PAD_NATIVO_MUTACAO=maple) "
+                                     "so existe no build de validacao");
+#endif
+        } else {
+            periph_use(nullptr);
+        }
         if (opt_.controls == ControlsProvider::Native) {
             if (!opt_.input) throw std::runtime_error("--controles nativo sem fonte de entrada (InputSystem)");
             if (std::getenv("BS_PAD_CONTRATO")) throw std::runtime_error("BS_PAD_CONTRATO confere o servidor legado: use --controles legado");
-            const char*    mv  = std::getenv("BS_PAD_NATIVO_MUTACAO");
-            const uint32_t mut = transitional::pad::parse_mutations(mv ? mv : "");
-            maple_set_controller_present((mut & transitional::pad::kNatMaple) != 0);
             // coleta onde o legado entrega o fim do DMA: logo depois do servidor com tempo por ciclos
             // (nativo/legado), no disparo seguinte com o tempo experimental (pad_adapter.cpp, collect)
             transitional::pad::install(transitional::boundary_registry(), *opt_.input, mut,
@@ -814,6 +834,7 @@ void GameHost::threadMain() {
         } else if (!opt_.data.empty()) {
             syscall_service_set_data(std::make_unique<disc::RuntimeDisc>(opt_.data));
         }
+        syscall_service_set_menu_hook(onSystemMenu);
         epoch_       = std::chrono::steady_clock::now();
         epochVblank_ = 0;
         workStart_ = rateStart_ = epoch_;
@@ -831,6 +852,7 @@ void GameHost::threadMain() {
     if (!sh4_threads_shutdown() && err.empty()) err = "falha ao liberar as fibras das threads do guest";
     if (traceOn()) std::fprintf(stderr, "[host] fibras liberadas\n");
     syscall_service_set_data(nullptr);  // fecha os dados do jogo
+    syscall_service_set_menu_hook(nullptr);
 #if BS_VALIDACAO
     gdrom_set_disc(nullptr);  // fecha a imagem de disco do modelo HLE
 #endif
@@ -842,15 +864,18 @@ void GameHost::threadMain() {
         std::fputs(transitional::pad::summary().c_str(), stderr);
         transitional::pad::uninstall(transitional::boundary_registry());
     }
+#if BS_VALIDACAO
     maple_set_controller_present(true);
+#endif
     {
-        const MapleCounters m = maple_counters();
+        const MapleCounters m = periph_counters();
         std::fprintf(stderr, "[maple] DMAs %llu; porta A: DEVICE_INFO %llu, GET_CONDITION %llu; respostas do controle %llu, "
                              "leituras da fonte %llu\n",
                      static_cast<unsigned long long>(m.dmas), static_cast<unsigned long long>(m.devInfo[0]),
                      static_cast<unsigned long long>(m.getCond[0]), static_cast<unsigned long long>(m.controllerResponses),
                      static_cast<unsigned long long>(m.sourceReads));
     }
+    periph_use(nullptr);  // N8.4: a proxima sessao escolhe de novo
     // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
     std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
     if (!transitional::time::installed()) transitional::time::uninstall();  // o contador de passos do legado

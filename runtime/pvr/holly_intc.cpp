@@ -14,7 +14,7 @@
 #include "debug/intc_trace.h"
 
 #include "pvr/pvr_regs.h"
-#include "maple/maple.h"
+#include "system/maple_bus.h"
 #include "pvr/pvr_video.h"
 
 #include <array>
@@ -65,7 +65,7 @@ void update(uint64_t now) {
     // fim do DMA do Maple: bit 12
     if (due & kDueMaple) {
         reg(kIstNrm) |= kIstMapleDma;
-        maple_dma_take();
+        periph_dma_take();
     }
     g_last = now;
     if (due && g_intc_trace) {

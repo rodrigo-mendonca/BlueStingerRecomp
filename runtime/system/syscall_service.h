@@ -9,7 +9,9 @@
 //    setores dos dados do jogo (o RuntimeDisc nativo; no jogo, 2 setores de metadados do volume no boot);
 //  - FLASHROM: so a particao 2 (0x1C000, 16 KB): INFO, READ, WRITE (a flash so apaga bits: AND) e DELETE, em memoria,
 //    em branco (0xFF) a cada sessao (decisao do mantenedor: volatil, como as referencias);
-//  - SYSINFO: so ID (ponteiro para 0x8C000068).
+//  - SYSINFO: so ID (ponteiro para 0x8C000068);
+//  - MISC r4 = 1 (8C15E9C4, o soft reset A+B+X+Y+START): o menu do sistema. O console sairia do jogo para o menu do
+//    BIOS; aqui a sessao termina pelo gancho do host (syscall_service_set_menu_hook), com mensagem. Sem gancho, erro.
 // Qualquer outro pedido (outra funcao, comando, particao, faixa ou vetor) e um componente removido do produto: erro
 // explicito (sh4_fatal), contado, sem recuo silencioso. O modelo HLE (hle/bios, gdrom/gdrom, hle/flashrom) fica so na
 // validacao (--arquivos legado, --flash, --sistema hle, BS_GDROM_TIMING) e nas ferramentas.
@@ -50,8 +52,12 @@ struct SyscallCounts {
     uint64_t cmdInit = 0, cmdVersion = 0, cmdDmaRead = 0, sectors = 0;
     uint64_t flashInfo = 0, flashRead = 0, flashWrite = 0, flashDelete = 0;
     uint64_t sysinfoId = 0;
+    uint64_t menuExit = 0;  // MISC r4 = 1: o jogo pediu o menu do sistema (soft reset)
     uint64_t refused = 0;  // pedidos fora do contrato (erro explicito; meta 0)
 };
 const SyscallCounts& syscall_service_counts();
+// Gancho do menu do sistema (MISC r4 = 1): o host encerra a sessao (nao volta; nullptr tira).
+using MenuHook = void (*)(Sh4Context*);
+void syscall_service_set_menu_hook(MenuHook hook);
 
 } // namespace bs

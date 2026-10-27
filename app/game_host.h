@@ -74,12 +74,15 @@ class InputSystem;
 // Provedor dos controles (N3, docs/N3-PLANO.md): nativo (padrao desde o fim do N3) = o SDK pd e
 // alimentado direto (transitional/pad_adapter), sem controle no Maple; legado (fallback temporario)
 // = o Maple responde como controle e le o InputSystem pela ponte.
-enum class ControlsProvider { Legacy, Native };
+// N8.4: None = nenhum adaptador e o barramento sem dispositivos (so jogos falsos dos testes, sem o SDK pd; a linha de
+// comando nao o oferece). Legacy so existe no build de validacao.
+enum class ControlsProvider { Legacy, Native, None };
 
 // Provedor dos saves (N4, docs/N4-PREPARACAO.md): nativo (padrao desde o fim do N4) = a API bu
 // atendida por transitional/bu_adapter sobre arquivos em `savesRoot` (um envelope por slot);
 // legado (fallback temporario) = a biblioteca bu original, sem VMU no Maple ("VMU not found").
-enum class SavesProvider { Legacy, Native };
+// N8.4: None = sem adaptador da bu (jogos falsos dos testes); Legacy so no build de validacao.
+enum class SavesProvider { Legacy, Native, None };
 
 // Provedor dos filmes (N5, docs/N5-PLANO.md): nativo (padrao desde o fim do N5) = as entradas MW da
 // funcao de video do jogo atendidas por transitional/video_adapter (MP4 do Builder em data\video,

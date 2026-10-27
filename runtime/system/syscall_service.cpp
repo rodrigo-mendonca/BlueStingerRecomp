@@ -43,6 +43,7 @@ std::array<uint8_t, kFlashPartSize> g_part;
 std::unique_ptr<disc::RuntimeDisc> g_data;
 const SysDiscBackend*              g_backend = nullptr;
 SyscallCounts                      g_counts;
+MenuHook                           g_menuHook = nullptr;
 
 void log(const char* what, const Sh4Context* c) {
     static const bool on = std::getenv("BS_SISTEMA_LOG") != nullptr;
@@ -239,7 +240,16 @@ void sysinfo(Sh4Context* c) {
 
 void romfont(Sh4Context* c) { removed(c, "ROMFONT", kSyscallRomfont, "vetor", kBiosVecRomfont); }
 void gdrom2(Sh4Context* c) { removed(c, "GDROM2", kSyscallGdrom2, "vetor", kBiosVecGdrom2); }
-void misc(Sh4Context* c) { removed(c, "MISC", kSyscallMisc, "vetor", kBiosVecMisc); }
+void misc(Sh4Context* c) {
+    log("MISC", c);
+    // soft reset (A+B+X+Y+START, stub 8C15E9C4): o menu do sistema. O host encerra a sessao; nao volta.
+    if (c->r[4] == 1 && g_menuHook) {
+        ++g_counts.menuExit;
+        std::fprintf(stderr, "[sistema] o jogo pediu o menu do sistema (soft reset, pr=%08X): fim da sessao\n", c->pr);
+        g_menuHook(c);
+    }
+    removed(c, "MISC", kSyscallMisc, "vetor", kBiosVecMisc);
+}
 
 void     nativePoll(Sh4Context*) {}  // tudo termina dentro do EXEC_SERVER
 uint64_t nativeEvents() { return 0; }
@@ -283,5 +293,6 @@ uint64_t sys_disc_state_hash() { return g_backend ? g_backend->state_hash() : na
 uint64_t sys_disc_event_count() { return g_backend ? g_backend->event_count() : nativeEvents(); }
 
 const SyscallCounts& syscall_service_counts() { return g_counts; }
+void                 syscall_service_set_menu_hook(MenuHook hook) { g_menuHook = hook; }
 
 } // namespace bs

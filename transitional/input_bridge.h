@@ -27,9 +27,11 @@ float   trigger_from_byte(uint8_t b);
 native::input::ControllerState to_controller(const PadState& p);
 PadState                       to_pad(const native::input::ControllerState& s);
 
+#if BS_VALIDACAO
 // Fonte do runtime que tira a amostra de `sys` a cada leitura do Maple (porta A; as demais vazias
-// como sempre). nullptr desinstala. O dono de `sys` e o chamador.
+// como sempre). nullptr desinstala. O dono de `sys` e o chamador. N8.4: so na validacao (o modelo do Maple).
 void install(native::input::InputSystem* sys);
+#endif
 
 // Fonte de teste do InputSystem a partir de uma fonte do runtime (roteiros, gameplay assistido,
 // teclado e XInput do modo BS_INPUT=host): o estado vem da fonte e passa pelas conversoes.

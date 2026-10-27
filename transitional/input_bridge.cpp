@@ -21,6 +21,7 @@ constexpr Pair kButtons[] = {{kPadC, ni::C},          {kPadB, ni::B},        {kP
                              {kPadLeft, ni::DpadLeft}, {kPadRight, ni::DpadRight}, {kPadZ, ni::Z},
                              {kPadY, ni::Y},          {kPadX, ni::X},        {kPadD, ni::D}};
 
+#if BS_VALIDACAO  // N8.4: a ponte para o Maple (controle no barramento) so existe na validacao
 class LatchSource final : public InputSource {
 public:
     explicit LatchSource(ni::InputSystem* s) : sys_(s) {}
@@ -33,6 +34,7 @@ public:
 private:
     ni::InputSystem* sys_;
 };
+#endif
 
 } // namespace
 
@@ -69,7 +71,9 @@ PadState to_pad(const ni::ControllerState& s) {
     return p;
 }
 
+#if BS_VALIDACAO
 void install(ni::InputSystem* sys) { input_set_source(sys ? std::make_unique<LatchSource>(sys) : nullptr); }
+#endif
 
 ni::SampleFn from_runtime_source(std::shared_ptr<InputSource> src) {
     return [src = std::move(src)](const ni::SampleContext& ctx) { return to_controller(src->read(0, ctx.sample)); };

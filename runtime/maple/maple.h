@@ -3,11 +3,12 @@
 // tabela de comandos em SB_MDSTAR, respostas dos dispositivos gravadas nos buffers de
 // recepcao e fim de DMA em ISTNRM bit 12. M4: controle padrao na porta A sem unidades
 // de expansao (sem VMU); portas B-D vazias.
+// N8.4: modelo de validacao e das ferramentas (bs_runtime_hle); o produto usa o barramento sem dispositivos
+// (system/maple_bus), que reproduz este modelo sem controle. Os consumidores leem pela fachada periph_*.
 #include "cpu/sh4_context.h"
+#include "system/maple_bus.h"
 
 namespace bs {
-
-constexpr uint32_t kIstMapleDma = 1u << 12;
 
 void maple_reset();
 
@@ -39,14 +40,9 @@ void     maple_dma_take();
 void maple_set_controller_present(bool present);
 bool maple_controller_present();
 
-// Contadores do barramento (prova de fechamento do N3-2; sempre ligados, so somas).
-struct MapleCounters {
-    uint64_t dmas = 0;                                     // disparos (MDST = 1)
-    uint64_t devInfo[4] = {}, getCond[4] = {}, other[4] = {};  // quadros enviados por porta
-    uint64_t controllerResponses = 0;                       // quadros respondidos pelo controle da porta A
-    uint64_t sourceReads = 0;                               // consultas a fonte de entrada (read/connected)
-};
 MapleCounters maple_counters();
 void          maple_counters_reset();
+// Este modelo como provedor da fachada periph_* (validacao: --controles legado, --saves legado, negativos).
+const PeriphBackend* maple_bus_backend();
 
 } // namespace bs

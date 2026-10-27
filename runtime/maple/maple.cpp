@@ -292,4 +292,10 @@ uint64_t maple_cond_seq(int port) { return port >= 0 && port < 4 ? g_condSeq[por
 
 void maple_dma_take() { g_due = 0; }
 
+const PeriphBackend* maple_bus_backend() {
+    static const PeriphBackend b{maple_reset, maple_read, maple_write, maple_vblank_in, maple_dma_take, maple_counters,
+                                 maple_cond_seq};
+    return &b;
+}
+
 } // namespace bs

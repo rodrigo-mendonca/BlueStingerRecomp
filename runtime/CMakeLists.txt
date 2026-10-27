@@ -21,6 +21,7 @@ add_library(bs_rt_nativo OBJECT
   memory/tmu_logical.cpp
   memory/sys_logical.cpp
   system/syscall_service.cpp
+  system/maple_bus.cpp
 )
 list(APPEND BS_RT_PAPEIS nativo)
 
@@ -37,7 +38,6 @@ add_library(bs_rt_simulacao OBJECT
   pvr/holly_sb.cpp
   pvr/vram.cpp
   pvr/ta.cpp
-  maple/maple.cpp
   input/input.cpp
   boot/native_boot.cpp
   aica/aica_regs.cpp
@@ -78,7 +78,8 @@ endif()
 # N8.3: modelo HLE do BIOS, do drive de GD-ROM e da flash (o provedor legado de arquivos por setores, --flash e o tempo
 # reios). Fora do bs_runtime: o produto nao o liga; a validacao (bs_app_core com BS_VALIDACAO) e as ferramentas
 # (bs_runtime_cdi: Builder, bs-diff, testes com o CDI) sim.
-add_library(bs_rt_hle OBJECT hle/bios.cpp hle/flashrom.cpp gdrom/gdrom.cpp gdrom/data_source.cpp)
+add_library(bs_rt_hle OBJECT hle/bios.cpp hle/flashrom.cpp gdrom/gdrom.cpp gdrom/data_source.cpp
+  maple/maple.cpp)  # N8.4: o modelo do Maple (controle no barramento) tambem
 if(BS_VALIDACAO)
   list(APPEND BS_RT_PAPEIS hle)
 endif()

@@ -6,7 +6,7 @@
 
 #include "cpu/sh4_runtime.h"
 #include "system/system_area.h"
-#include "maple/maple.h"
+#include "system/maple_bus.h"
 #include "mods/mod_api.h"
 
 #include <array>
@@ -368,7 +368,7 @@ void closure_finish(bool nativeMode) {
     if (!f) return;
     std::fprintf(f, "modo\t%s\n", nativeMode ? "nativo" : "legado");
     for (const auto& [a, n] : k.fns) std::fprintf(f, "f_%08X\t%llu\n", a, (unsigned long long)n);
-    const MapleCounters m = maple_counters();
+    const MapleCounters m = periph_counters();
     std::fprintf(f, "maple_dmas\t%llu\nmaple_respostas_controle\t%llu\nmaple_leituras_fonte\t%llu\n",
                  (unsigned long long)m.dmas, (unsigned long long)m.controllerResponses, (unsigned long long)m.sourceReads);
     for (int p = 0; p < 4; ++p)

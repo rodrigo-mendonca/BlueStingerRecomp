@@ -1271,13 +1271,18 @@ std::unique_ptr<ni::InputSystem> setupInput(const Args& a, bool window, std::str
     // N3-2: no --controles nativo o pd nativo tira as amostras e o Maple nao tem controle nem
     // fonte (a ponte so fica no negativo BS_PAD_NATIVO_MUTACAO=maple). Sem fonte nenhuma, um
     // InputSystem vazio: controle presente e neutro, como o estado fixo do Maple no legado.
+    // N8.4: a ponte para o Maple (controle no barramento) so existe na validacao; o produto recusa antes o que a pede.
     if (a.controls == bs::ControlsProvider::Native) {
         if (!sys) sys = std::make_unique<ni::InputSystem>();
+#if BS_VALIDACAO
         const char* m = std::getenv("BS_PAD_NATIVO_MUTACAO");
         ib::install(m && std::strstr(m, "maple") ? sys.get() : nullptr);
+#endif
         return sys;
     }
+#if BS_VALIDACAO
     ib::install(sys.get());
+#endif
     return sys;
 }
 
@@ -1423,9 +1428,9 @@ const char* kUsage =
     "       tempo logico sem ciclos estimados, N2b-2; padrao no --headless: nativo = o estavel, por ciclos, e o\n"
     "       recuo; legado so para comparacao ate o N8)\n"
     "     --controles nativo|legado: provedor dos controles (padrao: nativo = o SDK de controles alimentado\n"
-    "       direto, sem controle no Maple; legado = pelo Maple emulado, fallback temporario)\n"
+    "       direto, sem controle no Maple; legado = pelo Maple emulado, so no build de validacao)\n"
     "     --saves nativo|legado: saves (padrao: nativo = arquivos em Documentos\\DC-Recomp\\Blue Stinger\\saves;\n"
-    "       legado = sem VMU, fallback temporario; --saves-portatil = saves\\ ao lado do executavel;\n"
+    "       legado = sem VMU, so no build de validacao; --saves-portatil = saves\\ ao lado do executavel;\n"
     "       --saves-pasta <dir> = outra pasta)\n"
     "     --saves-importar <arquivo.vms> | --saves-exportar <arquivo.vms> [--saves-nome BLUESTIN.00n]:\n"
     "       copia um save de VMU (VMS) para a pasta de saves, ou de la para fora, e sai\n"
@@ -1483,7 +1488,9 @@ int mainHeadless(Args& a) {
     const int rc = runHeadless(host, a);
     host.requestStop();
     host.join();
+#if BS_VALIDACAO
     ib::install(nullptr);  // a thread do jogo ja parou: a fonte pode sair antes do InputSystem
+#endif
     return rc;
 }
 
@@ -1755,7 +1762,9 @@ int mainWindow(Args& a) {
         std::fclose(g_recorder->f);
         g_recorder.reset();
     }
+#if BS_VALIDACAO
     ib::install(nullptr);
+#endif
     cleanup();
     return rc;
 }
@@ -1784,6 +1793,25 @@ int main(int, char**) {
                      "(-DBS_VALIDACAO=ON, preset msvc-validacao); o produto usa o servico nativo do sistema (N8.3)\n",
                      what);
         return 2;
+    }
+    // N8.4 (docs/N8-4-PERIFERICOS.md): o modelo do Maple (controle no barramento, bu original) e os diagnosticos dele
+    {
+        const char* mut  = std::getenv("BS_PAD_NATIVO_MUTACAO");
+        const char* what = a.controls == bs::ControlsProvider::Legacy ? "--controles legado"
+                           : a.saves == bs::SavesProvider::Legacy     ? "--saves legado"
+                           : mut && std::strstr(mut, "maple")         ? "BS_PAD_NATIVO_MUTACAO=maple"
+                                                                      : nullptr;
+        for (const char* v : {"BS_MAPLE_PORTS", "BS_MAPLE_FUNCAO", "BS_PAD_MUTACAO", "BS_PAD_LEITURAS"})
+            if (!what && std::getenv(v) && *std::getenv(v)) what = v;
+        if (!what && std::getenv("BS_MAPLE_DEBUG")) what = "BS_MAPLE_DEBUG";  // o modelo o liga so pela presenca (revisao Codex)
+        if (what) {
+            std::fprintf(stderr,
+                         "erro: %s (modelo do Maple: controle e VMU simulados no barramento) so existe no build de "
+                         "validacao (-DBS_VALIDACAO=ON, preset msvc-validacao); o produto usa os controles e saves "
+                         "nativos e o barramento sem dispositivos (N8.4)\n",
+                         what);
+            return 2;
+        }
     }
 #endif
     if (a.version) {

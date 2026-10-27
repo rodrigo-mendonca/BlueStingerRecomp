@@ -10,7 +10,7 @@
 #include "pvr/holly_sb.h"
 
 #include "cpu/sh4_runtime.h"
-#include "maple/maple.h"
+#include "system/maple_bus.h"
 #include "memory/sh4_dmac.h"
 #include "pvr/holly_intc.h"
 
@@ -59,14 +59,14 @@ bool removedRange(Sh4Context* c, uint32_t p, unsigned size, bool write, uint32_t
 void holly_sb_reset() {
     g_regs.fill(0);
     g_reported.fill(false);
-    maple_reset();
+    periph_reset();
 }
 
 bool holly_sb_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);
     if (removedRange(c, p, size, false, 0)) return true;
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
-    if (maple_read(c, a, v)) return true;
+    if (periph_read(c, a, v)) return true;
     if (p == kSbRev) {
         v = 0x0000000B;
         return true;
@@ -102,7 +102,7 @@ bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (removedRange(c, p, size, true, v)) return true;
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
-    if (maple_write(c, a, v)) return true;
+    if (periph_write(c, a, v)) return true;
     if (p != kSbRev) g_regs[(p - kBase) / 4] = v;
     if (p == kC2Dst) g_c2dstWritten = true;
     // Diagnostico: BS_PVR_DEBUG=1 registra o disparo do DMA do canal 2 (SB_C2DST)
