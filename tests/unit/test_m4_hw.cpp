@@ -413,6 +413,7 @@ BS_TEST(ta_yuv_converter_macroblocks_to_vram) {
 }
 #endif
 
+#if BS_VALIDACAO  // N8.7: o decodificador de texels da VRAM (pvr_texel.cpp) so existe na validacao
 // Textura YUV422 linear: pares de pixels na mesma palavra; cores pelos coeficientes do PowerVR2.
 BS_TEST(texture_yuv422_linear) {
     vram_reset();
@@ -458,3 +459,4 @@ BS_TEST(texture_vq_and_mipmap_offsets) {
     m.width = 8, m.height = 8;
     BS_CHECK(pvr_texture_supported(m) && pvr_texel(m, 0, 0) == 0xFFFF0000);
 }
+#endif

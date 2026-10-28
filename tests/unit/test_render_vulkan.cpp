@@ -5,6 +5,7 @@
 
 #include "render/fidelity_scenes.h"
 #include "render/frame_prep.h"
+#include "render/soft/soft_device.h"
 #include "render/vulkan/vk_device.h"
 
 #include <algorithm>
@@ -236,6 +237,78 @@ BS_TEST(render_vulkan_triangle_buffer_growth_rewrites_descriptors) {
         for (size_t i = 0; covered && i < bigImg.size(); ++i) covered = (bigImg[i] & 0xFFFFFF) == 0x20A040;
         BS_CHECK(covered);
         BS_CHECK(run_cl(*d, small, again) && again == first);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// N8.7: o renderizador em software sobre a IR (native/render/soft) e o Vulkan desenham as cenas fieis com as mesmas
+// contas (inclusive a fog por tabela e os volumes da lista 1): as provas na tolerancia da cena e as imagens inteiras
+// identicas (o modo fiel e bit a bit).
+BS_TEST(render_vulkan_equals_software_device) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        int compared = 0;
+        for (const auto& s : nr::fidelity_scenes()) {
+            if (!s.blocked.empty() || s.mode != nr::SceneMode::Faithful || s.image) continue;
+            nr::soft::SoftwareDevice  sw;
+            std::vector<nr::TextureHandle> hs;
+            for (const auto& t : s.textures) hs.push_back(sw.create_texture(t.desc, std::as_bytes(std::span<const uint32_t>(t.argb))).value());
+            nr::CommandList cl = s.cl;
+            for (size_t i = 0; i < cl.draws.size(); ++i)
+                cl.draws[i].state.texture = s.draw_texture[i] >= 0 ? hs[size_t(s.draw_texture[i])] : nr::TextureHandle{};
+            std::vector<uint32_t> soft, vk;
+            uint32_t              w = 0, h = 0;
+            BS_CHECK(sw.submit(cl).ok() && sw.read_frame(soft, w, h).ok());
+            BS_CHECK(run(*d, s, vk));
+            for (const auto& p : s.probes) {
+                const uint32_t got = soft.empty() ? 0 : soft[size_t(p.y) * s.cl.frame.width + p.x] & 0xFFFFFF;
+                if (!close(got, p.rgb, p.tolerance))
+                    std::fprintf(stderr, "  cena %s (%u,%u): software %06X, esperado %06X\n", s.name.c_str(), p.x, p.y, got, p.rgb);
+                BS_CHECK(close(got, p.rgb, p.tolerance));
+            }
+            size_t diff = 0;  // os 32 bits (o alfa tambem: DstAlpha/InvDstAlpha o leem; revisao Codex 20261028-103445)
+            for (size_t i = 0; i < std::min(soft.size(), vk.size()); ++i) diff += soft[i] != vk[i];
+            if (diff || soft.size() != vk.size())
+                std::fprintf(stderr, "  cena %s: software x Vulkan, %zu pixels diferentes\n", s.name.c_str(), diff);
+            BS_CHECK(diff == 0 && soft.size() == vk.size());
+            ++compared;
+        }
+        std::fprintf(stderr, "  cenas comparadas %d\n", compared);
+        BS_CHECK(compared >= 9);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
+
+// N8.7 (revisao Codex 20261028-115305): sem a profundidade crua, um volume que nao e aplicado (lista 3, aqui com 1/w
+// extremo) nao entra no intervalo da profundidade: a imagem continua igual a do software.
+BS_TEST(render_vulkan_ignored_volume_does_not_shift_depth_range) {
+    _putenv_s("BS_VK_SEM_PROFUNDIDADE_CRUA", "1");
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        _putenv_s("BS_VK_SEM_PROFUNDIDADE_CRUA", "");
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        BS_CHECK(!d->stats().raw_depth);
+        const std::vector<nr::FidelityScene> scenes = nr::fidelity_scenes();
+        const nr::FidelityScene*             base   = nullptr;
+        for (const auto& s : scenes)
+            if (s.name == "modificador_opaco") base = &s;
+        BS_CHECK(base != nullptr);
+        if (!base) return;
+        nr::FidelityScene s = *base;
+        nr::ModifierVolume m;
+        m.first_vertex = uint32_t(s.cl.vertices.size()), m.triangle_count = 1, m.list = nr::ListType::TranslucentModifier;
+        for (auto [x, y] : {std::pair{0.f, 0.f}, {64.f, 0.f}, {0.f, 64.f}}) s.cl.vertices.push_back({x, y, -1e30f, 0, 0, 0, 0});
+        s.cl.modifiers.push_back(m);
+        nr::soft::SoftwareDevice sw;
+        std::vector<uint32_t>    soft, vk;
+        uint32_t                 w = 0, h = 0;
+        BS_CHECK(sw.submit(s.cl).ok() && sw.read_frame(soft, w, h).ok());
+        BS_CHECK(run(*d, s, vk));
+        BS_CHECK(soft == vk && !soft.empty());
+        for (const auto& p : s.probes) BS_CHECK(close(vk[size_t(p.y) * s.cl.frame.width + p.x] & 0xFFFFFF, p.rgb, p.tolerance));
     }
     BS_CHECK(nr::vulkan_live_objects() == 0);
 }

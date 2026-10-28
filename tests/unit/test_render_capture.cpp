@@ -94,6 +94,7 @@ void loadTexture(uint32_t base, uint16_t seed) {  // 8x8 RGB565 twiddled
 }
 
 } // namespace
+#if BS_VALIDACAO  // o modo conferir: a IR contra o caminho do TA (N8.7: so na validacao)
 
 BS_TEST(render_capture_strip_is_one_draw) {
     CaptureScene s;
@@ -319,12 +320,13 @@ BS_TEST(render_capture_image_from_ir_ignores_live_registers) {
     const PvrFrame   fr  = rc::pvr_frame(f);
     BS_CHECK(fr == pvr_frame_from_regs());
     const auto       tri = rc::triangles(f);
-    const auto       a   = pvr_render_triangles(tri, fr, 32, 32);
+    const auto       a   = pvr_render_triangles(tri, {}, {}, fr, 32, 32);
     s.reg(0x080, 0), s.reg(0x0BC, 0xFFFFFFFF), s.reg(0x0C0, 0), s.reg(0x088, fb(5.f)), s.reg(0x098, 1);
     BS_CHECK(!(pvr_frame_from_regs() == fr));
-    BS_CHECK(pvr_render_triangles(tri, fr, 32, 32) == a);
+    BS_CHECK(pvr_render_triangles(tri, {}, {}, fr, 32, 32) == a);
     s.expectClean();
 }
+#endif  // BS_VALIDACAO
 
 // N7b: --render nativo pelo caminho do jogo (registradores, FIFO do TA, STARTRENDER): a imagem do Vulkan vai para o
 // framebuffer. Texturas HD pelo contrato do N7a: a substituicao compativel do mesmo TextureId e usada; uma
@@ -377,6 +379,7 @@ BS_TEST(render_capture_native_vulkan_and_hd_replacement) {
     }
     rc::set_texture_replacements(nullptr);
 }
+#if BS_VALIDACAO  // o modo comparar: o rasterizador do caminho do TA (N8.7: so na validacao)
 
 // N7b (revisao Codex 2026-10-21): a IMAGEM INTEIRA do Vulkan contra a do software (BS_RENDER_IR=comparar) em cenas
 // pelo caminho do jogo: gouraud, sprite, recorte, textura bilinear com repeticao e espelho, HALF_OFFSET 1 e 3,
@@ -547,6 +550,7 @@ BS_TEST(render_capture_vulkan_full_image_matches_software) {
         if (std::string(c.name) == "profundidade_negativa") BS_CHECK(st.vk_negative_depth == 1);
     }
 }
+#endif  // BS_VALIDACAO
 
 // Recuo para o software (revisao Codex 2026-10-21): textura que nao chega ao Vulkan = este render no software
 // (nunca um desenho sem textura); falha do dispositivo = o Vulkan sai e o resto da sessao fica no software.

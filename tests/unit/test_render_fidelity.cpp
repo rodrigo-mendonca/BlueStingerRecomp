@@ -39,6 +39,47 @@ struct Frag {
     uint32_t argb;
     float    tri_key;
 };
+// N8.7: fog por tabela (o mesmo modelo de soft_raster.cpp, em double): z = densidade x 1/w em [1, 256)
+double fog_alpha(const nr::FrameParams& f, double inv_w) {
+    const int    ex = int(int8_t(f.fog_density & 0xFF));
+    const double z  = std::min(std::max(double((f.fog_density >> 8) & 0xFF) / 128.0 * std::ldexp(1.0, ex) * inv_w, 1.0), 255.9999);
+    const int    e  = int(std::floor(std::log2(z)));
+    const double m  = z * 16.0 / std::ldexp(1.0, e) - 16.0;
+    const int    i  = std::min(127, int(std::floor(m)) + e * 16);
+    const double fr = m - std::floor(m);
+    const double hi = (f.fog_table[size_t(i)] >> 8) / 255.0, lo = (f.fog_table[size_t(i)] & 0xFF) / 255.0;
+    return hi + (lo - hi) * fr;
+}
+uint32_t fogged(const nr::FrameParams& f, uint32_t argb, double inv_w) {
+    const double a = fog_alpha(f, inv_w);
+    uint32_t     o = argb & 0xFF000000u;
+    for (int sh = 0; sh <= 16; sh += 8) {
+        const double c = ((argb >> sh) & 0xFF) / 255.0, g = ((f.fog_color >> sh) & 0xFF) / 255.0;
+        o |= uint32_t(std::lround((c + (g - c) * a) * 255)) << sh;
+    }
+    return o;
+}
+// N8.7: o estado de um volume no centro do pixel: paridade dos triangulos a frente de `depth` (ligado, a partir de
+// or_from: OU); `covered`: algum triangulo cobre o ponto
+bool volume_parity(const nr::FidelityScene& s, const nr::ModifierVolume& m, double x, double y, float depth, bool& covered,
+                   bool start) {
+    bool parity = start;  // o estado que ficou de um volume aberto
+    covered     = false;
+    for (uint32_t k = 0; k < m.triangle_count; ++k) {
+        const auto& a = s.cl.vertices[m.first_vertex + 3 * k];
+        const auto& b = s.cl.vertices[m.first_vertex + 3 * k + 1];
+        const auto& c = s.cl.vertices[m.first_vertex + 3 * k + 2];
+        const double area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        if (area == 0) continue;
+        const double w0 = ((b.x - x) * (c.y - y) - (b.y - y) * (c.x - x)) / area;
+        const double w1 = ((c.x - x) * (a.y - y) - (c.y - y) * (a.x - x)) / area;
+        const double w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        covered = true;
+        if (a.inv_w * w0 + b.inv_w * w1 + c.inv_w * w2 > depth) parity = k >= m.or_from ? true : !parity;
+    }
+    return parity;
+}
 uint32_t sat_add(uint32_t a, uint32_t b) {
     uint32_t o = 0;
     for (int sh = 0; sh <= 16; sh += 8) o |= std::min(255u, ((a >> sh) & 0xFF) + ((b >> sh) & 0xFF)) << sh;
@@ -98,6 +139,7 @@ std::vector<Frag> fragments(const nr::FidelityScene& s, uint32_t px, uint32_t py
             }
             if (d.state.offset_color) argb = (argb & 0xFF000000u) | sat_add(argb & 0xFFFFFF, off);
             const float iw = float(a.inv_w * w0 + b.inv_w * w1 + c.inv_w * w2);
+            if (d.state.fog == nr::Fog::Table) argb = fogged(s.cl.frame, argb, iw);
             out.push_back({di, t, iw, argb, (a.inv_w + b.inv_w + c.inv_w) / 3.0f});
         }
     }
@@ -109,12 +151,35 @@ int64_t evaluate(const nr::FidelityScene& s, uint32_t px, uint32_t py, bool tria
     const auto fr    = fragments(s, px, py);
     uint32_t   color = s.cl.frame.clear_color & 0xFFFFFF;
     float      depth = 0;  // fundo: o mais longe
+    bool       shadow = false;
     for (const auto& f : fr) {
         const auto& st = s.cl.draws[f.draw].state;
         if (st.list != nr::ListType::Opaque) continue;
         if (!depth_pass(st.depth, f.inv_w, depth)) continue;
-        color = f.argb & 0xFFFFFF;
+        color = f.argb & 0xFFFFFF, shadow = st.shadow;
         if (st.depth_write) depth = f.inv_w;
+    }
+    // N8.7: volumes da lista 1 (fechados, inclusao): dentro se a paridade a frente da profundidade e impar
+    if ((s.cl.frame.shadow_scale & 0x100) && shadow) {
+        // resultado acumulado na ordem dos volumes: inclusao (dentro) liga; exclusao: so continua o que nao esta dentro
+        bool inside = false, pending = false;  // pending: o estado de um volume aberto que segue para o proximo
+        for (const auto& m : s.cl.modifiers) {
+            if (m.list != nr::ListType::OpaqueModifier) continue;
+            bool       covered = false;
+            const bool p       = volume_parity(s, m, px + 0.5, py + 0.5, depth, covered, pending);
+            if (!m.closed || !covered) {  // a soma so toca os pixels cobertos: o estado continua
+                pending = p;
+                continue;
+            }
+            pending = false;
+            inside  = m.inclusion ? (inside || p) : (inside && !p);
+        }
+        if (inside) {
+            const uint32_t k = s.cl.frame.shadow_scale & 0xFF;
+            uint32_t       o = 0;
+            for (int sh = 0; sh <= 16; sh += 8) o |= ((((color >> sh) & 0xFF) * k) >> 8) << sh;
+            color = o;
+        }
     }
     const uint32_t ref = uint32_t(std::lround(s.cl.frame.punch_through_ref * 255));
     const Frag*    pt  = nullptr;
@@ -169,8 +234,10 @@ BS_TEST(render_fidelity_scenes_coherent) {
         }
         (s.mode == nr::SceneMode::Faithful ? faithful : enhancement)++;
     }
-    BS_CHECK(faithful >= 9 && enhancement >= 1 && blocked == 2);
-    for (const char* n : {"modificador_opaco", "modificador_translucido"}) BS_CHECK(find(v, n) && !find(v, n)->blocked.empty());
+    BS_CHECK(faithful >= 11 && enhancement >= 1 && blocked == 1);
+    BS_CHECK(find(v, "modificador_translucido") && !find(v, "modificador_translucido")->blocked.empty());
+    BS_CHECK(find(v, "modificador_opaco") && find(v, "modificador_opaco")->blocked.empty());  // N8.7: fiel
+    BS_CHECK(find(v, "fog_tabela") && find(v, "fog_tabela")->blocked.empty());
 }
 
 // Os valores esperados de todas as provas saem da geometria pelo avaliador independente (revisao Codex

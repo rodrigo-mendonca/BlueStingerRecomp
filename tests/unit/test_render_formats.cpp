@@ -6,16 +6,21 @@
 
 #include "cpu/sh4_context.h"
 #include "cpu/sh4_mem.h"
+#include "cpu/sh4_runtime.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_render.h"
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
+#include "render/texture_convert.h"
+#include "render_capture.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 #include <execution>
 #include <vector>
 #include <xmmintrin.h>
@@ -58,7 +63,12 @@ struct Scene {
         const uint32_t plane[3 + 3 * 4] = {0, 0, 0, 0, 0, 1, bg, 32, 0, 1, bg, 0, 32, 1, bg};
         std::memcpy(vram_data(), plane, sizeof plane);
         reg(0x144, 0x80000000);  // TA_LIST_INIT
+#if !BS_VALIDACAO
+        // N8.7: no produto, o render vai pela IR (o renderizador em software sobre a captura)
+        transitional::render_capture::install(transitional::render_capture::Mode::Software);
+#endif
     }
+    ~Scene() { transitional::render_capture::install(transitional::render_capture::Mode::Off); }
 
     void reg(uint32_t off, uint32_t v) { sh4_write32(&c, 0xA05F8000 + off, v); }
     void ta(std::initializer_list<uint32_t> words) {
@@ -97,7 +107,7 @@ void loadTexture() {
     for (uint32_t y = 0; y < 8; ++y)
         for (uint32_t x = 0; x < 8; ++x) {
             const uint16_t v = x < 4 ? 0xF800 : 0x07E0;
-            const uint32_t i = pvr_twiddle(x, y, 8, 8);
+            const uint32_t i = bs::native::render::twiddle_index(x, y, 8, 8);
             std::memcpy(vram_data() + vram_offset64(kTex + 2 * i), &v, 2);
         }
 }
@@ -419,7 +429,7 @@ BS_TEST(render_texture_bilinear_and_point) {
         for (uint32_t y = 0; y < 8; ++y)
             for (uint32_t x = 0; x < 8; ++x) {
                 const uint16_t v = x < 4 ? 0x0000 : 0xFFFF;
-                std::memcpy(vram_data() + vram_offset64(kTex + 2 * pvr_twiddle(x, y, 8, 8)), &v, 2);
+                std::memcpy(vram_data() + vram_offset64(kTex + 2 * bs::native::render::twiddle_index(x, y, 8, 8)), &v, 2);
             }
         fullQuad(s, 0x8000000Au, kIspAlways, kTspOpaque | (filter << 13), kTcw565, 0xFFFFFFFF, 0, -0.015625f,
                  0.984375f);
@@ -790,3 +800,34 @@ BS_TEST(render_punch_through_ignores_zwrite_disable) {
     s.render();
     BS_CHECK(s.px16(3, 3) == 0xF800);
 }
+
+#if !BS_VALIDACAO
+// N8.7 (revisao Codex 20261028-115305): no produto, um poligono que o PVR desenharia mas a IR nao representa (textura
+// bump, dois volumes) e erro explicito: o render nao publica um quadro sem ele.
+namespace {
+[[noreturn]] void throwingFatal(Sh4Context*, const char* what, uint32_t, uint32_t) { throw std::runtime_error(what); }
+}  // namespace
+BS_TEST(render_product_unsupported_state_is_explicit_error) {
+    for (const bool twoVolumes : {false, true}) {
+        Scene          s(0xFF000000u);
+        const uint32_t fb0 = s.px16(16, 16);
+        if (twoVolumes) s.global(0x80000042u, kIspAlways, kTspOpaque);  // PCW bit 6: dois volumes (global de 32 bytes)
+        else s.global(0x8000000Au, kIspAlways, kTspOpaque, (4u << 27) | (0x200000 >> 3));  // textura bump (formato 4)
+        for (auto [x, y] : {std::pair{0.f, 0.f}, {32.f, 0.f}, {0.f, 32.f}})
+            s.vtx(x, y, 1.f, 0, 0, 0xFFFF0000u, 0, x == 0.f && y == 32.f);
+        s.endList();
+        std::string msg;
+        sh4_set_fatal_handler(throwingFatal);
+        try {
+            s.render();
+        } catch (const std::runtime_error& e) {
+            msg = e.what();
+        }
+        sh4_set_fatal_handler(nullptr);
+        if (msg.find("que a IR nao representa") == std::string::npos)
+            std::fprintf(stderr, "  %s: %s\n", twoVolumes ? "dois volumes" : "bump", msg.c_str());
+        BS_CHECK(msg.find("que a IR nao representa") != std::string::npos);
+        BS_CHECK(s.px16(16, 16) == fb0);  // nada foi gravado no framebuffer
+    }
+}
+#endif

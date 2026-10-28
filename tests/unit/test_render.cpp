@@ -9,6 +9,7 @@
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
+#include "render_capture.h"
 
 #include <cstring>
 #include <vector>
@@ -47,7 +48,13 @@ struct RenderFixture {
         const uint32_t plane[3 + 3 * 4] = {0, 0, 0, 0, 0, 1, bg, 32, 0, 1, bg, 0, 32, 1, bg};
         std::memcpy(vram_data(), plane, sizeof plane);
         reg(0x144, 0x80000000);              // TA_LIST_INIT
+#if !BS_VALIDACAO
+        // N8.7: no produto, o render vai pela IR (o renderizador em software sobre a captura); na validacao, o
+        // rasterizador do caminho do TA. As mesmas provas valem para os dois
+        transitional::render_capture::install(transitional::render_capture::Mode::Software);
+#endif
     }
+    ~RenderFixture() { transitional::render_capture::install(transitional::render_capture::Mode::Off); }
 
     void reg(uint32_t off, uint32_t v) { sh4_write32(&c, 0xA05F8000 + off, v); }
 
@@ -74,6 +81,7 @@ struct RenderFixture {
 
 } // namespace
 
+#if BS_VALIDACAO  // N8.7: o decodificador de texels da VRAM (pvr_texel.cpp) so existe na validacao
 BS_TEST(pvr_twiddle_interleaves_y_in_even_bits) {
     BS_CHECK(pvr_twiddle(0, 1, 8, 8) == 1);
     BS_CHECK(pvr_twiddle(1, 0, 8, 8) == 2);
@@ -105,6 +113,8 @@ BS_TEST(pvr_texel_pal4_uses_low_nibble_first_and_selector) {
     BS_CHECK(pvr_texel(t, 0, 0) == 0xFFFF0000);
     BS_CHECK(pvr_texel(t, 0, 1) == 0xFF0000FF);  // indice twiddled 1 = (x 0, y 1)
 }
+
+#endif
 
 BS_TEST(render_background_plane_fills_framebuffer) {
     RenderFixture f(0x00FF0000);
