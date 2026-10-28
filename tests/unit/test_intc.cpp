@@ -102,11 +102,14 @@ BS_TEST(intc_masked_or_blocked_interrupt_is_not_delivered) {
 }
 
 // Boot do Blue Stinger: le o RTC em 0xA0710000/04 (segundos desde 1950, 16+16 bits).
+// N8.6: a area de som nativa (o produto) e o modelo da AICA (validacao) se comportam igual.
 BS_TEST(aica_rtc_counts_emulated_seconds_and_accepts_enabled_writes) {
+  for (const SoundBusBackend* bk : {static_cast<const SoundBusBackend*>(nullptr), aica_bus_backend()}) {
+    snd_bus_use(bk);
     std::vector<uint8_t> ram(16u << 20);
     Sh4Context           c{};
     c.ram = ram.data();
-    aica_rtc_set(0x906D38C5, 0);
+    snd_bus_rtc_set(0x906D38C5, 0);
     auto rtc = [&] { return (sh4_read32(&c, 0xA0710000) << 16) | sh4_read32(&c, 0xA0710004); };
     BS_CHECK(rtc() == 0x906D38C5);
     c.cycles = 3 * 200000000ull + 5;
@@ -119,7 +122,9 @@ BS_TEST(aica_rtc_counts_emulated_seconds_and_accepts_enabled_writes) {
     BS_CHECK(rtc() == 0x10000000);
     sh4_write32(&c, 0xA0710000, 0x2000);
     BS_CHECK(rtc() == 0x10000000);
-    BS_CHECK(aica_rtc_host_now() > 0x80000000u);  // depois de 2018 na epoca de 1950
+    BS_CHECK(aica_rtc_host_now() > 0x80000000u && snd_rtc_host_now() > 0x80000000u);  // depois de 2018 (epoca de 1950)
+    snd_bus_use(nullptr);
+  }
 }
 
 // N8.1, cadencia B (tempo logico): quem deixa um nivel entregavel fora de um atendimento pede o atendimento no
