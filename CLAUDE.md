@@ -44,6 +44,8 @@ legado` e `--saves legado` so na validacao (presets `msvc-validacao`, `msvc-rele
 do legado conferem o exe com `tools/dist/valida_exe.ps1`.
 N8.5 (`docs/N8-5-FILMES.md`): `--video legado` (Sofdec) e o conversor YUV so na validacao; `test_assistido`, `test_ordem`
 e `n5_e001` usam o exe de validacao; `test_gameplay` usa o filme nativo e o roteiro `passo_newgame_area1`.
+N8.6 (`docs/N8-6-AUDIO.md`): area de som nativa (`runtime/system/sound_bus`); o modelo da AICA, `--audio legado`,
+`BS_AUDIO=legado` e `BS_AICA_*` so na validacao (`bs_runtime_hle`); a bateria H do N6 roda no exe de validacao.
 
 Ferramentas:
 - `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:

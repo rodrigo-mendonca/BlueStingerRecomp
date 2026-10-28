@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) e N8.3 (boot, BIOS, flash e GD-ROM fora do produto) concluídos em 2026-10-26; N8.4 (controles, saves e Maple fora do produto) e N8.5 (filme legado e conversor YUV fora do produto) concluídos em 2026-10-27; N8.6–N8.8 em sequência pela autorização contínua.** Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) e N8.3 (boot, BIOS, flash e GD-ROM fora do produto) concluídos em 2026-10-26; N8.4 (controles, saves e Maple fora do produto), N8.5 (filme legado e conversor YUV fora do produto) e N8.6 (áudio legado e AICA fora do produto) concluídos em 2026-10-27; N8.7–N8.8 em sequência pela autorização contínua.** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -3163,6 +3163,65 @@ adapter atende as entradas MW (1 create, 1 start, 0 chamadas de outros players, 
 
 **N8.5 concluído.**
 
+### N8.6: áudio e AICA legados (2026-10-27)
+
+Executado pela autorização contínua do mantenedor até o fim do N8. Detalhes em `docs/N8-6-AUDIO.md`.
+
+**Inventário:** com o áudio nativo (o padrão desde o N6), o SDK de som recompilado só inicializa e consulta a área da
+AICA: a RAM de som, o controle `0x00702C00` e o RTC. Nenhum registrador de canal, DSP, temporizador ou interrupção do
+ARM7 é tocado, e nenhum DMA do G2 parte (sonda `BS_HW_PROBE`, 6 000 VBlanks).
+
+**Removido do produto:**
+- o modelo da AICA (`runtime/aica`), agora no `bs_runtime_hle`. Ele é substituído pela área de som nativa
+  (`runtime/system/sound_bus`: RAM, controle e RTC com o contrato medido e a mesma instrumentação das referências). Fora
+  do contrato, é erro explícito;
+- o `--audio legado`, os `--audio-efeitos/-falas/-musica legado` e o `BS_AUDIO=legado` (saída 2, e o `GameHost` também
+  recusa);
+- as `BS_AICA_TRACE`, `_LOG`, `_MUTACAO`, `_DUMP_AT` e `_LOG_TUDO`, recusadas pela presença;
+- a partida do DMA do G2 (bit 0 em `0x5F7818/38/58/78`), erro explícito.
+
+O `bs-diff` instala os modelos do Maple e da AICA, o que também corrige o `bs-diff` depois do N8.4.
+
+**Equivalência:** produto 16/16 com as 179 exceções e nenhuma nova. No unitário, a área nativa e o modelo dão as mesmas
+leituras, o mesmo `BS_CLOCK_LOG` e o mesmo `BS_INTC_TRACE`.
+
+**Revisão Codex `codex-20261027-111725`:** 2 achados aceitos e corrigidos:
+- `BS_AICA_DUMP_AT` e `BS_AICA_LOG_TUDO` entram na seleção e na recusa;
+- o teste compara a instrumentação, e a catraca cobre toda a matriz de recusa.
+
+| Teste | Resultado |
+|---|---|
+| unitários | 332/332 no produto, 331/331 na validação |
+| ctest Debug | 19/19, com e sem disco |
+| `test_pd_nativo` | 86/86 |
+| `test_saves` | 25/25 |
+| `test_n8_nativo` | 26/26 |
+| `test_n2b2` | 17/17 |
+| `test_assistido` | 28/28 |
+| `test_ordem` | 8/8 |
+| bateria H (validação) | H2, H3, H5, H6 aprovadas; H8 (com `-Build build\msvc-release`); H4 com 3 falhas anteriores ao N8.6 |
+| `test_builder` | 22/22 |
+| `test_projeto` | 18/18 |
+| `test_preview` | 12/12 |
+| `test_gameplay` | 4/4 |
+| H9 | 0 faltas |
+
+**H4 (pendência para o mantenedor):** o critério está desatualizado desde o `e13a123` (2026-10-23, espera do DMA no
+download nativo da música). O estado é igual em todos os passos comuns, mas o nativo fica 5 a 10 VBlanks atrás. Isso
+excede a tolerância de ±2 passos, e a linha da música ganhou o campo `espera do DMA` no fim. O exe de validação do N8.5
+(`49a9a08`, worktree) dá as mesmas falhas, com os quatro traços de estado por passo (LOAD e heliporto, legado e nativo)
+idênticos byte a byte. O critério não foi
+alterado.
+
+**Tamanho:** o produto tem 19 231 744 bytes (N8.5: 19 244 032).
+
+**Hashes:**
+- produto `FE89D6AB…`;
+- validação `3AC165DA…`;
+- rollback: a Preview do N8.5 em `dist\BlueStinger-Preview.n8-5-ced7570c`.
+
+**N8.6 concluído.**
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
@@ -3170,7 +3229,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c), N8.2 e N8.3 concluídos em 2026-10-26; N8.4 em 2026-10-27; N8.5–N8.8 pela autorização contínua até o fim do N8;
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c), N8.2 e N8.3 concluídos em 2026-10-26; N8.4, N8.5 e N8.6 em 2026-10-27; N8.7–N8.8 pela autorização contínua até o fim do N8;
 4. N9;
 5. N10.
 
@@ -3186,7 +3245,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4 **concluído** em 2026-10-27 (barramento sem dispositivos; Maple, `--controles/--saves legado` fora do produto); N8.5 **concluído** em 2026-10-27 (filme legado e conversor YUV fora do produto); N8.6–N8.8 não iniciadas | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4 **concluído** em 2026-10-27 (barramento sem dispositivos; Maple, `--controles/--saves legado` fora do produto); N8.5 **concluído** em 2026-10-27 (filme legado e conversor YUV fora do produto); N8.6 **concluído** em 2026-10-27 (área de som nativa; AICA, áudio legado e DMA do G2 fora do produto); N8.7–N8.8 não iniciadas | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

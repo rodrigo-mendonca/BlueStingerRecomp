@@ -773,6 +773,9 @@ Planejamento técnico concluído em 2026-10-24.
   - o soft reset (MISC r4 = 1) encerra a sessão pelo gancho do host.
 - **N8.5** (`docs/N8-5-FILMES.md`): os filmes do produto são só os nativos. O `--video legado` (Sofdec) e o conversor
   YUV do TA (`ta_yuv_removed`) são erro explícito no produto. Da biblioteca Sofdec recompilada, só a init roda.
+- **N8.6** (`docs/N8-6-AUDIO.md`): a área de som do produto é o serviço `system/sound_bus` (RAM de som, controle e RTC;
+  fachada `snd_bus_*`), sem AICA, ARM7 nem driver. O modelo da AICA (`runtime/aica`) fica no `bs_runtime_hle`, e o
+  áudio legado, as `BS_AICA_*` e a partida do DMA do G2 são erro explícito no produto.
 
 O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
 - **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico
