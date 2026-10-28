@@ -57,6 +57,8 @@ if (-not $vcvars -or -not (Test-Path $vcvars)) {
 $steps = @(
     @{ N = "build_release"; T = "build"; C = "cmake --build --preset msvc-release"; Stop = $true },
     @{ N = "build_debug";   T = "build"; C = "cmake --build --preset msvc-debug"; Stop = $true },
+    # N8.2: o build de validacao (legado, modelos e sondas; as suites do legado e a bateria H usam este exe)
+    @{ N = "build_validacao"; T = "build"; C = "cmake --build --preset msvc-validacao"; Stop = $true },
     @{ N = "build_mods";    T = "build"; C = "cmake --build build\msvc-release-mods"; Stop = $true },
     @{ N = "build_watch";   T = "build"; C = "cmake --build build\msvc-release-watch --target bluestinger"; Stop = $true },
     @{ N = "unitarios";     T = "cmd";   C = "build\msvc-debug\tests\bs_unit_tests.exe" },
@@ -65,6 +67,8 @@ $steps = @(
     @{ N = "make_builder";  T = "suite"; A = @("$dist\make_builder.ps1"); Stop = $true },
     @{ N = "make_preview";  T = "suite"; A = @("$dist\make_preview.ps1", "-Disc", $Disc); Stop = $true },
     @{ N = "test_preview";  T = "suite"; A = @("$dist\test_preview.ps1") },
+    # N8.0: as 16 referencias no exe da Preview (com mods\ ao lado), com as 179 excecoes de SPC aprovadas
+    @{ N = "referencias";   T = "cmd";   C = "python tools\dev\n8_referencias.py conferir --exe dist\BlueStinger-Preview\BlueStinger.exe --ref analysis\n8\referencias --excecoes config\n8_1_excecoes_spc.toml --paralelo 4"; Max = 7200 },
     @{ N = "test_gameplay"; T = "suite"; A = @("$dist\test_gameplay.ps1") },
     @{ N = "test_builder";  T = "suite"; A = @("$dist\test_builder.ps1", "-Disc", $Disc) },
     @{ N = "test_projeto";  T = "suite"; A = @("$dist\test_projeto.ps1", "-Disc", $Disc) },
@@ -80,7 +84,13 @@ $steps = @(
     @{ N = "test_pd_nativo"; T = "suite"; A = @("$dist\test_pd_nativo.ps1"); Max = 10800 },
     @{ N = "test_saves";    T = "suite"; A = @("$dist\test_saves.ps1") },
     # N5: o filme nativo no jogo (E001: conversao so dele, rotas legado x nativo, START medido)
-    @{ N = "n5_e001";       T = "suite"; A = @("$repo\tools\dev\n5_e001.ps1") }
+    @{ N = "n5_e001";       T = "suite"; A = @("$repo\tools\dev\n5_e001.ps1") },
+    # N8: produto nativo x validacao (test_n8_nativo) e a bateria H do N6: a validacao nos casos com o legado, o H4 em
+    # etapa propria e o H9 (tudo nativo, em tempo real) na Preview
+    @{ N = "test_n8_nativo"; T = "suite"; A = @("$dist\test_n8_nativo.ps1"); Max = 10800 },
+    @{ N = "n6_h";          T = "suite"; A = @("$repo\tools\dev\n6_h.ps1", "-Exe", "$repo\build\msvc-validacao\app\bluestinger.exe", "-ExeMods", "$repo\build\msvc-release-mods\app\bluestinger.exe", "-Data", "$repo\dist\BlueStinger-Preview\data", "-Build", "$repo\build\msvc-release", "-Casos", "H2,H3,H5,H6,H7,H8"); Max = 10800 },
+    @{ N = "n6_h4";         T = "suite"; A = @("$repo\tools\dev\n6_h.ps1", "-Exe", "$repo\build\msvc-validacao\app\bluestinger.exe", "-Data", "$repo\dist\BlueStinger-Preview\data", "-Build", "$repo\build\msvc-release", "-Casos", "H4", "-Saida", "$env:TEMP\bs-n6-h4") },
+    @{ N = "n6_h9";         T = "suite"; A = @("$repo\tools\dev\n6_h.ps1", "-Exe", "$repo\dist\BlueStinger-Preview\BlueStinger.exe", "-Casos", "H9", "-Saida", "$env:TEMP\bs-n6-h9") }
 )
 if ($env:BS_REGRESSAO_ETAPAS) { $steps = & $env:BS_REGRESSAO_ETAPAS $repo }
 $names = $steps | ForEach-Object { $_.N }
