@@ -131,12 +131,17 @@ function Fingerprint {
     } finally { Pop-Location }
 }
 
-# Chave da etapa: a base + o conteudo do script da propria suite (build/cmd so dependem da base)
+# Chave da etapa: a base + a definicao da etapa (tipo, comando, argumentos, disco, limite, parada; revisao Codex
+# 20261028-011732: etapas que usam o mesmo script com argumentos diferentes, ou um argumento editado aqui, nao reaproveitam
+# a aprovacao) + o conteudo do script da propria suite
 function StepKey($st, $base) {
-    if ($st.T -ne "suite") { return $base }
+    $def = "T=$($st.T)|C=$($st.C)|A=$(@($st.A) -join [char]31)|Disc=$($st.Disc)|Max=$($st.Max)|Stop=$($st.Stop)"
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $d = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($def))) -replace "-", "").Substring(0, 8)
+    if ($st.T -ne "suite") { return "$base-$d" }
     $f = $st.A[0]
     $h = if (Test-Path -LiteralPath $f) { (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.Substring(0, 16) } else { "ausente" }
-    return "$base-$h"
+    return "$base-$h-$d"
 }
 
 function LoadState {

@@ -89,6 +89,24 @@ Write-Host ("{0} R16 processo travado encerrado (PID {1}), rc=124 no estado, sai
 if (-not $ok) { $fails++ }
 Remove-Item "$root\travar"
 Run "R17 retomada refaz a etapa que estourou" "test_a"
+# revisao Codex 20261028-011732: a definicao da etapa entra na chave. Duas etapas com o mesmo script e argumentos
+# diferentes; mudar so o argumento de uma refaz so ela (o script anota "test_a" uma vez por execucao)
+function Etapas([string]$casoA2) {
+    @"
+param(`$repo)
+@(
+    @{ N = "make_x"; T = "suite"; A = @("`$repo\tools\dist\make_x.ps1"); Stop = `$true },
+    @{ N = "test_a"; T = "suite"; A = @("`$repo\tools\dist\test_a.ps1", "-Caso", "1") },
+    @{ N = "test_a2"; T = "suite"; A = @("`$repo\tools\dist\test_a.ps1", "-Caso", "$casoA2") },
+    @{ N = "test_b"; T = "suite"; A = @("`$repo\tools\dist\test_b.ps1") }
+)
+"@ | Out-File "$root\etapas.ps1" -Encoding utf8
+}
+Etapas "2"
+Run "R18 argumentos novos e etapa nova com o mesmo script" "test_a,test_a"
+Run "R19 nada mudou"                   ""
+Etapas "3"
+Run "R20 so o argumento de test_a2 mudou" "test_a"
 Remove-Item Env:\BS_REGRESSAO_ETAPAS
 if ($fails -eq 0) { Remove-Item -Recurse -Force $root } else { Write-Host "artefatos em $root" }
 Write-Host "falhas: $fails"
