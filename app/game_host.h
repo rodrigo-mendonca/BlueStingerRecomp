@@ -94,13 +94,14 @@ enum class VideoProvider { Legacy, Native, None };
 // Provedor dos efeitos sonoros (N6 fase D, docs/N6-PLANO.md secao 14): legado (padrao ate a prova de equivalencia)
 // = o SDK de som original na AICA emulada; nativo = as 5 entradas do SDK atendidas por transitional/sound_adapter
 // (BS_SND.MLT do disco do usuario, mixer nativo). Musica e falas continuam no legado nesta fase.
-enum class AudioEffectsProvider { Legacy, Native };
+// N8.6: None = sem adaptador e a area de som nativa (so os jogos falsos dos testes); Legacy so na validacao.
+enum class AudioEffectsProvider { Legacy, Native, None };
 // Provedor das falas (N6 fase E, docs/N6-PLANO.md secao 16): legado (padrao ate a prova) = o MW WAV da CRI original;
 // nativo = transitional/sound_adapter (WAV do disco do usuario; dublagem de mods em modsudio\<idioma>oz).
-enum class AudioVoicesProvider { Legacy, Native };
+enum class AudioVoicesProvider { Legacy, Native, None };
 // Provedor da musica (N6 fase F, docs/N6-PLANO.md secao 18): legado (padrao ate a prova) = o SDK de som e o driver
 // Manatee originais na AICA emulada; nativo = o sequenciador e o sintetizador Manatee em C++ (native/audio/manatee_*).
-enum class AudioMusicProvider { Legacy, Native };
+enum class AudioMusicProvider { Legacy, Native, None };
 // Renderizador (N7b, docs/N7-PLANO.md secao 14): software (padrao ate a aprovacao do Vulkan) = o rasterizador de
 // referencia; nativo = a IR do TA desenhada no Vulkan (transitional/render_capture + native/render/vulkan), com
 // recuo automatico para o software se nao houver Vulkan.

@@ -288,4 +288,9 @@ bool aica_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     return true;
 }
 
+const SoundBusBackend* aica_bus_backend() {
+    static const SoundBusBackend b{aica_regs_reset, aica_rtc_set, aica_reg_read, aica_reg_write, aica_ram};
+    return &b;
+}
+
 } // namespace bs

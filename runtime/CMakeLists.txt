@@ -22,6 +22,7 @@ add_library(bs_rt_nativo OBJECT
   memory/sys_logical.cpp
   system/syscall_service.cpp
   system/maple_bus.cpp
+  system/sound_bus.cpp
 )
 list(APPEND BS_RT_PAPEIS nativo)
 
@@ -40,7 +41,6 @@ add_library(bs_rt_simulacao OBJECT
   pvr/ta.cpp
   input/input.cpp
   boot/native_boot.cpp
-  aica/aica_regs.cpp
 )
 list(APPEND BS_RT_PAPEIS simulacao)
 
@@ -79,7 +79,8 @@ endif()
 # reios). Fora do bs_runtime: o produto nao o liga; a validacao (bs_app_core com BS_VALIDACAO) e as ferramentas
 # (bs_runtime_cdi: Builder, bs-diff, testes com o CDI) sim.
 add_library(bs_rt_hle OBJECT hle/bios.cpp hle/flashrom.cpp gdrom/gdrom.cpp gdrom/data_source.cpp
-  maple/maple.cpp)  # N8.4: o modelo do Maple (controle no barramento) tambem
+  maple/maple.cpp  # N8.4: o modelo do Maple (controle no barramento) tambem
+  aica/aica_regs.cpp)  # N8.6: e o da AICA (RAM de som, controle, RTC e os diagnosticos BS_AICA_*)
 if(BS_VALIDACAO)
   list(APPEND BS_RT_PAPEIS hle)
 endif()

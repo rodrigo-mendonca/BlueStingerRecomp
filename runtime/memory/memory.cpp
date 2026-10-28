@@ -5,7 +5,7 @@
 #include <map>
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
-#include "aica/aica_regs.h"
+#include "system/sound_bus.h"
 #include "cpu/sh4_intc.h"
 #include "debug/hw_probe.h"
 #include "memory/sh4_ccn.h"
@@ -192,7 +192,7 @@ bool hwRead(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
            pvr_reg_read(c, a, size, v) ||        // 0x005F8000
            holly_intc_read(c, a, size, v) ||     // 0x005F6900 (antes do system block)
            holly_sb_read(c, a, size, v) ||       // 0x005F6800
-           aica_reg_read(c, a, size, v) ||       // 0x00702C00, RTC
+           snd_bus_read(c, a, size, v) ||        // N8.6: area de som (RAM de som, 0x00702C00, RTC)
            irq_bridge_read(a, size, v) ||        // P4: INTEVT, ICR/IPR no tempo logico (N8.1: ponte)
            sh4_intc_read(a, size, v) ||          // P4: ICR/IPR, INTEVT
            sys_logical_read(a, size, v) ||       // P4: CCR, arrays do cache e PDTRA no tempo logico (N8.1)
@@ -213,7 +213,7 @@ bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
            pvr_reg_write(c, a, size, v) ||
            holly_intc_write(c, a, size, v) ||
            holly_sb_write(c, a, size, v) ||
-           aica_reg_write(c, a, size, v) ||
+           snd_bus_write(c, a, size, v) ||
            irq_bridge_write(a, size, v) ||
            sh4_intc_write(a, size, v) ||
            sys_logical_write(a, size, v) ||

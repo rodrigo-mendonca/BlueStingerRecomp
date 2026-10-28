@@ -1,6 +1,7 @@
 #include "debug/cri_diag.h"
 
-#include "aica/aica_regs.h"
+#include "aica/aica_regs.h"  // kAicaRamSize
+#include "system/sound_bus.h"
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
@@ -235,7 +236,7 @@ uint64_t             g_snapVb = 0, g_snapReports = 0;
 void snapRam(Sh4Context* c, std::vector<uint8_t>& out) {
     out.resize(kRamBytes + kAicaRamSize + kVramSize);  // RAM principal, de som e VRAM
     std::memcpy(out.data(), c->ram, kRamBytes);
-    std::memcpy(out.data() + kRamBytes, aica_ram(), kAicaRamSize);
+    std::memcpy(out.data() + kRamBytes, snd_bus_ram(), 2u << 20);  // N8.6: a area de som ativa
     std::memcpy(out.data() + kRamBytes + kAicaRamSize, vram_data(), kVramSize);
 }
 

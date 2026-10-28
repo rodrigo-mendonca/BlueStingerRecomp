@@ -1446,7 +1446,7 @@ const char* kUsage =
     "     --legendas <idioma>|auto|nenhuma: legendas de mods nos filmes e nas falas (padrao: auto = pt-BR se o pacote\n"
     "       estiver instalado, senao en-US; ou legendas.idioma do instalacao.toml; en-US recua para en)\n"
     "     --audio nativo|legado: os tres provedores de audio de uma vez (padrao: nativo; legado = SDK de som e driver\n"
-    "       Manatee originais na AICA emulada, fallback temporario); as opcoes abaixo valem sobre ela\n"
+    "       Manatee originais na AICA emulada, so no build de validacao); as opcoes abaixo valem sobre ela\n"
     "     --audio-efeitos nativo|legado: efeitos sonoros (padrao: nativo = BS_SND.MLT do disco pelo mixer nativo)\n"
     "     --audio-falas nativo|legado: falas (padrao: nativo = WAV do disco e dublagens de mods)\n"
     "     --audio-musica nativo|legado: musica (padrao: nativo = sequenciador e sintetizador Manatee em C++ com os\n"
@@ -1819,6 +1819,22 @@ int main(int, char**) {
                      "erro: --video legado (filme legado: Sofdec original e o conversor YUV do PVR) so existe no build "
                      "de validacao (-DBS_VALIDACAO=ON, preset msvc-validacao); o produto usa os filmes nativos (N8.5)\n");
         return 2;
+    }
+    // N8.6 (docs/N8-6-AUDIO.md): o audio legado (SDK de som e driver originais na AICA) e o modelo da AICA
+    {
+        const char* what = a.audioEffects == bs::AudioEffectsProvider::Legacy ? "efeitos legados (--audio/--audio-efeitos legado)"
+                           : a.audioVoices == bs::AudioVoicesProvider::Legacy  ? "falas legadas (--audio/--audio-falas legado)"
+                           : a.audioMusic == bs::AudioMusicProvider::Legacy    ? "musica legada (--audio/--audio-musica legado)"
+                                                                               : nullptr;
+        for (const char* v : {"BS_AICA_TRACE", "BS_AICA_LOG", "BS_AICA_MUTACAO", "BS_AICA_DUMP_AT", "BS_AICA_LOG_TUDO"})
+            if (!what && std::getenv(v)) what = v;  // o modelo os liga pela presenca
+        if (what) {
+            std::fprintf(stderr,
+                         "erro: %s (audio legado: SDK de som e driver originais na AICA simulada) so existe no build de "
+                         "validacao (-DBS_VALIDACAO=ON, preset msvc-validacao); o produto usa o audio nativo (N8.6)\n",
+                         what);
+            return 2;
+        }
     }
 #endif
     if (a.version) {

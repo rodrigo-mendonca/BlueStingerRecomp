@@ -10,7 +10,7 @@
 //  - registradores do PVR/Holly deixados pelo BIOS: bios_entry_state.inc.
 #include "boot/native_boot.h"
 
-#include "aica/aica_regs.h"
+#include "system/sound_bus.h"
 #include "cpu/irq_bridge.h"
 #include "cpu/sh4_intc.h"
 #include "cpu/sh4_mem.h"
@@ -84,7 +84,7 @@ void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     holly_intc_reset(0);
     holly_sb_reset();  // inclui o Maple
     syscall_service_reset();  // N8.3: pedidos do drive e flash em branco (o modelo HLE e da validacao)
-    aica_regs_reset();
+    snd_bus_reset();  // N8.6: area de som (o modelo da AICA e da validacao)
     sh4_intc_reset();
     irq_bridge_reset();
     sh4_port_reset();
@@ -125,7 +125,7 @@ void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     std::vector<uint32_t> pvr(2048, 0);
     for (const auto& r : kBiosPvrState) pvr[r[0] / 4] = r[1];
     pvr_regs_load(pvr.data());
-    aica_rtc_set(rtcSeconds, 0);
+    snd_bus_rtc_set(rtcSeconds, 0);
     syscall_service_install(&c);  // N8.3: vetores das syscalls -> servico nativo
 }
 

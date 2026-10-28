@@ -103,6 +103,19 @@ bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     if (removedRange(c, p, size, true, v)) return true;
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     if (periph_write(c, a, v)) return true;
+#if !BS_VALIDACAO
+    // N8.6 (docs/N8-6-AUDIO.md): sem AICA nem DMA do G2 no produto. A tabela do SDK so grava 0 nos registradores de
+    // partida (0x005F7818/38/58/78) e o jogo so le o estado; uma partida pediria a transferencia para a AICA: erro.
+    if ((p == 0x005F7818 || p == 0x005F7838 || p == 0x005F7858 || p == 0x005F7878) && (v & 1)) {
+        static char msg[176];
+        std::snprintf(msg, sizeof msg,
+                      "partida do DMA do G2 em %08X: a AICA e o DMA do G2 foram removidos do produto no N8.6 (o som e "
+                      "nativo)",
+                      p);
+        std::fprintf(stderr, "[sb] %s\n", msg);
+        sh4_fatal(c, msg, c->pc, v);
+    }
+#endif
     if (p != kSbRev) g_regs[(p - kBase) / 4] = v;
     if (p == kC2Dst) g_c2dstWritten = true;
     // Diagnostico: BS_PVR_DEBUG=1 registra o disparo do DMA do canal 2 (SB_C2DST)

@@ -36,7 +36,9 @@
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_video.h"
 #include "system/maple_bus.h"
+#include "system/sound_bus.h"
 #if BS_VALIDACAO
+#include "aica/aica_regs.h"
 #include "maple/maple.h"
 #endif
 
@@ -637,6 +639,22 @@ void GameHost::threadMain() {
         } else {
             periph_use(nullptr);
         }
+        // N8.6: a area de som do produto e a nativa (system/sound_bus); o modelo da AICA (o audio legado: o SDK e o driver
+        // originais escrevem canais e o DSP; os diagnosticos BS_AICA_*) so existe na validacao
+        const bool aicaModel = opt_.audioEffects == AudioEffectsProvider::Legacy || opt_.audioVoices == AudioVoicesProvider::Legacy ||
+                               opt_.audioMusic == AudioMusicProvider::Legacy || std::getenv("BS_AICA_TRACE") ||
+                               std::getenv("BS_AICA_LOG") || std::getenv("BS_AICA_MUTACAO") ||
+                               std::getenv("BS_AICA_DUMP_AT") || std::getenv("BS_AICA_LOG_TUDO");  // todos os BS_AICA_* do modelo
+        if (aicaModel) {
+#if BS_VALIDACAO
+            snd_bus_use(aica_bus_backend());
+#else
+            throw std::runtime_error("o audio legado e o modelo da AICA (--audio legado, BS_AICA_*) so existem no build "
+                                     "de validacao");
+#endif
+        } else {
+            snd_bus_use(nullptr);
+        }
         if (opt_.controls == ControlsProvider::Native) {
             if (!opt_.input) throw std::runtime_error("--controles nativo sem fonte de entrada (InputSystem)");
             if (std::getenv("BS_PAD_CONTRATO")) throw std::runtime_error("BS_PAD_CONTRATO confere o servidor legado: use --controles legado");
@@ -880,7 +898,8 @@ void GameHost::threadMain() {
                      static_cast<unsigned long long>(m.getCond[0]), static_cast<unsigned long long>(m.controllerResponses),
                      static_cast<unsigned long long>(m.sourceReads));
     }
-    periph_use(nullptr);  // N8.4: a proxima sessao escolhe de novo
+    periph_use(nullptr);   // N8.4: a proxima sessao escolhe de novo
+    snd_bus_use(nullptr);  // N8.6
     // N2b (criterio B4): VBlank-In que chegaram com o bit ainda aceso (um atendimento para dois)
     std::fprintf(stderr, "[vblank] fundidos %llu\n", static_cast<unsigned long long>(holly_vblank_fused()));
     if (!transitional::time::installed()) transitional::time::uninstall();  // o contador de passos do legado

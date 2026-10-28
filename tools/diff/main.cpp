@@ -27,6 +27,7 @@
 #include "debug/snapshot.h"
 #include "funcs.h"
 #include "aica/aica_regs.h"
+#include "maple/maple.h"
 #include "gdrom/image_source.h"
 #include "hle/bios.h"
 #include "hle/flashrom.h"
@@ -141,6 +142,9 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     // BS_NATIVE_BOOT=<imagem>: estado de entrada pelo boot nativo (runtime/boot), sem o
     // snapshot do Flycast (a <entrada> e ignorada); a hora do RTC e a do snapshot de
     // referencia, se houver, para comparar com o mesmo trace.
+    // N8.4/N8.6: o bs-diff compara com o oraculo: os modelos (Maple com o controle, AICA), nao os servicos nativos
+    periph_use(maple_bus_backend());
+    snd_bus_use(aica_bus_backend());
     const char* nativeImage = std::getenv("BS_NATIVE_BOOT");
     if (nativeImage) {
         uint32_t rtc = boot_rtc_now();
