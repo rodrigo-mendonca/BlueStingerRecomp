@@ -218,10 +218,10 @@ public:
         auto           r    = submitFrame(cl);
         const double   ms   = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         if (ms >= lentos)
-            std::fprintf(stderr, "[render-vk] render lento %llu: %.1f ms (GPU %.1f ms; refeito %llu; pipelines novos %llu; textura %zu bytes; %ux%u)\n",
+            std::fprintf(stderr, "[render-vk] render lento %llu: %.1f ms (GPU %.1f ms; refeito %llu; pipelines novos %llu; textura %zu bytes; %ux%u; camadas %u, fragmentos %u)\n",
                          static_cast<unsigned long long>(st_.frames), ms, st_.gpu_ms_total - gpu0,
                          static_cast<unsigned long long>(st_.fragment_retries - ret0),
-                         static_cast<unsigned long long>(pipelinesCreated_ - pip0), up0, w_, h_);
+                         static_cast<unsigned long long>(pipelinesCreated_ - pip0), up0, w_, h_, lastLayers_, lastFrags_);
         return r;
     }
 
@@ -259,6 +259,7 @@ public:
             const uint32_t* head = static_cast<const uint32_t*>(headerRead_.map);
             const uint32_t  used = head[0], overflow = head[2];
             st_.max_layers = std::max<uint64_t>(st_.max_layers, head[4]);
+            lastLayers_ = head[4], lastFrags_ = used;
             st_.fragments += std::min(used, fragCapacity_);
             if (!overflow) break;
             // a lista do pixel nao coube: cresce e refaz o MESMO quadro (sem perder fragmentos); o semaforo do slot ja foi
@@ -507,6 +508,7 @@ private:
     VkCommandBuffer  cmd_ = VK_NULL_HANDLE;
     VkFence          fence_ = VK_NULL_HANDLE;
     uint64_t         pipelinesCreated_ = 0;  // diagnostico BS_VK_LENTOS
+    uint32_t         lastLayers_ = 0, lastFrags_ = 0;  // BS_VK_LENTOS: maior lista e fragmentos do ultimo render
     VulkanStats      st_;
     bool             floatControls_ = false, denormPreserve_ = false, rawDepth_ = false;
     float            scale_ = 1.f;  // resolucao interna (N7c)
@@ -804,6 +806,7 @@ private:
         for (int i = 0; i < 7; ++i)
             if (i != 5 || tris_.buf) list[n++] = w[i];
         f_.vkUpdateDescriptorSets(dev_, n, list, 0, nullptr);
+        ++st_.frame_set_writes;
     }
 
     // alvo w x h: cor RGBA8 (anexo, armazenamento do resolve, origem da leitura), profundidade D32, cabecas das
@@ -1044,9 +1047,15 @@ private:
         if (!prep_.vertices.empty()) std::memcpy(verts_.map, prep_.vertices.data(), prep_.vertices.size() * sizeof(GpuVertex));
         const size_t tbytes = std::max<size_t>(prep_.tri_data.size() * sizeof(uint32_t), 64);
         if (tris_.size < tbytes) {
-            const VkBuffer old = tris_.buf;
+            // o buffer novo pode receber o MESMO handle do que acabou de ser liberado (o driver reaproveita): o descritor
+            // e sempre regravado. Comparar com o handle antigo deixava o descritor na memoria liberada e o shader lia uma
+            // pagina sem mapeamento (VK_ERROR_DEVICE_LOST com "Invalid Read" na AMD integrada; docs/N8-7-DIAGNOSTICO.md)
             if (!ensureHost(tris_, tbytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) return fail("dados dos triangulos");
-            if (tris_.buf != old) writeFrameSets();
+            ++st_.tri_reallocs;
+            if (std::getenv("BS_VK_ENVIOS"))
+                std::fprintf(stderr, "[render-vk] triangulos realocados no render %llu: %zu bytes\n",
+                             static_cast<unsigned long long>(st_.frames + 1), size_t(tris_.size));
+            writeFrameSets();
         }
         if (!prep_.tri_data.empty()) std::memcpy(tris_.map, prep_.tri_data.data(), prep_.tri_data.size() * sizeof(uint32_t));
         if (!uploadBytes_.empty() && !ensureHost(staging_, uploadBytes_.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT))
@@ -1058,8 +1067,14 @@ private:
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         f_.vkBeginCommandBuffer(cmd_, &bi);
         // envios de textura pendentes
+        // diagnostico BS_VK_ENVIOS=1: cada envio (render, textura, tamanho, nova ou atualizada, deslocamento na area de envio)
+        static const bool envios = std::getenv("BS_VK_ENVIOS") != nullptr;
         for (const Upload& u : uploads_) {
             Tex* t = u.tex == dummyId_ ? &dummy_ : &texs_[u.tex];
+            if (envios)
+                std::fprintf(stderr, "[render-vk] envio render %llu: textura %u %ux%u %s, deslocamento %zu de %zu\n",
+                             static_cast<unsigned long long>(st_.frames + 1), u.tex, t->desc.width, t->desc.height,
+                             t->ready ? "atualizada" : "nova", u.offset, uploadBytes_.size());
             imageBarrier(t->image.img, t->ready ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);

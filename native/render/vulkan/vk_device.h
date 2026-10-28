@@ -27,6 +27,9 @@ struct VulkanStats {
     std::string device;
     uint64_t    frames = 0, triangles = 0, culled = 0, nonfinite_depth = 0, batches = 0, pipelines = 0;
     uint64_t    fragments = 0, fragment_retries = 0, uploads = 0;
+    // N8.7: realocacoes do buffer de triangulos e regravacoes dos descritores do quadro (cada realocacao regrava: o
+    // handle novo pode ser igual ao liberado)
+    uint64_t    tri_reallocs = 0, frame_set_writes = 0;
     uint64_t    negative_depth_frames = 0;  // quadros com 1/w negativo (profundidade deslocada, ver frame_prep)
     // garantias do modo fiel (igualdade bit a bit com o software): ambiente FP do software nos shaders
     // (VK_KHR_shader_float_controls) e profundidade crua (VK_EXT_depth_range_unrestricted)

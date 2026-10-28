@@ -185,3 +185,57 @@ BS_TEST(render_downsample_box) {
     for (uint32_t c : small) all = all && c == 0xFF808080u;
     BS_CHECK(all);
 }
+
+// N8.7 (docs/N8-7-DIAGNOSTICO.md, causa da perda do dispositivo na AMD integrada): quando o buffer de triangulos cresce,
+// o descritor do quadro e SEMPRE regravado. O driver pode dar ao buffer novo o mesmo handle do liberado; comparar os
+// handles deixava o descritor na memoria liberada (Invalid Read). Aqui: um quadro pequeno, uma grade opaca com dezenas
+// de milhares de triangulos (forca a realocacao, sem sobreposicao) e o pequeno de novo, com a mesma imagem.
+namespace {
+nr::CommandList grid_frame(int rows, int step) {
+    nr::CommandList cl;
+    cl.frame.width = 640, cl.frame.height = 480, cl.frame.clear_color = 0xFF000000;
+    for (int r = 0; r < rows; ++r) {
+        nr::Draw d;
+        d.state.list = nr::ListType::Opaque, d.state.gouraud = false;
+        d.first_vertex = uint32_t(cl.vertices.size());
+        const float y0 = float(r * 480 / rows), y1 = float((r + 1) * 480 / rows);
+        for (int x = 0; x <= 640; x += step)
+            for (const float y : {y0, y1}) {
+                nr::Vertex v;
+                v.x = float(x), v.y = y, v.inv_w = 1.f, v.color = 0xFF20A040;
+                cl.vertices.push_back(v);
+            }
+        d.vertex_count = uint32_t(cl.vertices.size()) - d.first_vertex;
+        cl.draws.push_back(d);
+    }
+    return cl;
+}
+bool run_cl(nr::VulkanDevice& d, const nr::CommandList& cl, std::vector<uint32_t>& img) {
+    uint32_t w = 0, h = 0;
+    return d.submit(cl).ok() && d.read_frame(img, w, h).ok() && w == cl.frame.width && h == cl.frame.height;
+}
+} // namespace
+
+BS_TEST(render_vulkan_triangle_buffer_growth_rewrites_descriptors) {
+    std::string err;
+    {
+        auto d = nr::VulkanDevice::create(&err);
+        if (!d) BS_SKIP("dispositivo Vulkan");
+        const nr::CommandList small = grid_frame(4, 160), big = grid_frame(120, 2);  // 40 e 76 800 triangulos
+        std::vector<uint32_t> first, again, bigImg;
+        BS_CHECK(run_cl(*d, small, first));
+        const uint64_t re0 = d->stats().tri_reallocs, wr0 = d->stats().frame_set_writes;
+        const bool     bigOk = run_cl(*d, big, bigImg);
+        if (!bigOk) std::fprintf(stderr, "  quadro grande: %s\n", d->stats().last_error.c_str());
+        BS_CHECK(bigOk);
+        const uint64_t re = d->stats().tri_reallocs - re0, wr = d->stats().frame_set_writes - wr0;
+        std::fprintf(stderr, "  realocacoes %llu, regravacoes dos descritores %llu\n", (unsigned long long)re, (unsigned long long)wr);
+        BS_CHECK(re >= 1 && wr >= re);
+        // a grade cobre a tela inteira com a cor dos vertices: o shader leu os dados dos triangulos novos
+        bool covered = bigImg.size() == size_t(640) * 480;
+        for (size_t i = 0; covered && i < bigImg.size(); ++i) covered = (bigImg[i] & 0xFFFFFF) == 0x20A040;
+        BS_CHECK(covered);
+        BS_CHECK(run_cl(*d, small, again) && again == first);
+    }
+    BS_CHECK(nr::vulkan_live_objects() == 0);
+}
