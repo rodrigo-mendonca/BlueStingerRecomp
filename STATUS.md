@@ -3222,6 +3222,25 @@ alterado.
 
 **N8.6 concluído.**
 
+### N8.7: IR nativa, fallback software e retirada do PVR (2026-10-28): bloqueada
+
+Avaliada pela autorização contínua do mantenedor até o fim do N8. Detalhes em `docs/N8-7-GRAFICOS.md`.
+
+**Pré-requisitos do plano** ("N8.2, D-N8-2, evidência N7 de fog/volumes e software-IR aprovado"):
+- o N8.2 e a D-N8-2 estão atendidos;
+- **falta a evidência de fog e volumes:** 2 758 908 desenhos com fog por tabela e 76 287 volumes a partir do render
+  1127, sem implementação fiel nem quadro pareado contra o Flycast. É trabalho do N7, que permanece em 95% e não pode ser
+  reaberto sem o mantenedor;
+- **falta o backend software-IR:** o rasterizador em software atual lê TA, VRAM e os registradores do PVR. Ele é o recuo
+  permanente do Vulkan.
+
+**Inventário** (sonda, `newgame_area1`, 6 000 VBlanks): store queues 79 040 019 acessos, FIFO do TA 2 691 836,
+registradores do PVR 376 793, VRAM 2 677 792, DMAC do canal 2 35 838.
+
+**Decisão:** nenhum corte gráfico. O produto continua com o caminho gráfico atual, coberto pelas 16 referências e pelas
+suítes. Ficam para o mantenedor: reabrir o N7 (fog e volumes); autorizar o produtor nativo da IR e o backend software-IR;
+ou aceitar o N8 fechado sem o corte gráfico.
+
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
 A etapa **N9 — Remasterização** entrou antes dos mods. O antigo escopo de mods e a elevação dos sistemas do jogo
