@@ -110,7 +110,15 @@ public:
         VkImageLayout gameLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         VkSemaphore   slotWait = VK_NULL_HANDLE;  // a escrita do slot na fila do renderizador (primeira apresentacao dele)
         uint32_t      w = 0, h = 0;
-        if (r.slot_seq && slots_.pin(r.slot_seq, img, gameView, w, h, pinned_, slotWait)) {
+        uint64_t      slotVersion = 0;
+        if (r.slot_seq && slots_.pin(r.slot_seq, img, gameView, w, h, pinned_, slotWait, slotVersion)) {
+            // o slot foi recriado (outra resolucao interna): a vista nova pode ter o mesmo handle da destruida, e o
+            // conjunto em cache apontaria para ela (revisao Codex 20261028-030202). No inicio do quadro o anterior ja
+            // terminou: descartar os conjuntos e seguro
+            if (pinned_ >= 0 && pinned_ < int(kSlotVersions) && slotSeen_[pinned_] != slotVersion + 1) {
+                forgetSets();
+                slotSeen_[pinned_] = slotVersion + 1;  // 0 = slot ainda nao visto
+            }
             gameLayout = VK_IMAGE_LAYOUT_GENERAL;  // os slots ficam em GENERAL (vk_internal.h)
             const uint32_t rows = r.slot_rows ? r.slot_rows : h;
             uv[1] = float(r.slot_y0) / float(h), uv[3] = float(r.slot_y0 + rows) / float(h);
@@ -263,6 +271,8 @@ private:
     VkDeviceSize          staged_ = 0;
     std::vector<PostPass> post_;  // os passes deste quadro (sem os que a fonte nao comporta)
     int                   pinned_ = -1;
+    static constexpr size_t kSlotVersions = 16;  // mais que os slots do dispositivo (vk_device.cpp kSlots)
+    uint64_t              slotSeen_[kSlotVersions] = {};  // geracao + 1 de cada slot ja apresentado
     // swapchain
     VkSwapchainKHR             swap_ = VK_NULL_HANDLE;
     uint32_t                   sw_ = 0, sh_ = 0;

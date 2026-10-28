@@ -1,0 +1,104 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// N8.7: volumes modificadores da lista 1 (sombra por intensidade, FPU_SHAD_SCALE bit 8), com as contas do rasterizador em
+// software (native/render/soft/soft_raster.cpp, applyVolumes e cover): por pixel, depois das opacas e do punch-through,
+// cada triangulo de volume que cobre o ponto de amostra (regra top-left, amostra do FPU) e fica a frente da profundidade
+// (1/w maior, teste estrito) inverte a paridade (bit 1), ou a liga a partir de or_from; no fechamento, a area do volume
+// soma o estado ao resultado (bit 0: inclusao por OU, exclusao por E) e zera o estado. Dentro, se o poligono visivel tem
+// o bit de sombra (o stencil gravado pelo passe das opacas), a cor e escalada por FPU_SHAD_SCALE / 256 (inteiro).
+// Os triangulos chegam por tile de 32 x 32 pixels do jogo, na ordem de submissao (volume e triangulo), ja sem os
+// descartados (cull, area nula); area e 1/area vem da CPU, como no modo fiel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+struct Vol {
+    uint first, count, flags, orFrom;  // flags: bit 0 inclusao, bit 1 fechado
+};
+layout(std430, set = 0, binding = 0) readonly buffer Vols { Vol vols[]; };
+// por triangulo: ax ay bx by cx cy az bz cz area inv (11 floats)
+layout(std430, set = 0, binding = 1) readonly buffer VTris { float vt[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Tiles { uint tileStart[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Entries { uvec2 ent[]; };  // (volume, triangulo global)
+layout(set = 0, binding = 4) uniform sampler2D depthTex;                           // o aspecto de profundidade
+layout(set = 0, binding = 5) uniform usampler2D stencilTex;                        // o aspecto de stencil (bit de sombra)
+layout(set = 0, binding = 6, rgba8) uniform image2D color;
+
+layout(push_constant) uniform P {
+    uvec2 size;       // o alvo
+    uint  tilesX;     // tiles do jogo (32 px) por linha
+    uint  scale;      // FPU_SHAD_SCALE bits 7-0
+    float invScale;   // pixel do alvo -> coordenadas do jogo
+    float fpuOff;     // 0.5 (HALF_OFFSET bit 0) ou 0
+    uint  rawDepth;   // 1: a profundidade guarda o proprio 1/w; 0: (1/w - bias) x escala, limitado a [0, 1]
+    float depthBias;
+    float depthScale;
+} pc;
+
+#include "exact.glsl"
+
+const uint kTriFloats = 11u;
+
+bool topLeft(vec2 p, vec2 q, float area) {
+    precise float dx = q.x - p.x, dy = q.y - p.y;
+    if (area > 0.0) dx = -dx, dy = -dy;
+    return (dy == 0.0 && dx < 0.0) || dy > 0.0;
+}
+
+// cobertura do ponto (px, py) e o 1/w do triangulo nele (soft_raster.cpp, cover)
+bool cover(uint t, float px, float py, out float z) {
+    const uint  o = t * kTriFloats;
+    const vec2  a = vec2(vt[o], vt[o + 1u]), b = vec2(vt[o + 2u], vt[o + 3u]), c = vec2(vt[o + 4u], vt[o + 5u]);
+    const float az = vt[o + 6u], bz = vt[o + 7u], cz = vt[o + 8u], area = vt[o + 9u], inv = vt[o + 10u];
+    precise float w0 = (b.x - px) * (c.y - py) - (c.x - px) * (b.y - py);
+    precise float w1 = (c.x - px) * (a.y - py) - (a.x - px) * (c.y - py);
+    precise float w2 = (a.x - px) * (b.y - py) - (b.x - px) * (a.y - py);
+    if (area < 0.0) w0 = -w0, w1 = -w1, w2 = -w2;
+    if (w0 < 0.0 || w1 < 0.0 || w2 < 0.0) return false;
+    if ((w0 == 0.0 && !topLeft(b, c, area)) || (w1 == 0.0 && !topLeft(c, a, area)) || (w2 == 0.0 && !topLeft(a, b, area)))
+        return false;
+    precise float ai = abs(inv);
+    precise float l0 = w0 * ai, l1 = w1 * ai, l2 = w2 * ai;
+    precise float zz = l0 * az + l1 * bz + l2 * cz;
+    z = zz;
+    return true;
+}
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.size.x || p.y >= pc.size.y) return;
+    if ((texelFetch(stencilTex, ivec2(p), 0).r & 1u) == 0u) return;  // o poligono visivel nao tem o bit de sombra
+    // o ponto de amostra nas coordenadas do jogo (o mesmo do modo fiel) e o tile dele
+    precise float px = (float(p.x) + pc.fpuOff) * pc.invScale, py = (float(p.y) + pc.fpuOff) * pc.invScale;
+    const uvec2   g  = pc.invScale == 1.0 ? p : uvec2(floor((vec2(p) + 0.5) * pc.invScale));
+    const uint    tile = (g.y >> 5u) * pc.tilesX + (g.x >> 5u);
+    const float   depth = texelFetch(depthTex, ivec2(p), 0).r;
+    uint          st = 0u;
+    uint          i = tileStart[tile], e = tileStart[tile + 1u];
+    while (i < e) {
+        const uint v = ent[i].x;
+        uint       j = i;
+        while (j < e && ent[j].x == v) ++j;
+        for (uint k = i; k < j; ++k) {
+            float z;
+            if (!cover(ent[k].y, px, py, z)) continue;
+            if (pc.rawDepth == 0u) z = clamp((z - pc.depthBias) * pc.depthScale, 0.0, 1.0);
+            if (!(z > depth)) continue;  // so a frente da profundidade
+            st = (ent[k].y - vols[v].first) >= vols[v].orFrom ? (st | 2u) : (st ^ 2u);
+        }
+        if ((vols[v].flags & 2u) != 0u) {  // fechado: a area do volume soma o estado ao resultado
+            bool covered = false;
+            for (uint k = i; k < j && !covered; ++k) {
+                float z;
+                covered = cover(ent[k].y, px, py, z);
+            }
+            if (covered) {
+                const uint b = st & 3u;
+                st = (vols[v].flags & 1u) != 0u ? (b >= 1u ? 1u : 0u) : (b == 1u ? 1u : 0u);
+            }
+        }
+        i = j;
+    }
+    if ((st & 1u) == 0u) return;
+    const uvec4 c = min(uvec4(floor(imageLoad(color, ivec2(p)) * 255.0 + 0.5)), uvec4(255u));  // RGBA
+    const uvec3 s = (c.rgb * pc.scale) >> 8u;
+    imageStore(color, ivec2(p), vec4(k255[s.r], k255[s.g], k255[s.b], k255[c.a]));
+}

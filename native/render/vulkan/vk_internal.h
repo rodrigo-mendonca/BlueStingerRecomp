@@ -216,7 +216,10 @@ struct VkBase {
 // entre as filas); as seguintes recebem VK_NULL_HANDLE. A dependencia inversa (a apresentacao terminou de ler antes de
 // a escrita seguinte comecar) vem da cerca da apresentacao, esperada antes de soltar a fixacao.
 struct SlotSource {
-    virtual bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait) = 0;
+    // version: a geracao da imagem do slot (muda quando ele e recriado). A vista nova pode ter o mesmo handle da destruida:
+    // quem guarda descritores pela vista os descarta quando a geracao muda (revisao Codex 20261028-030202)
+    virtual bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait,
+                     uint64_t& version) = 0;
     virtual void unpin(int idx) = 0;
     virtual class PostChain* post_chain() = 0;  // a cadeia de pos-processamento do dispositivo (nullptr = indisponivel)
 

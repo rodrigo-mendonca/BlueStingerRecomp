@@ -1836,6 +1836,16 @@ int main(int, char**) {
             return 2;
         }
     }
+    // N8.7 (docs/N8-7-GRAFICOS.md): o produto desenha so pela IR (software ou Vulkan); os modos que comparam com o
+    // rasterizador do caminho do TA (BS_RENDER_IR=capturar|conferir|comparar) sao da validacao
+    for (const char* v : {"BS_RENDER_IR", "BS_RENDER_IR_BMP"})
+        if (std::getenv(v)) {
+            std::fprintf(stderr,
+                         "erro: %s (o rasterizador do caminho do TA, a referencia das comparacoes) so existe no build de "
+                         "validacao (-DBS_VALIDACAO=ON, preset msvc-validacao); o produto desenha pela IR (N8.7)\n",
+                         v);
+            return 2;
+        }
 #endif
     if (a.version) {
         std::printf("Blue Stinger (recompilado) %s, compilado em %s\n", BS_VERSION, BS_BUILD_DATE);

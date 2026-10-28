@@ -185,13 +185,86 @@ std::vector<FidelityScene> fidelity_scenes() {
         for (uint32_t p : {0u, 1000u, 4095u}) s.probes.push_back({p % kSize, p / kSize, rgb(s.image_argb[p]), 0});
         v.push_back(s);
     }
-    for (auto [name, list] : {std::pair{"modificador_opaco", ListType::OpaqueModifier},
-                              std::pair{"modificador_translucido", ListType::TranslucentModifier}}) {
-        auto s = base(name, "volume modificador (lista 1/3 do TA)", 0xFF000000);
+    {  // N8.7: volume modificador da lista 1, sombra por intensidade (FPU_SHAD_SCALE 0x180: escala 128 / 256)
+        auto s = base("modificador_opaco",
+                      "volume fechado de inclusao: a face da frente (1/w 2) a frente do opaco (1/w 1) e a de tras atras "
+                      "(1/w 0,5) cobrem x < 32: paridade 1, dentro; so o poligono com o bit de sombra (PCW bit 7) escurece, "
+                      "por (c x 128) >> 8; soft_raster.cpp applyVolumes, volumes.comp",
+                      0xFF000000);
+        DrawState sh = opaque();
+        sh.shadow    = true;
+        quad(s, sh, 0, 64, 1, 1, red);
+        DrawState no = opaque();  // por cima, nas linhas de baixo, sem o bit de sombra
+        Draw      d;
+        d.state = no, d.first_vertex = uint32_t(s.cl.vertices.size()), d.vertex_count = 4;
+        for (auto [x, y] : {std::pair{0.f, 48.f}, {64.f, 48.f}, {0.f, 64.f}, {64.f, 64.f}})
+            s.cl.vertices.push_back({x, y, 1.5f, 0, 0, 0xFF00FF00u, 0});
+        s.cl.draws.push_back(d);
+        s.draw_texture.push_back(-1);
+        ModifierVolume m;
+        m.first_vertex = uint32_t(s.cl.vertices.size()), m.triangle_count = 4, m.list = ListType::OpaqueModifier;
+        m.inclusion = true, m.closed = true;
+        for (const float z : {2.f, 0.5f})
+            for (auto [x, y] : {std::pair{0.f, 0.f}, {32.f, 0.f}, {0.f, 64.f}, {32.f, 0.f}, {32.f, 64.f}, {0.f, 64.f}})
+                s.cl.vertices.push_back({x, y, z, 0, 0, 0, 0});
+        s.cl.modifiers.push_back(m);
+        s.cl.frame.shadow_scale = 0x180;
+        s.probes.push_back({8, 16, 0x7F0000, 0});   // dentro, com o bit: escurecido
+        s.probes.push_back({48, 16, 0xFF0000, 0});  // fora do volume
+        s.probes.push_back({8, 56, 0x00FF00, 0});   // dentro, sem o bit: intacto
+        v.push_back(s);
+    }
+    {  // N8.7 (revisao Codex 20261028-103445): inclusao, exclusao e fechamento por OU, com volumes sobrepostos
+        auto s = base("modificador_inclusao_exclusao_ou",
+                      "A inclusao (x < 40), B exclusao (24 <= x < 64): o resultado e A E NAO B; C fechado por OU (so a face "
+                      "da frente, y < 16): inclusao de toda a faixa; soft_raster.cpp applyVolumes, volumes.comp",
+                      0xFF000000);
+        DrawState sh = opaque();
+        sh.shadow    = true;
+        quad(s, sh, 0, 64, 1, 1, red);
+        auto box = [&](float x0, float x1, float y0, float y1, std::initializer_list<float> zs, bool inclusion, uint32_t or_from) {
+            ModifierVolume m;
+            m.first_vertex = uint32_t(s.cl.vertices.size()), m.list = ListType::OpaqueModifier;
+            m.inclusion = inclusion, m.closed = true, m.or_from = or_from;
+            for (const float z : zs) {
+                for (auto [x, y] : {std::pair{x0, y0}, {x1, y0}, {x0, y1}, {x1, y0}, {x1, y1}, {x0, y1}})
+                    s.cl.vertices.push_back({x, y, z, 0, 0, 0, 0});
+                m.triangle_count += 2;
+            }
+            s.cl.modifiers.push_back(m);
+        };
+        box(0, 40, 0, 64, {2.f, 0.5f}, true, ~0u);    // A
+        box(24, 64, 0, 64, {2.f, 0.5f}, false, ~0u);  // B
+        box(0, 64, 0, 16, {2.f}, true, 0);            // C: so a frente, por OU
+        s.cl.frame.shadow_scale = 0x180;
+        s.probes.push_back({8, 32, 0x7F0000, 0});   // A e nao B
+        s.probes.push_back({32, 32, 0xFF0000, 0});  // A e B: excluido
+        s.probes.push_back({56, 32, 0xFF0000, 0});  // so B
+        s.probes.push_back({56, 8, 0x7F0000, 0});   // C
+        s.probes.push_back({32, 8, 0x7F0000, 0});   // C (a exclusao de B veio antes)
+        v.push_back(s);
+    }
+    {  // N8.7: fog por tabela
+        auto s = base("fog_tabela",
+                      "fog por tabela: z = FOG_DENSITY (0xC000: 192 / 128 = 1,5) x 1/w; 16 entradas por oitava; os dois "
+                      "valores da entrada interpolados pela fracao; a cor mistura com FOG_COL_RAM; soft_raster.cpp fogAlpha",
+                      0xFF000000);
+        DrawState fg = opaque();
+        fg.fog       = Fog::Table;
+        quad(s, fg, 0, 32, 1, 1, red);               // z 1,5: indice 8, fracao 0 -> o valor de cima (128)
+        quad(s, fg, 32, 64, 1.03125f, 1.03125f, red);  // z 1,546875: indice 8, fracao 0,75
+        s.cl.frame.fog_table[8] = 0x8000;            // de cima 128, de baixo 0
+        s.cl.frame.fog_color    = 0x0000FF00;
+        s.cl.frame.fog_density  = 0xC000;
+        s.probes.push_back({16, 32, 0x7F8000, 0});
+        s.probes.push_back({48, 32, 0xDF2000, 0});
+        v.push_back(s);
+    }
+    {
+        auto s = base("modificador_translucido", "volume modificador da lista 3 (sobre as translucidas)", 0xFF000000);
         quad(s, opaque(), 0, 64, 1, 1, red);
-        s.cl.modifiers.push_back({0, 1, true, list});  // 1 triangulo: os 3 primeiros vertices
-        s.blocked = "a referencia em software ainda nao aplica volumes (pvr_render.cpp: listas 1 e 3 descartadas) e a IR nao "
-                    "tem o segundo conjunto de parametros do poligono (dois volumes); medir o uso no oraculo antes";
+        s.cl.modifiers.push_back({0, 1, true, ListType::TranslucentModifier});  // 1 triangulo: os 3 primeiros vertices
+        s.blocked = "volumes da lista 3 nao sao aplicados: o jogo nao os usa nas rotas medidas (N8.7, 0 em 297 065 volumes)";
         v.push_back(s);
     }
     return v;

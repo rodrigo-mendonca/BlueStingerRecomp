@@ -7,7 +7,11 @@
 #include "render/vulkan/spirv/pvr_frag_autosort_fcd.h"
 #include "render/vulkan/spirv/pvr_frag_fc.h"
 #include "render/vulkan/spirv/pvr_frag_fcd.h"
+#include "render/soft/soft_raster.h"
 #include "render/vulkan/spirv/pvr_vert.h"
+#include "render/vulkan/spirv/volumes_comp.h"
+#include "render/vulkan/spirv/volumes_comp_fc.h"
+#include "render/vulkan/spirv/volumes_comp_fcd.h"
 #include "render/vulkan/spirv/resolve_comp.h"
 #include "render/vulkan/spirv/resolve_comp_fc.h"
 #include "render/vulkan/spirv/resolve_comp_fcd.h"
@@ -55,8 +59,11 @@ static_assert(sizeof(Push) == 64);
 constexpr uint32_t F_TEXTURED = 1, F_GOURAUD = 2, F_OFFSET = 4, F_USE_ALPHA = 8, F_IGNORE_TEX_ALPHA = 16, F_CLAMP = 32,
                    F_CLIP_OUTSIDE = 64, F_CLAMP_U = 4096, F_CLAMP_V = 8192, F_FLIP_U = 16384, F_FLIP_V = 32768,
                    F_TEXEL_HALF = 65536, F_ATTR_PLUS = 1u << 19, F_ATTR_MINUS = 1u << 20, F_EXACT = 1u << 21,
-                   F_SAMPLE_CORNER = 1u << 22, F_ATTR_CORNER = 1u << 23, F_RAW_DEPTH = 1u << 24;
+                   F_SAMPLE_CORNER = 1u << 22, F_ATTR_CORNER = 1u << 23, F_RAW_DEPTH = 1u << 24,
+                   F_FOG = 1u << 25,     // N8.7: fog por tabela
+                   F_SHADOW = 1u << 26;  // N8.7: PCW bit 7 (o passe das opacas grava o bit de sombra do pixel)
 constexpr uint32_t kFragBytes = 32;  // struct Frag (std430)
+constexpr uint32_t kFrameDataBytes = 64 * 4 + 2 * 4;  // N8.7: FrameData de pvr.frag (fog)
 constexpr uint32_t kHeader    = 32;  // cabecalho das listas por pixel (Heads: 8 palavras)
 
 struct Tex {
@@ -120,7 +127,8 @@ public:
                 denormPreserve_ = fc.shaderDenormPreserveFloat32;
             }
         }
-        if (has(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME))
+        // testes (N8.7): BS_VK_SEM_PROFUNDIDADE_CRUA=1 exercita o caminho dos dispositivos sem a extensao
+        if (has(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME) && !std::getenv("BS_VK_SEM_PROFUNDIDADE_CRUA"))
             rawDepth_ = true, ext.push_back(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
         if (surfaceExt_ && has(VK_KHR_SWAPCHAIN_EXTENSION_NAME))  // apresentacao direta (N7c)
             swapchainExt_ = true, ext.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -401,7 +409,9 @@ public:
                           std::vector<uint32_t>& out) override {
         PostChain* c = post_chain();
         if (!c || argb.size() < size_t(w) * h) return Error::Unsupported;
-        Image  src = makeImage(w, h, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        // sem passes, a propria imagem e copiada de volta (TRANSFER_SRC; Validation Layers, N8.7)
+        Image  src = makeImage(w, h, VK_FORMAT_B8G8R8A8_UNORM,
+                               VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                VK_IMAGE_ASPECT_COLOR_BIT);
         Buffer up = makeBuffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
         Buffer rd = makeBuffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true);
@@ -453,19 +463,21 @@ public:
     }
 
     // SlotSource: a apresentacao fixa o slot enquanto o desenha (o renderizador nao o reaproveita)
-    bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait) override {
+    bool pin(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, VkSemaphore& wait,
+             uint64_t& version) override {
         bool consume = true;
-        return pinShared(seq, img, view, w, h, idx, &consume, wait);
+        return pinShared(seq, img, view, w, h, idx, &consume, wait, &version);
     }
     // consume != nullptr: a apresentacao (outra fila) recebe o semaforo da escrita na primeira fixacao
     bool pinShared(uint64_t seq, VkImage& img, VkImageView& view, uint32_t& w, uint32_t& h, int& idx, bool* consume,
-                   VkSemaphore& wait) {
+                   VkSemaphore& wait, uint64_t* version = nullptr) {
         std::lock_guard<std::mutex> lock(slotMutex_);
         wait = VK_NULL_HANDLE;
         for (int i = 0; i < kSlots; ++i)
             if (seq && slots_[i].seq == seq && slots_[i].shaderRead) {
                 ++slots_[i].pins;
                 img = slots_[i].image.img, view = slots_[i].image.view, w = slots_[i].w, h = slots_[i].h, idx = i;
+                if (version) *version = slots_[i].version;
                 if (consume && slots_[i].readyPending && presentQueue_ != queue_) wait = slots_[i].ready;
                 if (consume) slots_[i].readyPending = false;  // a mesma fila: a ordem de submissao basta
                 return true;
@@ -544,6 +556,7 @@ private:
 
     // layouts, pipelines e amostrador (fixos)
     VkDescriptorSetLayout texLayout_ = VK_NULL_HANDLE, fragLayout_ = VK_NULL_HANDLE, resolveLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool      volPool_ = VK_NULL_HANDLE;  // N8.7
     VkDescriptorPool      texPool_ = VK_NULL_HANDLE, framePool_ = VK_NULL_HANDLE;
     VkPipelineLayout      gfxLayout_ = VK_NULL_HANDLE, compLayout_ = VK_NULL_HANDLE;
     VkShaderModule        vert_ = VK_NULL_HANDLE, frag_ = VK_NULL_HANDLE, fragList_ = VK_NULL_HANDLE, comp_ = VK_NULL_HANDLE;
@@ -558,6 +571,18 @@ private:
     VkRenderPass    pass_ = VK_NULL_HANDLE;
     VkFramebuffer   fb_ = VK_NULL_HANDLE;
     Buffer          heads_, frags_, readback_, headerRead_, verts_, staging_, tris_;
+    Buffer          frameData_;  // N8.7: os parametros do quadro (fog), escritos pela CPU a cada render
+    // N8.7: volumes modificadores (volumes.comp): o bit de sombra do pixel (anexo R8_UINT do passe das opacas), o segundo
+    // passe (translucidas), os dados por quadro (volumes, triangulos, tiles, entradas) e o compute
+    Image                 shadow_;
+    VkRenderPass          passB_ = VK_NULL_HANDLE;
+    VkFramebuffer         fbB_   = VK_NULL_HANDLE;
+    Buffer                volVols_, volTris_, volTiles_, volEnt_;
+    VkDescriptorSetLayout volLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSet       volSet_    = VK_NULL_HANDLE;
+    VkPipelineLayout      volPipeLayout_ = VK_NULL_HANDLE;
+    VkShaderModule        volMod_  = VK_NULL_HANDLE;
+    VkPipeline            volPipe_ = VK_NULL_HANDLE;
     uint32_t        fragCapacity_ = 0;
     VkDescriptorSet fragSet_ = VK_NULL_HANDLE, resolveSet_ = VK_NULL_HANDLE;
 
@@ -664,11 +689,13 @@ private:
         li.bindingCount = 1, li.pBindings = &tb;
         if (!ok(f_.vkCreateDescriptorSetLayout(dev_, &li, nullptr, &texLayout_), "layout da textura", error)) return false;
         ++g_live;
-        VkDescriptorSetLayoutBinding fb[4] = {{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        VkDescriptorSetLayoutBinding fb[5] = {{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
                                               {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
                                               {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-                                              {3, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
-        li.bindingCount = 4, li.pBindings = fb;
+                                              {3, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+                                              // N8.7: os parametros do quadro (fog)
+                                              {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+        li.bindingCount = 5, li.pBindings = fb;
         if (!ok(f_.vkCreateDescriptorSetLayout(dev_, &li, nullptr, &fragLayout_), "layout das listas", error)) return false;
         ++g_live;
         VkDescriptorSetLayoutBinding rb[3] = {{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
@@ -683,7 +710,7 @@ private:
         pi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, pi.maxSets = 8192, pi.poolSizeCount = 1, pi.pPoolSizes = &tps;
         if (!ok(f_.vkCreateDescriptorPool(dev_, &pi, nullptr, &texPool_), "pool das texturas", error)) return false;
         ++g_live;
-        VkDescriptorPoolSize fps[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2},
+        VkDescriptorPoolSize fps[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2},
                                        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1}};
         pi.flags = 0, pi.maxSets = 3, pi.poolSizeCount = 3, pi.pPoolSizes = fps;
         if (!ok(f_.vkCreateDescriptorPool(dev_, &pi, nullptr, &framePool_), "pool do quadro", error)) return false;
@@ -693,6 +720,47 @@ private:
         if (!ok(f_.vkAllocateDescriptorSets(dev_, &ai, &fragSet_), "conjunto das listas", error)) return false;
         ai.pSetLayouts = &resolveLayout_;
         if (!ok(f_.vkAllocateDescriptorSets(dev_, &ai, &resolveSet_), "conjunto do resolve", error)) return false;
+        {  // N8.7: volumes.comp
+            VkDescriptorSetLayoutBinding vb[7] = {
+                {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+                {6, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+            VkDescriptorSetLayoutCreateInfo vli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+            vli.bindingCount = 7, vli.pBindings = vb;
+            if (!ok(f_.vkCreateDescriptorSetLayout(dev_, &vli, nullptr, &volLayout_), "layout dos volumes", error)) return false;
+            ++g_live;
+            VkDescriptorPoolSize       vps[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
+                                                 {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}};
+            VkDescriptorPoolCreateInfo vpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+            vpi.maxSets = 1, vpi.poolSizeCount = 3, vpi.pPoolSizes = vps;
+            if (!ok(f_.vkCreateDescriptorPool(dev_, &vpi, nullptr, &volPool_), "pool dos volumes", error)) return false;
+            ++g_live;
+            VkDescriptorSetAllocateInfo vai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            vai.descriptorPool = volPool_, vai.descriptorSetCount = 1, vai.pSetLayouts = &volLayout_;
+            if (!ok(f_.vkAllocateDescriptorSets(dev_, &vai, &volSet_), "conjunto dos volumes", error)) return false;
+            VkPushConstantRange        vpr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 36};
+            VkPipelineLayoutCreateInfo vl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+            vl.setLayoutCount = 1, vl.pSetLayouts = &volLayout_, vl.pushConstantRangeCount = 1, vl.pPushConstantRanges = &vpr;
+            if (!ok(f_.vkCreatePipelineLayout(dev_, &vl, nullptr, &volPipeLayout_), "layout dos volumes", error)) return false;
+            ++g_live;
+            volMod_ = floatControls_ && denormPreserve_ ? module(kVolumesCompFcd, sizeof kVolumesCompFcd)
+                      : floatControls_                  ? module(kVolumesCompFc, sizeof kVolumesCompFc)
+                                                        : module(kVolumesComp, sizeof kVolumesComp);
+            if (!volMod_) {
+                if (error) *error = "shader dos volumes";
+                return false;
+            }
+            VkComputePipelineCreateInfo vc{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+            vc.stage  = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, volMod_, "main", nullptr};
+            vc.layout = volPipeLayout_;
+            if (!ok(f_.vkCreateComputePipelines(dev_, VK_NULL_HANDLE, 1, &vc, nullptr, &volPipe_), "pipeline dos volumes", error))
+                return false;
+            ++g_live;
+        }
         // N7c: reducao da resolucao interna (downsample.comp): imagem de armazenamento -> buffer
         VkDescriptorSetLayoutBinding db[2] = {{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
                                               {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
@@ -789,10 +857,12 @@ private:
 
     void writeFrameSets() {
         VkDescriptorBufferInfo fbi{frags_.buf, 0, VK_WHOLE_SIZE}, hbi{heads_.buf, 0, VK_WHOLE_SIZE}, tbi{tris_.buf, 0, VK_WHOLE_SIZE};
+        VkDescriptorBufferInfo pbi{frameData_.buf, 0, VK_WHOLE_SIZE};
         VkDescriptorImageInfo  ii{VK_NULL_HANDLE, color_.view, VK_IMAGE_LAYOUT_GENERAL};
         VkDescriptorImageInfo  di{VK_NULL_HANDLE, depth_.view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet   w[7] = {};
-        for (int i = 0; i < 7; ++i) w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, w[i].descriptorCount = 1;
+        VkWriteDescriptorSet   w[8] = {};
+        for (int i = 0; i < 8; ++i) w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, w[i].descriptorCount = 1;
+        w[7].dstSet = fragSet_, w[7].dstBinding = 4, w[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, w[7].pBufferInfo = &pbi;
         w[6].dstSet = fragSet_, w[6].dstBinding = 3, w[6].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, w[6].pImageInfo = &di;
         w[5].dstSet = fragSet_, w[5].dstBinding = 2, w[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, w[5].pBufferInfo = &tbi;
         w[0].dstSet = fragSet_, w[0].dstBinding = 0, w[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, w[0].pBufferInfo = &fbi;
@@ -801,16 +871,19 @@ private:
         w[3].dstSet = resolveSet_, w[3].dstBinding = 1, w[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, w[3].pBufferInfo = &hbi;
         w[4].dstSet = resolveSet_, w[4].dstBinding = 2, w[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, w[4].pImageInfo = &ii;
         // a posicao 5 (triangulos) so existe depois do primeiro quadro: ate la, sem ela
-        VkWriteDescriptorSet list[7];
+        VkWriteDescriptorSet list[8];
         uint32_t             n = 0;
-        for (int i = 0; i < 7; ++i)
-            if (i != 5 || tris_.buf) list[n++] = w[i];
+        for (int i = 0; i < 8; ++i)
+            if ((i != 5 || tris_.buf) && (i != 7 || frameData_.buf)) list[n++] = w[i];
         f_.vkUpdateDescriptorSets(dev_, n, list, 0, nullptr);
         ++st_.frame_set_writes;
     }
 
-    // alvo w x h: cor RGBA8 (anexo, armazenamento do resolve, origem da leitura), profundidade D32, cabecas das
-    // listas por pixel, leitura de volta
+    // alvo w x h: cor RGBA8 (anexo, armazenamento do resolve e dos volumes, origem da leitura), profundidade D32 (amostrada
+    // pelos volumes), o bit de sombra (R8_UINT), cabecas das listas por pixel, leitura de volta.
+    // N8.7: dois passes. A: opacas e punch-through (cor, profundidade e o bit de sombra do poligono visivel). Entre eles, os
+    // volumes modificadores (volumes.comp, so com volumes no quadro). B: subpasso 0 translucidas na ordem; subpasso 1
+    // translucidas em autosort (a profundidade como entrada, o >= feito no shader).
     bool target(uint32_t w, uint32_t h, uint32_t gw, uint32_t gh) {
         gameW_ = gw, gameH_ = gh;
         if (w == w_ && h == h_ && gw == downW_ && gh == downH_ && pass_) return true;
@@ -820,62 +893,113 @@ private:
         color_ = makeImage(w, h, VK_FORMAT_R8G8B8A8_UNORM,
                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                            VK_IMAGE_ASPECT_COLOR_BIT);
-        depth_ = makeImage(w, h, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+        depth_ = makeImage(w, h, VK_FORMAT_D32_SFLOAT,
+                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                            VK_IMAGE_ASPECT_DEPTH_BIT);
-        if (!color_.img || !depth_.img) return false;
-        VkAttachmentDescription at[2] = {};
-        at[0].format = VK_FORMAT_R8G8B8A8_UNORM, at[0].samples = VK_SAMPLE_COUNT_1_BIT;
-        at[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, at[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        at[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, at[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        at[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED, at[0].finalLayout = VK_IMAGE_LAYOUT_GENERAL;
-        at[1]               = at[0];
-        at[1].format = VK_FORMAT_D32_SFLOAT, at[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        at[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        // subpasso 0: opacas, punch-through, translucidas na ordem; 1: translucidas em autosort (a profundidade como
-        // entrada, o >= feito no shader com o 1/w do software)
-        VkAttachmentReference cr{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, dr{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-        VkAttachmentReference ir{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-        VkSubpassDescription  sps[2] = {};
-        sps[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, sps[0].colorAttachmentCount = 1, sps[0].pColorAttachments = &cr;
-        sps[0].pDepthStencilAttachment = &dr;
-        sps[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, sps[1].colorAttachmentCount = 1, sps[1].pColorAttachments = &cr;
-        sps[1].inputAttachmentCount = 1, sps[1].pInputAttachments = &ir;
-        VkSubpassDependency dep[3] = {};
-        dep[0].srcSubpass = VK_SUBPASS_EXTERNAL, dep[0].dstSubpass = 0;
-        dep[0].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        dep[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        dep[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        dep[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        dep[2].srcSubpass = 0, dep[2].dstSubpass = 1, dep[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-        dep[2].srcStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-                               VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        // o store da profundidade no fim do subpasso 1 (mesmo DONT_CARE) e escrita em LATE_FRAGMENT_TESTS: entra no
-        // destino para ficar ordenado depois da transicao de layout desta dependencia (SYNC-HAZARD-WRITE-AFTER-WRITE)
-        dep[2].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        dep[2].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                               VK_ACCESS_SHADER_WRITE_BIT;
-        dep[2].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
-                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        dep[1].srcSubpass = 1, dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-        dep[1].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        dep[1].dstStageMask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dep[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-        VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        rp.attachmentCount = 2, rp.pAttachments = at, rp.subpassCount = 2, rp.pSubpasses = sps;
-        rp.dependencyCount = 3, rp.pDependencies = dep;
-        if (f_.vkCreateRenderPass(dev_, &rp, nullptr, &pass_) != VK_SUCCESS) return false;
-        ++g_live;
-        VkImageView             views[2] = {color_.view, depth_.view};
-        VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-        fi.renderPass = pass_, fi.attachmentCount = 2, fi.pAttachments = views, fi.width = w, fi.height = h, fi.layers = 1;
-        if (f_.vkCreateFramebuffer(dev_, &fi, nullptr, &fb_) != VK_SUCCESS) return false;
-        ++g_live;
+        shadow_ = makeImage(w, h, VK_FORMAT_R8_UINT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT);
+        if (!color_.img || !depth_.img || !shadow_.img) return false;
+        {  // passe A
+            VkAttachmentDescription at[3] = {};
+            at[0].format = VK_FORMAT_R8G8B8A8_UNORM, at[0].samples = VK_SAMPLE_COUNT_1_BIT;
+            at[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, at[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            at[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, at[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            at[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED, at[0].finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+            at[1] = at[0], at[1].format = VK_FORMAT_D32_SFLOAT, at[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            at[2] = at[0], at[2].format = VK_FORMAT_R8_UINT, at[2].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkAttachmentReference cr[2] = {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
+            VkAttachmentReference dr{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+            VkSubpassDescription  sp{};
+            sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, sp.colorAttachmentCount = 2, sp.pColorAttachments = cr;
+            sp.pDepthStencilAttachment = &dr;
+            VkSubpassDependency dep[2] = {};
+            dep[0].srcSubpass = VK_SUBPASS_EXTERNAL, dep[0].dstSubpass = 0;
+            dep[0].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            dep[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                  VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                                   VK_ACCESS_SHADER_READ_BIT;
+            dep[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                   VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            // as escritas do passe A: lidas pelos volumes (compute), pelo passe B e pelas copias
+            dep[1].srcSubpass = 0, dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+            dep[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                                  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[1].dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                                  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_SHADER_WRITE_BIT;
+            dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT |
+                                   VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+            VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+            rp.attachmentCount = 3, rp.pAttachments = at, rp.subpassCount = 1, rp.pSubpasses = &sp;
+            rp.dependencyCount = 2, rp.pDependencies = dep;
+            if (f_.vkCreateRenderPass(dev_, &rp, nullptr, &pass_) != VK_SUCCESS) return false;
+            ++g_live;
+            VkImageView             views[3] = {color_.view, depth_.view, shadow_.view};
+            VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            fi.renderPass = pass_, fi.attachmentCount = 3, fi.pAttachments = views, fi.width = w, fi.height = h, fi.layers = 1;
+            if (f_.vkCreateFramebuffer(dev_, &fi, nullptr, &fb_) != VK_SUCCESS) return false;
+            ++g_live;
+        }
+        {  // passe B
+            VkAttachmentDescription at[2] = {};
+            at[0].format = VK_FORMAT_R8G8B8A8_UNORM, at[0].samples = VK_SAMPLE_COUNT_1_BIT;
+            at[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, at[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            at[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, at[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            at[0].initialLayout = VK_IMAGE_LAYOUT_GENERAL, at[0].finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+            at[1] = at[0], at[1].format = VK_FORMAT_D32_SFLOAT, at[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            at[1].initialLayout = at[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            VkAttachmentReference cr{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, dr{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+            VkAttachmentReference ir{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+            VkSubpassDescription  sps[2] = {};
+            sps[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, sps[0].colorAttachmentCount = 1, sps[0].pColorAttachments = &cr;
+            sps[0].pDepthStencilAttachment = &dr;
+            sps[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, sps[1].colorAttachmentCount = 1, sps[1].pColorAttachments = &cr;
+            sps[1].inputAttachmentCount = 1, sps[1].pInputAttachments = &ir;
+            VkSubpassDependency dep[3] = {};
+            dep[0].srcSubpass = VK_SUBPASS_EXTERNAL, dep[0].dstSubpass = 0;
+            dep[0].srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dep[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                  VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+            dep[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                   VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            dep[2].srcSubpass = 0, dep[2].dstSubpass = 1, dep[2].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+            dep[2].srcStageMask  = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            // o store da profundidade no fim do subpasso 1 (mesmo DONT_CARE) e escrita em LATE_FRAGMENT_TESTS: entra no
+            // destino para ficar ordenado depois da transicao de layout desta dependencia (SYNC-HAZARD-WRITE-AFTER-WRITE)
+            dep[2].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            dep[2].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_SHADER_WRITE_BIT;
+            dep[2].dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dep[1].srcSubpass = 1, dep[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+            dep[1].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dep[1].dstStageMask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dep[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+            VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+            rp.attachmentCount = 2, rp.pAttachments = at, rp.subpassCount = 2, rp.pSubpasses = sps;
+            rp.dependencyCount = 3, rp.pDependencies = dep;
+            if (f_.vkCreateRenderPass(dev_, &rp, nullptr, &passB_) != VK_SUCCESS) return false;
+            ++g_live;
+            VkImageView             views[2] = {color_.view, depth_.view};
+            VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            fi.renderPass = passB_, fi.attachmentCount = 2, fi.pAttachments = views, fi.width = w, fi.height = h, fi.layers = 1;
+            if (f_.vkCreateFramebuffer(dev_, &fi, nullptr, &fbB_) != VK_SUCCESS) return false;
+            ++g_live;
+        }
         heads_      = makeBuffer(kHeader + VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
         // a leitura de volta e sempre na resolucao do jogo: com a escala, a reducao feita na GPU (down_)
@@ -893,11 +1017,34 @@ private:
             f_.vkUpdateDescriptorSets(dev_, 2, dw, 0, nullptr);
         }
         headerRead_ = makeBuffer(kHeader, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, true);
-        if (!heads_.buf || !readback_.buf || !headerRead_.buf) return false;
+        if (!frameData_.buf) frameData_ = makeBuffer(kFrameDataBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        if (!heads_.buf || !readback_.buf || !headerRead_.buf || !frameData_.buf) return false;
         for (auto& [k, p] : pipes_) f_.vkDestroyPipeline(dev_, p, nullptr), --g_live;  // o passe mudou
         pipes_.clear();
+        volSetValid_ = false;  // as imagens mudaram: o conjunto dos volumes e regravado no proximo quadro com volumes
         // 4 fragmentos por pixel na resolucao do jogo; com a escala, 2 (o quadro cresce sozinho se faltar)
         return fragments(std::max(fragCapacity_, w * h * (scale_ == 1.f ? 4u : 2u)));
+    }
+
+    // N8.7: o conjunto dos volumes (volumes.comp). Regravado sempre que um buffer dele ou o alvo muda (o handle novo pode
+    // ser igual ao liberado: nunca comparar handles)
+    bool volSetValid_ = false;
+    void writeVolSet() {
+        VkDescriptorBufferInfo b[4] = {{volVols_.buf, 0, VK_WHOLE_SIZE}, {volTris_.buf, 0, VK_WHOLE_SIZE},
+                                       {volTiles_.buf, 0, VK_WHOLE_SIZE}, {volEnt_.buf, 0, VK_WHOLE_SIZE}};
+        VkDescriptorImageInfo  di{sampler_, depth_.view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+        VkDescriptorImageInfo  si{sampler_, shadow_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkDescriptorImageInfo  ci{VK_NULL_HANDLE, color_.view, VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet   w[7] = {};
+        for (uint32_t i = 0; i < 7; ++i) {
+            w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, w[i].dstSet = volSet_, w[i].dstBinding = i, w[i].descriptorCount = 1;
+            if (i < 4) w[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, w[i].pBufferInfo = &b[i];
+        }
+        w[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, w[4].pImageInfo = &di;
+        w[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, w[5].pImageInfo = &si;
+        w[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, w[6].pImageInfo = &ci;
+        f_.vkUpdateDescriptorSets(dev_, 7, w, 0, nullptr);
+        volSetValid_ = true;
     }
 
     uint32_t downW_ = 0, downH_ = 0;  // tamanho do jogo do alvo atual
@@ -907,7 +1054,9 @@ private:
         pipes_.clear();
         if (fb_) f_.vkDestroyFramebuffer(dev_, fb_, nullptr), --g_live, fb_ = VK_NULL_HANDLE;
         if (pass_) f_.vkDestroyRenderPass(dev_, pass_, nullptr), --g_live, pass_ = VK_NULL_HANDLE;
-        freeImage(color_), freeImage(depth_);
+        if (fbB_) f_.vkDestroyFramebuffer(dev_, fbB_, nullptr), --g_live, fbB_ = VK_NULL_HANDLE;
+        if (passB_) f_.vkDestroyRenderPass(dev_, passB_, nullptr), --g_live, passB_ = VK_NULL_HANDLE;
+        freeImage(color_), freeImage(depth_), freeImage(shadow_);
         freeBuffer(heads_), freeBuffer(frags_), freeBuffer(readback_), freeBuffer(headerRead_);
     }
 
@@ -967,8 +1116,12 @@ private:
             cb.dstColorBlendFactor = cb.dstAlphaBlendFactor = blendFactor(s.dst, false);
             cb.colorBlendOp = cb.alphaBlendOp = VK_BLEND_OP_ADD;
         }
+        // N8.7: opacas e punch-through no passe A, que tem o anexo do bit de sombra (R8_UINT). O estado e o mesmo nos dois
+        // anexos (sem mistura nesse passe; o R8_UINT ignora G, B e A): nao exige o recurso independentBlend
+        const bool                          inA = mode == PassMode::Opaque || mode == PassMode::PunchThrough;
+        VkPipelineColorBlendAttachmentState cbsAll[2] = {cb, cb};
         VkPipelineColorBlendStateCreateInfo cbs{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-        cbs.attachmentCount = 1, cbs.pAttachments = &cb;
+        cbs.attachmentCount = inA ? 2 : 1, cbs.pAttachments = cbsAll;
         VkDynamicState                   dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
         dy.dynamicStateCount = 2, dy.pDynamicStates = dyn;
@@ -976,7 +1129,8 @@ private:
         gp.stageCount = 2, gp.pStages = st, gp.pVertexInputState = &vi, gp.pInputAssemblyState = &ia;
         gp.pViewportState = &vp, gp.pRasterizationState = &rs, gp.pMultisampleState = &ms, gp.pDepthStencilState = &ds;
         gp.pColorBlendState = &cbs, gp.pDynamicState = &dy, gp.layout = gfxLayout_, gp.renderPass = pass_;
-        gp.subpass = mode == PassMode::TranslucentAutosort ? 1 : 0;
+        gp.renderPass = inA ? pass_ : passB_;
+        gp.subpass    = mode == PassMode::TranslucentAutosort ? 1 : 0;
         VkPipeline p = VK_NULL_HANDLE;
         if (f_.vkCreateGraphicsPipelines(dev_, VK_NULL_HANDLE, 1, &gp, nullptr, &p) != VK_SUCCESS) return VK_NULL_HANDLE;
         ++pipelinesCreated_;
@@ -1023,6 +1177,8 @@ private:
         if (s.wrap_v == Wrap::Mirror) fl |= F_FLIP_V;
         if (fr.texel_center) fl |= F_TEXEL_HALF;
         fl |= F_EXACT;  // modo fiel: a cobertura do software
+        if (s.fog == Fog::Table && !soft::fog_volumes_disabled()) fl |= F_FOG;  // N8.7
+        if (s.shadow) fl |= F_SHADOW;
         if (!fr.sample_center) fl |= F_SAMPLE_CORNER;
         if (!fr.attribute_center) fl |= F_ATTR_CORNER;
         if (rawDepth_) fl |= F_RAW_DEPTH;
@@ -1038,6 +1194,91 @@ private:
         p.depthBias = prep_.depth_bias;
         p.invScale  = 1.f / scale_;
         return p;
+    }
+
+    // N8.7: os volumes modificadores da lista 1 (volumes.comp), entre os passes A e B. So com a sombra por intensidade
+    // (FPU_SHAD_SCALE bit 8) e volumes no quadro. A CPU separa os triangulos por tile de 32 x 32 pixels do jogo, na ordem
+    // de submissao, sem os descartados (o cull do volume, area nula ou nao finita), com a area e 1/area calculadas como no
+    // rasterizador em software. Os volumes da lista 3 (sobre as translucidas) nao sao aplicados (contados).
+    bool volumes(const CommandList& cl) {
+        const FrameParams& fr = cl.frame;
+        bool               any = false;
+        for (const ModifierVolume& m : cl.modifiers) {
+            if (m.list == ListType::TranslucentModifier) ++st_.translucent_volumes_ignored;
+            else any = true;
+        }
+        if (!any || !(fr.shadow_scale & 0x100) || soft::fog_volumes_disabled()) return true;
+        const uint32_t tilesX = (fr.width + 31) / 32, tilesY = (fr.height + 31) / 32;
+        std::vector<uint32_t>              vols;   // 4 por volume
+        std::vector<float>                 tris;   // 11 por triangulo
+        std::vector<std::vector<uint32_t>> bins(size_t(tilesX) * tilesY);  // pares (volume, triangulo)
+        uint32_t                           nt = 0;
+        for (const ModifierVolume& m : cl.modifiers) {
+            if (m.list != ListType::OpaqueModifier) continue;
+            const uint32_t v = uint32_t(vols.size() / 4);
+            vols.insert(vols.end(), {nt, m.triangle_count, (m.inclusion ? 1u : 0u) | (m.closed ? 2u : 0u), m.or_from});
+            for (uint32_t k = 0; k < m.triangle_count; ++k, ++nt) {
+                const Vertex& a = cl.vertices[m.first_vertex + 3 * k];
+                const Vertex& b = cl.vertices[m.first_vertex + 3 * k + 1];
+                const Vertex& c = cl.vertices[m.first_vertex + 3 * k + 2];
+                const float   area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+                const float   inv  = 1.f / area;
+                tris.insert(tris.end(), {a.x, a.y, b.x, b.y, c.x, c.y, a.inv_w, b.inv_w, c.inv_w, area, inv});
+                if (area == 0 || !std::isfinite(area)) continue;
+                if (m.cull == 1 && std::fabs(area) < 2 * fr.small_cull) continue;
+                if (m.cull == 2 && area < 0) continue;
+                if (m.cull == 3 && area > 0) continue;
+                const int x0 = std::max(0, int(std::floor(std::min({a.x, b.x, c.x}))));
+                const int x1 = std::min(int(fr.width) - 1, int(std::ceil(std::max({a.x, b.x, c.x}))));
+                const int y0 = std::max(0, int(std::floor(std::min({a.y, b.y, c.y}))));
+                const int y1 = std::min(int(fr.height) - 1, int(std::ceil(std::max({a.y, b.y, c.y}))));
+                if (x0 > x1 || y0 > y1) continue;
+                for (int ty = y0 / 32; ty <= y1 / 32; ++ty)
+                    for (int tx = x0 / 32; tx <= x1 / 32; ++tx) bins[size_t(ty) * tilesX + tx].insert(bins[size_t(ty) * tilesX + tx].end(), {v, nt});
+            }
+        }
+        std::vector<uint32_t> tiles(bins.size() + 1, 0), ent;
+        for (size_t t = 0; t < bins.size(); ++t) {
+            tiles[t] = uint32_t(ent.size() / 2);
+            ent.insert(ent.end(), bins[t].begin(), bins[t].end());
+        }
+        tiles[bins.size()] = uint32_t(ent.size() / 2);
+        if (ent.empty()) ent = {0, 0};  // buffers nao vazios
+        if (tris.empty()) tris.assign(11, 0.f);
+        // os buffers crescem; cada realocacao regrava o conjunto (o handle novo pode repetir o liberado)
+        bool rewrite = !volSetValid_;
+        auto put = [&](Buffer& buf, const void* data, size_t bytes) {
+            if (buf.size < bytes) {
+                if (!ensureHost(buf, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) return false;
+                rewrite = true;
+            }
+            std::memcpy(buf.map, data, bytes);
+            return true;
+        };
+        if (!put(volVols_, vols.data(), vols.size() * 4) || !put(volTris_, tris.data(), tris.size() * 4) ||
+            !put(volTiles_, tiles.data(), tiles.size() * 4) || !put(volEnt_, ent.data(), ent.size() * 4))
+            return false;
+        if (rewrite) writeVolSet();
+        f_.vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_COMPUTE, volPipe_);
+        f_.vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_COMPUTE, volPipeLayout_, 0, 1, &volSet_, 0, nullptr);
+        struct {
+            uint32_t w, h, tilesX, scale;
+            float    invScale, fpuOff;
+            uint32_t raw;
+            float    bias, depthScale;
+        } pc{w_, h_, tilesX, fr.shadow_scale & 0xFF, 1.f / scale_, fr.sample_center ? 0.5f : 0.f, rawDepth_ ? 1u : 0u,
+             prep_.depth_bias, prep_.depth_scale};
+        static_assert(sizeof pc == 36);
+        f_.vkCmdPushConstants(cmd_, volPipeLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, &pc);
+        f_.vkCmdDispatch(cmd_, (w_ + 7) / 8, (h_ + 7) / 8, 1);
+        // a cor escrita pelo compute: lida e escrita pelo passe B e pelas copias
+        imageBarrier(color_.img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                     VK_ACCESS_SHADER_WRITE_BIT,
+                     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                     VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT |
+                         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        ++st_.volume_frames, st_.volume_triangles += nt;
+        return true;
     }
 
     Result<void> record(const CommandList& cl) {
@@ -1058,6 +1299,12 @@ private:
             writeFrameSets();
         }
         if (!prep_.tri_data.empty()) std::memcpy(tris_.map, prep_.tri_data.data(), prep_.tri_data.size() * sizeof(uint32_t));
+        {  // N8.7: FrameData (pvr.frag): a tabela da fog, a cor e a densidade
+            uint32_t fd[kFrameDataBytes / 4] = {};
+            for (size_t i = 0; i < fr.fog_table.size(); ++i) fd[i / 2] |= uint32_t(fr.fog_table[i]) << ((i & 1) * 16);
+            fd[64] = fr.fog_color & 0xFFFFFF, fd[65] = fr.fog_density & 0xFFFF;
+            std::memcpy(frameData_.map, fd, sizeof fd);
+        }
         if (!uploadBytes_.empty() && !ensureHost(staging_, uploadBytes_.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT))
             return Error::Io;
         if (!uploadBytes_.empty()) std::memcpy(staging_.map, uploadBytes_.data(), uploadBytes_.size());
@@ -1094,7 +1341,7 @@ private:
         bufferBarrier(heads_.buf, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-        VkClearValue clear[2] = {};
+        VkClearValue clear[3] = {};
         const uint32_t c = fr.clear_color;
         clear[0].color = {{float((c >> 16) & 0xFF) / 255.f, float((c >> 8) & 0xFF) / 255.f, float(c & 0xFF) / 255.f,
                            float(c >> 24) / 255.f}};
@@ -1102,8 +1349,9 @@ private:
                          : rawDepth_ ? fr.clear_depth
                                      : std::clamp((fr.clear_depth - prep_.depth_bias) * prep_.depth_scale, 0.f, 1.f);
         clear[1].depthStencil = {cz, 0};
+        clear[2].color.uint32[0] = 0;  // N8.7: o bit de sombra
         VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-        rb.renderPass = pass_, rb.framebuffer = fb_, rb.renderArea = {{0, 0}, {w_, h_}}, rb.clearValueCount = 2, rb.pClearValues = clear;
+        rb.renderPass = pass_, rb.framebuffer = fb_, rb.renderArea = {{0, 0}, {w_, h_}}, rb.clearValueCount = 3, rb.pClearValues = clear;
         f_.vkCmdBeginRenderPass(cmd_, &rb, VK_SUBPASS_CONTENTS_INLINE);
         // com a profundidade crua, o clamp do depthClamp vai a +-1e30 (o 1/w do jogo cabe; o shader escreve gl_FragDepth)
         VkViewport vp{0, 0, float(w_), float(h_), rawDepth_ ? -1e30f : 0.f, rawDepth_ ? 1e30f : 1.f};
@@ -1112,8 +1360,19 @@ private:
         f_.vkCmdBindVertexBuffers(cmd_, 0, 1, &verts_.buf, &zero);
         f_.vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, gfxLayout_, 1, 1, &fragSet_, 0, nullptr);
         VkPipeline bound = VK_NULL_HANDLE;
-        bool       second = false;
+        bool       inB = false, second = false;
+        // N8.7: o fim do passe A (opacas e punch-through), os volumes e o comeco do passe B (translucidas)
+        auto toB = [&]() -> bool {
+            f_.vkCmdEndRenderPass(cmd_);
+            if (!volumes(cl)) return false;
+            VkRenderPassBeginInfo rbB{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+            rbB.renderPass = passB_, rbB.framebuffer = fbB_, rbB.renderArea = {{0, 0}, {w_, h_}};
+            f_.vkCmdBeginRenderPass(cmd_, &rbB, VK_SUBPASS_CONTENTS_INLINE);
+            inB = true, bound = VK_NULL_HANDLE;
+            return true;
+        };
         for (const Batch& b : prep_.batches) {
+            if (!inB && b.mode != PassMode::Opaque && b.mode != PassMode::PunchThrough && !toB()) return fail("volumes");
             if (b.mode == PassMode::TranslucentAutosort && !second) {
                 f_.vkCmdNextSubpass(cmd_, VK_SUBPASS_CONTENTS_INLINE), second = true, bound = VK_NULL_HANDLE;
             }
@@ -1141,8 +1400,13 @@ private:
             f_.vkCmdPushConstants(cmd_, gfxLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
             f_.vkCmdDraw(cmd_, b.count, 1, b.first, 0);
         }
-        if (!second) f_.vkCmdNextSubpass(cmd_, VK_SUBPASS_CONTENTS_INLINE);
-        f_.vkCmdEndRenderPass(cmd_);  // cor em GENERAL (dependencia externa: compute e transferencia)
+        if (!inB) {  // sem translucidas: so o passe A (e os volumes)
+            f_.vkCmdEndRenderPass(cmd_);
+            if (!volumes(cl)) return fail("volumes");
+        } else {
+            if (!second) f_.vkCmdNextSubpass(cmd_, VK_SUBPASS_CONTENTS_INLINE);
+            f_.vkCmdEndRenderPass(cmd_);  // cor em GENERAL (dependencia externa: compute e transferencia)
+        }
         if (prep_.has_autosort) {
             f_.vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_COMPUTE, resolve_);
             f_.vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_COMPUTE, compLayout_, 0, 1, &resolveSet_, 0, nullptr);
@@ -1252,7 +1516,13 @@ private:
             for (auto& [id, t] : texs_) freeImage(t.image);
             texs_.clear();
             freeImage(dummy_.image);
-            freeBuffer(verts_), freeBuffer(staging_), freeBuffer(tris_);
+            freeBuffer(verts_), freeBuffer(staging_), freeBuffer(tris_), freeBuffer(frameData_);
+            freeBuffer(volVols_), freeBuffer(volTris_), freeBuffer(volTiles_), freeBuffer(volEnt_);
+            if (volPipe_) f_.vkDestroyPipeline(dev_, volPipe_, nullptr), --g_live, volPipe_ = VK_NULL_HANDLE;
+            if (volPipeLayout_) f_.vkDestroyPipelineLayout(dev_, volPipeLayout_, nullptr), --g_live, volPipeLayout_ = VK_NULL_HANDLE;
+            if (volPool_) f_.vkDestroyDescriptorPool(dev_, volPool_, nullptr), --g_live, volPool_ = VK_NULL_HANDLE;
+            if (volLayout_) f_.vkDestroyDescriptorSetLayout(dev_, volLayout_, nullptr), --g_live, volLayout_ = VK_NULL_HANDLE;
+            if (volMod_) f_.vkDestroyShaderModule(dev_, volMod_, nullptr), --g_live, volMod_ = VK_NULL_HANDLE;
             if (resolve_) f_.vkDestroyPipeline(dev_, resolve_, nullptr), --g_live;
             for (VkShaderModule m : {vert_, frag_, fragList_, comp_})
                 if (m) f_.vkDestroyShaderModule(dev_, m, nullptr), --g_live;

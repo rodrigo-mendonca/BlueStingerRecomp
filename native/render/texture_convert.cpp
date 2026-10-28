@@ -114,4 +114,14 @@ bool convert_pal4(std::span<const uint8_t> data, uint32_t w, uint32_t h, std::sp
     return true;
 }
 
+bool convert_pal8(std::span<const uint8_t> data, uint32_t w, uint32_t h, std::span<const uint32_t> palette,
+                  std::vector<uint32_t>& out) {
+    if (!dims_ok(w, h) || !pow2(w) || !pow2(h) || palette.size() < 256) return false;
+    if (data.size() < size_t(w) * h) return false;
+    out.resize(size_t(w) * h);
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w; ++x) out[size_t(y) * w + x] = palette[data[twiddle_index(x, y, w, h)]];
+    return true;
+}
+
 } // namespace bs::native::render

@@ -5,6 +5,7 @@
 // tile de 32 bits, profundidade em 1/w, fundo, listas opaca/punch-through/translucida),
 // com aproximacoes documentadas em pvr_render.cpp.
 #include "cpu/sh4_context.h"
+#include "render/soft/soft_raster.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,8 @@ namespace bs {
 
 struct RenderStats {
     uint32_t triangles = 0, sprites = 0, skipped = 0;  // skipped: formatos ainda nao suportados
+    uint32_t two_volume = 0;  // N8.7: globais de poligono com "dois volumes" (PCW bit 6), que o jogo nao usa
+    uint32_t unsupported = 0;  // N8.7: vertices omitidos de estados que o PVR desenharia (erro no produto)
     uint32_t width = 0, height = 0;
 };
 
@@ -27,34 +30,11 @@ bool pvr_render_take_fp_violation();
 // ---- O que o decodificador das listas do TA produz (N7a: a mesma decodificacao alimenta o rasterizador e a captura
 // da IR de render; nenhum segundo parser) ----
 
-struct PvrColor {
-    float a = 0, r = 0, g = 0, b = 0;  // [0, 1], ja quantizados como o TA guarda (8 bits por canal)
-};
-
-struct PvrVertex {
-    float    x = 0, y = 0, z = 0, u = 0, v = 0;  // z = 1/w
-    PvrColor col, off;
-};
-
-// Um triangulo com o estado decodificado do global e do recorte do usuario (as palavras do hardware, sem traducao).
-struct PvrTri {
-    uint32_t  list = 0, isp = 0, tsp = 0, tcw = 0;
-    bool      tex = false, offset = false, gouraud = true;
-    uint32_t  clipMode = 0;                       // PCW bits 17-16: 2 dentro, 3 fora do recorte
-    int       cx0 = 0, cy0 = 0, cx1 = 0, cy1 = 0;  // recorte do usuario em pixels (inclusivo)
-    PvrVertex v[3];
-};
-
-// Os registradores do quadro que o rasterizador usa (lidos uma vez por render): fundo, profundidade do fundo,
-// FPU_CULL_VAL, stride linear das texturas (TEXT_CONTROL), PT_ALPHA_REF, HALF_OFFSET, clamp de cor e a ordenacao
-// dos translucidos. A captura da IR redesenha a partir dos FrameParams convertidos de volta para esta forma.
-struct PvrFrame {
-    uint32_t background = 0;  // RGB do plano de fundo
-    float    background_depth = 0, cull_val = 0;
-    uint32_t tex_stride = 0, pt_ref = 0, half_offset = 0, clamp_max = 0, clamp_min = 0;
-    bool     autosort = true;
-    bool     operator==(const PvrFrame&) const = default;
-};
+// N8.7: os tipos sao os do rasterizador nativo (native/render/soft/soft_raster.h), o mesmo que desenha a IR
+using PvrColor  = native::render::soft::Color;
+using PvrVertex = native::render::soft::Vertex;
+using PvrTri    = native::render::soft::Tri;
+using PvrFrame  = native::render::soft::Frame;
 PvrFrame pvr_frame_from_regs();
 
 struct TaParam;
@@ -90,7 +70,12 @@ uint32_t pvr_background_color();                     // cor do plano de fundo do
 // Rasteriza triangulos dados (na ordem de submissao) com os registradores de quadro `frame` (nenhum registrador do
 // PVR e lido; os texels vem da VRAM atual), sem a VRAM de saida: a imagem ARGB8888 w x h. Mesma regra do pvr_render
 // (prova de equivalencia da IR: a imagem a partir da IR tem de ser identica a do caminho do TA).
-std::vector<uint32_t> pvr_render_triangles(std::span<const PvrTri> tris, const PvrFrame& frame, uint32_t width,
-                                           uint32_t height);
+// N8.7: so no build de validacao (pvr_render_ta.cpp): o rasterizador sobre os triangulos do TA com os texels da VRAM
+size_t pvr_render_ta(std::span<const PvrTri> prims, std::span<const native::render::soft::Volume> vols,
+                     std::span<const native::render::soft::VolumeTri> vtris, const PvrFrame& fr, native::render::soft::Image& r,
+                     native::render::soft::PhaseFn phase, void* ctx);
+std::vector<uint32_t> pvr_render_triangles(std::span<const PvrTri> tris, std::span<const native::render::soft::Volume> vols,
+                                           std::span<const native::render::soft::VolumeTri> vtris, const PvrFrame& frame,
+                                           uint32_t width, uint32_t height);
 
 } // namespace bs

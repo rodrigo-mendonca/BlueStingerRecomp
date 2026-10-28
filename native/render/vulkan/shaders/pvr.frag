@@ -48,6 +48,8 @@ const uint F_TEXTURED = 1u, F_GOURAUD = 2u, F_OFFSET = 4u, F_USE_ALPHA = 8u, F_I
 const uint F_CLAMP = 32u, F_CLIP_OUTSIDE = 64u, F_CLAMP_U = 4096u, F_CLAMP_V = 8192u, F_FLIP_U = 16384u;
 const uint F_FLIP_V = 32768u, F_TEXEL_HALF = 65536u, F_ATTR_PLUS = 524288u, F_ATTR_MINUS = 1048576u;
 const uint F_EXACT = 2097152u, F_SAMPLE_CORNER = 4194304u, F_ATTR_CORNER = 8388608u, F_RAW_DEPTH = 16777216u;
+const uint F_FOG = 33554432u;  // N8.7: fog por tabela (TSP bits 23-22 = 0)
+const uint F_SHADOW = 67108864u;  // N8.7: PCW bit 7 (o passe das opacas grava o bit de sombra do pixel)
 
 #include "exact.glsl"
 
@@ -55,6 +57,9 @@ const uint F_EXACT = 2097152u, F_SAMPLE_CORNER = 4194304u, F_ATTR_CORNER = 83886
 // ua va ub vb uc vc | cor a b c | deslocamento a b c | 2 de folga
 layout(std430, set = 1, binding = 2) readonly buffer Tris { uint triW[]; };
 const uint kTriWords = 24u;
+
+// N8.7: os parametros do quadro (FOG_TABLE: 2 entradas de 16 bits por palavra; FOG_COL_RAM; FOG_DENSITY)
+layout(std430, set = 1, binding = 4) readonly buffer FrameData { uint fogTable[64]; uint fogColor; uint fogDensity; } fd;
 
 #ifdef AUTOSORT
 struct Frag {
@@ -66,6 +71,8 @@ layout(std430, set = 1, binding = 0) buffer Frags { Frag frags[]; };
 layout(std430, set = 1, binding = 1) buffer Heads { uint count, capacity, overflow, width, maxList, pad0, pad1, pad2; uint head[]; };
 #else
 layout(location = 0) out vec4 outColor;
+// N8.7: o bit de sombra do poligono visivel (o anexo R8_UINT do passe das opacas; sem anexo nas translucidas)
+layout(location = 1) out uint outShadow;
 #endif
 
 vec4 argb(uint c) {  // c / 255 do decodificador do TA (RGBA aqui)
@@ -147,6 +154,25 @@ bool exact(ivec2 pix, out float z, out vec4 col, out vec3 off, out vec2 uv) {
     return true;
 }
 
+// N8.7: o alfa da fog por tabela para um 1/w, com as contas do rasterizador em software (soft_raster.cpp, fogAlpha):
+// z = densidade x 1/w em [1, 256); 16 entradas por oitava; os dois valores da entrada interpolados pela fracao
+float fogAlpha(float invW) {
+    const int     ex  = int(fd.fogDensity << 24u) >> 24;
+    precise float den = float((fd.fogDensity >> 8u) & 0xFFu) / 128.0 * ldexp(1.0, ex);
+    precise float zz  = min(max(den * invW, 1.0), 255.9999);
+    int           e;
+    frexp(zz, e);
+    e -= 1;
+    precise float m   = ldexp(zz * 16.0, -e) - 16.0;
+    const float   fl  = floor(m);
+    const int     idx = clamp(int(fl) + e * 16, 0, 127);
+    precise float f0  = m - fl;
+    const uint    ent = (fd.fogTable[uint(idx) >> 1u] >> ((uint(idx) & 1u) * 16u)) & 0xFFFFu;
+    const float   hi = k255[ent >> 8u], lo = k255[ent & 0xFFu];
+    precise float r  = hi + (lo - hi) * f0;
+    return r;
+}
+
 void main() {
     const ivec2 p = ivec2(gl_FragCoord.xy);
     float z;
@@ -201,6 +227,12 @@ void main() {
         if ((pc.flags & F_OFFSET) != 0u) o.rgb += off;
     }
     if ((pc.flags & F_CLAMP) != 0u) o = min(max(o, argb(pc.clampMin)), argb(pc.clampMax));
+    if ((pc.flags & F_FOG) != 0u) {  // N8.7: fog por tabela, sobre a cor final (o alfa nao muda)
+        precise float f  = fogAlpha(z);
+        const vec4    fc = argb(fd.fogColor | 0xFF000000u);
+        precise vec3  g  = o.rgb + (fc.rgb - o.rgb) * f;
+        o.rgb            = g;
+    }
     const uint mode = (pc.flags >> 17) & 3u;
     if (mode == 1u && q8(o.a) < pc.ptRef) discard;
 #ifdef AUTOSORT
@@ -223,5 +255,6 @@ void main() {
     gl_FragDepth = (pc.flags & F_RAW_DEPTH) != 0u ? z
                  : ((pc.flags & F_EXACT) != 0u ? clamp((z - pc.depthBias) * pc.depthScale, 0.0, 1.0) : gl_FragCoord.z);
     outColor     = mode == 2u ? o : quant(o);
+    outShadow    = (pc.flags & F_SHADOW) != 0u ? 1u : 0u;
 #endif
 }

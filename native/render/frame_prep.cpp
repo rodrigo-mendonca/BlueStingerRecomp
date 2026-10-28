@@ -1,5 +1,7 @@
 #include "render/frame_prep.h"
 
+#include "render/soft/soft_raster.h"
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -114,6 +116,23 @@ void prepare_frame(const CommandList& cl, PreparedFrame& out, bool exact, float 
             }
         }
     }
+    // N8.7 (revisao Codex 20261028-103445): o 1/w dos volumes modificadores entra no intervalo, senao, sem a profundidade
+    // crua, o limite a [0, 1] transformaria "volume a frente" em empate
+    // so os triangulos que o compute aplica (revisao Codex 20261028-115305): lista 1, sombra por intensidade ligada, area
+    // finita e nao nula, sem o descarte do volume (os mesmos filtros de vk_device.cpp volumes e soft_raster applyVolumes)
+    if ((f.shadow_scale & 0x100) && !soft::fog_volumes_disabled())
+        for (const ModifierVolume& m : cl.modifiers) {
+            if (m.list != ListType::OpaqueModifier) continue;
+            for (uint32_t k = 0; k < m.triangle_count; ++k) {
+                const Vertex* t = &cl.vertices[m.first_vertex + 3 * k];
+                const float   area = (t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (t[1].y - t[0].y);
+                if (area == 0 || !std::isfinite(area)) continue;
+                if ((m.cull == 1 && std::fabs(area) < 2 * f.small_cull) || (m.cull == 2 && area < 0) || (m.cull == 3 && area > 0))
+                    continue;
+                for (int i = 0; i < 3; ++i)
+                    if (std::isfinite(t[i].inv_w)) maxz = std::fmax(maxz, t[i].inv_w), minz = std::fmin(minz, t[i].inv_w);
+            }
+        }
     if (minz < 0) out.depth_bias = minz;
     const float range = maxz - out.depth_bias;
     while (range * out.depth_scale > 1.f) out.depth_scale *= 0.5f;  // potencia de 2: exata

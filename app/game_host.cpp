@@ -434,7 +434,7 @@ void GameHost::applyRequests() {
     }
     if (const int r = rendererPending_.exchange(-1); r >= 0 && !std::getenv("BS_RENDER_IR")) {
         transitional::render_capture::install(RenderProvider(r) == RenderProvider::Native ? transitional::render_capture::Mode::Native
-                                                                                           : transitional::render_capture::Mode::Off);
+                                                                                           : transitional::render_capture::Mode::Software);
         renderer_.store(r);
         std::fprintf(stderr, "[render] renderizador: %s\n", RenderProvider(r) == RenderProvider::Native ? "Vulkan" : "software");
     }
@@ -823,6 +823,10 @@ void GameHost::threadMain() {
             const char* cada = std::getenv("BS_RENDER_IR_BMP_CADA");
             transitional::render_capture::set_compare_dump(dir, cada ? uint32_t(std::strtoul(cada, nullptr, 10)) : 300u);
         }
+#if !BS_VALIDACAO
+        if (std::getenv("BS_RENDER_IR"))  // N8.7: o caminho do TA nao desenha no produto (main_sdl recusa antes)
+            throw std::runtime_error("BS_RENDER_IR so existe no build de validacao (N8.7)");
+#endif
         if (const char* ir = std::getenv("BS_RENDER_IR"); ir && *ir) {
             const char*       cada  = std::getenv("BS_RENDER_IR_CADA");
             const uint32_t    every = cada ? uint32_t(std::strtoul(cada, nullptr, 10)) : 1u;
@@ -833,6 +837,9 @@ void GameHost::threadMain() {
         } else if (opt_.render == RenderProvider::Native) {
             renderer_.store(int(RenderProvider::Native));
             transitional::render_capture::install(transitional::render_capture::Mode::Native);
+        } else {
+            // N8.7: o renderizador em software desenha a IR (native/render/soft), sem ler a VRAM
+            transitional::render_capture::install(transitional::render_capture::Mode::Software);
         }
         sh4_set_fatal_handler(onFatal);
         if (opt_.prepare) opt_.prepare(c);

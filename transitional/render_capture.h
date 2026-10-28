@@ -86,7 +86,18 @@ struct Stats {
     // primeiro; o primeiro render com volumes permite extrair uma cena real para o oraculo do Flycast.
     std::array<uint64_t, 4> fog_draws{}, fog_first_render{};
     uint64_t modifier_first_render = 0;
-    uint64_t frame_mismatch = 0;  // FrameParams que nao reproduzem os registradores usados (tem de ficar em 0)
+    // N8.7 (contrato da IR): desenhos com o bit de sombra (PCW bit 7) e o primeiro render deles; volumes da lista 3 (sobre
+    // os translucidos); globais de "dois volumes" (PCW bit 6, sem suporte: tem de ficar em 0). Os parametros da fog e a
+    // escala de sombra no primeiro render que usa cada um (dimensionam o efeito visivel).
+    uint64_t shadow_draws = 0, shadow_first_render = 0, translucent_volumes = 0, two_volume = 0;
+    uint64_t volume_inclusion = 0, volume_exclusion = 0, volume_or = 0, volume_mixed_cull = 0, volume_bad_instruction = 0;
+    uint32_t fog_density_first = 0, fog_color_first = 0, fog_table_nonzero_first = 0, fog_table_max_first = 0;
+    uint32_t shadow_scale_first = 0;
+    uint64_t frame_mismatch = 0;
+    // N8.7: o renderizador em software sobre a IR (quadros desenhados, falhas) e, no modo conferir, as imagens dele que
+    // diferem do caminho do TA (tem de ficar em 0)
+    uint64_t    soft_frames = 0, soft_failures = 0, soft_image_mismatch = 0;
+    std::string soft_error;  // FrameParams que nao reproduzem os registradores usados (tem de ficar em 0)
     // N7b (Vulkan)
     std::string vk_device, vk_error;
     uint64_t    vk_frames = 0, vk_failures = 0, tex_uploads = 0, tex_legacy = 0, tex_evicted = 0;
@@ -108,7 +119,9 @@ struct Stats {
     std::string first_error;
 };
 
-enum class Mode : uint8_t { Off, Capture, Check, Native, Compare };
+// Software (N8.7): o renderizador em software desenha a IR (native/render/soft); Native: Vulkan, com o software sobre a IR
+// como recuo
+enum class Mode : uint8_t { Off, Capture, Check, Native, Compare, Software };
 void         install(Mode m, uint32_t every = 1);  // instala no pvr_render e zera as estatisticas (Off desinstala e descarta)
 const Frame& last_frame();                         // a IR do ultimo render
 const Stats& stats();

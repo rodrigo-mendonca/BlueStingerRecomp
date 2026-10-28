@@ -5,6 +5,7 @@
 #include "pvr/ta.h"
 #include "render/frame_prep.h"
 #include "render/render_ir.h"
+#include "render/soft/soft_device.h"
 #include "render/texture_convert.h"
 #include "render/vulkan/vk_device.h"
 
@@ -23,6 +24,7 @@
 #include <utility>
 
 namespace bs::transitional::render_capture {
+namespace soft = bs::native::render::soft;
 namespace {
 
 constexpr uint32_t R(uint32_t off) { return 0x005F8000 + off; }
@@ -33,13 +35,8 @@ float f32(uint32_t w) {
     return f;
 }
 
-uint32_t pack(const PvrColor& c) {
-    auto q = [](float v) { return uint32_t(std::lround((v < 0 ? 0 : (v > 1 ? 1 : v)) * 255)); };
-    return (q(c.a) << 24) | (q(c.r) << 16) | (q(c.g) << 8) | q(c.b);
-}
-PvrColor unpack(uint32_t c) {  // a mesma expressao do decodificador (x / 255.f): o round-trip e exato
-    return {((c >> 24) & 0xFF) / 255.f, ((c >> 16) & 0xFF) / 255.f, ((c >> 8) & 0xFF) / 255.f, (c & 0xFF) / 255.f};
-}
+uint32_t pack(const PvrColor& c) { return soft::pack_color(c); }
+PvrColor unpack(uint32_t c) { return soft::unpack_color(c); }  // x / 255.f: o round-trip e exato
 
 nr::ListType list_type(uint32_t l) {
     switch (l) {
@@ -50,15 +47,7 @@ nr::ListType list_type(uint32_t l) {
     default: return nr::ListType::Opaque;
     }
 }
-uint32_t list_number(nr::ListType l) {
-    switch (l) {
-    case nr::ListType::OpaqueModifier: return 1;
-    case nr::ListType::Translucent: return 2;
-    case nr::ListType::TranslucentModifier: return 3;
-    case nr::ListType::PunchThrough: return 4;
-    default: return 0;
-    }
-}
+uint32_t list_number(nr::ListType l) { return soft::list_number(l); }
 
 uint32_t log2_size(uint32_t n) {  // 8 << k
     uint32_t k = 0;
@@ -146,9 +135,15 @@ public:
         // proximo global (de qualquer lista) comeca outro (revisao Codex 2026-10-21: globais iguais nao se fundem)
         if (mod_closing_) mod_open_ = false;
         mod_closing_ = false;
-        if (g.list != 1 && g.list != 3) return;
-        mod_instr_   = (g.w[1] >> 29) & 3;
+        if (g.list != 1 && g.list != 3) {
+            if (g.w[0] & 0x40) ++st.two_volume;  // N8.7: sem suporte na IR (o decodificador descarta o poligono)
+            return;
+        }
+        mod_instr_   = (g.w[1] >> 29) & 7;
         mod_closing_ = mod_instr_ == 1 || mod_instr_ == 2;
+        mod_cull_    = uint8_t((g.w[1] >> 27) & 3);  // N8.7: descarte de faces do volume
+        mod_last_    = g.w[0] & 0x40;                 // PCW bit 6 ("volume"): fechamento por inversao; sem ele, por OU
+        if (mod_instr_ > 2) ++st.volume_bad_instruction;
     }
 
     void modifier(const TaParam&, const TaParam& p) override {
@@ -156,12 +151,20 @@ public:
         ++frame.modifier_params;
         if (!mod_open_ || frame.cl.modifiers.back().list != list_type(p.list)) {
             frame.cl.modifiers.push_back({uint32_t(frame.cl.vertices.size()), 0, true, list_type(p.list)});
+            frame.cl.modifiers.back().cull = mod_cull_;
             ++frame.modifier_volumes;
             mod_open_ = true, mod_cur_closed_ = false;
         }
+        nr::ModifierVolume& mv = frame.cl.modifiers.back();
+        if (mv.cull != mod_cull_) ++st.volume_mixed_cull;  // a IR guarda um descarte por volume
         if (mod_closing_) {
-            frame.cl.modifiers.back().inclusion = mod_instr_ == 1;
-            if (!mod_cur_closed_) mod_cur_closed_ = true, ++mod_closed_;
+            mv.inclusion = mod_instr_ == 1, mv.closed = true;
+            if (!mod_last_ && mv.or_from == ~0u) mv.or_from = mv.triangle_count;  // este parametro entra por OU
+            if (!mod_cur_closed_) {
+                mod_cur_closed_ = true, ++mod_closed_;
+                ++(mv.inclusion ? st.volume_inclusion : st.volume_exclusion);
+                st.volume_or += mv.or_from != ~0u;
+            }
         }
         for (int i = 0; i < 3; ++i) {
             nr::Vertex v;
@@ -182,8 +185,12 @@ public:
         if (dumpAt.first && st.renders + 1 == dumpAt.first)
             std::fprintf(stderr, "[render] IR do render %llu em %s: %s\n", static_cast<unsigned long long>(dumpAt.first),
                          dumpAt.second.c_str(), save_frame_dump(dumpAt.second, frame) ? "ok" : "FALHOU");
+        // N8.7: o renderizador em software desenha a IR (soft_device), tambem como recuo do Vulkan (o motivo da queda ja
+        // foi registrado por vk_render)
+        if (mode == Mode::Software) return soft_render(w, h, image);
         if (mode != Mode::Native && mode != Mode::Compare) return false;
         vkOk_ = vk_render(w, h, mode == Mode::Native ? image : vkImage_);
+        if (mode == Mode::Native && !vkOk_) return soft_render(w, h, image);
         return mode == Mode::Native && vkOk_;
     }
 
@@ -196,15 +203,30 @@ public:
         st.draws += frame.cl.draws.size(), st.vertices += frame.cl.vertices.size(), st.sprites += frame.sprites;
         st.modifier_params += frame.modifier_params, st.modifier_volumes += frame.modifier_volumes;
         st.skipped_params += frame.skipped_params;
+        const nr::FrameParams& fp = frame.cl.frame;
         for (const nr::Draw& d : frame.cl.draws) {
             const size_t fog = size_t(d.state.fog);
             if (fog < st.fog_draws.size()) {
                 ++st.fog_draws[fog];
-                if (!st.fog_first_render[fog]) st.fog_first_render[fog] = st.renders;
+                if (!st.fog_first_render[fog]) {
+                    st.fog_first_render[fog] = st.renders;
+                    if (d.state.fog == nr::Fog::Table) {
+                        st.fog_density_first = fp.fog_density, st.fog_color_first = fp.fog_color;
+                        for (const uint16_t e : fp.fog_table)
+                            st.fog_table_nonzero_first += e != 0,
+                                st.fog_table_max_first = std::max<uint32_t>({st.fog_table_max_first, uint32_t(e >> 8), uint32_t(e & 0xFF)});
+                    }
+                }
+            }
+            if (d.state.shadow) {
+                ++st.shadow_draws;
+                if (!st.shadow_first_render) st.shadow_first_render = st.renders, st.shadow_scale_first = fp.shadow_scale;
             }
         }
+        for (const nr::ModifierVolume& m : frame.cl.modifiers) st.translucent_volumes += m.list == nr::ListType::TranslucentModifier;
         if (!frame.cl.modifiers.empty() && !st.modifier_first_render) st.modifier_first_render = st.renders;
         if (mode != Mode::Check || (st.renders - 1) % every) return;
+#if BS_VALIDACAO  // N8.7: o modo conferir (a IR contra o caminho do TA) so existe na validacao
         ++st.checked;
         auto fail = [&](uint64_t& counter, const std::string& what) {
             ++counter;
@@ -235,11 +257,23 @@ public:
                 }
             }
         }
-        const std::vector<uint32_t> again = pvr_render_triangles(tris, from_ir, w, h);
+        std::vector<soft::Volume>    vols;
+        std::vector<soft::VolumeTri> vtris;
+        soft::tri_volumes(frame.cl, vols, vtris);
+        const std::vector<uint32_t> again = pvr_render_triangles(tris, vols, vtris, from_ir, w, h);
         if (again.size() != image.size() || std::memcmp(again.data(), image.data(), image.size() * 4) != 0) {
             size_t diff = 0;
             for (size_t i = 0; i < std::min(again.size(), image.size()); ++i) diff += again[i] != image[i];
             fail(st.image_mismatch, "imagem a partir da IR difere em " + std::to_string(diff) + " pixels");
+        }
+        // N8.7: o dispositivo em software (texturas convertidas, nenhuma VRAM) desenha a mesma imagem do caminho do TA
+        std::vector<uint32_t> soft_img;
+        if (!soft_render(w, h, soft_img)) {
+            fail(st.soft_image_mismatch, "renderizador em software sobre a IR falhou: " + st.soft_error);
+        } else if (soft_img.size() != image.size() || std::memcmp(soft_img.data(), image.data(), image.size() * 4) != 0) {
+            size_t diff = 0;
+            for (size_t i = 0; i < std::min(soft_img.size(), image.size()); ++i) diff += soft_img[i] != image[i];
+            fail(st.soft_image_mismatch, "software sobre a IR difere em " + std::to_string(diff) + " pixels");
         }
         for (const TextureKey& k : frame.textures) {
             std::vector<uint32_t> argb;
@@ -262,6 +296,7 @@ public:
                         break;
                     }
         }
+#endif
     }
 
 private:
@@ -271,6 +306,8 @@ private:
     uint32_t               stride_   = 0;
     bool                   mod_open_ = false, mod_closing_ = false, mod_cur_closed_ = false;
     uint32_t               mod_instr_ = 0, mod_closed_ = 0;  // instrucao do ultimo global; volumes com ultimo poligono
+    uint8_t                mod_cull_ = 0;      // N8.7: descarte do ultimo global de volume
+    bool                   mod_last_ = false;  // N8.7: PCW bit 6 do ultimo global de volume
     std::set<std::pair<uint64_t, uint64_t>> keys_, ids_;  // para o resumo: quantas chaves e quantos conteudos
 
     // ---- N7b: backend Vulkan ----
@@ -287,6 +324,9 @@ private:
     std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, VkTex> vkTex_;
     std::vector<uint8_t>  raw_;
     std::vector<uint32_t> argb_;
+    // N8.7: o renderizador em software sobre a IR
+    std::unique_ptr<soft::SoftwareDevice>                                  soft_;
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, VkTex> softTex_;
 
     // N7c: os ultimos renders na escala (o mais novo na frente): a imagem reduzida que foi para a VRAM (para achar o
     // render exibido) e a maior. Tres por causa do buffer duplo (o exibido e o anterior ao ultimo) com folga.
@@ -365,16 +405,19 @@ private:
         return true;
     }
 
-    // handle do dispositivo para a textura: refeita quando os bytes da VRAM (ou a paleta) mudam
-    bool texture_handle(const TextureKey& k, nr::TextureHandle& out) {
+    // handle do dispositivo para a textura: refeita quando os bytes da VRAM (ou a paleta) mudam. hd: as substituicoes HD
+    // valem (so no Vulkan; o software amostra o original)
+    bool texture_handle(nr::IRenderDevice& dev, std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, VkTex>& cache,
+                        bool hd, const TextureKey& k, nr::TextureHandle& out) {
         if (g_fault == Fault::Texture) {
             g_fault = Fault::None;
             return false;
         }
         texture_source(k, raw_);
-        VkTex& e = vkTex_[{k.tcw, k.width, k.height, k.stride}];
+        VkTex& e = cache[{k.tcw, k.width, k.height, k.stride}];
         e.used   = st.renders;
-        if (e.handle && e.raw == raw_ && e.provider == g_replacements) {
+        nr::ITextureReplacements* repl = hd ? g_replacements : nullptr;
+        if (e.handle && e.raw == raw_ && e.provider == repl) {
             out = e.handle;
             return true;
         }
@@ -384,39 +427,68 @@ private:
         // substituicao HD pelo conteudo (nunca pelo endereco): compativel ou o original
         const std::vector<uint32_t>* texels = &argb_;
         uint32_t                     tw = k.width, th = k.height;
-        if (g_replacements) {
+        if (repl) {
             const nr::TextureId id = nr::texture_id(k.width, k.height, argb_);
-            if (const nr::ReplacementTexture* r = g_replacements->find(id)) {
+            if (const nr::ReplacementTexture* r = repl->find(id)) {
                 if (nr::replacement_compatible(id, *r)) texels = &r->argb, tw = r->width, th = r->height, ++st.tex_replaced;
                 else ++st.tex_replace_rejected;
             }
         }
         const auto bytes = std::as_bytes(std::span<const uint32_t>(*texels));
-        if (e.handle && (e.w != tw || e.h != th)) vk_->destroy_texture(e.handle), e.handle = {};
+        if (e.handle && (e.w != tw || e.h != th)) dev.destroy_texture(e.handle), e.handle = {};
         if (e.handle) {
-            if (!vk_->update_texture(e.handle, bytes)) return false;
+            if (!dev.update_texture(e.handle, bytes)) return false;
         } else {
             nr::TextureDesc d;
             d.width = tw, d.height = th;
-            auto r = vk_->create_texture(d, bytes);
+            auto r = dev.create_texture(d, bytes);
             if (!r) return false;
             e.handle = r.value();
         }
-        e.w = tw, e.h = th, e.provider = g_replacements;
+        e.w = tw, e.h = th, e.provider = repl;
         e.raw = raw_;
         ++st.tex_uploads;
         out = e.handle;
         return true;
     }
 
-    void evict() {  // texturas sem uso ha 600 renders saem da GPU
-        for (auto it = vkTex_.begin(); it != vkTex_.end();)
+    // texturas sem uso ha 600 renders saem do dispositivo
+    void evict(nr::IRenderDevice& dev, std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, VkTex>& cache) {
+        for (auto it = cache.begin(); it != cache.end();)
             if (st.renders - it->second.used > 600) {
-                if (it->second.handle) vk_->destroy_texture(it->second.handle);
-                it = vkTex_.erase(it), ++st.tex_evicted;
+                if (it->second.handle) dev.destroy_texture(it->second.handle);
+                it = cache.erase(it), ++st.tex_evicted;
             } else {
                 ++it;
             }
+    }
+
+    // N8.7: o renderizador em software sobre a IR (o recuo permanente do Vulkan): as texturas do quadro convertidas (sem as
+    // substituicoes HD) e a IR com os handles dele. Falha = erro registrado (nunca um quadro sem textura).
+    bool soft_render(uint32_t w, uint32_t h, std::vector<uint32_t>& out) {
+        if (!soft_) soft_ = std::make_unique<soft::SoftwareDevice>();
+        if (st.renders % 300 == 0) evict(*soft_, softTex_);
+        std::vector<nr::TextureHandle> handles(frame.textures.size());
+        for (size_t i = 0; i < frame.textures.size(); ++i)
+            if (!texture_handle(*soft_, softTex_, false, frame.textures[i], handles[i])) return soft_fail("textura");
+        const std::vector<nr::Draw> saved = frame.cl.draws;
+        for (nr::Draw& d : frame.cl.draws)
+            if (d.state.texture) d.state.texture = handles[d.state.texture.value - 1];
+        const auto r  = soft_->submit(frame.cl);
+        frame.cl.draws = saved;
+        uint32_t rw = 0, rh = 0;
+        if (!r) return soft_fail(std::string("quadro (") + native::error_name(r.error()) + ")");
+        if (!soft_->read_frame(out, rw, rh) || rw != w || rh != h) return soft_fail("tamanho da imagem");
+        ++st.soft_frames;
+        return true;
+    }
+    bool soft_fail(const std::string& why) {
+        ++st.soft_failures;
+        if (st.soft_error.empty()) {
+            st.soft_error = "render " + std::to_string(st.renders + 1) + ": " + why;
+            std::fprintf(stderr, "[render] software sobre a IR: falha no %s\n", st.soft_error.c_str());
+        }
+        return false;
     }
 
     // Perda do dispositivo (VK_ERROR_DEVICE_LOST e falhas do quadro): o dispositivo e recriado a partir dos dados da
@@ -464,10 +536,10 @@ private:
 
     bool vk_attempt(uint32_t w, uint32_t h, std::vector<uint32_t>& out, std::string* why) {
         if (!ensure_vk()) return false;
-        if (st.renders % 300 == 0) evict();
+        if (st.renders % 300 == 0) evict(*vk_, vkTex_);
         std::vector<nr::TextureHandle> handles(frame.textures.size());
         for (size_t i = 0; i < frame.textures.size(); ++i)
-            if (!texture_handle(frame.textures[i], handles[i])) {
+            if (!texture_handle(*vk_, vkTex_, true, frame.textures[i], handles[i])) {
                 // sem a textura o quadro sairia errado: este render fica no software (nunca um desenho sem textura)
                 if (st.vk_error.empty()) st.vk_error = "textura nao enviada ao Vulkan (render no software)";
                 *why = "textura";
@@ -618,6 +690,7 @@ nr::DrawState draw_state(const PvrTri& t, uint32_t texture_handle) {
     s.offset_color     = t.offset;
     s.ignore_tex_alpha = (t.tsp >> 19) & 1;
     s.color_clamp      = (t.tsp >> 21) & 1;
+    s.shadow           = t.shadow;
     s.mip_bias         = uint8_t((t.tsp >> 8) & 0xF);
     s.supersample      = (t.tsp >> 12) & 1;
     s.src_select       = (t.tsp >> 25) & 1;
@@ -627,31 +700,8 @@ nr::DrawState draw_state(const PvrTri& t, uint32_t texture_handle) {
     return s;
 }
 
-PvrTri pvr_state(const nr::DrawState& s, const TextureKey* tex) {
-    PvrTri t;
-    t.list = list_number(s.list);
-    t.isp  = (uint32_t(s.depth) << 29) | (uint32_t(s.cull) << 27) | (uint32_t(!s.depth_write) << 26);
-    const uint32_t flt = uint32_t(s.filter);
-    uint32_t       env = 0;
-    switch (s.env) {
-    case nr::TexEnv::Replace: env = 0; break;
-    case nr::TexEnv::Modulate: env = 1; break;
-    case nr::TexEnv::Decal: env = 2; break;
-    case nr::TexEnv::ModulateAlpha: env = 3; break;
-    }
-    t.tsp = (uint32_t(s.src) << 29) | (uint32_t(s.dst) << 26) | (uint32_t(s.fog) << 22) | (uint32_t(s.color_clamp) << 21) |
-            (uint32_t(s.use_alpha) << 20) | (uint32_t(s.ignore_tex_alpha) << 19) |
-            (uint32_t(s.wrap_u == nr::Wrap::Mirror) << 18) | (uint32_t(s.wrap_v == nr::Wrap::Mirror) << 17) |
-            (uint32_t(s.wrap_u == nr::Wrap::Clamp) << 16) | (uint32_t(s.wrap_v == nr::Wrap::Clamp) << 15) | (flt << 13) |
-            (uint32_t(s.src_select) << 25) | (uint32_t(s.dst_select) << 24) | (uint32_t(s.supersample) << 12) |
-            (uint32_t(s.mip_bias & 0xF) << 8) | (env << 6);
-    t.tex = bool(s.texture) && tex;
-    if (t.tex) t.tcw = tex->tcw, t.tsp |= (log2_size(tex->width) << 3) | log2_size(tex->height);
-    t.offset   = s.offset_color;
-    t.gouraud  = s.gouraud;
-    t.clipMode = s.clip == nr::Clip::Inside ? 2 : (s.clip == nr::Clip::Outside ? 3 : 0);
-    if (s.clip != nr::Clip::None) t.cx0 = s.clip_x0, t.cy0 = s.clip_y0, t.cx1 = s.clip_x1, t.cy1 = s.clip_y1;
-    return t;
+PvrTri pvr_state(const nr::DrawState& s, const TextureKey* tex) {  // a mesma conversao do renderizador em software
+    return soft::tri_state(s, tex ? tex->tcw : 0, tex ? tex->width : 0, tex ? tex->height : 0);
 }
 
 nr::Vertex vertex(const PvrVertex& v) {
@@ -661,12 +711,7 @@ nr::Vertex vertex(const PvrVertex& v) {
     return o;
 }
 
-PvrVertex pvr_vertex(const nr::Vertex& v) {
-    PvrVertex o;
-    o.x = v.x, o.y = v.y, o.z = v.inv_w, o.u = v.u, o.v = v.v;
-    o.col = unpack(v.color), o.off = unpack(v.offset);
-    return o;
-}
+PvrVertex pvr_vertex(const nr::Vertex& v) { return soft::tri_vertex(v); }
 
 nr::FrameParams frame_params(uint32_t width, uint32_t height) {
     nr::FrameParams f;
@@ -677,6 +722,7 @@ nr::FrameParams frame_params(uint32_t width, uint32_t height) {
     f.fog_color             = pvr_reg(R(0x0B0));  // FOG_COL_RAM
     f.fog_vertex_color      = pvr_reg(R(0x0B4));  // FOG_COL_VERT
     f.fog_density           = pvr_reg(R(0x0B8)) & 0xFFFF;  // FOG_DENSITY
+    f.shadow_scale          = pvr_reg(R(0x074)) & 0x1FF;   // FPU_SHAD_SCALE
     f.punch_through_ref     = float(pvr_reg(R(0x11C)) & 0xFF) / 255.f;
     f.translucent_autosort  = !(pvr_reg(R(0x098)) & 1);  // ISP_FEED_CFG bit 0
     const uint32_t half     = pvr_reg(R(0x080));           // HALF_OFFSET
@@ -686,19 +732,7 @@ nr::FrameParams frame_params(uint32_t width, uint32_t height) {
     return f;
 }
 
-PvrFrame pvr_frame(const Frame& f) {
-    const nr::FrameParams& p = f.cl.frame;
-    PvrFrame               r;
-    r.background       = p.clear_color & 0xFFFFFF;
-    r.background_depth = p.clear_depth;
-    r.cull_val         = p.small_cull;
-    r.tex_stride       = f.texture_stride;
-    r.pt_ref           = uint32_t(std::lround(p.punch_through_ref * 255));  // byte / 255.f: a volta e exata
-    r.half_offset      = (p.sample_center ? 1u : 0u) | (p.attribute_center ? 2u : 0u) | (p.texel_center ? 4u : 0u);
-    r.clamp_max = p.clamp_max, r.clamp_min = p.clamp_min;
-    r.autosort  = p.translucent_autosort;
-    return r;
-}
+PvrFrame pvr_frame(const Frame& f) { return soft::tri_frame(f.cl.frame, f.texture_stride); }
 
 bool valid(const Frame& f, std::string* error) {
     if (!nr::validate(f.cl, error)) return false;
@@ -763,7 +797,15 @@ bool convert_texture(const TextureKey& k, std::vector<uint32_t>& argb) {
         for (uint32_t i = 0; i < 16; ++i) pal[i] = pvr_pal_entry(sel * 16 + i);
         return nr::convert_pal4(read(w * h / 2), w, h, pal, argb);
     }
-    return false;  // paleta de 8 bits, YUV, bump: sem conversao nativa (o jogo nao os usa nos arquivos)
+    if (fmt == 6) {  // N8.7: paleta de 8 bits: o banco dos bits 26-25 do TCW; com mipmap, o maior nivel
+        std::vector<uint32_t> pal(256);
+        const uint32_t        bank = (k.tcw >> 25) & 3;
+        for (uint32_t i = 0; i < 256; ++i) pal[i] = pvr_pal_entry(bank * 256 + i);
+        const uint32_t off = mip ? pvr_mip_offset(6, false, w) : 0;
+        const auto     d   = read(off + w * h);
+        return nr::convert_pal8(std::span<const uint8_t>(d).subspan(off), w, h, pal, argb);
+    }
+    return false;  // YUV (o conversor saiu do produto no N8.5), bump e paleta de 4 bits com mipmap: sem conversao nativa
 }
 
 void texture_source(const TextureKey& k, std::vector<uint8_t>& raw) {
@@ -790,6 +832,11 @@ void texture_source(const TextureKey& k, std::vector<uint8_t>& raw) {
 bool texture_argb(const TextureKey& k, std::vector<uint32_t>& argb, bool& legacy) {
     legacy = false;
     if (convert_texture(k, argb)) return true;
+#if !BS_VALIDACAO
+    // N8.7: o produto nao decodifica texels da VRAM: sem conversao nativa, o render falha com o motivo (nunca um
+    // desenho sem textura nem um recuo silencioso)
+    return false;
+#else
     // sem conversao nativa (paleta de 8 bits, YUV, bump): o decodificador do legado, o mesmo que o software amostra
     // (so chegam aqui formatos que ele aceita: os outros nem viram desenho)
     const TexInfo t{k.tcw, k.width, k.height, k.stride};
@@ -798,6 +845,7 @@ bool texture_argb(const TextureKey& k, std::vector<uint32_t>& argb, bool& legacy
         for (uint32_t x = 0; x < k.width; ++x) argb[size_t(y) * k.width + x] = pvr_texel(t, x, y);
     legacy = true;
     return true;
+#endif
 }
 
 bool content_id(const TextureKey& k, nr::TextureId& id) {
@@ -822,7 +870,7 @@ bool read_hires(const HiresImage& h, std::vector<uint32_t>& argb) {
 }
 
 namespace {
-constexpr char kDumpMagic[8] = {'B', 'S', 'I', 'R', '1', 0, 0, 0};
+constexpr char kDumpMagic[8] = {'B', 'S', 'I', 'R', '2', 0, 0, 0};  // 2: N8.7 (ModifierVolume e DrawState novos)
 template <class T> void put(std::ofstream& o, const T& v) { o.write(reinterpret_cast<const char*>(&v), sizeof v); }
 template <class T> void put_vec(std::ofstream& o, const std::vector<T>& v) {
     put(o, uint32_t(v.size()));
@@ -925,6 +973,22 @@ std::string summary() {
                   (unsigned long long)s.modifier_first_render,
                   s.first_error.empty() ? "" : "; primeira: ", s.first_error.c_str());
     std::string out = b;
+    std::snprintf(b, sizeof b,
+                  "[render-ir] sombra: desenhos %llu (primeiro render %llu, FPU_SHAD_SCALE %03X); volumes sobre translucidos "
+                  "%llu; inclusao %llu, exclusao %llu, com OU %llu, descarte misturado %llu, instrucao invalida %llu; dois volumes %llu; fog no primeiro render com tabela: FOG_DENSITY %04X, FOG_COL_RAM %06X, entradas "
+                  "nao nulas %u de 128, maior valor %u\n",
+                  (unsigned long long)s.shadow_draws, (unsigned long long)s.shadow_first_render, s.shadow_scale_first,
+                  (unsigned long long)s.translucent_volumes, (unsigned long long)s.volume_inclusion,
+                  (unsigned long long)s.volume_exclusion, (unsigned long long)s.volume_or, (unsigned long long)s.volume_mixed_cull,
+                  (unsigned long long)s.volume_bad_instruction, (unsigned long long)s.two_volume, s.fog_density_first,
+                  s.fog_color_first & 0xFFFFFF, s.fog_table_nonzero_first, s.fog_table_max_first);
+    out += b;
+    if (s.soft_frames || s.soft_failures || s.soft_image_mismatch) {
+        std::snprintf(b, sizeof b, "[render-soft] quadros %llu, falhas %llu, imagens diferentes do caminho do TA %llu%s%s\n",
+                      (unsigned long long)s.soft_frames, (unsigned long long)s.soft_failures,
+                      (unsigned long long)s.soft_image_mismatch, s.soft_error.empty() ? "" : "; primeira: ", s.soft_error.c_str());
+        out += b;
+    }
     if (!s.vk_device.empty() || !s.vk_error.empty()) {
         char v[900];
         std::snprintf(v, sizeof v,

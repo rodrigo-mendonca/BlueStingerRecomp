@@ -68,7 +68,9 @@ list(APPEND BS_RT_PAPEIS diagnostico)
 
 # exclusivo de validacao: ruido de ciclos, sonda de hardware do N0, diagnostico do CRI
 if(BS_VALIDACAO)
-  add_library(bs_rt_validacao OBJECT debug/hw_probe.cpp debug/cycle_noise.cpp debug/cri_diag.cpp)
+  # N8.7: a referencia grafica do caminho do TA: o rasterizador sobre o TA, os texels da VRAM e o conversor YUV
+  add_library(bs_rt_validacao OBJECT debug/hw_probe.cpp debug/cycle_noise.cpp debug/cri_diag.cpp
+    pvr/pvr_render_ta.cpp pvr/pvr_texel.cpp pvr/ta_yuv.cpp)
   list(APPEND BS_RT_PAPEIS validacao)
 else()
   add_library(bs_rt_validacao OBJECT debug/validacao_stubs.cpp)
@@ -89,14 +91,15 @@ set(BS_RT_OBJ bs_rt_aot bs_rt_nativo bs_rt_simulacao bs_rt_estavel bs_rt_diagnos
 foreach(o ${BS_RT_OBJ} bs_rt_hle)
   target_include_directories(${o} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   # dados do jogo (RuntimeDisc, IP.BIN, descrambler) e o mapa de regioes; o leitor de CDI fica fora (bs_disc)
-  target_link_libraries(${o} PUBLIC bs_disc_data PRIVATE xinput bs_dcmap)
+  # N8.7: o rasterizador em software e nativo (native/render/soft); o caminho do TA o usa com os texels da VRAM
+  target_link_libraries(${o} PUBLIC bs_disc_data bs_native_render PRIVATE xinput bs_dcmap)
 endforeach()
 
 add_library(bs_runtime STATIC
   $<TARGET_OBJECTS:bs_rt_aot> $<TARGET_OBJECTS:bs_rt_nativo> $<TARGET_OBJECTS:bs_rt_simulacao>
   $<TARGET_OBJECTS:bs_rt_estavel> $<TARGET_OBJECTS:bs_rt_diagnostico> $<TARGET_OBJECTS:bs_rt_validacao>)
 target_include_directories(bs_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(bs_runtime PUBLIC bs_disc_data PRIVATE xinput bs_dcmap)
+target_link_libraries(bs_runtime PUBLIC bs_disc_data bs_native_render PRIVATE xinput bs_dcmap)
 string(REPLACE ";" "\n" BS_RT_PAPEIS_TXT "${BS_RT_PAPEIS}")
 file(WRITE ${CMAKE_BINARY_DIR}/runtime_papeis.txt "${BS_RT_PAPEIS_TXT}\n")
 # manifesto canonico papel<TAB>fonte, das mesmas listas dos alvos (catraca n8_produto_papeis; revisao Codex 2026-10-26)

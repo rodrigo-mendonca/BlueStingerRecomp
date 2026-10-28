@@ -58,6 +58,9 @@ struct DrawState {
     bool          offset_color = false;  // soma a cor de deslocamento (especular)
     bool          ignore_tex_alpha = false;  // alfa da textura tratado como 1
     bool          color_clamp = false;       // cor final limitada por FrameParams::clamp_min/max
+    // N8.7: PCW bit 7. Dentro de um volume modificador da fase do desenho, a cor e escalada por
+    // FrameParams::shadow_scale (o modo de um volume; o jogo nao usa "dois volumes", PCW bit 6)
+    bool          shadow = false;
     // bits do TSP que o rasterizador de referencia ainda nao usa, guardados para o backend (revisao Codex 2026-10-21)
     uint8_t       mip_bias = 0;              // TSP bits 11-8 (valor bruto)
     bool          supersample = false;       // TSP bit 12
@@ -88,6 +91,12 @@ struct ModifierVolume {
     uint32_t first_vertex = 0, triangle_count = 0;
     bool     inclusion = true;  // dentro do volume (senao fora)
     ListType list = ListType::OpaqueModifier;
+    // N8.7: o descarte de faces do volume (ISP bits 28-27, como Cull), se ele foi fechado (o ultimo parametro com a
+    // instrucao 1 ou 2; aberto = so os triangulos, sem somar a area) e o primeiro triangulo que entra por OU em vez da
+    // inversao (o parametro de fechamento sem o bit "volume" do PCW: um volume aberto ou um quad). ~0u = nenhum.
+    uint8_t  cull = 0;
+    bool     closed = false;
+    uint32_t or_from = ~0u;
 };
 
 struct FrameParams {
@@ -98,6 +107,7 @@ struct FrameParams {
     uint32_t                fog_color = 0;         // FOG_COL_RAM (fog por tabela)
     uint32_t                fog_vertex_color = 0;  // FOG_COL_VERT (fog por vertice)
     uint32_t                fog_density = 0;       // FOG_DENSITY (bruto: mantissa e expoente)
+    uint32_t                shadow_scale = 0;      // N8.7: FPU_SHAD_SCALE (bruto: bit 8 habilita, bits 7-0 a escala)
     float                   punch_through_ref = 0.5f;  // limiar de alfa
     // regras do rasterizador de referencia que valem para o quadro inteiro (N7a)
     bool                    translucent_autosort = true;  // translucidos ordenados por pixel (senao, na submissao)
