@@ -9,7 +9,8 @@
 # Uma configuracao por vez, nada em paralelo com ela. Nao muda nenhum arquivo do repositorio; logs em -Saida.
 #   powershell -File tools/dev/n87_amd.ps1 [-Exe <exe>] [-Data <data>] [-Casos iso,seq,par16] [-N 30] [-Saida <dir>]
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-release\app\bluestinger.exe"),
+    # o modo comparar (BS_RENDER_IR) so existe no build de validacao (N8.7)
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$Data = (Join-Path $PSScriptRoot "..\..\dist\BlueStinger-Preview\data"),
     [string]$Casos = "iso,seq,par16",
     [int]$N = 30,
@@ -67,7 +68,11 @@ function Rodada([string]$caso, [int]$i) {
     $dif = [regex]::Match($vk.Value, "pixels diferentes ([0-9.]+)%").Groups[1].Value
     $dev = if ($vk.Value -match "\[render-vk\] ([^:]+):") { $Matches[1] } else { "?" }
     "$caso`t$i`t$($p.ExitCode)`t$fal`t$rec`t$qd`t$dif`t$seg`t$log" | Add-Content -Encoding utf8 $resumo
-    $falha = $vk.Value -eq "" -or [int]("0$fal") -gt 0
+    # revisao Codex 20261028-030202: sem o Vulkan na GPU pedida, com 0 quadros, saida diferente de 0 ou sem a rota inteira,
+    # a rodada nao conta como sucesso
+    $rotaInteira = $t -match "VBlanks: $VBlanks"
+    $falha = $vk.Value -eq "" -or [int]("0$fal") -gt 0 -or $p.ExitCode -ne 0 -or $dev -notmatch [regex]::Escape($Gpu) -or
+             [int]("0$qd") -eq 0 -or -not $rotaInteira
     Write-Host ("{0} {1} #{2}: rc={3} dispositivo={4} quadros={5} falhas={6} recriado={7} diferentes={8}% {9}s{10}" -f `
         $(if ($falha) { "[FALHA]" } else { "[ ok ]" }), $caso, $i, $p.ExitCode, $dev, $qd, $fal, $rec, $dif, $seg,
         $(if ($falha) { " ($((Select-String -Path $log -Pattern 'falha no render|DEVICE_LOST|falha do dispositivo' | Select-Object -First 1).Line))" } else { "" }))

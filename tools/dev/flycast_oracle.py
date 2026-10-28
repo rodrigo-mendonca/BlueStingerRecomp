@@ -886,6 +886,89 @@ def cmd_bu_trace(a):
     return 0 if fechou else 3
 
 
+def quadro_flycast(g):
+    """N8.7: o quadro exibido pelo Flycast (rend.EmulateFramebuffer = yes: o render vai para a VRAM), com a mesma regra
+    de composicao do recompilado (runtime/pvr/pvr_video.cpp): FB_R_CTRL, FB_R_SIZE, FB_R_SOF1/2, entrelacado pelo
+    SPG_CONTROL. A VRAM e lida pelo caminho de 32 bits (0xA5000000), o mesmo layout dos enderecos de FB_R_SOF*."""
+    reg = lambda off: struct.unpack("<I", g.read(0xA05F8000 + off, 4))[0]
+    ctrl, size = reg(0x044), reg(0x05C)
+    fmt = (ctrl >> 2) & 3
+    bpp = 3 if fmt == 2 else (4 if fmt == 3 else 2)
+    words, lines, mod = (size & 0x3FF) + 1, ((size >> 10) & 0x3FF) + 1, (size >> 20) & 0x3FF
+    stride = (words + mod - (1 if mod else 0)) * 4
+    interlace = (reg(0x0D0) >> 4) & 1
+    dbl = (not interlace) and ((ctrl >> 1) & 1)
+    w, h = words * 4 // bpp, lines * (2 if interlace or dbl else 1)
+    sof1, sof2 = reg(0x050) & 0x00FFFFFC, reg(0x054) & 0x00FFFFFC
+    exp5 = lambda v: (v << 3) | (v >> 2)
+    exp6 = lambda v: (v << 2) | (v >> 4)
+    img = bytearray(w * h * 3)  # BGR
+    linhas = {}
+    for y in range(h):
+        base = ((sof2 if y & 1 else sof1) + (y >> 1) * stride) if interlace else (sof1 + ((y >> 1) if dbl else y) * stride)
+        if base not in linhas:
+            linhas[base] = g.read(0xA5000000 + base, w * bpp)
+        row = linhas[base]
+        for x in range(w):
+            if fmt == 0:
+                v = row[2 * x] | (row[2 * x + 1] << 8)
+                r, gg, b = exp5((v >> 10) & 31), exp5((v >> 5) & 31), exp5(v & 31)
+            elif fmt == 1:
+                v = row[2 * x] | (row[2 * x + 1] << 8)
+                r, gg, b = exp5(v >> 11), exp6((v >> 5) & 63), exp5(v & 31)
+            else:
+                b, gg, r = row[bpp * x], row[bpp * x + 1], row[bpp * x + 2]
+            o = 3 * (y * w + x)
+            img[o], img[o + 1], img[o + 2] = b, gg, r
+    return w, h, bytes(img)
+
+
+def grava_bmp(path, w, h, bgr):
+    pad = (4 - (w * 3) % 4) % 4
+    body = b"".join(bgr[3 * w * y:3 * w * (y + 1)] + b"\0" * pad for y in range(h - 1, -1, -1))
+    head = struct.pack("<2sIHHIIiiHHIIiiII", b"BM", 54 + len(body), 0, 0, 54, 40, w, h, 1, 24, 0, len(body), 2835, 2835, 0, 0)
+    open(path, "wb").write(head + body)
+
+
+def cmd_quadro(a):
+    """N8.7: o oraculo grafico. Reproduz o roteiro por passo de jogo (como o bu-trace) e grava o quadro exibido pelo
+    Flycast nos passos pedidos (<out>/pNNNNNN.bmp), para comparar com o do recompilado no mesmo passo."""
+    alvos = sorted(set(a.passos))
+    entrada = EntradaBu(roteiro_bu(a.roteiro))
+    os.makedirs(a.out, exist_ok=True)
+    g = None
+    try:
+        g = connect(a)
+        enter_game(g)
+        fixos = {PD_RETORNO} | {0x80000000 | x for x in entrada.ancoras}
+        for x in fixos:
+            g.bp(x)
+        passo, t0 = 0, time.time()
+        g.cont(limit=a.limite)
+        while alvos:
+            r = g.regs()
+            pc = r[R_PC] & 0x1FFFFFFF
+            if time.time() - t0 > a.limite:
+                print(f"limite de {a.limite:.0f}s atingido no passo {passo}")
+                break
+            if (0x80000000 | pc) == PD_RETORNO:
+                passo += 1
+                entrada.aplica(g)
+                if passo == alvos[0]:
+                    w, h, img = quadro_flycast(g)
+                    grava_bmp(os.path.join(a.out, f"p{passo:06d}.bmp"), w, h, img)
+                    print(f"passo {passo}: quadro {w}x{h} ({time.time() - t0:.0f} s)", flush=True)
+                    alvos.pop(0)
+            if pc in entrada.ancoras:
+                entrada.ancora(pc)
+            g.step()
+            if (g.regs()[R_PC] & 0x1FFFFFFF) not in g.bps:
+                g.cont(limit=max(1.0, a.limite - (time.time() - t0)))
+    finally:
+        fecha_flycast(a, g)
+    return 0 if not alvos else 4
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=3263)
@@ -947,10 +1030,15 @@ def main():
     b.add_argument("--limite", type=float, default=3600.0, help="tempo maximo do host (s)")
     b.add_argument("--marcas", type=lambda s: [int(x, 16) for x in s.split(",")], default=[],
                    help="enderecos (hex, virgula) cujo primeiro passo e registrado: calibra o roteiro")
+    q = sp.add_parser("quadro", help="N8.7: oraculo grafico (quadro exibido nos passos pedidos)")
+    q.add_argument("out", help="pasta dos BMP (pNNNNNN.bmp)")
+    q.add_argument("--roteiro", required=True, help="roteiro 'indice passo' (tools/dist/roteiros)")
+    q.add_argument("--passos", required=True, type=lambda s: [int(x) for x in s.split(",")], help="passos de jogo (virgula)")
+    q.add_argument("--limite", type=float, default=7200.0, help="tempo maximo do host (s)")
     a = p.parse_args()
     try:
         return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs,
-                "snap-free": cmd_snap_free, "mem": cmd_mem, "bu-trace": cmd_bu_trace}[a.cmd](a) or 0
+                "snap-free": cmd_snap_free, "mem": cmd_mem, "bu-trace": cmd_bu_trace, "quadro": cmd_quadro}[a.cmd](a) or 0
     finally:
         finish(a, None)  # erro no meio do comando: nao deixar Flycast orfao
 

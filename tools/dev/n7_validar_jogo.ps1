@@ -14,7 +14,8 @@
 #      swapchain, as duas filas, os semaforos dos slots e a cadeia de pos-processamento.
 # Resultado: por caso, o numero de mensagens de erro/aviso das camadas (tem de ser 0), e os logs em %TEMP%\bs_vk_jogo.
 param(
-    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\n7-game\app\bluestinger.exe"),
+    # N8.7: o modo comparar (A1) so existe no build de validacao
+    [string]$Exe = (Join-Path $PSScriptRoot "..\..\build\msvc-validacao\app\bluestinger.exe"),
     [string]$Data = "C:\Source\recomp-BStinger\dist\BlueStinger-Preview\data",
     [string]$Sdk = (Join-Path $env:LOCALAPPDATA "BlueStingerRecomp\sdk\VulkanSDK\1.4.363.0"),
     [string]$Casos = "A1,N1,J1"

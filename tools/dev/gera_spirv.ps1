@@ -29,6 +29,10 @@ $jobs = @(
     @("pvr_frag_fcd.h", "pvr.frag", "kPvrFragFcd", @("-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
     @("pvr_frag_autosort_fcd.h", "pvr.frag", "kPvrFragAutosortFcd", @("-DAUTOSORT", "-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
     @("resolve_comp_fcd.h", "resolve.comp", "kResolveCompFcd", @("-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
+    # N8.7: volumes modificadores (sombra por intensidade), com as tres variantes do ambiente FP
+    @("volumes_comp.h", "volumes.comp", "kVolumesComp", @()),
+    @("volumes_comp_fc.h", "volumes.comp", "kVolumesCompFc", @("-DFLOAT_CONTROLS")),
+    @("volumes_comp_fcd.h", "volumes.comp", "kVolumesCompFcd", @("-DFLOAT_CONTROLS", "-DDENORM_PRESERVE")),
     # N7c: apresentacao direta e reducao da resolucao interna
     @("present_vert.h", "present.vert", "kPresentVert", @()),
     @("present_frag.h", "present.frag", "kPresentFrag", @()),
