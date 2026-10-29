@@ -3402,6 +3402,25 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
     `n87_event_glue_orders_bits_counts_and_the_vblank_hook` roda nos dois builds com um provedor roteirizado e os mesmos
     valores esperados (bits, contagens, eventos sem prazo, instante anterior ignorado, estado visto pelo gancho do
     VBlank). As referências do produto nos dois modos de tempo conferem a cola na rota inteira.
+- **Incremento 4b (cópia do canal 2):**
+  - `native/render/kamui/channel_dma` guarda os registradores do DMAC e faz o disparo de `SB_C2DST` inteiro (blocos de
+    32 bytes para a área 4, fim do canal, `C2DSTAT`/`C2DLEN`/`C2DST`);
+  - no produto, `runtime/system/dma_bus` serve `memory/sh4_dmac.h` sobre ele. O `holly_sb` só levanta o bit 19; Maple,
+    G2, `SB_FFST` e as faixas removidas continuam nele. O `sh4_dmac.cpp` sai do produto (portão);
+  - na validação, o DMAC do legado é a referência e a cópia nativa roda em sombra (`[canal-2]`): registradores depois de
+    cada escrita; resultado, blocos e system block em cada disparo;
+  - negativo `BS_DMA_CANAL2_MUTACAO=origem`, exigido pelo ctest `n87_canal2_mutacao`: no combate, as 54 959 cópias
+    acusadas;
+  - equivalência: combate com 54 959 cópias (51 048 880 blocos, 329 759 operações) e NEW GAME com 40 092 (24 659 219
+    blocos), 0 diferentes;
+  - referências com o produto `bc2f4af9…` (`layout_dm`): N8.0 16/16 (179 exceções usadas) e N8.7 16/16;
+  - unitários: produto 325/0, validação 343/0; render 62/0 (3 casos novos); portão 35/47.
+- **Revisão Codex `20261029-134812`** (nenhuma divergência funcional encontrada):
+  - [BAIXA] a sombra não compara os ganchos `gfx_probe`: **aceito**. A sonda só existe na validação; no produto as
+    chamadas do `dma_bus` eram código morto e saíram. O legado, na validação, mantém os ganchos;
+  - [BAIXA] o destino recusado não passava pelo erro explícito do produto: **aceito**. O teste
+    `dmac_channel2_outside_area4_is_an_explicit_error` roda nos dois builds com destino na área 5 e um tratador fatal que
+    lança exceção, e confere a mensagem, o destino e a ausência das atualizações do fim.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

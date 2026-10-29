@@ -475,3 +475,35 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
 - **Equivalência:** combate com 598 802 operações e NEW GAME com 440 028, 0 diferentes. Referências com o produto
   `ece1a44b…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16. Com `limpa`, 543 675 acusadas, a primeira na operação
   170 (`ISTNRM` 110 contra 80110).
+
+## 17. Incremento 4b: cópia do canal 2 (2026-10-29)
+
+- **Nativo:** `native/render/kamui/channel_dma` guarda os registradores do DMAC do SH-4 (`SAR`/`DAR`/`DMATCR`/`CHCR` dos
+  quatro canais e `DMAOR`) e faz o disparo inteiro de `SB_C2DST = 1`:
+  - blocos de 32 bytes de `SAR2` para a área 4. O FIFO de polígonos recebe todos no mesmo endereço; o caminho de textura
+    avança 32 bytes por bloco. Um comprimento que não é múltiplo de 32 copia o último bloco inteiro;
+  - no fim, `SAR2` avança, `DMATCR2` zera e `CHCR2.TE` acende; `C2DSTAT` avança pelo comprimento, `C2DLEN` e `C2DST`
+    zeram;
+  - com `DMAOR.DME` ou `CHCR2.DE` desligado, nada muda (o `C2DST` escrito continua guardado). Um destino recusado para
+    a cópia sem atualizar nada.
+
+  A leitura da origem e o destino vêm de quem chama: o componente não toca a memória guest.
+- **Produto:** `runtime/system/dma_bus` serve `memory/sh4_dmac.h` sobre a cópia nativa. A origem é lida por
+  `sh4_read32`, como antes, e cada bloco vai para `ta_fifo_write`, na mesma ordem. Destino fora da área 4 é erro
+  explícito (`sh4_fatal`, com o destino pedido). O `holly_sb` chama `sh4_dmac_ch2_start` e só levanta o bit 19 no banco
+  de status (4a) e pede o novo poll; Maple, G2, `SB_FFST` e as faixas removidas continuam nele. O `sh4_dmac.cpp` sai do
+  produto (portão).
+- **Validação:** o DMAC do legado (`sh4_dmac.cpp`, com os ganchos da sonda gráfica, que só existe na validação) continua
+  sendo a referência. A cópia nativa roda em sombra:
+  - recebe as mesmas escritas, comparadas depois de cada uma (os 17 registradores);
+  - em cada disparo copia antes do legado, lendo a origem direto da RAM guest (sem repetir os ganchos de leitura), para
+    um destino que só registra os blocos. Depois do legado, a comparação confere o resultado, a sequência de blocos
+    (destino e conteúdo), os registradores do DMAC e os do system block (`[canal-2]`);
+  - negativo `BS_DMA_CANAL2_MUTACAO=origem` (a sombra lê a origem um bloco adiante). O ctest `n87_canal2_mutacao` exige
+    a falha.
+- **Equivalência:** combate com 54 959 cópias (51 048 880 blocos) e NEW GAME com 40 092 (24 659 219), 0 diferentes.
+  Com `origem`, as 54 959 cópias do combate são acusadas, a primeira na operação 10. Referências com o produto
+  `bc2f4af9…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **Testes nos dois builds:** FIFO (`dmac_channel2_to_ta`), caminho de textura com 40 bytes até a VRAM
+  (`dmac_channel2_texture_path_to_vram`) e destino fora da área 4 com o erro explícito e sem os registradores do fim
+  (`dmac_channel2_outside_area4_is_an_explicit_error`). Três casos do componente em `bs_render_tests`.
