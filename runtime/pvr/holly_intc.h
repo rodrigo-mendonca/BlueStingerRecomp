@@ -4,6 +4,8 @@
 // (fim de lista do TA, fim de render); as mascaras IML2/4/6 definem o nivel IRL.
 #include "cpu/sh4_context.h"
 
+#include <string>
+
 namespace bs {
 
 constexpr uint32_t kIstVblankIn  = 1u << 3;
@@ -40,5 +42,8 @@ uint32_t holly_irl_level_peek();
 // true se `a` e um registrador do controlador (o acesso foi tratado).
 bool holly_intc_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v);
 bool holly_intc_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v);
+
+// N8.7 4a (validacao): o banco de status nativo em sombra contra este controlador (vazio no produto)
+std::string holly_event_status_summary();
 
 } // namespace bs

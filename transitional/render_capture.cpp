@@ -4,6 +4,7 @@
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
+#include "pvr/holly_intc.h"
 #include "pvr/pvr_video.h"
 #include "pvr/vram.h"
 #include "render/frame_prep.h"
@@ -1162,6 +1163,7 @@ std::string summary() {
     out += pvr_frame_state_summary();  // N8.7 3a (validacao): o FrameState em sombra contra o banco do legado
     out += vram_heap_summary();        // N8.7 3b (validacao): a memoria das texturas em sombra contra o modelo da VRAM
     out += pvr_display_summary();      // N8.7 3c (validacao): o servico de exibicao em sombra contra a saida do legado
+    out += holly_event_status_summary();  // N8.7 4a (validacao): o banco de status em sombra contra o controlador
 #if BS_VALIDACAO
     out += "[texture-cache] texturas velhas pela geracao " + std::to_string(s.tex_stale) +
            (s.tex_stale_error.empty() ? std::string() : "; primeira: " + s.tex_stale_error) + "\n";

@@ -14,7 +14,9 @@
 #include "cpu/irq_bridge.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
+#include "pvr/pvr_video.h"
 
+#include <string>
 #include <vector>
 
 using namespace bs;
@@ -101,6 +103,32 @@ BS_TEST(intc_masked_or_blocked_interrupt_is_not_delivered) {
     BS_CHECK(g_seen.calls == 1);
 }
 
+#if BS_VALIDACAO
+// N8.7 4a: o banco de status nativo roda em sombra no controlador do legado e confere cada operacao (eventos vencidos,
+// levantados, limpezas e mascaras). O contador e do processo: nenhuma operacao anterior pode ter divergido. Negativo: o
+// ctest n87_event_status_mutacao roda este caso com BS_EVENT_STATUS_MUTACAO=limpa e exige a falha
+BS_TEST(intc_native_event_status_shadow_agrees) {
+    auto differ = [] {
+        const std::string s = holly_event_status_summary();
+        const size_t      p = s.find("diferentes ");
+        return p == std::string::npos ? ~0ull : std::stoull(s.substr(p + 11));
+    };
+    BS_CHECK(differ() == 0);
+    IrqFixture f;
+    sh4_set_sr(f.c, 0x40000000);
+    f.c.pc         = 0x8C010000;
+    f.c.ret_expect = 0x8C000000;
+    sh4_irq_check(&f.c);                                // VBlank-In vencido, entregue e reconhecido pelo tratador
+    holly_intc_raise((1u << 19) | (1u << 8));           // fim do DMA do canal 2 + fim do modificador opaco
+    sh4_write32(&f.c, 0xA05F6920, 1u << 19);            // IML4NRM
+    BS_CHECK(holly_irl_level(f.c.cycles) == 4);
+    sh4_write32(&f.c, 0xA05F6900, (1u << 19) | (1u << 8));  // o tratador do Kamui limpa os dois
+    BS_CHECK(holly_irl_level(f.c.cycles) == 0);
+    BS_CHECK(g_seen.calls == 1 && differ() == 0);
+    BS_CHECK(holly_event_status_summary().find("[event-status] operacoes comparadas") == 0);
+}
+#endif
+
 // Boot do Blue Stinger: le o RTC em 0xA0710000/04 (segundos desde 1950, 16+16 bits).
 // N8.6: a area de som nativa (o produto) e o modelo da AICA (validacao) se comportam igual.
 BS_TEST(aica_rtc_counts_emulated_seconds_and_accepts_enabled_writes) {
@@ -182,6 +210,55 @@ BS_TEST(n8_cadence_b_wakeup_requests_service_only_when_deliverable) {
     sh4_request_service();
     BS_CHECK(f.c.next_event == ~0ull);
     time_set_provider(nullptr);
+}
+
+// N8.7 4a (revisao Codex 20261029-103042): a cola do controlador (eventos vencidos -> bits, contagens, gancho do VBlank
+// depois do estado) com um provedor roteirizado. Roda nos dois builds com os mesmos valores esperados: no produto confere
+// o banco nativo (system/event_bus), na validacao o controlador do legado (a referencia).
+namespace {
+struct ScriptedDue : LogicalSpy {
+    std::vector<uint32_t> dues;
+    size_t                next = 0;
+    uint32_t holly_due(uint64_t) override { return next < dues.size() ? dues[next++] : 0; }
+    bool     cycle_cadence() const override { return true; }
+};
+struct AtHook {
+    uint32_t ist = 0;
+    uint64_t vblanks = 0, fused = 0, events = 0;
+    int      calls = 0;
+} g_atHook;
+void recordHook(void*) {
+    uint32_t i6, i4, i2;
+    holly_intc_peek(g_atHook.ist, i6, i4, i2);
+    g_atHook.vblanks = holly_vblank_count(), g_atHook.fused = holly_vblank_fused(), g_atHook.events = holly_event_count();
+    ++g_atHook.calls;
+}
+} // namespace
+
+BS_TEST(n87_event_glue_orders_bits_counts_and_the_vblank_hook) {
+    ScriptedDue p;
+    p.dues = {kDueVblankIn | kDueVblankOut | kDueRender | kDueMaple, kDueVblankIn, 0};
+    time_set_provider(&p);
+    holly_intc_reset(0);
+    g_atHook = {};
+    pvr_set_vblank_hook(recordHook, nullptr);
+    const uint64_t e0 = holly_event_count();
+    holly_intc_sync(10);  // todos os eventos de uma vez: o gancho ve o estado inteiro
+    BS_CHECK(g_atHook.calls == 1 && g_atHook.ist == (kIstVblankIn | kIstVblankOut | 0x7u | (1u << 12)));
+    BS_CHECK(g_atHook.vblanks == 1 && g_atHook.fused == 0 && g_atHook.events == e0 + 1);
+    holly_intc_sync(20);  // VBlank-In com o bit ainda aceso: fundido
+    BS_CHECK(g_atHook.calls == 2 && g_atHook.vblanks == 2 && g_atHook.fused == 1 && g_atHook.events == e0 + 2);
+    holly_intc_sync(30);  // nada venceu: nao conta
+    holly_intc_sync(25);  // instante anterior: ignorado
+    BS_CHECK(holly_event_count() == e0 + 2 && g_atHook.calls == 2 && p.next == 3);
+    holly_intc_raise(1u << 19);
+    uint32_t ist, i6, i4, i2;
+    holly_intc_peek(ist, i6, i4, i2);
+    BS_CHECK(ist == (kIstVblankIn | kIstVblankOut | 0x7u | (1u << 12) | (1u << 19)) && holly_event_count() == e0 + 3);
+    BS_CHECK(holly_irl_level_peek() == 0);  // sem mascara
+    pvr_set_vblank_hook(nullptr, nullptr);
+    time_set_provider(nullptr);
+    holly_intc_reset(0);
 }
 
 BS_TEST(n8_cadence_b_stable_time_keeps_the_cycle_quantum) {

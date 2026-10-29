@@ -28,7 +28,8 @@ add_library(bs_rt_nativo OBJECT
 # validacao o banco do legado (pvr/pvr_regs.cpp) continua ativo e o FrameState roda em sombra
 if(NOT BS_VALIDACAO)
   target_sources(bs_rt_nativo PRIVATE system/graphics_bus.cpp system/texture_heap_bus.cpp  # 3b: a memoria das texturas
-    system/display_bus.cpp)  # 3c: a imagem exibida
+    system/display_bus.cpp   # 3c: a imagem exibida
+    system/event_bus.cpp)    # 4a: o banco de status de interrupcao (D-K3)
 endif()
 list(APPEND BS_RT_PAPEIS nativo)
 
@@ -39,7 +40,6 @@ add_library(bs_rt_simulacao OBJECT
   memory/sh4_dmac.cpp
   pvr/pvr_render.cpp
   pvr/pvr_texture.cpp
-  pvr/holly_intc.cpp
   pvr/holly_sb.cpp
   pvr/ta.cpp
   input/input.cpp
@@ -76,7 +76,8 @@ if(BS_VALIDACAO)
     pvr/pvr_render_ta.cpp pvr/pvr_texel.cpp pvr/ta_yuv.cpp
     pvr/pvr_regs.cpp   # N8.7 3a: o banco de registradores do legado, referencia do FrameState
     pvr/vram.cpp       # N8.7 3b: o modelo da VRAM do legado, referencia da memoria das texturas
-    pvr/pvr_video.cpp) # N8.7 3c: a saida de video do legado, referencia do servico de exibicao
+    pvr/pvr_video.cpp  # N8.7 3c: a saida de video do legado, referencia do servico de exibicao
+    pvr/holly_intc.cpp) # N8.7 4a: o controlador de interrupcoes do legado, referencia do banco de status
   list(APPEND BS_RT_PAPEIS validacao)
 else()
   add_library(bs_rt_validacao OBJECT debug/validacao_stubs.cpp)
