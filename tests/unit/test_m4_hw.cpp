@@ -17,6 +17,8 @@
 #include "pvr/vram.h"
 
 #include <cstring>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace bs;
@@ -111,6 +113,85 @@ BS_TEST(dmac_channel2_to_ta) {
     BS_CHECK(sh4_read32(&h.c, 0xA05F6800) == 0x10000040 && sh4_read32(&h.c, 0xFFA00020) == src + 64);
     BS_CHECK(h.istnrm() & (1u << 19));
 }
+
+// N8.7 4b: o caminho de textura (C2DSTAT com o bit 24) avanca o destino por bloco ate a VRAM (lida pelo caminho de 64
+// bits, 0xA4000000); 40 bytes copiam dois blocos inteiros. Roda nos dois builds: no produto, a copia nativa
+// (system/dma_bus); na validacao, o DMAC do legado
+BS_TEST(dmac_channel2_texture_path_to_vram) {
+    Hw h;
+    const uint32_t src = 0x8C110000;
+    for (uint32_t i = 0; i < 16; ++i) sh4_write32(&h.c, src + 4 * i, 0xC0DE0000 | i);
+    sh4_write32(&h.c, 0xFFA00020, src);
+    sh4_write32(&h.c, 0xFFA00040, 0x8201);
+    sh4_write32(&h.c, 0xFFA0002C, 0x12C1);
+    sh4_write32(&h.c, 0xA05F6800, 0x11000000);
+    sh4_write32(&h.c, 0xA05F6804, 40);
+    sh4_write32(&h.c, 0xA05F6808, 1);
+    BS_CHECK(sh4_read32(&h.c, 0xA4000000) == 0xC0DE0000 && sh4_read32(&h.c, 0xA400003C) == 0xC0DE000F);
+    BS_CHECK(sh4_read32(&h.c, 0xA05F6800) == 0x11000028 && sh4_read32(&h.c, 0xFFA00020) == src + 64);
+    BS_CHECK(sh4_read32(&h.c, 0xFFA00028) == 0 && (sh4_read32(&h.c, 0xFFA0002C) & 2) && (h.istnrm() & (1u << 19)));
+}
+
+namespace {
+uint32_t g_fatalExtra = 0;
+[[noreturn]] void throwingFatal(Sh4Context*, const char* what, uint32_t, uint32_t extra) {
+    g_fatalExtra = extra;
+    throw std::runtime_error(what);
+}
+} // namespace
+
+// N8.7 4b (revisao Codex 20261029-134812): destino fora da area 4 (0x14000000, area 5) e erro explicito com o destino
+// pedido, sem os registradores do fim (SAR2, CHCR2.TE, C2DSTAT, ISTNRM bit 19). Roda nos dois builds
+BS_TEST(dmac_channel2_outside_area4_is_an_explicit_error) {
+    Hw h;
+    const uint32_t src = 0x8C130000;
+    sh4_write32(&h.c, 0xFFA00020, src);
+    sh4_write32(&h.c, 0xFFA00040, 0x8201);
+    sh4_write32(&h.c, 0xFFA0002C, 0x12C1);
+    sh4_write32(&h.c, 0xA05F6800, 0x14000000);
+    sh4_write32(&h.c, 0xA05F6804, 64);
+    sh4_set_fatal_handler(throwingFatal);
+    bool caught = false;
+    try {
+        sh4_write32(&h.c, 0xA05F6808, 1);
+    } catch (const std::runtime_error& e) {
+        caught = std::string(e.what()).find("fora da area 4") != std::string::npos;
+    }
+    sh4_set_fatal_handler(nullptr);
+    BS_CHECK(caught && g_fatalExtra == 0x14000000);
+    BS_CHECK(sh4_read32(&h.c, 0xFFA00020) == src && !(sh4_read32(&h.c, 0xFFA0002C) & 2));
+    BS_CHECK(sh4_read32(&h.c, 0xA05F6800) == 0x14000000 && sh4_read32(&h.c, 0xA05F6804) == 64);
+    BS_CHECK(!(h.istnrm() & (1u << 19)));
+}
+
+#if BS_VALIDACAO
+// N8.7 4b (validacao): a copia do canal 2 nativa em sombra no DMAC do legado nao diverge nos dois caminhos nem com o
+// canal desligado. Negativo: BS_DMA_CANAL2_MUTACAO=origem (ctest n87_canal2_mutacao) tem de acusar
+BS_TEST(dmac_channel2_native_shadow_agrees) {
+    auto differ = [] {
+        const std::string s = sh4_dmac_ch2_summary();
+        const size_t      p = s.find("diferentes ");
+        return p == std::string::npos ? ~0ull : std::stoull(s.substr(p + 11));
+    };
+    BS_CHECK(differ() == 0);
+    Hw h;
+    const uint32_t src = 0x8C120000;
+    for (uint32_t i = 0; i < 32; ++i) sh4_write32(&h.c, src + 4 * i, i == 0 ? 0x81000000 : i == 8 ? 0 : 0x5A5A0000 | i);
+    sh4_write32(&h.c, 0xFFA00020, src);
+    sh4_write32(&h.c, 0xA05F6800, 0x10000000);
+    sh4_write32(&h.c, 0xA05F6804, 64);
+    sh4_write32(&h.c, 0xA05F6808, 1);  // desligado
+    sh4_write32(&h.c, 0xFFA00040, 0x8201);
+    sh4_write32(&h.c, 0xFFA0002C, 0x12C1);
+    sh4_write32(&h.c, 0xA05F6808, 1);  // FIFO
+    sh4_write32(&h.c, 0xA05F6800, 0x11000100);
+    sh4_write32(&h.c, 0xA05F6804, 64);
+    sh4_write32(&h.c, 0xA05F6808, 1);  // textura
+    BS_CHECK(ta_params().size() == 2 && sh4_read32(&h.c, 0xA4000100) == 0x5A5A0010);
+    BS_CHECK(differ() == 0);
+    BS_CHECK(sh4_dmac_ch2_summary().find("[canal-2] operacoes comparadas") == 0);
+}
+#endif
 
 namespace {
 

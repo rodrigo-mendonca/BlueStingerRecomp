@@ -71,7 +71,8 @@ add_executable(bs_render_tests unit/main.cpp unit/test_render_native.cpp unit/te
                unit/test_render_frame_prep.cpp unit/test_render_vulkan.cpp unit/test_render_post.cpp
                unit/test_render_kamui.cpp unit/test_render_frame_state.cpp
                unit/test_render_texture_heap.cpp
-               unit/test_render_display_service.cpp unit/test_render_event_status.cpp)
+               unit/test_render_display_service.cpp unit/test_render_event_status.cpp
+               unit/test_render_channel_dma.cpp)
 target_include_directories(bs_render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
 target_link_libraries(bs_render_tests PRIVATE bs_native_render bs_native_render_vk)
 add_test(NAME render COMMAND bs_render_tests)
@@ -88,6 +89,11 @@ if(BS_VALIDACAO)
   set_tests_properties(n87_event_status_mutacao PROPERTIES
     ENVIRONMENT "BS_EVENT_STATUS_MUTACAO=limpa;BS_TEST_FILTRO=intc_native_event_status_shadow_agrees"
     PASS_REGULAR_EXPRESSION "FAIL. intc_native_event_status_shadow_agrees")
+  # N8.7 4b: negativo da copia do canal 2 em sombra: com a origem um bloco adiante na sombra, a comparacao tem de acusar
+  add_test(NAME n87_canal2_mutacao COMMAND bs_unit_tests)
+  set_tests_properties(n87_canal2_mutacao PROPERTIES
+    ENVIRONMENT "BS_DMA_CANAL2_MUTACAO=origem;BS_TEST_FILTRO=dmac_channel2_native_shadow_agrees"
+    PASS_REGULAR_EXPRESSION "FAIL. dmac_channel2_native_shadow_agrees")
 endif()
 
 # Interface do recompilador (catalogo de textos, configuracao da instalacao, troca da instalacao)

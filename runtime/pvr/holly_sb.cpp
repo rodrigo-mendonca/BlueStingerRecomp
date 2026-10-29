@@ -130,15 +130,12 @@ bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     if (g2log && p >= 0x005F7800 && p < 0x005F7900 && g2n++ < 400)
         std::fprintf(stderr, "[sb] G2 escrita %08X = %08X (ciclo %llu)\n", p, v, (unsigned long long)c->cycles);
     // SB_C2DST = 1: DMA do canal 2 (SH-4 DMAC) de SB_C2DLEN bytes para SB_C2DSTAT. No fim,
-    // C2DSTAT avanca, C2DLEN e C2DST zeram e ISTNRM bit 19 (fim do DMA do PVR) acende;
-    // a interrupcao e avaliada no proximo poll (next_event = 0).
+    // C2DSTAT avanca, C2DLEN e C2DST zeram (N8.7 4b: tudo na copia do canal 2, memory/sh4_dmac.h)
+    // e ISTNRM bit 19 (fim do DMA do PVR) acende; a interrupcao e avaliada no proximo poll
+    // (next_event = 0).
     if (p == kC2Dst && (v & 1)) {
-        uint32_t& dest = g_regs[(kC2Dstat - kBase) / 4];
-        uint32_t& len  = g_regs[(kC2Dlen - kBase) / 4];
-        if (sh4_dmac_ch2_transfer(c, dest, len)) {
-            dest += len;
-            len = 0;
-            g_regs[(kC2Dst - kBase) / 4] = 0;
+        if (sh4_dmac_ch2_start(c, g_regs[(kC2Dstat - kBase) / 4], g_regs[(kC2Dlen - kBase) / 4],
+                               g_regs[(kC2Dst - kBase) / 4])) {
             holly_intc_raise(kIstPvrDma);
             c->next_event = 0;
         }

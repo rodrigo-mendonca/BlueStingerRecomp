@@ -29,7 +29,8 @@ add_library(bs_rt_nativo OBJECT
 if(NOT BS_VALIDACAO)
   target_sources(bs_rt_nativo PRIVATE system/graphics_bus.cpp system/texture_heap_bus.cpp  # 3b: a memoria das texturas
     system/display_bus.cpp   # 3c: a imagem exibida
-    system/event_bus.cpp)    # 4a: o banco de status de interrupcao (D-K3)
+    system/event_bus.cpp     # 4a: o banco de status de interrupcao (D-K3)
+    system/dma_bus.cpp)      # 4b: a copia do canal 2
 endif()
 list(APPEND BS_RT_PAPEIS nativo)
 
@@ -37,7 +38,6 @@ list(APPEND BS_RT_PAPEIS nativo)
 # medido), Maple e entrada, AICA, PVR/Holly/TA/VRAM, store queues e DMAC
 add_library(bs_rt_simulacao OBJECT
   memory/sh4_sq.cpp
-  memory/sh4_dmac.cpp
   pvr/pvr_render.cpp
   pvr/pvr_texture.cpp
   pvr/holly_sb.cpp
@@ -77,7 +77,8 @@ if(BS_VALIDACAO)
     pvr/pvr_regs.cpp   # N8.7 3a: o banco de registradores do legado, referencia do FrameState
     pvr/vram.cpp       # N8.7 3b: o modelo da VRAM do legado, referencia da memoria das texturas
     pvr/pvr_video.cpp  # N8.7 3c: a saida de video do legado, referencia do servico de exibicao
-    pvr/holly_intc.cpp) # N8.7 4a: o controlador de interrupcoes do legado, referencia do banco de status
+    pvr/holly_intc.cpp  # N8.7 4a: o controlador de interrupcoes do legado, referencia do banco de status
+    memory/sh4_dmac.cpp) # N8.7 4b: o DMAC do legado, referencia da copia do canal 2
   list(APPEND BS_RT_PAPEIS validacao)
 else()
   add_library(bs_rt_validacao OBJECT debug/validacao_stubs.cpp)
