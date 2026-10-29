@@ -24,6 +24,11 @@ add_library(bs_rt_nativo OBJECT
   system/maple_bus.cpp
   system/sound_bus.cpp
 )
+# N8.7 (docs/N8-7-KAMUI.md, incremento 3a): no produto, os registradores graficos sao o estado do quadro nativo; na
+# validacao o banco do legado (pvr/pvr_regs.cpp) continua ativo e o FrameState roda em sombra
+if(NOT BS_VALIDACAO)
+  target_sources(bs_rt_nativo PRIVATE system/graphics_bus.cpp)
+endif()
 list(APPEND BS_RT_PAPEIS nativo)
 
 # simulacao do Dreamcast ainda no caminho do produto (compartilhada ate os cortes N8.4-N8.7): boot (estado de entrada
@@ -31,7 +36,6 @@ list(APPEND BS_RT_PAPEIS nativo)
 add_library(bs_rt_simulacao OBJECT
   memory/sh4_sq.cpp
   memory/sh4_dmac.cpp
-  pvr/pvr_regs.cpp
   pvr/pvr_render.cpp
   pvr/pvr_video.cpp
   pvr/pvr_texture.cpp
@@ -70,7 +74,8 @@ list(APPEND BS_RT_PAPEIS diagnostico)
 if(BS_VALIDACAO)
   # N8.7: a referencia grafica do caminho do TA: o rasterizador sobre o TA, os texels da VRAM e o conversor YUV
   add_library(bs_rt_validacao OBJECT debug/hw_probe.cpp debug/gfx_probe.cpp debug/cycle_noise.cpp debug/cri_diag.cpp
-    pvr/pvr_render_ta.cpp pvr/pvr_texel.cpp pvr/ta_yuv.cpp)
+    pvr/pvr_render_ta.cpp pvr/pvr_texel.cpp pvr/ta_yuv.cpp
+    pvr/pvr_regs.cpp)  # N8.7 3a: o banco de registradores do legado, referencia do FrameState
   list(APPEND BS_RT_PAPEIS validacao)
 else()
   add_library(bs_rt_validacao OBJECT debug/validacao_stubs.cpp)

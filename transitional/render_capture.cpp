@@ -1109,6 +1109,7 @@ std::string summary() {
                       s.list_error.empty() ? "" : "; primeira: ", s.list_error.c_str());
         out += b;
     }
+    out += pvr_frame_state_summary();  // N8.7 3a (validacao): o FrameState em sombra contra o banco do legado
     if (s.hires_renders) {  // N7c: resolucao interna
         char r[300];
         std::snprintf(r, sizeof r,

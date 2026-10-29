@@ -3,6 +3,8 @@
 // M4: guardam o valor escrito; SPG_STATUS e derivado do contador de ciclos.
 #include "cpu/sh4_context.h"
 
+#include <string>
+
 namespace bs {
 
 void pvr_regs_reset();
@@ -54,5 +56,8 @@ uint64_t pvr_spg_next_line_change(uint64_t after);
 // Linhas das interrupcoes de VBlank (SPG_VBLANK_INT 0x005F80C4).
 uint32_t pvr_vblank_in_line();
 uint32_t pvr_vblank_out_line();
+
+// N8.7 (validacao): as comparacoes do banco do legado com o FrameState nativo em sombra (pvr_regs.cpp)
+std::string pvr_frame_state_summary();
 
 } // namespace bs

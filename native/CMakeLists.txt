@@ -69,7 +69,8 @@ add_library(bs_native_render STATIC render/texture_convert.cpp render/render_ir.
             render/post_shader.cpp          # N7c: pacotes e validacao dos shaders de pos-processamento
             render/soft/soft_raster.cpp     # N8.7: rasterizador de referencia em software (o recuo do Vulkan)
             render/soft/soft_device.cpp     # N8.7: o renderizador em software sobre a IR
-            render/kamui/list_sink.cpp)     # N8.7: as listas do Kamui direto para a IR (docs/N8-7-KAMUI.md)
+            render/kamui/list_sink.cpp      # N8.7: as listas do Kamui direto para a IR (docs/N8-7-KAMUI.md)
+            render/kamui/frame_state.cpp)   # N8.7 3a: o estado do quadro (registradores graficos)
 target_link_libraries(bs_native_render PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus)
 
 # N7b: backend Vulkan (offscreen; o Vulkan e carregado em tempo de execucao, sem SDK; cabecalhos Khronos em

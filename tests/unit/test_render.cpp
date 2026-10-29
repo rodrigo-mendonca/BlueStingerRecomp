@@ -4,6 +4,7 @@
 #include "test.h"
 
 #include "cpu/sh4_mem.h"
+#include "cpu/time_hooks.h"
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_texture.h"
@@ -120,6 +121,34 @@ BS_TEST(render_background_plane_fills_framebuffer) {
     RenderFixture f(0x00FF0000);
     f.render();
     BS_CHECK(f.px(0, 0) == 0xF800 && f.px(31, 31) == 0xF800);
+}
+
+// N8.7 3a (revisao Codex 20261028-212527, D-K4): o STARTRENDER pela escrita do jogo agenda o fim de render no instante da
+// escrita + min(450000 + bytes do TA * 100, 1500000); um segundo render substitui o prazo; no prazo, ISTNRM 0-2 acendem.
+// Vale nos dois builds (produto: FrameState; validacao: o banco do legado).
+BS_TEST(render_startrender_schedules_render_done_with_the_ta_bytes) {
+    RenderFixture f(0x00FF0000);
+    f.opaqueGlobal(7u << 29);
+    f.vertex(0, 0, 1, 0xFF00FF00);
+    f.vertex(32, 0, 1, 0xFF00FF00);
+    f.vertex(0, 32, 1, 0xFF00FF00, true);
+    f.endList();
+    BS_CHECK(ta_bytes() == 5 * 32);
+    const uint64_t t0 = time_now(&f.c);
+    f.render();
+    BS_CHECK(pvr_render_done_due() == t0 + 450000 + 5 * 32 * 100);
+    f.c.cycles += 1000;
+    const uint64_t t1 = time_now(&f.c);
+    f.render();  // o segundo prazo substitui o primeiro
+    BS_CHECK(pvr_render_done_due() == t1 + 450000 + 5 * 32 * 100 && t1 > t0);
+    // muitos bytes: o teto de 1 500 000
+    for (int i = 0; i < 400; ++i) f.ta({0x80000002u, 7u << 29, 0x20800000u, 0});
+    f.render();
+    BS_CHECK(pvr_render_done_due() == time_now(&f.c) + 1500000);
+    const uint64_t due = pvr_render_done_due();
+    f.c.cycles += due - time_now(&f.c);
+    holly_intc_sync(time_now(&f.c));
+    BS_CHECK((sh4_read32(&f.c, 0xA05F6900) & 7) == 7 && pvr_render_done_due() == 0);
 }
 
 // Triangulo (0,0) (32,0) (0,32): amostra no centro do pixel; diagonal x + y + 1 < 32.

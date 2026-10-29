@@ -25,12 +25,14 @@
 #include "pvr/pvr_render.h"
 #include "pvr/ta.h"
 #include "cpu/sh4_runtime.h"
+#include "render/kamui/frame_state.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace bs {
 namespace {
@@ -71,6 +73,49 @@ int                             g_startCount = 0;
 
 uint32_t reg(uint32_t a) { return g_regs[(a - kBase) / 4]; }
 
+// N8.7 (docs/N8-7-KAMUI.md, incremento 3a): este banco e a referencia; o FrameState nativo (o do produto) roda em sombra,
+// recebe cada acesso e e comparado: valores lidos (SPG_STATUS no mesmo instante), o registrador gravado e os ponteiros do
+// TA, o banco inteiro a cada STARTRENDER e as contas da temporizacao do video. Negativos (BS_FRAME_STATE_MUTACAO):
+// leitura (o valor lido da sombra + 1), escrita (a sombra perde uma escrita de dado simples), fase (a fase do feixe
+// carregada errada), efeitos (a sombra nao pede a sincronizacao do INTC), prazo (a formula do produto + 1 ciclo)
+native::render::kamui::FrameState g_shadow(kFieldCycles);
+uint64_t                          g_shadowChecks = 0, g_shadowMismatch = 0;
+// revisao Codex 20261028-212527: os efeitos de cada escrita, na ordem (R render, S sincronizacao do INTC, I listas novas,
+// C listas continuadas, G temporizacao nova, Y YUV): o legado registra os que executa, a sombra os que pede
+std::string g_fxLegacy, g_fxShadow;
+uint64_t    g_renderNow = 0;  // o instante em que o legado calculou o prazo do fim de render
+std::string                       g_shadowFirst;
+
+const std::string& shadow_mutation() {
+    static const std::string m = [] {
+        const char* v = std::getenv("BS_FRAME_STATE_MUTACAO");
+        return std::string(v ? v : "");
+    }();
+    return m;
+}
+
+void shadow_check(bool same, const char* what, uint32_t p, uint64_t a, uint64_t b) {
+    ++g_shadowChecks;
+    if (same) return;
+    ++g_shadowMismatch;
+    if (g_shadowFirst.empty()) {
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "%s %08X: legado %llX, FrameState %llX", what, p, (unsigned long long)a,
+                      (unsigned long long)b);
+        g_shadowFirst = buf;
+    }
+}
+
+class NoEffects final : public native::render::kamui::FrameEffects {
+public:
+    void start_render() override { g_fxShadow += 'R'; }
+    void spg_sync() override { g_fxShadow += shadow_mutation() == "efeitos" ? "" : "S"; }
+    void list_init() override { g_fxShadow += 'I'; }
+    void list_continue() override { g_fxShadow += 'C'; }
+    void spg_changed() override { g_fxShadow += 'G'; }
+    void yuv(uint32_t, uint32_t) override { g_fxShadow += 'Y'; }
+};
+
 // Area 0 vista por P0-P3 (o jogo usa P2, 0xA05F....).
 uint32_t canon(uint32_t a) { return a < 0xE0000000 ? (a & 0x1FFFFFFF) : 0; }
 
@@ -82,6 +127,7 @@ uint32_t fieldLines() {
 } // namespace
 
 void pvr_regs_reset() {
+    g_shadow.reset();
     g_regs.fill(0);
     g_phase = 0;
     g_renderDue = 0;
@@ -93,7 +139,7 @@ void pvr_regs_reset() {
 uint32_t pvr_vblank_in_line() { return reg(kSpgVblankInt) & 0x3FF; }
 uint32_t pvr_vblank_out_line() { return (reg(kSpgVblankInt) >> 16) & 0x3FF; }
 
-bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line) {
+static bool pvr_spg_crossed_legado(uint64_t from, uint64_t to, uint32_t line) {
     if (to <= from) return false;
     from += g_phase;
     to += g_phase;
@@ -105,7 +151,7 @@ bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line) {
     return count(to) > count(from);
 }
 
-uint64_t pvr_spg_next_crossing(uint64_t after, uint32_t line) {
+static uint64_t pvr_spg_next_crossing_legado(uint64_t after, uint32_t line) {
     const uint32_t lines = fieldLines();
     if (line >= lines) return kSpgNever;
     const uint64_t off = uint64_t(line) * kFieldCycles / lines;
@@ -116,7 +162,7 @@ uint64_t pvr_spg_next_crossing(uint64_t after, uint32_t line) {
     return off + k * kFieldCycles - g_phase;
 }
 
-uint64_t pvr_spg_next_line_change(uint64_t after) {
+static uint64_t pvr_spg_next_line_change_legado(uint64_t after) {
     // a mesma conta de pvr_spg_position: a linha muda na primeira posicao do campo com
     // (posicao * linhas / campo) >= linha + 1, ou seja, em teto((linha + 1) * campo / linhas). (O
     // inicio de linha de pvr_spg_next_crossing e truncado: no limite, a linha ainda nao mudou.)
@@ -128,7 +174,7 @@ uint64_t pvr_spg_next_line_change(uint64_t after) {
     return base + next - g_phase;
 }
 
-SpgPos pvr_spg_position(uint64_t cycles) {
+static SpgPos pvr_spg_position_legado(uint64_t cycles) {
     cycles += g_phase;
     const uint32_t lines   = fieldLines();
     const uint32_t vbstart = reg(kSpgVblank) & 0x3FF;
@@ -141,7 +187,45 @@ SpgPos pvr_spg_position(uint64_t cycles) {
     return p;
 }
 
+bool pvr_spg_crossed(uint64_t from, uint64_t to, uint32_t line) {
+    const bool r = pvr_spg_crossed_legado(from, to, line);
+    shadow_check(r == g_shadow.spg_crossed(from, to, line), "spg_crossed", line, r, g_shadow.spg_crossed(from, to, line));
+    return r;
+}
+uint64_t pvr_spg_next_crossing(uint64_t after, uint32_t line) {
+    const uint64_t r = pvr_spg_next_crossing_legado(after, line), n = g_shadow.spg_next_crossing(after, line);
+    shadow_check(r == n, "spg_next_crossing", line, r, n);
+    return r;
+}
+uint64_t pvr_spg_next_line_change(uint64_t after) {
+    const uint64_t r = pvr_spg_next_line_change_legado(after), n = g_shadow.spg_next_line_change(after);
+    shadow_check(r == n, "spg_next_line_change", 0, r, n);
+    return r;
+}
+SpgPos pvr_spg_position(uint64_t cycles) {
+    const SpgPos r = pvr_spg_position_legado(cycles);
+    const auto   n = g_shadow.spg_position(cycles);
+    shadow_check(r.line == n.line && r.vsync == n.vsync && r.blank == n.blank, "spg_position", r.line, r.line, n.line);
+    return r;
+}
+
+static uint64_t g_readNow = 0;  // o instante usado pela ultima leitura do SPG_STATUS (para a sombra)
+
+static bool reg_read_legado(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v);
+
 bool pvr_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
+    if (!reg_read_legado(c, a, size, v)) return false;
+    const uint32_t p = canon(a);
+    if (p != kTaYuvTexCnt) {  // o contador do YUV e do conversor (so o filme legado o le)
+        bool     modeled = true;
+        uint32_t n       = g_shadow.read(p, p == kSpgStatus ? g_readNow : 0, modeled);
+        if (shadow_mutation() == "leitura") ++n;
+        shadow_check(n == v, "leitura", p, v, n);
+    }
+    return true;
+}
+
+static bool reg_read_legado(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     if (p == kId) {
@@ -161,6 +245,7 @@ bool pvr_reg_read(Sh4Context* c, uint32_t a, unsigned size, uint32_t& v) {
     }
     if (p == kSpgStatus) {
         const uint64_t now = time_now(c);
+        g_readNow          = now;
         const SpgPos   s   = pvr_spg_position(now);
         // bit 10: campo (alterna a cada campo com SPG_CONTROL.interlace, bit 4); bit 11
         // nunca aceso no Flycast
@@ -203,6 +288,14 @@ uint64_t pvr_render_done_due() { return g_renderDue; }
 void     pvr_render_done_take() { g_renderDue = 0; }
 
 void pvr_regs_load(const uint32_t* words) {
+    if (shadow_mutation() == "fase") {
+        std::array<uint32_t, kSize / 4> w;
+        std::copy(words, words + kSize / 4, w.begin());
+        w[(kSpgStatus - kBase) / 4] += 7;  // a sombra comeca sete linhas adiante
+        g_shadow.load(w.data());
+    } else {
+        g_shadow.load(words);
+    }
     for (uint32_t i = 0; i < kSize / 4; ++i) g_regs[i] = words[i];
     const uint32_t status = words[(kSpgStatus - kBase) / 4];
     const uint32_t lines  = fieldLines();
@@ -219,7 +312,51 @@ void pvr_regs_dump(Sh4Context* c, uint32_t* out) {
     }
 }
 
+static bool reg_write_legado(Sh4Context* c, uint32_t a, unsigned size, uint32_t v);
+
 bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
+    g_fxLegacy.clear(), g_fxShadow.clear();
+    if (!reg_write_legado(c, a, size, v)) return false;
+    const uint32_t p = canon(a);
+    NoEffects      fx;
+    static uint64_t plain = 0;
+    const bool      skip  = shadow_mutation() == "escrita" && p == 0x005F8060 && ++plain == 3;  // FB_W_SOF1, gravado a cada render
+    if (!skip) g_shadow.write(p, v, fx);
+    shadow_check(g_shadow.reg(p) == reg(p), "escrita", p, reg(p), g_shadow.reg(p));
+    shadow_check(g_fxLegacy == g_fxShadow, ("efeitos " + g_fxLegacy + " x " + g_fxShadow).c_str(), p, g_fxLegacy.size(),
+                 g_fxShadow.size());
+    if (p == kStartRender) {  // o prazo do fim de render: o instante do legado + a formula compartilhada do produto
+        const uint64_t cost = native::render::kamui::render_done_cost(ta_bytes()) + (shadow_mutation() == "prazo" ? 1 : 0);
+        shadow_check(g_renderDue == g_renderNow + cost, "prazo do fim de render", p, g_renderDue, g_renderNow + cost);
+    }
+    if (p == kTaListInit) {
+        shadow_check(g_shadow.reg(kTaItpCurrent) == reg(kTaItpCurrent), "TA_ITP_CURRENT", kTaItpCurrent, reg(kTaItpCurrent),
+                     g_shadow.reg(kTaItpCurrent));
+        shadow_check(g_shadow.reg(kTaNextOpb) == reg(kTaNextOpb), "TA_NEXT_OPB", kTaNextOpb, reg(kTaNextOpb),
+                     g_shadow.reg(kTaNextOpb));
+    }
+    if (p == kStartRender)  // o banco inteiro a cada render
+        for (uint32_t i = 0; i < kSize / 4; ++i) {
+            const uint32_t q = kBase + 4 * i;
+            if (g_regs[i] != g_shadow.reg(q)) {
+                shadow_check(false, "banco", q, g_regs[i], g_shadow.reg(q));
+                break;
+            }
+        }
+    for (uint32_t i = 0; i < 1024; i += 97)  // amostra da paleta convertida
+        if (p == kStartRender) shadow_check(pvr_pal_entry(i) == g_shadow.palette_argb(i), "paleta", i, pvr_pal_entry(i),
+                                            g_shadow.palette_argb(i));
+    return true;
+}
+
+std::string pvr_frame_state_summary() {
+    char b[400];
+    std::snprintf(b, sizeof b, "[frame-state] comparacoes %llu, diferentes %llu%s%s\n", (unsigned long long)g_shadowChecks,
+                  (unsigned long long)g_shadowMismatch, g_shadowFirst.empty() ? "" : "; primeira: ", g_shadowFirst.c_str());
+    return b;
+}
+
+static bool reg_write_legado(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     const uint32_t p = canon(a);
     if (p < kBase || p >= kBase + kSize || size != 4) return false;
     // Diagnostico: BS_PVR_DEBUG=1 registra a 1a escrita de cada registrador e todo STARTRENDER
@@ -237,6 +374,7 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
                      (unsigned long long)c->cycles);
     // Testes de integracao: BS_STOP_ON_STARTRENDER=<n> para na n-esima escrita em STARTRENDER
     if (p == 0x005F8014) {
+        g_fxLegacy += 'R';
         ++g_startCount;
         if (g_gfx_probe) gfx_probe_start_render(c);
         if (g_startHook) g_startHook(c, g_startCount);
@@ -273,29 +411,31 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         // (spg.cpp, scheduleRenderDone): min(450000 + bytes do TA * 100, 1500000) ciclos.
         // Aproximacao. Depois disso, ISTNRM bits 0 (video), 1 (ISP) e 2 (TSP).
         const uint64_t cost = std::min<uint64_t>(450000 + uint64_t(ta_bytes()) * 100, 1500000);
-        g_renderDue         = time_now(c) + cost;
+        g_renderNow         = time_now(c);
+        g_renderDue         = g_renderNow + cost;
         time_provider().render_scheduled(g_renderDue);
     }
-    if (p == kSpgLoad || p == kSpgVblankInt) holly_intc_sync(time_now(c));
+    if (p == kSpgLoad || p == kSpgVblankInt) holly_intc_sync(time_now(c)), g_fxLegacy += 'S';
     if (p == kTaListInit && (v & 0x80000000)) {
         if (g_gfx_probe) gfx_probe_list_init();
         ta_list_init();
+        g_fxLegacy += 'I';
         // o TA recomeca nos ponteiros iniciais; o jogo le TA_ITP_CURRENT para saber onde
         // gravar o poligono de fundo (aproximacao: no hardware ele avanca com os
         // parametros gravados; o Flycast, o oraculo, nao o avanca)
         g_regs[(kTaNextOpb - kBase) / 4]    = reg(kTaNextOpbInit);
         g_regs[(kTaItpCurrent - kBase) / 4] = reg(kTaIspBase);
     }
-    if (p == kTaListCont) ta_list_continue();  // qualquer escrita (como no Flycast)
+    if (p == kTaListCont) ta_list_continue(), g_fxLegacy += 'C';  // qualquer escrita (como no Flycast)
     // registradores de comando e so de leitura nao guardam o valor escrito
     const bool command = p == kTaListInit || p == kStartRender || p == kSoftReset;
     const bool readOnly = p == kSpgStatus || p == kId || p == kRevision || p == kTaYuvTexCnt;
     if (!command && !readOnly) g_regs[(p - kBase) / 4] = v;
-    if (p == kSpgLoad || p == kSpgVblankInt) time_provider().spg_changed();  // nova temporizacao do SPG
+    if (p == kSpgLoad || p == kSpgVblankInt) time_provider().spg_changed(), g_fxLegacy += 'G';  // nova temporizacao do SPG
 #if !BS_VALIDACAO
     if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_removed(c, "escrita no conversor YUV do TA", p);  // N8.5
 #endif
-    if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_reset(reg(kTaYuvTexBase), reg(kTaYuvTexCtrl));
+    if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) ta_yuv_reset(reg(kTaYuvTexBase), reg(kTaYuvTexCtrl)), g_fxLegacy += 'Y';
     return true;
 }
 
