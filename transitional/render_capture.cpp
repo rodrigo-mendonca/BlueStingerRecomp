@@ -1166,6 +1166,7 @@ std::string summary() {
     out += pvr_display_summary();      // N8.7 3c (validacao): o servico de exibicao em sombra contra a saida do legado
     out += holly_event_status_summary();  // N8.7 4a (validacao): o banco de status em sombra contra o controlador
     out += sh4_dmac_ch2_summary();        // N8.7 4b (validacao): a copia do canal 2 em sombra contra o DMAC
+    out += ta_area4_summary();            // N8.7 4c (validacao): a entrada da area 4 em sombra contra o TA
 #if BS_VALIDACAO
     out += "[texture-cache] texturas velhas pela geracao " + std::to_string(s.tex_stale) +
            (s.tex_stale_error.empty() ? std::string() : "; primeira: " + s.tex_stale_error) + "\n";

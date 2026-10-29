@@ -4,6 +4,7 @@
 #include "cpu/sh4_context.h"
 #include "render/kamui/list_sink.h"
 
+#include <string>
 #include <vector>
 
 namespace bs {
@@ -21,6 +22,8 @@ uint32_t                     ta_bytes();          // bytes recebidos pela FIFO d
 native::render::kamui::ListSink& ta_list_sink();
 // N8.7, validacao: fins de lista em que o ListSink e a FIFO do legado (a referencia) discordaram (tem de ficar em 0)
 uint64_t ta_list_end_mismatches();
+// N8.7 4c, so a validacao: a entrada da area 4 nativa em sombra no TA do legado ("[area-4] ...\n"); vazio no produto
+std::string ta_area4_summary();
 
 // Destino das store queues/DMA na area 4: FIFO de poligonos (0x10000000), caminho direto
 // de textura (0x11000000, escreve na VRAM pelo caminho de 64 bits). 32 bytes por vez.

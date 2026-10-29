@@ -9,11 +9,17 @@
 // tipos 5/6 (textura + cor float), 11-14 (textura + dois volumes), sprites e
 // volumes modificadores. Fim de lista acende ISTNRM: opaca bit 7, modificador opaco 8,
 // translucida 9, modificador translucido 10, punch-through 21.
+//
+// N8.7 4c (docs/N8-7-KAMUI.md): so na validacao. A FIFO de poligonos do legado e a referencia do ListSink, e este
+// arquivo, a da entrada da area 4 nativa (native/render/kamui/area4_entry), que roda em sombra: em cada bloco, o
+// caminho, o bit do fim de lista e os offsets do caminho de textura sao comparados com os do legado ([area-4]). No
+// produto, a entrada e system/area4_bus.cpp.
 #include "pvr/ta.h"
 
 #include "cpu/sh4_runtime.h"
 #include "pvr/holly_intc.h"
 #include "pvr/vram.h"
+#include "render/kamui/area4_entry.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -25,8 +31,7 @@ namespace {
 
 enum : uint32_t { kEndOfList = 0, kUserClip = 1, kObjListSet = 2, kGlobal = 4, kSprite = 5, kVertex = 7 };
 
-#if BS_VALIDACAO
-// N8.7: a FIFO de poligonos do legado (so na validacao): a referencia do ListSink nativo, que o produto usa
+// N8.7: a FIFO de poligonos do legado: a referencia do ListSink nativo, que o produto usa
 struct State {
     int      list = -1;          // lista aberta (-1: nenhuma)
     bool     vertex64 = false;   // vertices da lista/objeto atual tem 64 bytes
@@ -39,12 +44,44 @@ std::vector<TaParam> g_params;
 uint32_t             g_bytes = 0;  // bytes recebidos pela FIFO de poligonos desde o init
 int                  g_lastEnd = -1;  // a lista fechada pelo ultimo bloco (-1: nenhuma)
 uint64_t             g_endMismatch = 0;
-#endif
 native::render::kamui::ListSink g_list;  // N8.7: as listas do Kamui, decodificadas direto para a IR
 
 constexpr uint32_t kListEndBit[5] = {1u << 7, 1u << 8, 1u << 9, 1u << 10, 1u << 21};
 
-#if BS_VALIDACAO
+// N8.7 4c: a entrada da area 4 nativa em sombra
+using native::render::kamui::Area4Entry;
+uint64_t    g_a4Blocks = 0, g_a4Poly = 0, g_a4Tex = 0, g_a4Ends = 0, g_a4Differ = 0;
+std::string g_a4First;
+
+// negativo (BS_AREA4_MUTACAO=banco): a sombra troca o banco da primeira palavra do caminho de textura
+bool area4_mutation() {
+    static const bool m = [] {
+        const char* v = std::getenv("BS_AREA4_MUTACAO");
+        return v && std::string(v) == "banco";
+    }();
+    return m;
+}
+
+void area4_differ(uint32_t target, const char* detail) {
+    ++g_a4Differ;
+    if (g_a4First.empty()) {
+        char b[192];
+        std::snprintf(b, sizeof b, "bloco %llu em %08X: %s", (unsigned long long)g_a4Blocks, target, detail);
+        g_a4First = b;
+    }
+}
+
+// o caminho que o legado tomou (em ta_fifo_write) contra o da entrada nativa
+void area4_route(uint32_t target, Area4Entry::Path legacy) {
+    ++g_a4Blocks;
+    const Area4Entry::Path n = Area4Entry::route(target);
+    if (n != legacy) {
+        char b[64];
+        std::snprintf(b, sizeof b, "caminho legado %d, nativo %d", int(legacy), int(n));
+        area4_differ(target, b);
+    }
+}
+
 bool polyGlobal64(uint32_t pcw) {
     const uint32_t col = (pcw >> 4) & 3, tex = (pcw >> 3) & 1, off = (pcw >> 2) & 1, vol = (pcw >> 6) & 1;
     return vol ? col == 2 : (col == 2 && tex && off);
@@ -116,43 +153,36 @@ void polygonFifo(Sh4Context* c, const uint32_t* d) {
     std::memcpy(g.half.w, d, 32);
     g.pendingHalf = true;
 }
-#endif
 
 } // namespace
 
 void ta_reset() {
-#if BS_VALIDACAO
     g = {};
     g_params.clear();
     g_bytes = 0;
-#endif
     g_list.list_init();
     ta_yuv_reset(0, 0);
 }
 
 void ta_list_init() {
-#if BS_VALIDACAO
     g = {};
     g_params.clear();
     g_bytes = 0;
-#endif
     g_list.list_init();
 }
 
-#if BS_VALIDACAO
 uint32_t                    ta_bytes() { return g_bytes; }
 const std::vector<TaParam>& ta_params() { return g_params; }
 uint64_t                    ta_list_end_mismatches() { return g_endMismatch; }
-#else
-uint32_t                    ta_bytes() { return g_list.bytes(); }
-const std::vector<TaParam>& ta_params() { return g_list.params(); }
-uint64_t                    ta_list_end_mismatches() { return 0; }
-#endif
+
+std::string ta_area4_summary() {
+    return "[area-4] blocos comparados " + std::to_string(g_a4Blocks) + " (poligonos " + std::to_string(g_a4Poly) +
+           ", textura " + std::to_string(g_a4Tex) + ", fins de lista " + std::to_string(g_a4Ends) + "), diferentes " +
+           std::to_string(g_a4Differ) + (g_a4First.empty() ? std::string() : "; primeira: " + g_a4First) + "\n";
+}
 
 void ta_list_continue() {
-#if BS_VALIDACAO
     g.list = -1;
-#endif
     g_list.list_continue();
 }
 
@@ -160,11 +190,15 @@ native::render::kamui::ListSink& ta_list_sink() { return g_list; }
 
 bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     const uint32_t p = target & 0x1FFFFFFF;
-    if ((p >> 26) != 4) return false;  // area 4: 0x10000000-0x13FFFFFF
+    if ((p >> 26) != 4) {  // area 4: 0x10000000-0x13FFFFFF
+        area4_route(target, Area4Entry::Path::Outside);
+        return false;
+    }
     const uint32_t region = p & 0x01800000;  // 0x00 poligonos, 0x00800000 YUV, 0x01000000+ textura
     if (region == 0) {
+        area4_route(target, Area4Entry::Path::Polygon);
+        ++g_a4Poly;
         const native::render::kamui::BlockResult r = g_list.feed(data);
-#if BS_VALIDACAO
         // a FIFO do legado e a referencia (interrupcoes e erro); o fim de lista do ListSink tem de ser o mesmo
         g_bytes += 32;
         g_lastEnd = -1;
@@ -176,29 +210,43 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
         }();
         const int end = mutEnd && r.list_end >= 0 ? (r.list_end + 1) % 5 : r.list_end;
         if (end != g_lastEnd) ++g_endMismatch;
-#else
-        // N8.7 (docs/N8-7-KAMUI.md): o fim de lista vem do ListSink, no mesmo bloco e com os mesmos bits de ISTNRM
-        if (r.invalid) sh4_fatal(c, "parametro do TA com tipo invalido", c->pc, data[0]);
-        if (r.list_end >= 0) holly_intc_raise(kListEndBit[r.list_end]);
-#endif
+        // o bit que a entrada nativa acenderia no fim de lista, contra o que a FIFO do legado acendeu
+        if (g_lastEnd >= 0) {
+            ++g_a4Ends;
+            if (Area4Entry::list_end_bit(g_lastEnd) != kListEndBit[g_lastEnd]) {
+                char b[96];
+                std::snprintf(b, sizeof b, "fim da lista %d: bit legado %08X, nativo %08X", g_lastEnd,
+                              kListEndBit[g_lastEnd], Area4Entry::list_end_bit(g_lastEnd));
+                area4_differ(target, b);
+            }
+        }
         return true;
     }
     if (p & 0x01000000) {  // caminho direto de textura: VRAM pelo caminho de 64 bits
+        area4_route(target, Area4Entry::Path::Texture);
+        ++g_a4Tex;
         const uint32_t off = p & 0x00FFFFE0;
-        for (int i = 0; i < 8; ++i) std::memcpy(vram_data() + vram_offset64(off + 4 * i), &data[i], 4);
+        uint32_t       legacy[8], native[8];
+        for (int i = 0; i < 8; ++i) legacy[i] = vram_offset64(off + 4 * i);
+        Area4Entry::texture_offsets(target, native);
+        if (area4_mutation()) native[0] ^= kVramSize / 2;
+        for (int i = 0; i < 8; ++i)
+            if (native[i] != legacy[i]) {
+                char b[96];
+                std::snprintf(b, sizeof b, "palavra %d do caminho de textura: legado %06X, nativo %06X", i, legacy[i],
+                              native[i]);
+                area4_differ(target, b);
+                break;
+            }
+        for (int i = 0; i < 8; ++i) std::memcpy(vram_data() + legacy[i], &data[i], 4);
         // N8.7 3b: as 8 palavras ficam 4 em cada banco, contiguas (16 bytes em cada)
-        vram_touch(vram_offset64(off), 16);
-        vram_touch(vram_offset64(off + 4), 16);
+        vram_touch(legacy[0], 16);
+        vram_touch(legacy[1], 16);
         return true;
     }
-#if !BS_VALIDACAO
-    // N8.5 (docs/N8-5-FILMES.md): o conversor YUV so serve o filme legado (Sofdec); no produto os filmes sao nativos e o
-    // jogo nunca o usa (sonda e referencias). Um macrobloco aqui e um componente removido: erro explicito.
-    ta_yuv_removed(c, "macrobloco no conversor YUV do TA", p);
-#else
+    area4_route(target, Area4Entry::Path::Yuv);
     ta_yuv_write(c, data);
     return true;
-#endif
 }
 
 [[noreturn]] void ta_yuv_removed(Sh4Context* c, const char* what, uint32_t where) {
@@ -210,12 +258,5 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     std::fprintf(stderr, "[ta] %s\n", msg);
     sh4_fatal(c, msg, c->pc, where);
 }
-
-#if !BS_VALIDACAO
-// N8.7: o conversor YUV so existe no build de validacao (ta_yuv.cpp); no produto, qualquer uso e o erro do N8.5
-void     ta_yuv_reset(uint32_t, uint32_t) {}
-uint32_t ta_yuv_count() { return 0; }
-void     ta_yuv_write(Sh4Context* c, const uint32_t*) { ta_yuv_removed(c, "macrobloco no conversor YUV do TA", 0x10800000); }
-#endif
 
 } // namespace bs

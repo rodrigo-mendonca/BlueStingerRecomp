@@ -164,7 +164,72 @@ BS_TEST(dmac_channel2_outside_area4_is_an_explicit_error) {
     BS_CHECK(!(h.istnrm() & (1u << 19)));
 }
 
+// N8.7 4c (revisao Codex 20261029-171814): a composicao que a entrada da area 4 executa, nos dois builds (no produto,
+// system/area4_bus; na validacao, o TA do legado). Caminho de textura: as 8 palavras nos dois bancos e a geracao das
+// duas faixas tocadas sobe
+BS_TEST(ta_texture_block_writes_all_words_and_bumps_both_banks) {
+    Hw h;
+    const uint64_t lo = vram_generation64(0x80, 4), hi = vram_generation64(0x84, 4);
+    sh4_write32(&h.c, 0xFF000038, 0x10);
+    h.sq(0xE1000080, {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7});
+    for (uint32_t i = 0; i < 8; ++i) BS_CHECK(sh4_read32(&h.c, 0xA4000080 + 4 * i) == 0xA0 + i);
+    BS_CHECK(sh4_read32(&h.c, 0xA5000040) == 0xA0 && sh4_read32(&h.c, 0xA5400040) == 0xA1);  // vista de 32 bits
+    BS_CHECK(vram_generation64(0x80, 4) > lo && vram_generation64(0x84, 4) > hi);
+}
+
+// tipo de parametro invalido (3) na FIFO: erro explicito com a palavra de controle, sem fim de lista
+BS_TEST(ta_invalid_parameter_is_an_explicit_error) {
+    Hw h;
+    sh4_write32(&h.c, 0xFF000038, 0x10);
+    h.sq(0xE0000000, {0x80000000, 0, 0, 0, 0, 0, 0, 0});  // global, lista opaca
+    sh4_set_fatal_handler(throwingFatal);
+    bool caught = false;
+    try {
+        h.sq(0xE0000000, {0x60000000, 0, 0, 0, 0, 0, 0, 0});
+    } catch (const std::runtime_error& e) {
+        caught = std::string(e.what()).find("tipo invalido") != std::string::npos;
+    }
+    sh4_set_fatal_handler(nullptr);
+    BS_CHECK(caught && g_fatalExtra == 0x60000000 && !(h.istnrm() & (1u << 7)));
+}
+
+#if !BS_VALIDACAO
+// so o produto: um macrobloco no conversor YUV (removido no N8.5) e erro explicito com o endereco fisico do bloco
+BS_TEST(ta_yuv_block_is_a_removed_component_in_the_product) {
+    Hw h;
+    sh4_write32(&h.c, 0xFF000038, 0x10);
+    sh4_set_fatal_handler(throwingFatal);
+    bool caught = false;
+    try {
+        h.sq(0xE0800040, {1, 2, 3, 4, 5, 6, 7, 8});
+    } catch (const std::runtime_error& e) {
+        caught = std::string(e.what()).find("conversor YUV") != std::string::npos;
+    }
+    sh4_set_fatal_handler(nullptr);
+    BS_CHECK(caught && g_fatalExtra == 0x10800040);
+}
+#endif
+
 #if BS_VALIDACAO
+// N8.7 4c (validacao): a entrada da area 4 nativa em sombra no TA do legado: FIFO com fim de lista e caminho de textura
+// sem diferenca. Negativo: BS_AREA4_MUTACAO=banco (ctest n87_area4_mutacao) tem de acusar
+BS_TEST(ta_native_area4_shadow_agrees) {
+    auto differ = [] {
+        const std::string s = ta_area4_summary();
+        const size_t      p = s.find("diferentes ");
+        return p == std::string::npos ? ~0ull : std::stoull(s.substr(p + 11));
+    };
+    BS_CHECK(differ() == 0);
+    Hw h;
+    sh4_write32(&h.c, 0xFF000038, 0x10);                     // QACR0: area 4
+    h.sq(0xE0000000, {0x80000000, 0, 0, 0, 0, 0, 0, 0});     // global, lista opaca
+    h.sq(0xE0000000, {0, 0, 0, 0, 0, 0, 0, 0});              // fim de lista: bit 7
+    h.sq(0xE1000040, {0x11111111, 0x22222222, 0, 0, 0, 0, 0, 0});  // caminho de textura
+    BS_CHECK((h.istnrm() & (1u << 7)) && sh4_read32(&h.c, 0xA4000040) == 0x11111111);
+    BS_CHECK(differ() == 0);
+    BS_CHECK(ta_area4_summary().find("[area-4] blocos comparados") == 0);
+}
+
 // N8.7 4b (validacao): a copia do canal 2 nativa em sombra no DMAC do legado nao diverge nos dois caminhos nem com o
 // canal desligado. Negativo: BS_DMA_CANAL2_MUTACAO=origem (ctest n87_canal2_mutacao) tem de acusar
 BS_TEST(dmac_channel2_native_shadow_agrees) {

@@ -74,7 +74,8 @@ add_library(bs_native_render STATIC render/texture_convert.cpp render/render_ir.
             render/kamui/texture_heap.cpp   # N8.7 3b: a memoria das texturas (D-K2)
             render/kamui/display_service.cpp  # N8.7 3c: a imagem exibida (leitura do framebuffer)
             render/kamui/event_status.cpp   # N8.7 4a: o banco minimo de status de interrupcao (D-K3)
-            render/kamui/channel_dma.cpp)   # N8.7 4b: a copia do canal 2
+            render/kamui/channel_dma.cpp    # N8.7 4b: a copia do canal 2
+            render/kamui/area4_entry.cpp)   # N8.7 4c: a entrada da area 4
 target_link_libraries(bs_native_render PUBLIC bs_native_api PRIVATE tomlplusplus::tomlplusplus)
 
 # N7b: backend Vulkan (offscreen; o Vulkan e carregado em tempo de execucao, sem SDK; cabecalhos Khronos em

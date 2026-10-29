@@ -152,9 +152,22 @@ if(NOT VALIDACAO AND NOT ha)
 elseif(VALIDACAO AND ha)
   list(APPEND bad "dma_bus.cpp.obj na validacao (a copia do canal 2 roda em sombra no DMAC do legado)")
 endif()
+# N8.7 4c: no produto, a entrada da area 4 nativa (system/area4_bus); o TA do legado so na validacao
+tem(":ta.cpp.obj" ha)  # com o prefixo da biblioteca: "ta.cpp.obj" tambem casaria runtime_data.cpp.obj
+if(NOT VALIDACAO AND ha)
+  list(APPEND bad "ta.cpp.obj (o TA do legado) no produto")
+elseif(VALIDACAO AND NOT ha)
+  list(APPEND bad "ta.cpp.obj (a referencia da entrada da area 4) ausente da validacao")
+endif()
+tem(area4_bus.cpp.obj ha)
+if(NOT VALIDACAO AND NOT ha)
+  list(APPEND bad "area4_bus.cpp.obj (a entrada da area 4 do produto) ausente")
+elseif(VALIDACAO AND ha)
+  list(APPEND bad "area4_bus.cpp.obj na validacao (a entrada da area 4 roda em sombra no TA do legado)")
+endif()
 foreach(sym "list_sink.cpp.obj" "?feed@ListSink@kamui@" "frame_state.cpp.obj" "?write@FrameState@kamui@" "texture_heap.cpp.obj"
     "display_service.cpp.obj" "?scanout@kamui@" "event_status.cpp.obj" "?deliver@EventStatus@kamui@"
-    "channel_dma.cpp.obj" "?ch2_start@ChannelDma@kamui@")
+    "channel_dma.cpp.obj" "?ch2_start@ChannelDma@kamui@" "area4_entry.cpp.obj" "?route@Area4Entry@kamui@")
   tem("${sym}" ha)
   if(NOT ha)
     list(APPEND bad "${sym} (o ListSink nativo) ausente")
