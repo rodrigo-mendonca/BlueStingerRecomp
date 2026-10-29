@@ -3335,6 +3335,36 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
     `prazo` e `efeitos`;
   - [BAIXA] nenhum teste fixava o prazo: **aceito**. O teste `render_startrender_schedules_render_done_with_the_ta_bytes`
     cobre o prazo absoluto, a substituição por um segundo render, o teto e o ISTNRM 0 a 2 no prazo.
+- **Incremento 3b (TextureHeap, D-K2):**
+  - `native/render/kamui/texture_heap` é a memória das texturas: 8 MB com as duas vistas (32 e 64 bits) sobre os mesmos
+    bytes, escritas parciais, a volta no fim dos 8 MB e uma geração por página de 4 KB;
+  - no produto, `runtime/system/texture_heap_bus` serve a API de `pvr/vram.h` sobre ela, e o `vram.cpp` sai do produto
+    (portão);
+  - os escritores diretos marcam as páginas: o caminho direto de textura do TA (destino das store queues e do DMA), a
+    gravação do render no framebuffer e o YUV da validação;
+  - o cache de texturas reaproveita o envio quando a geração do intervalo da textura e a da paleta não mudaram, sem reler
+    os bytes;
+  - na validação, o modelo do legado continua ativo e a memória nativa roda em sombra, com as páginas tocadas comparadas
+    a cada render. O cache também relê os bytes e conta as texturas velhas;
+  - negativos: `BS_TEXTURE_HEAP_MUTACAO=marca` (sem marcação: 2 994 texturas velhas acusadas no combate, e o teste do
+    cache falha) e `BS_TEXTURE_CACHE_MUTACAO=antecipa` (a geração confirmada antes do envio: o teste da falha de envio
+    falha);
+  - equivalência: combate e NEW GAME com 0 páginas diferentes e 0 texturas velhas (4 106 438 e 3 020 507 páginas
+    comparadas);
+  - referências com o produto do TextureHeap (exe `3f7e74e08f6d055f…`, `--paralelo 2`): N8.0 sem fog e volumes **16/16**,
+    só com as 179 exceções; N8.7 **16/16**, sem exceção;
+  - unitários: produto 322/0, validação 337/0; render 52/0.
+- **Revisão Codex `20261029-013355`:** os 4 achados foram aceitos e corrigidos.
+  - [ALTA] a geração ignorava a parte de uma textura que dá a volta no fim dos 8 MB: `write`, `touch` e `generation64`
+    dividem o intervalo; teste `texture_heap_generation_and_touch_wrap_at_the_end`;
+  - [ALTA] a gravação no framebuffer podia escrever além dos 8 MB num pixel que atravessa o fim (defeito herdado): o pixel
+    é gravado byte a byte com a máscara, e a marcação é por linha, com a volta; teste
+    `render_writeback_wraps_at_the_end_of_vram`;
+  - [MÉDIA] a geração nova era confirmada antes do envio da textura: agora só depois do envio que deu certo (ou dos bytes
+    iguais); teste `render_capture_failed_texture_upload_does_not_confirm_the_generation`, com a falha injetada
+    `Fault::TextureUpload` e o negativo `antecipa`;
+  - [BAIXA] faltava cobertura das fronteiras: os testes novos cobrem a volta, o caminho direto de textura do TA e a
+    mudança só da paleta (`render_capture_texture_cache_sees_ta_path_and_palette_changes`).
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

@@ -404,3 +404,24 @@ O que ainda não for medido continua aceito com a semântica atual e coberto pel
   - combate (experimental): 2 041 730, 0 diferentes;
   - NEW GAME: 2 067 891, 0 diferentes;
   - quadros e eventos do produto iguais aos do incremento 2.
+
+## 14. Incremento 3b: TextureHeap (2026-10-29)
+
+- **Nativo:** `native/render/kamui/texture_heap` é a memória (D-K2): 8 MB no layout do caminho de 32 bits, `offset64`
+  para a vista de 64 bits, escritas parciais, a volta no fim dos 8 MB e uma geração por página de 4 KB.
+  `generation64(off64, n)` dá a maior geração das páginas que um intervalo do caminho de 64 bits ocupa nos dois bancos.
+- **Produto:** `runtime/system/texture_heap_bus` serve `pvr/vram.h` (com `vram_touch` e `vram_generation64`). O
+  `vram.cpp` sai do produto.
+- **Escritores diretos** (marcam com `vram_touch`):
+  - o caminho direto de textura do TA, com 16 bytes em cada banco por bloco;
+  - a gravação do render, por linha;
+  - o conversor YUV (validação).
+- **Cache de texturas:** o envio é reaproveitado quando as gerações do intervalo (`texture_span`, o mesmo de
+  `texture_source`) e da paleta (formatos 5 e 6; `palette_generation` do FrameState) não mudaram. As gerações só são
+  confirmadas depois do envio que deu certo.
+- **Validação:** o `vram.cpp` continua ativo e a memória nativa roda em sombra:
+  - as páginas tocadas são comparadas a cada render (`[texture-heap]`);
+  - o cache relê os bytes e conta as texturas velhas (`[texture-cache]`);
+  - negativos `BS_TEXTURE_HEAP_MUTACAO=marca` e `BS_TEXTURE_CACHE_MUTACAO=antecipa`.
+- **Equivalência:** combate (4 106 438 páginas) e NEW GAME (3 020 507), 0 diferentes e 0 texturas velhas; referências
+  com o produto (`3f7e74e08f6d055f…`): N8.0 sem fog e volumes 16/16 (só as 179 exceções), N8.7 16/16.
