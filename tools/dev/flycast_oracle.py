@@ -933,13 +933,47 @@ def grava_bmp(path, w, h, bgr):
 def cmd_quadro(a):
     """N8.7: o oraculo grafico. Reproduz o roteiro por passo de jogo (como o bu-trace) e grava o quadro exibido pelo
     Flycast nos passos pedidos (<out>/pNNNNNN.bmp), para comparar com o do recompilado no mesmo passo."""
+    import shutil
     alvos = sorted(set(a.passos))
     entrada = EntradaBu(roteiro_bu(a.roteiro))
     os.makedirs(a.out, exist_ok=True)
     g = None
+    # --vmu: a VMU desta sessao no slot A1 (como o bu-trace); a do Flycast e o emu.cfg voltam no fim
+    base = os.path.dirname(a.flycast or FLYCAST)
+    vmu, cfg = os.path.join(base, "data", FLYCAST_VMU), os.path.join(base, "emu.cfg")
+    trocas = []
+    if a.vmu:
+        for f in (vmu, cfg):
+            if os.path.exists(f + ".bs-original"):
+                raise SystemExit(f"{f}.bs-original existe (sessao anterior interrompida?): restaure-o antes")
     try:
-        g = connect(a)
-        enter_game(g)
+        if a.vmu:
+            trocas.append((vmu, vmu + ".bs-original"))
+            if os.path.exists(vmu):
+                shutil.copyfile(vmu, vmu + ".bs-original")
+            shutil.copyfile(a.vmu, vmu)
+            trocas.append((cfg, cfg + ".bs-original"))
+            shutil.copyfile(cfg, cfg + ".bs-original")
+            txt = open(cfg, encoding="utf-8").read()
+            if not re.search(r"(?m)^device1\.1 = \d+$", txt):
+                raise SystemExit(f"{cfg}: esperava uma linha 'device1.1 = <tipo>' (slot A1)")
+            open(cfg, "w", encoding="utf-8").write(re.sub(r"(?m)^device1\.1 = \d+$", "device1.1 = 1", txt))
+        # 2026-10-28: o stub as vezes aceita o "?" e nunca responde ao primeiro "s" do boot (4 h presa no recv). A partida
+        # tem prazo; sem resposta, o Flycast e encerrado e a sessao recomeca do zero (no maximo 3 vezes)
+        for tentativa in range(1, 4):
+            g = connect(a)
+            try:
+                g.s.settimeout(120.0)
+                enter_game(g)
+                g.s.settimeout(None)
+                break
+            except (socket.timeout, ConnectionResetError) as e:
+                print(f"partida do Flycast sem resposta (tentativa {tentativa}: {e!r}); recomecando", flush=True)
+                fecha_flycast(a, g)
+                g = None
+                time.sleep(3.0)
+        else:
+            raise SystemExit("o Flycast nao respondeu a partida em 3 tentativas")
         fixos = {PD_RETORNO} | {0x80000000 | x for x in entrada.ancoras}
         for x in fixos:
             g.bp(x)
@@ -966,6 +1000,11 @@ def cmd_quadro(a):
                 g.cont(limit=max(1.0, a.limite - (time.time() - t0)))
     finally:
         fecha_flycast(a, g)
+        for f, guarda in trocas:
+            if os.path.exists(guarda):
+                os.replace(guarda, f)
+            elif os.path.exists(f):
+                os.remove(f)
     return 0 if not alvos else 4
 
 
@@ -1035,6 +1074,7 @@ def main():
     q.add_argument("--roteiro", required=True, help="roteiro 'indice passo' (tools/dist/roteiros)")
     q.add_argument("--passos", required=True, type=lambda s: [int(x) for x in s.split(",")], help="passos de jogo (virgula)")
     q.add_argument("--limite", type=float, default=7200.0, help="tempo maximo do host (s)")
+    q.add_argument("--vmu", help="imagem de VMU (128 KB) no slot A1 nesta sessao (a do Flycast volta no fim)")
     a = p.parse_args()
     try:
         return {"call": cmd_call, "snap": cmd_snap, "trace": cmd_trace, "first-diff": cmd_first_diff, "regs": cmd_regs,

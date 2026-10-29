@@ -184,7 +184,7 @@ $lote1 = @(
 # N11 compara com ciclos contra o executavel anterior ao N2b-2 (Maple com controle): o lado novo usa o
 # provedor legado de controles, porque no nativo o DMA do Maple termina ~9 600 ciclos antes (N3-2), e o audio legado,
 # porque o antigo e anterior ao N6 (so tem o audio legado).
-if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev -saves ""), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" -ev -controles "legado" -saves "legado" -audio "legado") }
+if ($hasOld) { $lote1 += (Caso "est_antigo" $ExeAntigo "nativo" $VBlanks "newgame_area1" -ev -saves ""), (Caso "est_n11" $Exe "nativo" $VBlanks "newgame_area1" @{ BS_RENDER_SEM_FOG_VOLUMES = "1" } -ev -controles "legado" -saves "legado" -audio "legado") }
 if ($hasMods) { $lote1 += (Caso "exp_mods" $ExeMods "experimental" $VBlanks "newgame_area1") }
 $r = RunBatch $lote1
 
@@ -341,6 +341,7 @@ $d = @("fl", "fr", "ev", "tt", "cl", "sl", "au") | Where-Object { (Hash "$($r.ex
 Check "N10 determinismo (B8): duas execucoes experimentais identicas" ((Ended $r.exp_ex2 $VBlanksEx) -and $d.Count -eq 0) "diferem: $($d -join ',')"
 
 # ---- N11: estavel inalterado ----
+# (N8.7: o lado novo sem a fog por tabela e os volumes, que o executavel anterior nao tem: BS_RENDER_SEM_FOG_VOLUMES)
 if ($hasOld) {
     # artefatos selecionados (trace de ordem com ciclos, leituras, relogio, estado, tempo, quadro final),
     # todos presentes e nao vazios, e as duas execucoes terminadas

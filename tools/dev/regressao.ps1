@@ -68,7 +68,10 @@ $steps = @(
     @{ N = "make_preview";  T = "suite"; A = @("$dist\make_preview.ps1", "-Disc", $Disc); Stop = $true },
     @{ N = "test_preview";  T = "suite"; A = @("$dist\test_preview.ps1") },
     # N8.0: as 16 referencias no exe da Preview (com mods\ ao lado), com as 179 excecoes de SPC aprovadas
-    @{ N = "referencias";   T = "cmd";   C = "python tools\dev\n8_referencias.py conferir --exe dist\BlueStinger-Preview\BlueStinger.exe --ref analysis\n8\referencias --excecoes config\n8_1_excecoes_spc.toml --paralelo 4"; Max = 7200 },
+    # N8.7: as referencias do N8.0 sao anteriores a fog por tabela e aos volumes: conferidas com os dois desligados; os
+    # quadros com os efeitos tem o conjunto proprio (referencias_n87, capturado com o exe do N8.7, sem excecoes)
+    @{ N = "referencias";   T = "cmd";   C = "python tools\dev\n8_referencias.py conferir --exe dist\BlueStinger-Preview\BlueStinger.exe --ref analysis\n8\referencias --excecoes config\n8_1_excecoes_spc.toml --paralelo 4 --ambiente BS_RENDER_SEM_FOG_VOLUMES=1"; Max = 7200 },
+    @{ N = "referencias_n87"; T = "cmd"; C = "python tools\dev\n8_referencias.py conferir --exe dist\BlueStinger-Preview\BlueStinger.exe --ref analysis\n8\referencias_n87 --paralelo 4"; Max = 7200 },
     @{ N = "test_gameplay"; T = "suite"; A = @("$dist\test_gameplay.ps1") },
     @{ N = "test_builder";  T = "suite"; A = @("$dist\test_builder.ps1", "-Disc", $Disc) },
     @{ N = "test_projeto";  T = "suite"; A = @("$dist\test_projeto.ps1", "-Disc", $Disc) },
@@ -92,7 +95,18 @@ $steps = @(
     @{ N = "n6_h4";         T = "suite"; A = @("$repo\tools\dev\n6_h.ps1", "-Exe", "$repo\build\msvc-validacao\app\bluestinger.exe", "-Data", "$repo\dist\BlueStinger-Preview\data", "-Build", "$repo\build\msvc-release", "-Casos", "H4", "-Saida", "$env:TEMP\bs-n6-h4") },
     @{ N = "n6_h9";         T = "suite"; A = @("$repo\tools\dev\n6_h.ps1", "-Exe", "$repo\dist\BlueStinger-Preview\BlueStinger.exe", "-Casos", "H9", "-Saida", "$env:TEMP\bs-n6-h9") }
 )
-if ($env:BS_REGRESSAO_ETAPAS) { $steps = & $env:BS_REGRESSAO_ETAPAS $repo }
+if ($env:BS_REGRESSAO_ETAPAS) { $steps = & $env:BS_REGRESSAO_ETAPAS $repo $Disc }
+# revisao Codex 20261028-012302: esquema das etapas (T/C/N texto, A lista de textos, Disc/Stop booleanos, Max inteiro);
+# um "False" ou "0" textual mudaria o comportamento sem mudar a chave
+foreach ($st in $steps) {
+    $bad = @()
+    foreach ($k in "N", "T", "C") { if ($null -ne $st[$k] -and $st[$k] -isnot [string]) { $bad += $k } }
+    if ($st.T -notin "build", "cmd", "suite") { $bad += "T" }
+    if ($null -ne $st.A -and @($st.A | Where-Object { $_ -isnot [string] }).Count) { $bad += "A" }
+    foreach ($k in "Disc", "Stop") { if ($null -ne $st[$k] -and $st[$k] -isnot [bool]) { $bad += $k } }
+    if ($null -ne $st.Max -and $st.Max -isnot [int]) { $bad += "Max" }
+    if ($bad.Count) { Write-Host "ERRO: etapa '$($st.N)' com tipo invalido em: $($bad -join ', ')"; exit 2 }
+}
 $names = $steps | ForEach-Object { $_.N }
 foreach ($x in @($Desde, $Ate)) { if ($x -and $names -notcontains $x) { Write-Host "ERRO: etapa desconhecida '$x'. Etapas: $($names -join ', ')"; exit 2 } }
 
@@ -134,8 +148,28 @@ function Fingerprint {
 # Chave da etapa: a base + a definicao da etapa (tipo, comando, argumentos, disco, limite, parada; revisao Codex
 # 20261028-011732: etapas que usam o mesmo script com argumentos diferentes, ou um argumento editado aqui, nao reaproveitam
 # a aprovacao) + o conteudo do script da propria suite
+# Forma canonica com tipo e comprimento (revisao Codex 20261028-012302): $null, $false e "False" nao colidem
+function Canon($v) {
+    if ($null -eq $v) { return "n" }
+    if ($v -is [bool]) { return "b:$v" }
+    if ($v -is [int]) { return "i:$v" }
+    if ($v -is [string]) { return "s$($v.Length):$v" }
+    $xs = @($v | ForEach-Object { Canon $_ })
+    return "a$($xs.Count):[" + ($xs -join [char]31) + "]"
+}
+# Identidade da midia (revisao Codex 20261028-012302): caminho resolvido e SHA-256 do conteudo, calculada uma vez, entra
+# na chave das etapas que usam a imagem (Disc, ou o caminho nos argumentos). Trocar o caminho ou o conteudo refaz a etapa.
+$script:midia = $null
+function MediaId {
+    if ($null -eq $script:midia) {
+        $r = (Resolve-Path -LiteralPath $Disc -ErrorAction SilentlyContinue).Path
+        $script:midia = if ($r) { "$($r.ToLowerInvariant())|$((Get-FileHash -LiteralPath $r -Algorithm SHA256).Hash)" } else { "ausente:$Disc" }
+    }
+    return $script:midia
+}
 function StepKey($st, $base) {
-    $def = "T=$($st.T)|C=$($st.C)|A=$(@($st.A) -join [char]31)|Disc=$($st.Disc)|Max=$($st.Max)|Stop=$($st.Stop)"
+    $def = "T=$(Canon $st.T)|C=$(Canon $st.C)|A=$(Canon @($st.A))|Disc=$(Canon $st.Disc)|Max=$(Canon $st.Max)|Stop=$(Canon $st.Stop)"
+    if ($st.Disc -or (@($st.A) -contains $Disc)) { $def += "|Midia=$(MediaId)" }
     $sha = [Security.Cryptography.SHA256]::Create()
     $d = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($def))) -replace "-", "").Substring(0, 8)
     if ($st.T -ne "suite") { return "$base-$d" }

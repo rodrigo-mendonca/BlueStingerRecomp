@@ -221,11 +221,13 @@ if ($want.K13) {
         # A referencia e anterior ao N5 e ao N6: sem --video (so tem o Sofdec) e com o audio legado de entao; o lado
         # novo fixa --video legado e --audio legado para comparar o mesmo cenario (prova de 2026-10-25: com o audio
         # legado, quadros e leituras identicos aos da referencia; com o nativo, diferem). Mesmo roteiro, --tempo e relogio.
-        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n -NoTrace -ctl "" -saves "legado" -audio "legado"
+        # N8.7: a referencia e anterior a fog por tabela e aos volumes modificadores; o lado novo os desliga
+        # (BS_RENDER_SEM_FOG_VOLUMES; os efeitos tem as referencias proprias em analysis/n8/referencias_n87)
+        Job "k13_novo_$r" $Exe "$rot\$r.txt" $n @{ BS_RENDER_SEM_FOG_VOLUMES = "1" } -NoTrace -ctl "" -saves "legado" -audio "legado"
         Job "k13_ref_$r" $ExeRef "$rot\$r.txt" $n -NoTrace -ctl "" -video ""
     }
     $r0 = $RotasK13[0]  # traco ligado: na primeira rota
-    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) -ctl "" -saves "legado" -audio "legado"
+    Job "k13_traco" $Exe "$rot\$r0.txt" $(if ($r0 -eq "newgame_area1") { 7300 } else { VBlanksFor "$rot\$r0.txt" }) @{ BS_RENDER_SEM_FOG_VOLUMES = "1" } -ctl "" -saves "legado" -audio "legado"
 }
 RunAll
 

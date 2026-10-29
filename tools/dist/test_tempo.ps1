@@ -56,6 +56,9 @@ function Run($tempo, $arquivos, $n, $mutacao = "") {
     $env:BS_INPUT_SCRIPT = (Join-Path $PSScriptRoot "roteiros\newgame_area1.txt")
     $env:BS_RELOGIO_FIXO = "1700000000"
     $env:BS_EVENT_TRACE = $r.Ev; $env:BS_CLOCK_LOG = $r.Cl; $env:BS_TEMPO_MUTACAO = $mutacao
+    # N8.7: os quadros de referencia (N0/N1) sao anteriores a fog por tabela e aos volumes; conferido em 2026-10-28:
+    # 8 000 VBlanks com os efeitos = 0F03450B, sem eles = F472ECC2 (a referencia)
+    $env:BS_RENDER_SEM_FOG_VOLUMES = "1"
     $env:BS_TIME_TRACE = $(if ($tempo -eq "nativo") { $r.Tt } else { "" })
     $log = Join-Path $Saida "saida_$tag.txt"
     try {
@@ -71,7 +74,7 @@ function Run($tempo, $arquivos, $n, $mutacao = "") {
     }
     finally {
         $env:BS_INPUT_SCRIPT = ""; $env:BS_RELOGIO_FIXO = ""; $env:BS_EVENT_TRACE = ""; $env:BS_CLOCK_LOG = ""
-        $env:BS_TIME_TRACE = ""; $env:BS_TEMPO_MUTACAO = ""
+        $env:BS_TIME_TRACE = ""; $env:BS_TEMPO_MUTACAO = ""; $env:BS_RENDER_SEM_FOG_VOLUMES = ""
     }
     $r.Out = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { "" }
     return $r

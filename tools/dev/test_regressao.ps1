@@ -11,7 +11,7 @@ Copy-Item $src "$repo\tools\dev\regressao.ps1"
 $marks = "$root\execucoes.txt"
 # cada script falso anota que rodou; test_b falha se existir o arquivo "falhar"; test_a trava (dorme) se
 # existir "travar", anotando o proprio PID (o executor tem que encerrar a arvore no limite de tempo)
-foreach ($n in "make_x", "test_a", "test_b") {
+foreach ($n in "make_x", "test_a", "test_b", "test_d") {
     $fail = if ($n -eq "test_b") { "if (Test-Path '$root\falhar') { exit 1 }" }
             elseif ($n -eq "test_a") { "if (Test-Path '$root\travar') { Set-Content '$root\pid.txt' `$PID; Write-Host 'dormindo'; Start-Sleep 600 }" } else { "" }
     "Add-Content '$marks' '$n'`n$fail`nexit 0" | Out-File "$repo\tools\dist\$n.ps1" -Encoding utf8
@@ -32,9 +32,12 @@ Pop-Location
 $env:BS_REGRESSAO_ETAPAS = "$root\etapas.ps1"
 
 $fails = 0
+$script:disco = "$root\disco1.bin"
+"imagem 1" | Out-File "$root\disco1.bin" -Encoding ascii
+"imagem 2" | Out-File "$root\disco2.bin" -Encoding ascii
 function Run([string]$id, [string]$expect, [int]$expectRc = 0) {
     Remove-Item $marks -ErrorAction SilentlyContinue
-    & powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\dev\regressao.ps1" -Estado $est *> (Join-Path $root "$($id.Split(' ')[0]).txt")
+    & powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\dev\regressao.ps1" -Estado $est -Disc $script:disco *> (Join-Path $root "$($id.Split(' ')[0]).txt")
     $rc  = $LASTEXITCODE
     $ran = if (Test-Path $marks) { (Get-Content $marks) -join "," } else { "" }
     $ok  = $ran -eq $expect -and $rc -eq $expectRc
@@ -107,6 +110,29 @@ Run "R18 argumentos novos e etapa nova com o mesmo script" "test_a,test_a"
 Run "R19 nada mudou"                   ""
 Etapas "3"
 Run "R20 so o argumento de test_a2 mudou" "test_a"
+# revisao Codex 20261028-012302: a identidade da midia (caminho e conteudo) entra na chave das etapas que a usam
+@'
+param($repo, $disc)
+@(
+    @{ N = "make_x"; T = "suite"; A = @("$repo\tools\dist\make_x.ps1"); Stop = $true },
+    @{ N = "test_a"; T = "suite"; A = @("$repo\tools\dist\test_a.ps1") },
+    @{ N = "test_d"; T = "suite"; A = @("$repo\tools\dist\test_d.ps1", "-Disc", $disc) }
+)
+'@ | Out-File "$root\etapas.ps1" -Encoding utf8
+Run "R21 etapa com a midia"            "test_a,test_d"
+Run "R22 nada mudou"                   ""
+$script:disco = "$root\disco2.bin"
+Run "R23 outro caminho de midia: so a etapa que a usa" "test_d"
+"imagem 3" | Out-File "$root\disco2.bin" -Encoding ascii
+Run "R24 mesmo caminho, conteudo novo" "test_d"
+# esquema: booleano ou numero em texto e recusado (rc=2, nada roda)
+foreach ($c in @(@("Stop", '"False"'), @("Max", '"0"'), @("Disc", '"1"'))) {
+    @"
+param(`$repo)
+@( @{ N = "test_a"; T = "suite"; A = @("`$repo\tools\dist\test_a.ps1"); $($c[0]) = $($c[1]) } )
+"@ | Out-File "$root\etapas.ps1" -Encoding utf8
+    Run "R25 $($c[0]) textual recusado" "" 2
+}
 Remove-Item Env:\BS_REGRESSAO_ETAPAS
 if ($fails -eq 0) { Remove-Item -Recurse -Force $root } else { Write-Host "artefatos em $root" }
 Write-Host "falhas: $fails"
