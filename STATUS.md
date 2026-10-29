@@ -3243,9 +3243,74 @@ ou aceitar o N8 fechado sem o corte gráfico.
 
 **Atualização (2026-10-28):** o mantenedor autorizou a implementação do N8.7 e suspendeu a regressão do N8.8. O diagnóstico
 somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas referências, com 6 etapas aprovadas para o
-`c6d8a8e` (estado preservado em `%LOCALAPPDATA%\BlueStingerRecomp
-8-0
-88_suspenso`; não vale para binários futuros).
+`c6d8a8e` (estado preservado em `%LOCALAPPDATA%\BlueStingerRecomp\n8-0\n88_suspenso`; não vale para binários futuros).
+
+**Implementação (2026-10-28; commits `63ae54c`, `71b5be4`, `0d102b6`, `5931dec`; detalhes em `docs/N8-7-GRAFICOS.md` seção 5):**
+
+1. **AMD (`Invalid Read`).**
+   - A hipótese da carga da APU foi refutada: 11/30 falhas com a GPU isolada e 9/30 no software sequencial.
+   - Pela bisseção, a causa demonstrada foi esta: na realocação de `tris_`, o driver devolvia o mesmo `VkBuffer`, e o
+     descritor não era reescrito. As 6 falhas tinham o identificador repetido; nenhuma das 26 aprovações o tinha.
+   - Corrigido, com o teste `render_vulkan_triangle_buffer_growth_rewrites_descriptors`: **0/90** depois (iso, par16,
+     seq).
+2. **Fog e volumes no software e no Vulkan.**
+   - O software ganhou a fog por tabela e os volumes opacos (sombra do PCW, `FPU_SHAD_SCALE`, inclusão, exclusão e OU).
+   - O Vulkan ganhou os mesmos efeitos, com duas passagens e o `volumes.comp`.
+   - O software e o Vulkan são iguais em 32 bits nas cenas de fidelidade, na NVIDIA e na AMD.
+   - Na rota de combate inteira: 27 149 renders iguais entre IR, software e TA. 6,2 milhões de desenhos com sombra,
+     297 065 volumes (todos de inclusão) e nenhum volume translúcido. A fog por tabela aparece a partir do render 14 620.
+   - As camadas de validação dão 0 mensagens nas duas GPUs.
+3. **Corte no produto.**
+   - O raster pelo TA, o decodificador de texels da VRAM e o conversor YUV ficam só na validação; o portão de papéis
+     confere os símbolos proibidos.
+   - O padrão é o modo `Software` sobre a IR, e estado não suportado é `sh4_fatal`.
+   - `BS_RENDER_IR` é recusado no produto.
+4. **Testes.**
+   - Unitários: produto 318/0, validação 331/0; render 39/0 nos três builds.
+   - Portão de papéis: produto com 35 objetos, validação com 46.
+5. **Revisões Codex** `20261028-030202`, `20261028-103445` e `20261028-115305`: todos os achados aceitos e corrigidos
+   (cache de descritores por geração, intervalo de profundidade com os volumes aplicados, cenas discriminantes, alfa na
+   comparação, estado não suportado explícito).
+6. **Referências do N8.0:**
+   - com `BS_RENDER_SEM_FOG_VOLUMES=1`: **16/16 iguais**, com as 179 exceções de SPC;
+   - com os efeitos: 14 rotas diferem **só em `quadros`**, a partir do primeiro quadro 3D.
+7. **Referências do N8.7** (`analysis/n8/referencias_n87`): capturadas com o exe final (`a83dadbe`), com fog e volumes.
+   Reproduzidas **16/16** com o mesmo exe, sem exceções.
+   A AMD foi provada de novo com o exe final de validação, com as duas passagens do Vulkan: **0/90** (iso, par16 e seq,
+   N = 30 cada, sozinho na máquina).
+8. **Oráculo do Flycast** (rota `passo_load_slot1` com a VMU `vmu_g1`): a sombra do Eliot tem a forma, a posição e a
+   intensidade do Flycast. No passo 3000 (mesma pose), 97,5 % dos pixels da sombra ficam mais perto do Flycast com o
+   efeito, e o erro médio cai de 19,3 para 3,3. Ainda falta um quadro de fog pareado.
+
+**Fronteira gráfica: desenho aprovado em 2026-10-28** (`docs/N8-7-KAMUI.md`).
+- Decisões do mantenedor: D-K1 = (a), D-K2 = `TextureHeap`, D-K3 = (a), D-K4 condicionada.
+- **Fase 0** (sonda `BS_HW_PROBE_GRAFICOS`, só na validação; rotas NEW GAME e combate):
+  - as listas chegam por store queue direto (média de 111 KB por render no combate) e pelo DMA do canal 2 (60 KB);
+  - o DMA também leva texturas (661 transferências);
+  - render para textura: nenhum;
+  - o tratador do Kamui (`8C1C53E2`) inicia o render e troca o quadro no VBlank, e ali também dispara o DMA do Maple.
+- **Incremento 2 (ListSink):**
+  - `native/render/kamui/list_sink` recebe os blocos da FIFO de polígonos e decodifica direto para a IR;
+  - no produto, o fim de lista, os bytes do TA e a IR vêm dele; o `Parser` e a FIFO do legado ficam só na validação;
+  - na validação, o legado é a referência, e o comparador confere render a render os parâmetros, os bytes, os fins de
+    lista, a IR e as contagens do decodificador;
+  - equivalência: 0 diferentes em 1 486 (cidade), 14 655 (heliporto), 19 984 (NEW GAME) e 27 149 renders (combate,
+    291 996 volumes);
+  - os 8 negativos são acusados (vértice, suporte, omitidos, dois volumes, global, instrução, descarte, fim de lista);
+  - quadros do produto iguais aos do exe final anterior;
+  - referências com o produto do ListSink (exe `c6b2e7835e59020…`):
+    - N8.0 com `BS_RENDER_SEM_FOG_VOLUMES=1`: **16/16**, só com as 179 exceções;
+    - N8.7 com fog e volumes: **16/16**, sem exceção. Repetida com `--paralelo 2`, porque a primeira tentativa foi
+      interrompida pelo Claude Code por falta de memória da máquina; o log interrompido estava vazio e não conta;
+  - unitários: produto 318/0, validação 332/0; render 44/0 (5 casos novos do ListSink);
+  - portão: produto com 35 objetos, validação com 47; `Parser`, `pvr_decode_legacy` e `polygonFifo` são proibidos no
+    produto, e o negativo cruzado reprova.
+- **Revisão Codex `20261028-173027`:** os 2 achados foram aceitos e corrigidos.
+  - [MÉDIA] o comparador não conferia as contagens que decidem o erro do produto: agora confere todas, contra o
+    `RenderStats` do legado e os retornos da captura, com um negativo para cada uma;
+  - [BAIXA] a sonda tomava a substituição do tratador sem encadear a anterior: agora encadeia, devolve a anterior ao
+    desligar e avisa se outra a substituir. O teste `gfx_probe_chains_and_restores_the_isr_override` cobre as duas
+    ordens de instalação.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
@@ -3269,8 +3334,8 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N4 Saves | concluída (pendência formal: SAVE num save point real) | 100 |
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
-| N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Bloqueios: o DEVICE_LOST intermitente na AMD foi reduzido a um `GPU fault`/`Invalid Read`, mas o shader ou recurso de origem ainda não foi identificado; fog por tabela e volumes têm uso real localizado no render 1127, porém continuam sem implementação fiel e sem quadro pareado contra o Flycast. O fallback é mitigação. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4 **concluído** em 2026-10-27 (barramento sem dispositivos; Maple, `--controles/--saves legado` fora do produto); N8.5 **concluído** em 2026-10-27 (filme legado e conversor YUV fora do produto); N8.6 **concluído** em 2026-10-27 (área de som nativa; AICA, áudio legado e DMA do G2 fora do produto); N8.7 **em execução** desde 2026-10-28 (antes bloqueado; autorizado pelo mantenedor); N8.8 **suspenso** aguardando o N8.7 (regressão nível 3 interrompida nas referências) | 0 |
+| N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Os dois bloqueios ganharam evidência no N8.7 (2026-10-28). **AMD:** a causa do `Invalid Read` foi demonstrada e corrigida (descritor não reescrito no realloc de `tris_`; 0/90 depois). **Fog e volumes:** implementados no software e no Vulkan, iguais em 32 bits, com a sombra conferida com o Flycast; falta um quadro de fog pareado. O N7 fica em 95% até o mantenedor encerrar formalmente esses bloqueios. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4 **concluído** em 2026-10-27 (barramento sem dispositivos; Maple, `--controles/--saves legado` fora do produto); N8.5 **concluído** em 2026-10-27 (filme legado e conversor YUV fora do produto); N8.6 **concluído** em 2026-10-27 (área de som nativa; AICA, áudio legado e DMA do G2 fora do produto); N8.7 **em execução** desde 2026-10-28: AMD corrigida, fog e volumes nos dois renderizadores, raster pelo TA, VRAM e YUV fora do produto; a fronteira guest (PVR/TA/VRAM) fica, por decisão pendente D-N8-2 b; N8.8 **suspenso** aguardando o N8.7 (regressão nível 3 interrompida nas referências) | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

@@ -1,6 +1,6 @@
 # N9 — Blue Stinger Remastered: planejamento
 
-**Situação: planejamento aprovado pelo mantenedor (2026-10-23). N9 NÃO INICIADO.** Este documento só registra o
+**Situação: planejamento aprovado pelo mantenedor (2026-10-23), atualizado com as lições do N8 em 2026-10-28 (seção 13). N9 NÃO INICIADO.** Este documento só registra o
 escopo, a arquitetura e os critérios. Nada do N9 é implementado antes do encerramento do N8 (executável sem legado) e
 da autorização do mantenedor para começar. A ordem N0–N10 não muda (`docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2).
 
@@ -427,3 +427,54 @@ marcos 3–5, já que só depende do perfil.
 10. Pacotes HD e áudio remasterizado oficiais: quem produz, licença e como se distribuem sem conteúdo comercial.
 11. Preset gráfico Remastered padrão por classe de GPU (detecção automática ou escolha no instalador).
 12. Se a Original ganha o menu inicial nativo como opção, ou mantém só a interface original.
+
+## 13. Atualização do planejamento depois do N8 (2026-10-28)
+
+Revisão do plano com o que o N8 mudou nas premissas. Continua **só planejamento**: nada do N9 é implementado antes do
+fechamento do N8 (N8.7 e N8.8) e da autorização do mantenedor.
+
+### 13.1 O que o N8 entrega ao N9
+
+| Entrega do N8 | Efeito no N9 |
+|---|---|
+| Produto × validação (N8.2, `BS_VALIDACAO`, catraca `n8_produto_papeis`) | as duas edições saem do **produto**; os modelos legados só existem no build de validação. A bateria da Original usa as referências do N8.0 no produto e o legado só na validação. Nenhuma subetapa do N9 pode depender de um objeto do papel de validação: a catraca falha |
+| Serviço nativo de syscalls, barramento de periféricos sem dispositivos, área de som nativa (N8.3–N8.6) | menus, saves e controles do N9 (N9.2–N9.4) usam só os serviços nativos. O soft reset (menu do sistema) já encerra a sessão pelo host: o "Menu principal" e o "Sair" do N9.2 partem desse gancho |
+| 16 referências do N8.0 e as 179 exceções de SPC | são a definição objetiva de "Original idêntica" (N9.0, aceitação). Nenhuma exceção nova sem investigação |
+| IR gráfica nativa do N8.7 (em execução): fog por tabela, bit de sombra, `FPU_SHAD_SCALE`, volumes modificadores, software-IR | ver 13.2 |
+
+### 13.2 Impacto do N8.7 nas subetapas gráficas
+
+- **N9.5 (widescreen e HUD):** a marca cena/HUD por desenho pode vir do produtor nativo da IR (o tipo de lista e os
+  desenhos 2D do Kamui) em vez de uma heurística sobre o 1/w. Entra como primeira tarefa do N9.5, sobre a IR do N8.7.
+- **N9.6 (iluminação e sombras):** os volumes modificadores do jogo, implementados fielmente no N8.7, são a sombra
+  original. A Remastered pode refiná-los (resolução, suavização) sem mudar onde a sombra cai: a regra da seção 16 do N7
+  passa a ter uma base concreta. Luzes e sombras novas continuam dependendo das provas técnicas.
+- **Fog:** a fog por tabela fiel (N8.7) é parte da edição Original. Na Remastered, a fog volumétrica ou a correção de
+  cor da fog são melhorias opcionais sobre os mesmos parâmetros do quadro, desligadas no preset Original.
+- **N9.8 (AA, texturas HD):** o software-IR e o Vulkan consomem a mesma IR; o MSAA e as texturas HD só existem no
+  Vulkan. O software segue como recuo fiel, sem os recursos da Remastered (registrado no menu, nunca silencioso).
+
+### 13.3 GPU AMD integrada (APU)
+
+A investigação do N8.7 (`docs/N8-7-DIAGNOSTICO.md`, seção 1) mede a perda do dispositivo Vulkan na APU (Ryzen 7 9700X,
+Radeon integrada) sob carga da CPU. Para o N9.11:
+- a matriz de GPUs inclui uma APU **com a CPU carregada** (o caso que reproduz a falha), além da GPU isolada;
+- os efeitos da Remastered não podem aumentar o trabalho da CPU por quadro sem medir o efeito na APU;
+- a recuperação do dispositivo continua obrigatória e é coberta por teste (falha injetada e falha real reproduzida).
+
+### 13.4 Pendências herdadas que o N9 não resolve sozinho
+
+- critério do H4 do N6 desatualizado desde o `e13a123` (`docs/N8-6-AUDIO.md` 5.1): decisão do mantenedor antes do
+  N9.9 (áudio remasterizado), porque a comparação nativo × legado é a prova de equivalência do áudio;
+- N7 em 95% (AMD, fog e volumes contra o Flycast): o N9 não começa a parte gráfica (N9.5–N9.8) com o N7 aberto;
+- campanha completa reproduzível (D-N8-4): critério do N8.8, base da validação da Remastered (seção 9).
+
+### 13.5 Ordem revista
+
+| Marco | Mudança |
+|---|---|
+| 0 | **novo:** fechamento do N8 (N8.7 com o corte gráfico ou a decisão explícita; N8.8 com a regressão integral) e N7 fechado ou com as pendências aceitas |
+| 1 | N9.0 sem mudança |
+| 6 | N9.5 começa pela marca cena/HUD sobre a IR nativa do N8.7 (não mais uma tarefa "do N7") |
+| 7 | N9.6 parte dos volumes fiéis do N8.7 |
+| 11 | N9.11 inclui a APU com carga da CPU na matriz |

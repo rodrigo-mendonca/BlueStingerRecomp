@@ -46,6 +46,10 @@ N8.5 (`docs/N8-5-FILMES.md`): `--video legado` (Sofdec) e o conversor YUV so na 
 e `n5_e001` usam o exe de validacao; `test_gameplay` usa o filme nativo e o roteiro `passo_newgame_area1`.
 N8.6 (`docs/N8-6-AUDIO.md`): area de som nativa (`runtime/system/sound_bus`); o modelo da AICA, `--audio legado`,
 `BS_AUDIO=legado` e `BS_AICA_*` so na validacao (`bs_runtime_hle`); a bateria H do N6 roda no exe de validacao.
+N8.7 (`docs/N8-7-GRAFICOS.md`): software e Vulkan sobre a mesma IR, com fog por tabela e volumes modificadores. Raster
+pelo TA, texels da VRAM e YUV so na validacao; o produto recusa `BS_RENDER_IR` (saida 2). `BS_RENDER_SEM_FOG_VOLUMES=1`
+desliga os dois efeitos, para comparar com as referencias do N8.0. `n87_amd.ps1` repete a prova da AMD. Os quadros novos
+ficam em `analysis/n8/referencias_n87`.
 
 Ferramentas:
 - `bs-extract <img.cdi> game-data`: extrai e valida o hash. `bs-extract --runtime <img.cdi> <dir>`:

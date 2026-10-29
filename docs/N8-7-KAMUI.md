@@ -1,0 +1,382 @@
+# N8.7: substituição da fronteira gráfica guest por interceptações do Kamui (proposta)
+
+Desenho técnico autorizado pelo mantenedor em 2026-10-28 e **aprovado no mesmo dia**, com as decisões da seção 10. A
+implementação segue a ordem obrigatória da seção 10.
+
+Fontes da evidência:
+- sonda do N0 (`analysis/hwscan_sonda`: `hw_manifest.tsv` com as contagens dinâmicas por PC, `callgraph.tsv`, `sdk_funcs.tsv`);
+- disassembly do `1ST_READ.BIN` (`bs-disasm`);
+- código do runtime (`runtime/pvr`, `runtime/memory`, `runtime/cpu/irq_bridge`);
+- inventário do `docs/N8-7-DIAGNOSTICO.md`.
+
+Marcação: **[C]** confirmado (disassembly, sonda ou código); **[H]** hipótese, a confirmar na fase 0 (seção 8).
+
+## 1. Inventário: Kamui e as funções que tocam o hardware gráfico
+
+O binário não tem símbolos. Os nomes abaixo são **papéis** deduzidos do código e dos acessos, não nomes do SDK.
+
+### 1.1 Camada de hardware do Kamui (HAL), `0x8C1C59A4`–`0x8C1C5CE0` [C]
+
+São funções pequenas, e todo acesso ao PVR fora do caminho de render passa por elas.
+
+| Endereço | Papel | Evidência | Chamadas |
+|---|---|---|---|
+| `8C1C59A4` | `reg_write(off, v)`: `*(0xA05F8000 + off) = v` | disassembly (3 instruções); a sonda vê ~150 registradores gravados, incluindo a tabela de fog `8200`–`83FC` | 23 diretas, 8 dinâmicas, 2 de cauda (22 chamadores) |
+| `8C1C59D6` | `reg_read(off)` | disassembly | 5 chamadores |
+| `8C1C59AE` | write-back do cache em `[r4, r4 + r5)`, de 32 em 32 bytes (chama `8C1C56CE`) | disassembly | HAL |
+| `8C1C59DC` | cópia para a VRAM: `memcpy(0xA5000000 + off, src, n)` (`8C1C56BE`) | disassembly | 1 (`8C1C5D46`) |
+| `8C1C59F2` | cópia da VRAM | disassembly | **nenhum chamador** |
+| `8C1C5A08` | carga de textura: com o endereço alinhado e as interrupções liberadas, write-back + DMA (`8C1C1E16`) para `0x11000000 + off` (caminho direto de textura do TA), repetido enquanto o retorno for `0x100`; senão, `memcpy` para `0xA4000000 + off`; espera opcional (`8C1C21BC`) | disassembly | 5 diretas, 2 de cauda (`8C18D07E`, `8C18D14C`, `8C18DA40`, `8C18DA92`, `8C1C3860`) |
+| `8C1C5AE0` | cópia + write-back (outro destino) | disassembly | 1 (`8C1C3860`) |
+| `8C1C5B04` | tabela de `{off, v}` → `reg_write` | disassembly | **nenhum chamador** |
+| `8C1C5B36` | instala o vetor (VBR + `0x600`) e o estado das interrupções | disassembly | 1 (`8C1C48C4`) |
+| `8C1C56BE` | `memcpy` (a cópia para a VRAM) | sonda: 2,1 M escritas na `vram32`, 0,9 M na `vram64` | 9 chamadores |
+
+### 1.2 Render, apresentação e interrupção [C nos acessos, H nos papéis]
+
+| Endereço | Papel | Acessos medidos |
+|---|---|---|
+| `8C1C53E2` | **tratador de interrupção do Holly do Kamui**. É chamado **dinamicamente** pelo despachante `8C1982F4`, que vem da ponte `8C00FA00` | `ISTNRM`/`ISTERR`: 24 mil leituras e escritas; `CHCR2`: 8 124 |
+| `8C1C4EC6` | dentro do tratador: dispara o render seguinte e troca o quadro exibido | `810C`; chama `4914`, `4A2C`, `4C9E`, `1DB4` |
+| `8C1C4C9E` | início do render | `STARTRENDER`, `PARAM_BASE`, `REGION_BASE`, `FB_W_*` (10 registradores, escrita direta) |
+| `8C1C4914` | troca do quadro exibido | `FB_R_CTRL`, `FB_R_SOF1/2`, `VO_CONTROL` |
+| `8C1C512E` | marca no framebuffer | `vram32` em `A5000000` e `A5400000` (191 mil); `8138` |
+| `8C18BC3C` | ponto do quadro do Kamui no render (chamado pela Ninja `8C173044`). Lê `TA_ITP_CURRENT`, grava o polígono de fundo na VRAM e chama `8C18BB84`, que leva o buffer de vértices ao TA pelo DMA (`8C1C1E16`) | CCN, SQ, TA, TMU |
+| `8C18D276` | carga de textura pelo DMA (+ `reg_write` + espera) | chamada por `8C1769E6` |
+| `8C1C1D4C`, `8C1C1DB4`, `8C1C1E16`, `8C1C202C` | DMA do canal 2: `SAR2`/`DAR2`/`DMATCR2`/`CHCR2`, `SB_C2DSTAT`/`C2DLEN`/`C2DST` | `1E16`: 8 124 chamadas, ~1 por quadro |
+
+### 1.3 Ninja e jogo com acesso direto (fora do Kamui) [C]
+
+| Endereço | Papel | Acessos |
+|---|---|---|
+| `8C172642` | laço do quadro da Ninja (chamado pelo jogo em `8C08BB40`): sondagem do `ISTNRM` e as chamadas da API Kamui do quadro | 474 535 leituras do `ISTNRM` |
+| `8C172620` | leitura do `SPG_STATUS` | 75 mil |
+| `8C173C58` | carga da paleta (`PALETTE_RAM 005F9000`–`903C`) | escrita direta |
+| `8C08EFF8`, `8C08F332`, `8C08F04E`, `8C08F0E0`, `8C08F450` | jogo/Shinobi: `SPG_STATUS`, `ISTERR`, `ISTNRM` | por quadro |
+| `8C17BFB4`, `8C17C208`, `8C17C2D0`, `8C1C5368`, `8C1C539C` | Shinobi: máscaras e estado do INTC do Holly | por quadro |
+
+### 1.4 Geometria: quem escreve as listas [C]
+
+A geometria **não** passa por uma chamada do Kamui por vértice. São dois transportes:
+
+1. **Store queue direto para o TA.** As funções de desenho da Ninja programam `QACR0/1` para o TA (a sonda vê as
+   escritas em `FF000038/3C` em `8C15F078`, `8C160CD4`, `8C160240` e outras) e chamam laços internos que gravam os
+   parâmetros pelo `pref`. Os maiores escritores, em escritas na SQ:
+
+   | Função | Escritas na SQ |
+   |---|---|
+   | `8C17EA5C` | 162 M |
+   | `8C17EC50` | 64 M |
+   | `8C19F61C` | 48 M |
+   | `8C17E538` | 33 M |
+   | `8C17FB10` | 27 M |
+   | `8C18186C` | 18 M |
+   | `8C19E124` | 18 M |
+   | `8C1815B0` | 17 M |
+
+   Ao todo são **cerca de 40 laços**, em `8C17E000`–`8C181FFF`, `8C199000`–`8C19FFFF`, `8C169xxx`, `8C1CDxxx`–`8C1CExxx`
+   e `8C1EBxxx`.
+2. **API de tiras do Kamui** (`8C187B08`, `7B58`, `7BD4`, `7C28`, `7F42`, `80BA`, `817E`): cabeçalhos de polígono e
+   vértices genéricos, chamados por 11 a 14 funções da Ninja. Também usa `QACR` + SQ.
+3. **Buffer de vértices + DMA** [H]: `8C18BC3C` → `8C18BB84` → `8C1C1E16`, uma vez por quadro. É preciso confirmar se o
+   DMA leva listas (FIFO de polígonos, `0x10000000`) ou textura (`0x11000000`), e com quantos bytes (fase 0).
+
+**Consequência:** interceptar a geometria **por função** exigiria reimplementar os ~40 laços da Ninja/Kamui. Isso está
+fora do escopo ("não reimplemente o Kamui inteiro") e seria trabalho do N10. O ponto natural é o **fim do transporte**:
+o bloco de 32 bytes que o `pref` ou o DMA entrega.
+
+### 1.5 Estruturas envolvidas
+
+- **Parâmetro do TA** (32 ou 64 bytes): PCW (tipo, lista, fim de tira), ISP/TSP, TCW (endereço de textura na VRAM,
+  formato), vértices, volumes modificadores. Hoje é decodificado pelo `Parser` do `pvr_render`.
+- **Estado do quadro**: os ~150 registradores gravados por `reg_write`. Exemplos: fundo `ISP_BACKGND_*`, `FPU_*`,
+  `FOG_*` + tabela, `HALF_OFFSET`, recorte, `TA_*_BASE/LIMIT`, `FB_W_*`, `SPG_*`.
+- **Polígono de fundo**: gravado pelo Kamui na VRAM, no endereço de `TA_ITP_CURRENT` (`pvr_regs.cpp` documenta isso).
+- **Texturas**: bytes na VRAM no endereço do TCW (64 bits), carregados por `5A08`/`56BE`; paleta na `PALETTE_RAM`.
+- **Framebuffer**: `FB_W_SOF1` (o render grava) e `FB_R_SOF1/2` (a saída de vídeo lê). A sonda não vê **leitura** da
+  VRAM pelo código do jogo (nenhuma em `vram32`/`vram64`).
+
+## 2. Fluxo atual até a IR nativa [C, código]
+
+```
+jogo/Ninja/Kamui (AOT)
+  ├─ pref → sh4_sq_flush (memory/sh4_sq)  ──┐
+  └─ DMA ch2 (sh4_dmac_ch2_transfer) ───────┤→ ta_fifo_write (pvr/ta) → polygonFifo: TaParam, lista, fim de lista
+                                            │                                       └→ holly_intc_raise (fim de lista)
+  reg_write → memória A05F8xxx → pvr_regs (efeitos: TA_LIST_INIT, STARTRENDER, SPG...)
+                                   └ STARTRENDER → pvr_render (Parser::feed sobre ta_params)
+                                        └ PvrCaptureSink → render_capture (transitório) → nr::CommandList
+                                              └ IRenderDevice: Software (padrão) ou Vulkan
+                                        └ writeBack → VRAM (FB_W_SOF1)
+                                   └ fim de render: min(450000 + ta_bytes × 100, 1500000) ciclos → holly_intc (ISTNRM 0-2)
+  VBlank (tempo lógico, N2) → holly_intc → ponte 8C00FA00 → 8C1982F4 → tratador do Kamui 8C1C53E2
+  pvr_video lê FB_R_SOF da VRAM → apresentação
+  texturas: render_capture lê os bytes da VRAM pelo TCW a cada render (cache por conteúdo)
+```
+
+## 3. Dependências por componente
+
+| Componente | Quem usa | Contrato visível ao jogo | Medido |
+|---|---|---|---|
+| Registradores do PVR (`pvr_regs`) | HAL `59A4`/`59D6`; escrita direta em `4C9E`/`4914`; leituras de `810C` | `TA_ITP_CURRENT`, `TA_NEXT_OPB`, `SPG_STATUS` (fase do VBlank e linha), ID/revisão | 376 mil acessos (6 000 VBlanks) |
+| FIFO do TA (`pvr/ta`) | `pref` e DMA | fim de lista → `ISTNRM` bits 7–10/21; **a contagem de bytes entra no prazo do fim de render** | 2,69 M |
+| Store queues (`sh4_sq`) | ~40 laços + API de tiras | é recurso da CPU: com destino na RAM é só memória | 79 M |
+| DMA canal 2 (`sh4_dmac` + `holly_sb`) | `1E16`/`1D4C`/`202C`, `5A08` | fim de DMA, `CHCR2.TE`, `SB_C2DSTAT` | 35,8 mil |
+| VRAM (`vram`) | `56BE` (texturas, fundo), `512E`, `writeBack`, `pvr_video` | nenhuma leitura pelo jogo | 2,68 M |
+| INTC do Holly (`holly_intc`) | tratador `53E2`, Ninja `172642`, jogo, Shinobi | `ISTNRM`/`ISTERR`/`IMLn` lidos e limpos | todo quadro |
+| Saída de vídeo (`pvr_video`) | `FB_R_SOF` | troca no VBlank | todo quadro |
+
+**Contratos de tempo que as referências fixam:**
+- o prazo do fim de render, que depende de `ta_bytes()` do quadro;
+- o fim de lista na hora em que o bloco chega;
+- o VBlank do N2;
+- no estável (`--tempo nativo`), os mesmos prazos em ciclos.
+
+Mudar qualquer um muda o estado por passo, e as 16 referências mostram isso.
+
+## 4. Pontos de interceptação
+
+### 4.1 Sem regenerar nada (runtime e ponte) [C]
+
+| Ponto | Mecanismo | Já usado |
+|---|---|---|
+| `pref` para a área 4 (`sh4_sq_flush`) | função do runtime | sim |
+| transferência do canal 2 (`sh4_dmac_ch2_transfer`) | função do runtime | sim |
+| acessos `A05F8000`–`A05F9FFF`, `A05F6800`–`A05F69FF`, área 4/VRAM | despacho de regiões do `memory.cpp` | sim (N8.4 `maple_bus`, N8.6 `sound_bus`) |
+| tratador `8C1C53E2` | `sh4_override`: a chamada é **dinâmica** (pelo despachante `8C1982F4`) | sim (mods, provedores) |
+| as 8 chamadas dinâmicas de `reg_write`, as de `1E16` (`8C18BB84`, `8C18D276`), `8C18817E`, `8C187F42` | `sh4_override` | — |
+
+### 4.2 Com slot nativo (`[native] slots` no `config/bluestinger_us.toml`)
+
+Precedente: N3–N6 e N7c. O gerador e a semântica do código traduzido **não mudam**; o `generated/` é regenerado, e só a
+macro da chamada para um slot muda, conferida arquivo a arquivo. **Isso conta como "modificar o AOT"? É decisão do
+mantenedor (D-K1).**
+
+Candidatos:
+- `8C1C59A4` e `8C1C59D6`;
+- `8C1C5A08`, `8C1C56BE` (só as chamadas da HAL), `8C1C5AE0`;
+- `8C18BC3C` (render do quadro), `8C18D276`;
+- `8C172642` (laço do quadro da Ninja);
+- `8C173C58` (paleta).
+
+### 4.3 O que não se intercepta
+
+- os ~40 laços de geometria (seria reimplementar);
+- a lógica da API do Kamui (93 entradas chamadas de fora da biblioteca; o estado de listas, tiras e texturas continua
+  recompilado).
+
+## 5. Proposta: tradução direta Kamui → IR
+
+**Princípio:** o Kamui recompilado continua decidindo **o quê** desenhar. O produto deixa de **simular o hardware** que
+recebe isso. A tradução fica em serviços nativos com a semântica do Kamui, como a fachada do N8.4 (`maple_bus`) e do N8.6
+(`sound_bus`): `runtime/system/graphics_bus` + `native/render/kamui`.
+
+| Serviço novo | Recebe | Faz | Substitui no produto |
+|---|---|---|---|
+| **`ListSink`** (`native/render/kamui/list_sink`) | o bloco de 32 bytes do `pref`/DMA (área 4, FIFO de polígonos) | decodifica direto para a `CommandList` em construção: o `Parser` do `pvr_render` movido para o nativo, como o raster no N8.7. Conta os bytes e emite o fim de lista como evento | `pvr/ta` (FIFO, estado, `ta_params`), o `Parser` do legado, `render_capture` (transitório) |
+| **`FrameState`** | `reg_write`/`reg_read` (slot), ou a região `A05F8xxx` (fachada) | guarda só os registradores que o Kamui usa e monta o `FrameParams` (fundo, fog, `FPU_SHAD_SCALE`, recorte, `HALF_OFFSET`). Comandos: `TA_LIST_INIT` reinicia o `ListSink`; `STARTRENDER` fecha a lista, entrega ao `IRenderDevice` e agenda o fim de render com **a mesma fórmula** | `pvr_regs` (o banco de hardware com efeitos) |
+| **`TextureHeap`** | as cópias da HAL (`5A08`/`56BE`/caminho direto de textura) e a paleta | armazena os bytes no endereço do TCW (área de memória do guest, D-K2), marca as páginas sujas e alimenta o `TextureCache` nativo (já existe: `texture_convert`, `convert_pal8`) | `vram` como dispositivo, o `texture_source` que relê a VRAM a cada render |
+| **`DisplayService`** | `4914`/`FB_R_SOF` | troca o quadro exibido no VBlank, pelo `IRenderDevice`/apresentação, sem passar pela VRAM | `pvr_video` (varredura da VRAM), `writeBack` |
+| **eventos** | fim de render, fim de lista, fim de DMA | eventos do tempo lógico (N2) e do estável, os mesmos instantes; o nível IRL vai à ponte | `holly_intc` como modelo (fica um banco `ISTNRM`/`IMLn` mínimo, decisão D-K3) |
+| **cópia do canal 2** | `1E16` (slot ou fachada) | cópia síncrona RAM → `ListSink`/`TextureHeap`, com o fim agendado como hoje | `sh4_dmac`, `holly_sb` (DMA) |
+
+**Ordem de corte** (cada passo é reversível e comparável):
+
+1. `ListSink` alimentado pelo `pref` e pelo DMA no lugar do `polygonFifo`, ainda com `pvr_regs`. O `render_capture` sai
+   do produto.
+2. `FrameState` no lugar de `pvr_regs`, primeiro pela região de memória (fachada) e depois, se D-K1 aprovar, pelos
+   slots da HAL.
+3. `TextureHeap` + `DisplayService`: a VRAM deixa de ser lida pelo render e pela apresentação.
+4. Eventos e DMA: `holly_intc`, `holly_sb` e `sh4_dmac` saem do produto. Ficam o banco mínimo do D-K3 e o tratador do
+   Kamui recompilado.
+
+## 6. Preservar texturas, estado, sincronização e ordem
+
+- **Texturas.**
+  - O endereço do TCW continua a chave: o jogo e o Kamui só conhecem endereços. Elevar para identificadores é o N10.
+  - O `TextureHeap` marca as páginas na cópia (o produtor é conhecido: a HAL e o caminho direto de textura) e tira a
+    comparação por conteúdo a cada render. A invalidação passa a ser exata, por página.
+  - **Render para textura:** FB_W_SOF1 fora da área de quadro → a `CommandList` grava num alvo do `TextureHeap` em vez
+    do framebuffer. A fase 0 mede se o jogo usa isso.
+- **Estado gráfico.** O `FrameState` monta o `FrameParams` **no `STARTRENDER`**, como hoje (`render_capture.cpp`
+  672–686). Fog, volumes e paleta continuam iguais em 32 bits ao software (cenas de fidelidade).
+- **Sincronização.**
+  - O prazo do fim de render continua `min(450000 + bytes × 100, 1500000)` no relógio do modo ativo, com os mesmos
+    `bytes`.
+  - O fim de lista é emitido no bloco de fim de lista.
+  - `TA_ITP_CURRENT`/`TA_NEXT_OPB` dão os mesmos valores. O Kamui os lê para gravar o polígono de fundo, e a aproximação
+    atual também fica.
+  - Nada muda no `--tempo nativo`, no padrão experimental nem no headless histórico.
+- **Ordem.**
+  - A `CommandList` guarda a ordem de chegada por lista (opaca, PT, translúcida, volumes), como o `Parser`.
+  - O ordenamento automático continua no dispositivo (`frame_prep`).
+  - O fundo é o primeiro, como hoje.
+
+## 7. Como provar que os componentes antigos saem do produto
+
+1. **Portão de papéis** (`tests/n8/check_papeis.cmake`):
+   - `ta.cpp`, `pvr_regs.cpp`, `vram.cpp`, `pvr_video.cpp`, `holly_intc.cpp`, `holly_sb.cpp`, `sh4_dmac.cpp` e
+     `render_capture.cpp` passam a objetos **só da validação**;
+   - os símbolos `?ta_fifo_write@bs@@`, `?pvr_render@bs@@`, `vram_data`, `holly_intc_raise`, `sh4_dmac_ch2_transfer` e
+     `PvrCaptureSink` ficam **proibidos** no mapa do produto;
+   - `graphics_bus`/`list_sink`/`frame_state`/`texture_heap` ficam obrigatórios.
+2. **Região sem dispositivo:** no produto, qualquer acesso fora do contrato da fachada é `sh4_fatal` com o nome do
+   componente removido, como `ta_yuv_removed` (N8.5) e o barramento do N8.4. Sem recuo silencioso.
+3. **Contagem zero nas rotas:** a sonda (validação) conta os acessos que caem fora da fachada, e a meta é 0 nas 16 rotas.
+
+## 8. Plano de testes, equivalência e recuo
+
+**Fase 0 (medição, só leitura, no exe de validação):**
+- separar os bytes do DMA do canal 2 entre a FIFO de polígonos e a textura;
+- `FB_W_SOF1` fora da área de quadro (render para textura);
+- os registradores que o Kamui **lê** e os valores esperados;
+- a sequência do tratador `53E2` (bits de `ISTNRM` tratados, encadeamento do DMA);
+- a quantidade de bytes por quadro.
+
+O resultado entra na seção 1 com [C].
+
+**Equivalência, a cada passo da seção 5:**
+- **comparação em processo**: o modo `comparar` do N7 vira "`ListSink` × `Parser` legado" na validação. As duas
+  `CommandList` são iguais por render (hash dos desenhos, vértices e estado) em todos os renders das rotas de combate,
+  NEW GAME e load;
+- **16 referências do N8.0** com `BS_RENDER_SEM_FOG_VOLUMES=1`: 16/16, com as 179 exceções e nenhuma nova;
+- **`referencias_n87`**: 16/16 sem exceção (quadros com os efeitos);
+- **Vulkan × software** em 32 bits nas cenas de fidelidade; AMD: `n87_amd.ps1` iso/par16/seq, N = 30.
+
+**Negativos** (cada um tem de reprovar):
+- bloco do TA corrompido;
+- `STARTRENDER` sem `TA_LIST_INIT`;
+- página de textura não marcada (o `TextureHeap` acusa a textura velha);
+- acesso a um registrador fora do contrato (`sh4_fatal`);
+- prazo do fim de render alterado (`BS_*_MUTACAO`: as referências reprovam);
+- render para textura sem suporte (erro explícito, não omissão).
+
+**Recuo e modelos:**
+- os modelos de hoje (`ta`, `pvr_regs`, `vram`, `holly_*`, `sh4_dmac`, `pvr_render_ta`, `render_capture`) ficam
+  **inteiros** no build de validação, atrás de `--graficos legado`. É o mesmo padrão de `--audio`/`--video`/`--controles
+  legado` no N8.4–N8.6. No produto, a opção é recusada (saída 2);
+- recuo de release: a Preview anterior fica em `dist` (`.n8-5-ced7570c` etc.);
+- cada passo da seção 5 é um commit próprio, com a catraca do mapa atualizada no mesmo commit.
+
+**Revisão:** Codex depois de cada passo da seção 5, antes da bateria longa.
+
+## 9. Decisões do mantenedor
+
+- **D-K1 (mecanismo):**
+  - (a) só o runtime e a ponte (seção 4.1): sem regenerar; o `FrameState` é uma fachada de memória como o N8.4/N8.6;
+  - (b) (a) + slots da HAL (seção 4.2): os registradores entram como chamadas com semântica e a região MMIO fica sem
+    contrato no produto, que é a prova mais forte; exige regenerar o `generated/` (só macros).
+
+  Recomendo **(a) primeiro**, com (b) como segundo corte se o mantenedor considerar os slots compatíveis com "não
+  modificar o AOT".
+- **D-K2 (VRAM):** o `TextureHeap` endereçado como a VRAM é memória do guest, como a RAM, não hardware simulado.
+  Recomendo aceitar, como o diagnóstico já recomendava.
+- **D-K3 (estado de interrupção):** o tratador do Kamui e a Ninja leem e limpam `ISTNRM`/`IMLn`.
+  - (a) Recomendo manter um banco mínimo de status com as fontes nativas, como a ponte do N8.1 fez com o INTC.
+  - (b) A alternativa é substituir o tratador `53E2` por um nativo, o que é reimplementar parte do Kamui.
+- **D-K4 (estável):** o `--tempo nativo` usa os mesmos prazos em ciclos, e a semântica dele não pode mudar. Proponho que
+  os serviços sejam a fonte nos dois modos. Os modelos que só o estável usa (o INTC do SH-4 fora da ponte) ficam fora
+  deste corte, sem mudança.
+
+**Fora do escopo:** reimplementar a API Kamui/Ninja, elevar texturas para identificadores (N10), N8.8 completo, N9, N10.
+
+## 10. Decisões aprovadas (mantenedor, 2026-10-28)
+
+- **D-K1 = (a):** interceptação só no runtime, sem regenerar o AOT nem mudar o gerador. Nesta etapa não há slots nativos
+  da camada do Kamui.
+- **D-K2 = `TextureHeap`:** preserva os endereços do TCW e todos os efeitos de memória que o código recompilado observa:
+  escritas parciais, invalidação, DMA e aliases.
+- **D-K3 = (a):** um banco mínimo de status alimentado por eventos nativos. O tratador de interrupções original do Kamui
+  continua, com a mesma semântica de leitura, limpeza e prioridade.
+- **D-K4 condicionada:** os serviços nativos só fornecem os eventos nos dois modos se o `--tempo nativo` preservar
+  inteira a sua semântica e as referências históricas. Relógios, ordem das interrupções e prazos não mudam para
+  simplificar a arquitetura.
+
+**Ordem obrigatória:**
+1. medição da fase 0;
+2. `ListSink`, com a IR validada render a render;
+3. `FrameState`, `TextureHeap` e `DisplayService`, em incrementos independentes;
+4. substituição progressiva das fronteiras TA, PVR e VRAM, com os contratos de eventos preservados;
+5. remoção dos objetos legados do produto só depois da independência funcional demonstrada e do mapa do linker conferido.
+
+**Regras:**
+- `holly_*` e `sh4_dmac` só saem inteiros depois de provado que as responsabilidades não gráficas deles (Maple, G2,
+  GD-ROM, INTC) foram preservadas;
+- equivalência de estados, eventos, IRQs, DMA, contadores, temporização e IR;
+- testes negativos para os acessos fora do contrato;
+- nenhum comparador enfraquecido e nenhuma exceção nova automática;
+- as referências do N8.0 que comparam quadros históricos usam o modo sem fog e volumes; as do N8.7 validam os efeitos;
+- divergência funcional, ou necessidade de regenerar o AOT, interrompe o incremento e vai ao mantenedor com a evidência.
+
+## 11. Fase 0: medição (2026-10-28)
+
+Sonda `BS_HW_PROBE_GRAFICOS=<arquivo>` (`runtime/debug/gfx_probe`), só na validação. No produto a variável é recusada
+(saída 2), e o portão confere o objeto. A sonda não muda o comportamento: com e sem ela, as mesmas linhas de progresso e
+`rc=0`.
+
+Rota `passo_newgame_area1`, 40 000 VBlanks, 19 984 renders:
+
+| Pergunta | Resultado |
+|---|---|
+| DMA do canal 2: listas ou texturas? | **as duas.** Polígonos: 39 968 transferências, 788 MB (64 B a 358 KB, o buffer de vértices do Kamui). Textura: 124 transferências, 1,3 MB (`8C1C5A08` para `0x11xxxxxx`). |
+| Bytes de polígono por render | store queue direto: média 67 KB (max 453 KB); DMA: média 39 KB (max 358 KB); total: média 107 KB (max 630 KB) |
+| Escritores das listas por SQ | 33 funções; as maiores sao `8C17EA5C` (28,9 M blocos), `8C17E538` (4,5 M), `8C1815B0` (2,1 M), `8C19E124` (1,3 M) e `8C19A234` (1,2 M) |
+| Render para textura | **não há.** `FB_W_SOF1` só vale `0x200000`/`0x600000` (o buffer duplo), os dois exibidos (`FB_R_SOF1/2`), nunca o bit 24; nenhuma das 259 926 texturas amostradas começa num alvo de render |
+| VRAM pelo caminho de memória | `8C1C56BE` (cópia: 2,1 M escritas pelo caminho de 32 bits, 0,9 M pelo de 64) e `8C1C512E` (959 mil, caminho de 32 bits, chamada pelo tratador). O jogo nunca lê a VRAM |
+| Registradores que o Kamui lê | `ISTNRM`/`ISTERR`, `SPG_STATUS` (`810C`), `TA_ITP_CURRENT` (`8138`, no fim da lista translúcida), `CHCR2` (`FFA0002C`), `FB_R_CTRL`/`VO_CONTROL` (uma vez). Pela HAL: `ID`, `REVISION`, `TEXT_CONTROL` e `TA_LIST_INIT` |
+
+Rota `passo_combate` (54 344 VBlanks, 27 149 renders, com fog e volumes), as mesmas conclusões:
+- DMA de polígonos: 54 298 transferências, 1,6 GB; de textura: 661, 5,8 MB;
+- bytes por render: SQ 111 KB em média (máximo 745 KB), DMA 60 KB (357 KB), total 171 KB (949 KB);
+- render para textura: nenhum. Só os dois framebuffers exibidos, e nenhuma das 713 519 texturas amostradas começa num
+  alvo de render;
+- tratador: 163 584 chamadas, as mesmas 24 sequências.
+
+**Sequência do tratador `8C1C53E2`** (120 043 chamadas, 24 sequências distintas). Por render:
+1. `ISTNRM = 0x80110`: fim do DMA do canal 2 + fim da lista do modificador opaco. Le `CHCR2`, limpa o `TE` e limpa os
+   bits 19 e 8;
+2. `0x90`: fim da lista opaca (bit 7);
+3. `0x80210`: fim do DMA + fim da lista translúcida. Limpa e lê `TA_ITP_CURRENT` duas vezes;
+4. `0x17`: fim de render (bits 0 a 2).
+
+No VBlank-In (`0x18`, uma vez por campo), o tratador:
+- grava `FB_R_SOF1/2` (troca do quadro exibido);
+- grava os registradores do próximo render e o `STARTRENDER` (o render começa **dentro** do VBlank);
+- **dispara o DMA do Maple** (`5F6C04`/`5F6C18`) e lê o estado do G2 (`5F7818`) e o `SB_FFST` (`5F688C`).
+
+Essas responsabilidades não gráficas (Maple, G2, FIFO do sistema) ficam com `holly_sb`/`maple_bus` e não saem com o
+corte gráfico.
+
+**Consequências para o desenho:**
+- o `ListSink` recebe os dois transportes (SQ e DMA); o DMA de textura vai ao `TextureHeap`;
+- sem render para textura, o `DisplayService` só precisa do buffer duplo; um `FB_W_SOF1` fora dele vira erro explícito;
+- o banco mínimo do D-K3 tem de responder `ISTNRM`/`ISTERR`/`IMLn`, `CHCR2.TE`, `SPG_STATUS` e `TA_ITP_CURRENT` com
+  os valores de hoje.
+
+## 12. Plano dos incrementos 3 e 4 (depois da fase 0)
+
+**Cobertura do contrato:**
+- a fase 0 mediu 3 rotas;
+- um contrato estrito, só com os registradores vistos, poderia derrubar o produto num caminho do jogo que as rotas não
+  cobrem (outras áreas, menus raros, game over).
+
+Por isso o `FrameState`:
+- **aceita todo o mapa de registradores que o Kamui usa** (dados simples, comandos, temporização, tabela de fog,
+  paleta), com a semântica de hoje;
+- **recusa com erro explícito só o que a IR desenharia errado**: render para textura, ou seja, `FB_W_SOF1` fora do
+  buffer duplo exibido; o YUV, já recusado no N8.5; e estados que o decodificador não representa (já fatais).
+
+O que ainda não for medido continua aceito com a semântica atual e coberto pela comparação na validação.
+
+**Padrão de cada incremento** (o mesmo do `ListSink`):
+1. o serviço nativo fica no produto;
+2. na validação, o modelo do legado continua a referência e roda junto;
+3. um comparador confere cada acesso ou render (valores lidos, prazos, eventos), com um negativo por mutação;
+4. a catraca do mapa proíbe o modelo no produto;
+5. referências N8.0 (com o diagnóstico sem fog e volumes) e N8.7, Codex e commit próprio.
+
+**Temporização do vídeo (SPG):**
+- as funções de posição do feixe, cruzamento de linha e próxima troca de linha alimentam os provedores de tempo nos dois
+  modos;
+- elas saem do banco do PVR para um módulo compartilhado, sem mudança de conta;
+- a comparação do `--tempo nativo` com as referências históricas é o critério (D-K4).

@@ -776,6 +776,18 @@ Planejamento técnico concluído em 2026-10-24.
 - **N8.6** (`docs/N8-6-AUDIO.md`): a área de som do produto é o serviço `system/sound_bus` (RAM de som, controle e RTC;
   fachada `snd_bus_*`), sem AICA, ARM7 nem driver. O modelo da AICA (`runtime/aica`) fica no `bs_runtime_hle`, e o
   áudio legado, as `BS_AICA_*` e a partida do DMA do G2 são erro explícito no produto.
+- **N8.7** (`docs/N8-7-GRAFICOS.md`, em fechamento):
+  - O renderizador software foi movido para `native/render/soft`. O `SoftwareDevice` consome a `CommandList`, como o
+    Vulkan.
+  - O software implementa fog por tabela e volumes modificadores opacos: o bit de sombra do PCW, o `FPU_SHAD_SCALE` e as
+    operações inclusão, exclusão e OU.
+  - O Vulkan tem os mesmos efeitos, com duas passagens e o compute `volumes.comp`. Nas cenas de fidelidade, ele é igual
+    ao software nos 32 bits.
+  - Saem do produto o decodificador de texels da VRAM, o raster pelo TA e o conversor YUV. Os objetos `pvr_render_ta`,
+    `pvr_texel` e `ta_yuv` ficam só na validação.
+  - O modo padrão é `Software` sobre a IR. Estado não suportado é erro explícito (`sh4_fatal`).
+  - A fronteira guest continua: os registros PVR, o FIFO do TA, a VRAM e o decodificador de listas em `render_capture`.
+    Retirá-la exige interceptar o Kamui (D-N8-2 b), o que é decisão do mantenedor.
 
 O inventário, os portões e a ordem N8.0–N8.8 estão em `docs/N8-PLANO.md`.
 - **No tempo lógico:** os módulos de Holly/PVR, Maple e GD-ROM continuam medindo e agendando prazos, no relógio lógico
