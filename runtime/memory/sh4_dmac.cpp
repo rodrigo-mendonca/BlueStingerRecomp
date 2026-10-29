@@ -5,6 +5,7 @@
 #include "memory/sh4_dmac.h"
 
 #include "cpu/sh4_mem.h"
+#include "debug/gfx_probe.h"
 #include "cpu/sh4_runtime.h"
 #include "pvr/ta.h"
 
@@ -54,9 +55,11 @@ bool sh4_dmac_ch2_transfer(Sh4Context* c, uint32_t dest, uint32_t len) {
     if (!(g_dmaor & kDme) || !(ch[3] & kDe)) return false;
     const bool fifo = (dest & 0x01800000) == 0;  // FIFO de poligonos: o endereco nao avanca
     uint32_t   src  = ch[0];
+    if (g_gfx_probe) gfx_probe_dma(c, src, dest, len);
     for (uint32_t off = 0; off < len; off += 32, src += 32) {
         uint32_t blk[8];
         for (int i = 0; i < 8; ++i) blk[i] = sh4_read32(c, src + 4 * i);
+        if (g_gfx_probe) gfx_probe_ta(c, fifo ? dest : dest + off, GfxPath::Dma);
         if (!ta_fifo_write(c, fifo ? dest : dest + off, blk))
             sh4_fatal(c, "DMA do canal 2 para destino fora da area 4", c->pc, dest);
     }

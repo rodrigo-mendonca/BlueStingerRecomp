@@ -40,10 +40,8 @@ namespace nr = bs::native::render;
 
 // O que identifica os texels de uma textura (a IR so guarda o handle): TCW (endereco, formato, paleta, modos),
 // tamanho do TSP e o stride linear (TEXT_CONTROL).
-struct TextureKey {
-    uint32_t tcw = 0, width = 0, height = 0, stride = 0;
-    bool     operator==(const TextureKey&) const = default;
-};
+// N8.7: o mesmo tipo do ListSink nativo (native/render/kamui/list_sink.h)
+using TextureKey = bs::native::render::kamui::TextureKey;
 
 struct Frame {
     nr::CommandList         cl;
@@ -112,6 +110,11 @@ struct Stats {
     double      cmp_min_psnr = 0, cmp_psnr_sum = 0;  // PSNR (RGB) por quadro: minimo e soma (media = soma / quadros)
     uint64_t    cmp_below40 = 0;                     // quadros com PSNR < 40 dB (criterio do plano, secao 5)
     uint64_t distinct_texture_keys = 0, distinct_texture_ids = 0;  // chaves (TCW+tamanho) e ids de conteudo distintos
+    // N8.7 (docs/N8-7-KAMUI.md, validacao): a IR do ListSink nativo contra a desta captura, render a render (tem de
+    // ficar em 0 diferentes); os volumes fechados e os parametros contados pelos dois lados
+    uint64_t    list_checked = 0, list_mismatch = 0;
+    uint64_t    list_volume_inclusion = 0, list_volume_exclusion = 0, list_volume_or = 0;
+    std::string list_error;
     // N7c: resolucao interna (Mode::Native com escala != 1)
     uint64_t hires_renders = 0, hires_shown = 0, hires_missed = 0;  // renders na escala; VBlanks com/sem a imagem maior
     double   hires_cpu_ms_total = 0;                                // leitura de volta (so a reduzida) na CPU

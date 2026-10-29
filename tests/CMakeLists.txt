@@ -68,7 +68,8 @@ add_test(NAME localization COMMAND bs_localization_tests)
 
 # N7 (preparacao): regras portaveis da renderizacao nativa, sem GPU
 add_executable(bs_render_tests unit/main.cpp unit/test_render_native.cpp unit/test_render_textures.cpp unit/test_render_fidelity.cpp unit/test_render_replacement.cpp
-               unit/test_render_frame_prep.cpp unit/test_render_vulkan.cpp unit/test_render_post.cpp)
+               unit/test_render_frame_prep.cpp unit/test_render_vulkan.cpp unit/test_render_post.cpp
+               unit/test_render_kamui.cpp)
 target_include_directories(bs_render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
 target_link_libraries(bs_render_tests PRIVATE bs_native_render bs_native_render_vk)
 add_test(NAME render COMMAND bs_render_tests)

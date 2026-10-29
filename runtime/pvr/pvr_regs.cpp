@@ -18,6 +18,7 @@
 #include "pvr/pvr_regs.h"
 #include "cpu/time_hooks.h"
 #include "debug/clock_log.h"
+#include "debug/gfx_probe.h"
 #include "debug/intc_trace.h"
 
 #include "pvr/holly_intc.h"
@@ -237,6 +238,7 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     // Testes de integracao: BS_STOP_ON_STARTRENDER=<n> para na n-esima escrita em STARTRENDER
     if (p == 0x005F8014) {
         ++g_startCount;
+        if (g_gfx_probe) gfx_probe_start_render(c);
         if (g_startHook) g_startHook(c, g_startCount);
         static const char* stop = std::getenv("BS_STOP_ON_STARTRENDER");
         if (stop && g_startCount == std::atoi(stop))
@@ -276,6 +278,7 @@ bool pvr_reg_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
     }
     if (p == kSpgLoad || p == kSpgVblankInt) holly_intc_sync(time_now(c));
     if (p == kTaListInit && (v & 0x80000000)) {
+        if (g_gfx_probe) gfx_probe_list_init();
         ta_list_init();
         // o TA recomeca nos ponteiros iniciais; o jogo le TA_ITP_CURRENT para saber onde
         // gravar o poligono de fundo (aproximacao: no hardware ele avanca com os

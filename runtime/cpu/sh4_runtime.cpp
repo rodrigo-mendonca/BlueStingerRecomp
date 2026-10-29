@@ -55,6 +55,11 @@ void sh4_override(uint32_t addr, Sh4Func fn) {
     else g_override.erase(sh4_phys(addr));
 }
 
+Sh4Func sh4_override_get(uint32_t addr) {
+    const auto o = g_override.find(sh4_phys(addr));
+    return o != g_override.end() ? o->second : nullptr;
+}
+
 Sh4Func sh4_lookup(uint32_t addr) {
     const uint32_t p  = sh4_phys(addr);
     if (!g_override.empty())

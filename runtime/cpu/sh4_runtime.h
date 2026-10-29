@@ -25,6 +25,7 @@ Sh4Func       sh4_lookup_generated(uint32_t addr);
 // Substitui (fn != nullptr) ou restaura (nullptr) a funcao de um endereco para os desvios
 // indiretos; usado pela camada de mods (runtime/mods), antes da tabela gerada.
 void          sh4_override(uint32_t addr, Sh4Func fn);
+Sh4Func       sh4_override_get(uint32_t addr);  // a substituicao atual do endereco (nullptr: nenhuma)
 inline uint32_t sh4_phys(uint32_t addr) { return addr & 0x1FFFFFFF; }
 
 // Chamada/salto indireto: procura `target` e executa. Endereco desconhecido vai

@@ -21,6 +21,7 @@
 #include "pvr/holly_sb.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/vram.h"
+#include "debug/gfx_probe.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -225,6 +226,13 @@ bool hwWrite(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
            sh4_ccn_write(a, size, v);
 }
 
+// N8.7 fase 0 (debug/gfx_probe.h): registradores do Holly/PVR, DMAC e VRAM, depois do acesso atendido
+bool gfxReg(uint32_t a) {
+    const uint32_t p = a & 0x1FFFFFFF;
+    return (a < 0xE0000000 && p >= 0x005F6800 && p < 0x005FA000) || (a >= 0xFFA00000 && a < 0xFFA00044);
+}
+bool gfxVram(uint32_t a) { return a < 0xE0000000 && ((a & 0x1FFFFFFF) >> 25) == 2; }  // 04000000-05FFFFFF
+
 } // namespace
 
 uint8_t sh4_read8_slow(Sh4Context* c, uint32_t a) {
@@ -243,25 +251,38 @@ uint16_t sh4_read16_slow(Sh4Context* c, uint32_t a) {
 uint32_t sh4_read32_slow(Sh4Context* c, uint32_t a) {
     if (g_hw_probe) hw_probe_access(c, a, 4, ProbeKind::Read);
     if (a & 3) sh4_address_error(c, a, false);
-    if (uint32_t v; hwRead(c, a, 4, v)) return v;
+    if (uint32_t v; hwRead(c, a, 4, v)) {
+        if (g_gfx_probe && gfxReg(a)) gfx_probe_reg(c, a < 0xE0000000 ? a & 0x1FFFFFFF : a, false, v);
+        return v;
+    }
     unmapped("read32", a, 0);
     return 0;
 }
 void sh4_write8_slow(Sh4Context* c, uint32_t a, uint8_t v) {
     if (g_hw_probe) hw_probe_access(c, a, 1, ProbeKind::Write);
-    if (hwWrite(c, a, 1, v)) return;
+    if (hwWrite(c, a, 1, v)) {
+        if (g_gfx_probe && gfxVram(a)) gfx_probe_vram_write(c, a, 1);
+        return;
+    }
     unmapped("write8", a, v);
 }
 void sh4_write16_slow(Sh4Context* c, uint32_t a, uint16_t v) {
     if (g_hw_probe) hw_probe_access(c, a, 2, ProbeKind::Write);
     if (a & 1) sh4_address_error(c, a, true);
-    if (hwWrite(c, a, 2, v)) return;
+    if (hwWrite(c, a, 2, v)) {
+        if (g_gfx_probe && gfxVram(a)) gfx_probe_vram_write(c, a, 2);
+        return;
+    }
     unmapped("write16", a, v);
 }
 void sh4_write32_slow(Sh4Context* c, uint32_t a, uint32_t v) {
     if (g_hw_probe) hw_probe_access(c, a, 4, ProbeKind::Write);
     if (a & 3) sh4_address_error(c, a, true);
-    if (hwWrite(c, a, 4, v)) return;
+    if (hwWrite(c, a, 4, v)) {
+        if (g_gfx_probe && gfxReg(a)) gfx_probe_reg(c, a < 0xE0000000 ? a & 0x1FFFFFFF : a, true, v);
+        if (g_gfx_probe && gfxVram(a)) gfx_probe_vram_write(c, a, 4);
+        return;
+    }
     unmapped("write32", a, v);
 }
 

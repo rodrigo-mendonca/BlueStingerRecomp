@@ -18,12 +18,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace bs {
 namespace {
 
 enum : uint32_t { kEndOfList = 0, kUserClip = 1, kObjListSet = 2, kGlobal = 4, kSprite = 5, kVertex = 7 };
 
+#if BS_VALIDACAO
+// N8.7: a FIFO de poligonos do legado (so na validacao): a referencia do ListSink nativo, que o produto usa
 struct State {
     int      list = -1;          // lista aberta (-1: nenhuma)
     bool     vertex64 = false;   // vertices da lista/objeto atual tem 64 bytes
@@ -34,9 +37,14 @@ struct State {
 
 std::vector<TaParam> g_params;
 uint32_t             g_bytes = 0;  // bytes recebidos pela FIFO de poligonos desde o init
+int                  g_lastEnd = -1;  // a lista fechada pelo ultimo bloco (-1: nenhuma)
+uint64_t             g_endMismatch = 0;
+#endif
+native::render::kamui::ListSink g_list;  // N8.7: as listas do Kamui, decodificadas direto para a IR
 
 constexpr uint32_t kListEndBit[5] = {1u << 7, 1u << 8, 1u << 9, 1u << 10, 1u << 21};
 
+#if BS_VALIDACAO
 bool polyGlobal64(uint32_t pcw) {
     const uint32_t col = (pcw >> 4) & 3, tex = (pcw >> 3) & 1, off = (pcw >> 2) & 1, vol = (pcw >> 6) & 1;
     return vol ? col == 2 : (col == 2 && tex && off);
@@ -79,7 +87,7 @@ void polygonFifo(Sh4Context* c, const uint32_t* d) {
     if ((type == kGlobal || type == kSprite) && g.list < 0) g.list = int((pcw >> 24) & 7);
     switch (type) {
     case kEndOfList:
-        if (g.list >= 0 && g.list <= 4) holly_intc_raise(kListEndBit[g.list]);
+        if (g.list >= 0 && g.list <= 4) holly_intc_raise(kListEndBit[g.list]), g_lastEnd = g.list;
         push(d, 8);
         g.list = -1;
         return;
@@ -108,35 +116,71 @@ void polygonFifo(Sh4Context* c, const uint32_t* d) {
     std::memcpy(g.half.w, d, 32);
     g.pendingHalf = true;
 }
+#endif
 
 } // namespace
 
 void ta_reset() {
+#if BS_VALIDACAO
     g = {};
     g_params.clear();
     g_bytes = 0;
+#endif
+    g_list.list_init();
     ta_yuv_reset(0, 0);
 }
 
 void ta_list_init() {
+#if BS_VALIDACAO
     g = {};
     g_params.clear();
     g_bytes = 0;
+#endif
+    g_list.list_init();
 }
 
-uint32_t ta_bytes() { return g_bytes; }
-
-void ta_list_continue() { g.list = -1; }
-
+#if BS_VALIDACAO
+uint32_t                    ta_bytes() { return g_bytes; }
 const std::vector<TaParam>& ta_params() { return g_params; }
+uint64_t                    ta_list_end_mismatches() { return g_endMismatch; }
+#else
+uint32_t                    ta_bytes() { return g_list.bytes(); }
+const std::vector<TaParam>& ta_params() { return g_list.params(); }
+uint64_t                    ta_list_end_mismatches() { return 0; }
+#endif
+
+void ta_list_continue() {
+#if BS_VALIDACAO
+    g.list = -1;
+#endif
+    g_list.list_continue();
+}
+
+native::render::kamui::ListSink& ta_list_sink() { return g_list; }
 
 bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     const uint32_t p = target & 0x1FFFFFFF;
     if ((p >> 26) != 4) return false;  // area 4: 0x10000000-0x13FFFFFF
     const uint32_t region = p & 0x01800000;  // 0x00 poligonos, 0x00800000 YUV, 0x01000000+ textura
     if (region == 0) {
+        const native::render::kamui::BlockResult r = g_list.feed(data);
+#if BS_VALIDACAO
+        // a FIFO do legado e a referencia (interrupcoes e erro); o fim de lista do ListSink tem de ser o mesmo
         g_bytes += 32;
+        g_lastEnd = -1;
         polygonFifo(c, data);
+        // negativo (BS_LISTA_NATIVA_MUTACAO=fim): a lista que o ListSink fechou trocada pela seguinte
+        static const bool mutEnd = [] {
+            const char* v = std::getenv("BS_LISTA_NATIVA_MUTACAO");
+            return v && std::string(v) == "fim";
+        }();
+        const int end = mutEnd && r.list_end >= 0 ? (r.list_end + 1) % 5 : r.list_end;
+        if (end != g_lastEnd) ++g_endMismatch;
+#else
+        // N8.7 (docs/N8-7-KAMUI.md): o fim de lista vem do ListSink, no mesmo bloco e com os mesmos bits de ISTNRM
+        if (r.invalid) sh4_fatal(c, "parametro do TA com tipo invalido", c->pc, data[0]);
+        if (r.list_end >= 0) holly_intc_raise(kListEndBit[r.list_end]);
+#endif
         return true;
     }
     if (p & 0x01000000) {  // caminho direto de textura: VRAM pelo caminho de 64 bits
@@ -148,9 +192,10 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     // N8.5 (docs/N8-5-FILMES.md): o conversor YUV so serve o filme legado (Sofdec); no produto os filmes sao nativos e o
     // jogo nunca o usa (sonda e referencias). Um macrobloco aqui e um componente removido: erro explicito.
     ta_yuv_removed(c, "macrobloco no conversor YUV do TA", p);
-#endif
+#else
     ta_yuv_write(c, data);
     return true;
+#endif
 }
 
 [[noreturn]] void ta_yuv_removed(Sh4Context* c, const char* what, uint32_t where) {

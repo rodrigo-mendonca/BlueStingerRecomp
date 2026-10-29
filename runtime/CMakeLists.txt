@@ -69,7 +69,7 @@ list(APPEND BS_RT_PAPEIS diagnostico)
 # exclusivo de validacao: ruido de ciclos, sonda de hardware do N0, diagnostico do CRI
 if(BS_VALIDACAO)
   # N8.7: a referencia grafica do caminho do TA: o rasterizador sobre o TA, os texels da VRAM e o conversor YUV
-  add_library(bs_rt_validacao OBJECT debug/hw_probe.cpp debug/cycle_noise.cpp debug/cri_diag.cpp
+  add_library(bs_rt_validacao OBJECT debug/hw_probe.cpp debug/gfx_probe.cpp debug/cycle_noise.cpp debug/cri_diag.cpp
     pvr/pvr_render_ta.cpp pvr/pvr_texel.cpp pvr/ta_yuv.cpp)
   list(APPEND BS_RT_PAPEIS validacao)
 else()

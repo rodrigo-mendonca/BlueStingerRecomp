@@ -669,3 +669,38 @@ BS_TEST(render_vulkan_replay_dump) {
     }
     BS_CHECK(false);
 }
+
+#if BS_VALIDACAO
+// N8.7 fase 0 (revisao Codex 20261028-173027): a sonda grafica encadeia a substituicao que ja existia no tratador do Kamui
+// e a devolve ao desligar; uma substituicao instalada depois dela nao e desfeita pelo desligamento
+#include "cpu/sh4_runtime.h"
+#include "debug/gfx_probe.h"
+
+namespace {
+int  g_fakeIsrHits = 0;
+void fake_isr(Sh4Context*) { ++g_fakeIsrHits; }
+} // namespace
+
+BS_TEST(gfx_probe_chains_and_restores_the_isr_override) {
+    constexpr uint32_t isr  = 0x8C1C53E2;
+    const std::string  path = std::string(std::getenv("TEMP") ? std::getenv("TEMP") : ".") + "/bs_gfx_probe_teste.txt";
+    // 1) o mod antes da sonda: a sonda o chama e o devolve
+    g_fakeIsrHits = 0;
+    sh4_override(isr, fake_isr);
+    gfx_probe_init(path);
+    BS_CHECK(sh4_override_get(isr) != fake_isr && sh4_override_get(isr) != nullptr);
+    Sh4Context c{};
+    sh4_lookup(isr)(&c);
+    BS_CHECK(g_fakeIsrHits == 1);
+    gfx_probe_init("");
+    BS_CHECK(sh4_override_get(isr) == fake_isr);
+    // 2) o mod depois da sonda: ele vence, e desligar a sonda nao o remove
+    sh4_override(isr, nullptr);
+    gfx_probe_init(path);
+    sh4_override(isr, fake_isr);
+    gfx_probe_init("");
+    BS_CHECK(sh4_override_get(isr) == fake_isr);
+    sh4_override(isr, nullptr);
+    std::remove(path.c_str());
+}
+#endif

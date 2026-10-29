@@ -5,6 +5,8 @@
 // tile de 32 bits, profundidade em 1/w, fundo, listas opaca/punch-through/translucida),
 // com aproximacoes documentadas em pvr_render.cpp.
 #include "cpu/sh4_context.h"
+#include "render/kamui/list_sink.h"
+#include "render/render.h"
 #include "render/soft/soft_raster.h"
 
 #include <cstddef>
@@ -36,8 +38,10 @@ using PvrVertex = native::render::soft::Vertex;
 using PvrTri    = native::render::soft::Tri;
 using PvrFrame  = native::render::soft::Frame;
 PvrFrame pvr_frame_from_regs();
+// N8.7: os parametros do quadro da IR (tamanho, fundo, fog, sombra, HALF_OFFSET, clamp...) a partir dos registradores
+native::render::FrameParams pvr_frame_params(uint32_t width, uint32_t height);
 
-struct TaParam;
+using TaParam = native::render::kamui::ListParam;  // N8.7: o parametro do TA (pvr/ta.h)
 
 // Captura (N7a): recebe, na ordem de submissao, o que o decodificador produz em cada render. `vertex` e cada vertice
 // de um strip com o estado do desenho (os vertices de `state` nao valem; end = fim de strip pelo PCW);
@@ -63,6 +67,9 @@ public:
     // N7b: depois da decodificacao, antes do rasterizador em software. true = `image` (w x h ARGB8888, ja com o
     // tamanho certo) foi preenchida por outro renderizador e o software nao roda neste render.
     virtual bool render(const PvrFrame&, uint32_t, uint32_t, std::vector<uint32_t>&) { return false; }
+    // N8.7 (produto): a IR que o ListSink decodificou das listas do Kamui; desenha e preenche `image` (w x h ARGB8888).
+    // false = nada desenhado (erro explicito no chamador)
+    virtual bool render_list(const native::render::kamui::ListFrame&, uint32_t, uint32_t, std::vector<uint32_t>&) { return false; }
 };
 void pvr_render_set_capture(PvrCaptureSink* sink);  // nullptr desliga
 uint32_t pvr_background_color();                     // cor do plano de fundo do render atual (ISP_BACKGND_T), RGB
@@ -71,6 +78,15 @@ uint32_t pvr_background_color();                     // cor do plano de fundo do
 // PVR e lido; os texels vem da VRAM atual), sem a VRAM de saida: a imagem ARGB8888 w x h. Mesma regra do pvr_render
 // (prova de equivalencia da IR: a imagem a partir da IR tem de ser identica a do caminho do TA).
 // N8.7: so no build de validacao (pvr_render_ta.cpp): o rasterizador sobre os triangulos do TA com os texels da VRAM
+// N8.7, so na validacao (pvr_render_ta.cpp): o decodificador do legado sobre ta_params(), com os retornos da captura
+struct PvrLegacyDecode {
+    std::vector<PvrTri>                          prims;
+    std::vector<native::render::soft::Volume>    vols;
+    std::vector<native::render::soft::VolumeTri> vtris;
+};
+void   pvr_decode_legacy(PvrCaptureSink* sink, RenderStats& st, PvrLegacyDecode& out);
+// as contagens do decodificador do legado no render em andamento (durante PvrCaptureSink::end; nullptr fora dele)
+const RenderStats* pvr_render_stats_in_progress();
 size_t pvr_render_ta(std::span<const PvrTri> prims, std::span<const native::render::soft::Volume> vols,
                      std::span<const native::render::soft::VolumeTri> vtris, const PvrFrame& fr, native::render::soft::Image& r,
                      native::render::soft::PhaseFn phase, void* ctx);

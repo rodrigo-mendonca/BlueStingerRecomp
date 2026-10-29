@@ -1,5 +1,6 @@
 #include "render_capture.h"
 
+#include "debug/gfx_probe.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
@@ -34,9 +35,6 @@ float f32(uint32_t w) {
     std::memcpy(&f, &w, 4);
     return f;
 }
-
-uint32_t pack(const PvrColor& c) { return soft::pack_color(c); }
-PvrColor unpack(uint32_t c) { return soft::unpack_color(c); }  // x / 255.f: o round-trip e exato
 
 nr::ListType list_type(uint32_t l) {
     switch (l) {
@@ -82,6 +80,9 @@ public:
         reset_strip();
         mod_open_ = false, mod_closing_ = false, mod_cur_closed_ = false;  // os volumes recomecam a cada render
         mod_instr_ = 0, mod_closed_ = 0;
+        // N8.7: o que os retornos deste render somam nas estatisticas (o ListSink tem de contar o mesmo)
+        at_begin_ = {st.two_volume, st.volume_bad_instruction, st.volume_mixed_cull, st.volume_inclusion,
+                     st.volume_exclusion, st.volume_or};
     }
 
     void vertex(const PvrTri& state, const PvrVertex& v, bool end) override {
@@ -187,6 +188,8 @@ public:
                          dumpAt.second.c_str(), save_frame_dump(dumpAt.second, frame) ? "ok" : "FALHOU");
         // N8.7: o renderizador em software desenha a IR (soft_device), tambem como recuo do Vulkan (o motivo da queda ja
         // foi registrado por vk_render)
+        if (g_gfx_probe)  // N8.7 fase 0: render para textura
+            for (const TextureKey& k : frame.textures) gfx_probe_texture(k.tcw, k.width, k.height);
         if (mode == Mode::Software) return soft_render(w, h, image);
         if (mode != Mode::Native && mode != Mode::Compare) return false;
         vkOk_ = vk_render(w, h, mode == Mode::Native ? image : vkImage_);
@@ -194,12 +197,46 @@ public:
         return mode == Mode::Native && vkOk_;
     }
 
+    // N8.7 (produto): a IR do ListSink (as listas do Kamui decodificadas direto) substitui a montagem pelos retornos do
+    // decodificador do legado; o resto (dispositivo, texturas, estatisticas) e o mesmo
+    bool render_list(const bs::native::render::kamui::ListFrame& lf, uint32_t w, uint32_t h,
+                     std::vector<uint32_t>& image) override {
+        frame                   = {};
+        frame.cl                = lf.cl;
+        frame.textures          = lf.textures;
+        frame.texture_stride    = lf.texture_stride;
+        frame.modifier_params   = lf.modifier_params, frame.modifier_volumes = lf.modifier_volumes;
+        frame.modifier_unclosed = lf.modifier_unclosed, frame.skipped_params = lf.skipped_params;
+        frame.sprites           = lf.sprites;
+        stride_                 = lf.texture_stride;
+        // o que os retornos global/modifier contavam durante a decodificacao
+        st.two_volume += lf.global_two_volume, st.volume_bad_instruction += lf.volume_bad_instruction;
+        st.volume_mixed_cull += lf.volume_mixed_cull, st.volume_inclusion += lf.volume_inclusion;
+        st.volume_exclusion += lf.volume_exclusion, st.volume_or += lf.volume_or;
+        const bool ok = render(PvrFrame{}, w, h, image);
+        st.modifier_unclosed += frame.modifier_unclosed;
+        ++st.renders;
+        account();
+        return ok;
+    }
+
     void end(const PvrFrame& used, std::span<const PvrTri> drawn, std::span<const uint32_t> image, uint32_t w,
              uint32_t h) override {
         frame.modifier_unclosed = frame.modifier_volumes - mod_closed_;
         st.modifier_unclosed += frame.modifier_unclosed;
         ++st.renders;
+#if BS_VALIDACAO
+        check_list_sink(drawn);
+#endif
         if (mode == Mode::Compare && vkOk_) compare(image, w, h);
+        account();
+        if (mode != Mode::Check || (st.renders - 1) % every) return;
+        check(used, drawn, image, w, h);
+    }
+
+private:
+    // as estatisticas de cada render (desenhos, fog, sombra, volumes)
+    void account() {
         st.draws += frame.cl.draws.size(), st.vertices += frame.cl.vertices.size(), st.sprites += frame.sprites;
         st.modifier_params += frame.modifier_params, st.modifier_volumes += frame.modifier_volumes;
         st.skipped_params += frame.skipped_params;
@@ -225,8 +262,12 @@ public:
         }
         for (const nr::ModifierVolume& m : frame.cl.modifiers) st.translucent_volumes += m.list == nr::ListType::TranslucentModifier;
         if (!frame.cl.modifiers.empty() && !st.modifier_first_render) st.modifier_first_render = st.renders;
-        if (mode != Mode::Check || (st.renders - 1) % every) return;
-#if BS_VALIDACAO  // N8.7: o modo conferir (a IR contra o caminho do TA) so existe na validacao
+    }
+
+    void check(const PvrFrame& used, std::span<const PvrTri> drawn, std::span<const uint32_t> image, uint32_t w, uint32_t h) {
+#if !BS_VALIDACAO
+        (void)used, (void)drawn, (void)image, (void)w, (void)h;
+#else  // N8.7: o modo conferir (a IR contra o caminho do TA) so existe na validacao
         ++st.checked;
         auto fail = [&](uint64_t& counter, const std::string& what) {
             ++counter;
@@ -309,6 +350,7 @@ private:
     uint8_t                mod_cull_ = 0;      // N8.7: descarte do ultimo global de volume
     bool                   mod_last_ = false;  // N8.7: PCW bit 6 do ultimo global de volume
     std::set<std::pair<uint64_t, uint64_t>> keys_, ids_;  // para o resumo: quantas chaves e quantos conteudos
+    std::array<uint64_t, 6>                 at_begin_{};  // N8.7: as estatisticas no inicio do render (check_list_sink)
 
     // ---- N7b: backend Vulkan ----
     std::shared_ptr<nr::VulkanDevice> vk_;  // o dispositivo do processo (o mesmo da apresentacao direta)
@@ -647,6 +689,98 @@ private:
     }
     uint32_t dumped_ = 0;
 
+#if BS_VALIDACAO
+    // N8.7: o ListSink (native/render/kamui) decodifica as mesmas listas direto para a IR; tem de dar exatamente esta
+    void check_list_sink(std::span<const PvrTri> drawn) {
+        namespace km = bs::native::render::kamui;
+        km::ListFrame lf;
+        ta_list_sink().build(frame.cl.frame, stride_, lf);
+        // negativos (BS_LISTA_NATIVA_MUTACAO=<campo>): o comparador tem de acusar cada um. vertice: o primeiro vertice
+        // muda meio pixel; suporte, omitidos, dois_volumes, global_dois_volumes, instrucao, descarte: a contagem + 1
+        static const std::string mut = [] {
+            const char* v = std::getenv("BS_LISTA_NATIVA_MUTACAO");
+            return std::string(v ? v : "");
+        }();
+        if ((mut == "1" || mut == "vertice") && !lf.cl.vertices.empty()) lf.cl.vertices[0].x += 0.5f;
+        if (mut == "suporte") ++lf.unsupported;
+        if (mut == "omitidos") ++lf.skipped;
+        if (mut == "dois_volumes") ++lf.two_volume;
+        if (mut == "global_dois_volumes") ++lf.global_two_volume;
+        if (mut == "instrucao") ++lf.volume_bad_instruction;
+        if (mut == "descarte") ++lf.volume_mixed_cull;
+        ++st.list_checked;
+        st.list_volume_inclusion += lf.volume_inclusion, st.list_volume_exclusion += lf.volume_exclusion;
+        st.list_volume_or += lf.volume_or;
+        std::string why;
+        // os parametros e os bytes que o ListSink juntou (pelos blocos) sao os da FIFO do legado
+        const auto& lp = ta_list_sink().params();
+        const auto& tp = ta_params();
+        if (ta_list_sink().bytes() != ta_bytes())
+            why = "bytes (" + std::to_string(ta_list_sink().bytes()) + " x " + std::to_string(ta_bytes()) + ")";
+        else if (lp.size() != tp.size())
+            why = "parametros (" + std::to_string(lp.size()) + " x " + std::to_string(tp.size()) + ")";
+        for (size_t i = 0; why.empty() && i < lp.size(); ++i)
+            if (lp[i].list != tp[i].list || lp[i].words != tp[i].words || std::memcmp(lp[i].w, tp[i].w, lp[i].words * 4))
+                why = "parametro " + std::to_string(i);
+        if (!why.empty()) {
+            ++st.list_mismatch;
+            if (st.list_error.empty()) st.list_error = "render " + std::to_string(st.renders) + ": " + why;
+            return;
+        }
+        const nr::CommandList &a = lf.cl, &b = frame.cl;
+        if (a.vertices.size() != b.vertices.size() ||
+            (!a.vertices.empty() && std::memcmp(a.vertices.data(), b.vertices.data(), a.vertices.size() * sizeof(nr::Vertex))))
+            why = "vertices (" + std::to_string(a.vertices.size()) + " x " + std::to_string(b.vertices.size()) + ")";
+        else if (a.draws.size() != b.draws.size())
+            why = "desenhos (" + std::to_string(a.draws.size()) + " x " + std::to_string(b.draws.size()) + ")";
+        else if (a.modifiers.size() != b.modifiers.size())
+            why = "volumes (" + std::to_string(a.modifiers.size()) + " x " + std::to_string(b.modifiers.size()) + ")";
+        else if (lf.textures.size() != frame.textures.size())
+            why = "texturas (" + std::to_string(lf.textures.size()) + " x " + std::to_string(frame.textures.size()) + ")";
+        for (size_t i = 0; why.empty() && i < a.draws.size(); ++i)
+            if (!(a.draws[i].state == b.draws[i].state) || a.draws[i].first_vertex != b.draws[i].first_vertex ||
+                a.draws[i].vertex_count != b.draws[i].vertex_count)
+                why = "desenho " + std::to_string(i);
+        for (size_t i = 0; why.empty() && i < a.modifiers.size(); ++i) {
+            const nr::ModifierVolume &x = a.modifiers[i], &y = b.modifiers[i];
+            if (x.first_vertex != y.first_vertex || x.triangle_count != y.triangle_count || x.inclusion != y.inclusion ||
+                x.list != y.list || x.cull != y.cull || x.closed != y.closed || x.or_from != y.or_from)
+                why = "volume " + std::to_string(i);
+        }
+        for (size_t i = 0; why.empty() && i < lf.textures.size(); ++i) {
+            const km::TextureKey& x = lf.textures[i];
+            const TextureKey&     y = frame.textures[i];
+            if (x.tcw != y.tcw || x.width != y.width || x.height != y.height || x.stride != y.stride)
+                why = "textura " + std::to_string(i);
+        }
+        if (why.empty() && (lf.modifier_params != frame.modifier_params || lf.modifier_volumes != frame.modifier_volumes ||
+                            lf.modifier_unclosed != frame.modifier_unclosed || lf.skipped_params != frame.skipped_params ||
+                            lf.sprites != frame.sprites || lf.texture_stride != frame.texture_stride))
+            why = "contagens do quadro";
+        // revisao Codex 20261028-173027: as contagens que decidem o erro do produto (unsupported) e as do diagnostico, contra
+        // o decodificador do legado (RenderStats) e os retornos da captura deste render
+        const RenderStats* ls = pvr_render_stats_in_progress();
+        if (why.empty() && !ls) why = "sem as contagens do decodificador do legado";
+        if (why.empty() && (lf.unsupported != ls->unsupported || lf.skipped != ls->skipped || lf.two_volume != ls->two_volume ||
+                            lf.triangles != ls->triangles || lf.sprites != ls->sprites))
+            why = "contagens do decodificador (suporte " + std::to_string(lf.unsupported) + " x " + std::to_string(ls->unsupported) +
+                  ", omitidos " + std::to_string(lf.skipped) + " x " + std::to_string(ls->skipped) + ", dois volumes " +
+                  std::to_string(lf.two_volume) + " x " + std::to_string(ls->two_volume) + ")";
+        if (why.empty() && (lf.global_two_volume != st.two_volume - at_begin_[0] ||
+                            lf.volume_bad_instruction != st.volume_bad_instruction - at_begin_[1] ||
+                            lf.volume_mixed_cull != st.volume_mixed_cull - at_begin_[2] ||
+                            lf.volume_inclusion != st.volume_inclusion - at_begin_[3] ||
+                            lf.volume_exclusion != st.volume_exclusion - at_begin_[4] || lf.volume_or != st.volume_or - at_begin_[5]))
+            why = "contagens dos volumes e dos globais";
+        // os triangulos do rasterizador do legado: os dos strips e dois por sprite
+        if (why.empty() && size_t(lf.triangles) + 2u * lf.sprites != drawn.size())
+            why = "triangulos (" + std::to_string(lf.triangles + 2u * lf.sprites) + " x " + std::to_string(drawn.size()) + ")";
+        if (why.empty()) return;
+        ++st.list_mismatch;
+        if (st.list_error.empty()) st.list_error = "render " + std::to_string(st.renders) + ": " + why;
+    }
+#endif
+
     void reset_strip() {
         strip_.clear();
         open_ = -1, tri_mode_ = false;
@@ -670,67 +804,18 @@ std::unique_ptr<Capture> g_cap;
 } // namespace
 
 nr::DrawState draw_state(const PvrTri& t, uint32_t texture_handle) {
-    nr::DrawState s;
-    s.list          = list_type(t.list);
-    s.texture.value = t.tex ? texture_handle : 0;
-    s.src           = nr::Blend(t.tsp >> 29);
-    s.dst           = nr::Blend((t.tsp >> 26) & 7);
-    s.depth         = nr::DepthTest(t.isp >> 29);
-    s.depth_write   = !((t.isp >> 26) & 1);
-    s.cull          = nr::Cull((t.isp >> 27) & 3);
-    s.filter = nr::Filter((t.tsp >> 13) & 3);
-    s.wrap_u = ((t.tsp >> 16) & 1) ? nr::Wrap::Clamp : (((t.tsp >> 18) & 1) ? nr::Wrap::Mirror : nr::Wrap::Repeat);
-    s.wrap_v = ((t.tsp >> 15) & 1) ? nr::Wrap::Clamp : (((t.tsp >> 17) & 1) ? nr::Wrap::Mirror : nr::Wrap::Repeat);
-    static constexpr nr::TexEnv kEnv[4] = {nr::TexEnv::Replace, nr::TexEnv::Modulate, nr::TexEnv::Decal,
-                                           nr::TexEnv::ModulateAlpha};  // decal, modulate, decal alpha, modulate alpha
-    s.env              = kEnv[(t.tsp >> 6) & 3];
-    s.fog              = nr::Fog((t.tsp >> 22) & 3);
-    s.gouraud          = t.gouraud;
-    s.use_alpha        = (t.tsp >> 20) & 1;
-    s.offset_color     = t.offset;
-    s.ignore_tex_alpha = (t.tsp >> 19) & 1;
-    s.color_clamp      = (t.tsp >> 21) & 1;
-    s.shadow           = t.shadow;
-    s.mip_bias         = uint8_t((t.tsp >> 8) & 0xF);
-    s.supersample      = (t.tsp >> 12) & 1;
-    s.src_select       = (t.tsp >> 25) & 1;
-    s.dst_select       = (t.tsp >> 24) & 1;
-    s.clip             = t.clipMode == 2 ? nr::Clip::Inside : (t.clipMode == 3 ? nr::Clip::Outside : nr::Clip::None);
-    if (s.clip != nr::Clip::None) s.clip_x0 = t.cx0, s.clip_y0 = t.cy0, s.clip_x1 = t.cx1, s.clip_y1 = t.cy1;
-    return s;
+    return bs::native::render::kamui::draw_state(t, texture_handle);  // N8.7: as regras ficam no ListSink
 }
 
 PvrTri pvr_state(const nr::DrawState& s, const TextureKey* tex) {  // a mesma conversao do renderizador em software
     return soft::tri_state(s, tex ? tex->tcw : 0, tex ? tex->width : 0, tex ? tex->height : 0);
 }
 
-nr::Vertex vertex(const PvrVertex& v) {
-    nr::Vertex o;
-    o.x = v.x, o.y = v.y, o.inv_w = v.z, o.u = v.u, o.v = v.v;
-    o.color = pack(v.col), o.offset = pack(v.off);
-    return o;
-}
+nr::Vertex vertex(const PvrVertex& v) { return bs::native::render::kamui::ir_vertex(v); }
 
 PvrVertex pvr_vertex(const nr::Vertex& v) { return soft::tri_vertex(v); }
 
-nr::FrameParams frame_params(uint32_t width, uint32_t height) {
-    nr::FrameParams f;
-    f.width = width, f.height = height;
-    f.clear_color = 0xFF000000 | pvr_background_color();
-    f.clear_depth = f32(pvr_reg(R(0x088)));  // ISP_BACKGND_D
-    for (size_t i = 0; i < f.fog_table.size(); ++i) f.fog_table[i] = uint16_t(pvr_reg(R(0x200 + uint32_t(i) * 4)) & 0xFFFF);
-    f.fog_color             = pvr_reg(R(0x0B0));  // FOG_COL_RAM
-    f.fog_vertex_color      = pvr_reg(R(0x0B4));  // FOG_COL_VERT
-    f.fog_density           = pvr_reg(R(0x0B8)) & 0xFFFF;  // FOG_DENSITY
-    f.shadow_scale          = pvr_reg(R(0x074)) & 0x1FF;   // FPU_SHAD_SCALE
-    f.punch_through_ref     = float(pvr_reg(R(0x11C)) & 0xFF) / 255.f;
-    f.translucent_autosort  = !(pvr_reg(R(0x098)) & 1);  // ISP_FEED_CFG bit 0
-    const uint32_t half     = pvr_reg(R(0x080));           // HALF_OFFSET
-    f.sample_center         = half & 1, f.attribute_center = half & 2, f.texel_center = half & 4;
-    f.small_cull            = f32(pvr_reg(R(0x078)));      // FPU_CULL_VAL
-    f.clamp_max             = pvr_reg(R(0x0BC)), f.clamp_min = pvr_reg(R(0x0C0));
-    return f;
-}
+nr::FrameParams frame_params(uint32_t width, uint32_t height) { return pvr_frame_params(width, height); }
 
 PvrFrame pvr_frame(const Frame& f) { return soft::tri_frame(f.cl.frame, f.texture_stride); }
 
@@ -1010,6 +1095,19 @@ std::string summary() {
                       s.vk_error.empty() ? "" : "; ",
                       s.vk_error.c_str());
         out += v;
+    }
+    if (s.list_checked) {  // N8.7: o ListSink nativo contra a captura
+        std::snprintf(b, sizeof b,
+                      "[lista-nativa] renders conferidos %llu, IR diferentes %llu, fins de lista diferentes %llu; volumes "
+                      "inclusao %llu (captura %llu), "
+                      "exclusao %llu (%llu), com OU %llu (%llu)%s%s\n",
+                      (unsigned long long)s.list_checked, (unsigned long long)s.list_mismatch,
+                      (unsigned long long)ta_list_end_mismatches(),
+                      (unsigned long long)s.list_volume_inclusion, (unsigned long long)s.volume_inclusion,
+                      (unsigned long long)s.list_volume_exclusion, (unsigned long long)s.volume_exclusion,
+                      (unsigned long long)s.list_volume_or, (unsigned long long)s.volume_or,
+                      s.list_error.empty() ? "" : "; primeira: ", s.list_error.c_str());
+        out += b;
     }
     if (s.hires_renders) {  // N7c: resolucao interna
         char r[300];
