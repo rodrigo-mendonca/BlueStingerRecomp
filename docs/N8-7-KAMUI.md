@@ -507,3 +507,27 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
 - **Testes nos dois builds:** FIFO (`dmac_channel2_to_ta`), caminho de textura com 40 bytes até a VRAM
   (`dmac_channel2_texture_path_to_vram`) e destino fora da área 4 com o erro explícito e sem os registradores do fim
   (`dmac_channel2_outside_area4_is_an_explicit_error`). Três casos do componente em `bs_render_tests`.
+
+## 18. Incremento 4c: entrada da área 4 (2026-10-29)
+
+- **Nativo:** `native/render/kamui/area4_entry`, sem estado e sem tocar a memória:
+  - `route`: o caminho de cada bloco de 32 bytes que as store queues e a cópia do canal 2 entregam. FIFO de polígonos
+    com os bits 23-24 em 0, conversor YUV com o bit 23, caminho de textura com o bit 24; fora da área 4, recusado;
+  - `list_end_bit`: o bit de `ISTNRM` do fim de cada lista (7, 8, 9, 10 e 21);
+  - `texture_offsets`: o offset de cada palavra do caminho de textura na memória das texturas, 4 em cada banco.
+- **Produto:** `runtime/system/area4_bus` serve `pvr/ta.h`. As listas vão para o `ListSink`, e o fim de lista acende o
+  bit no banco de status (4a) no mesmo bloco. Um parâmetro inválido é erro explícito, e o caminho de textura escreve na
+  `TextureHeap` (3b) e marca as duas faixas. Um bloco no conversor YUV continua sendo o erro do N8.5. O `ta.cpp` sai do
+  produto (portão, com o prefixo `:ta.cpp.obj`, porque `ta.cpp.obj` também casaria `runtime_data.cpp.obj`).
+- **Validação:** o `ta.cpp` fica só com a FIFO de polígonos do legado, que continua sendo a referência do `ListSink`
+  (`[lista-nativa]`), e passa a ser a referência da entrada nativa, que roda em sombra (`[area-4]`). Em cada bloco ela
+  confere o caminho, o bit do fim de lista e os 8 offsets do caminho de textura.
+  - Negativo `BS_AREA4_MUTACAO=banco`: a sombra troca o banco da primeira palavra. O ctest `n87_area4_mutacao` exige a
+    falha.
+- **Equivalência:** combate com 145 051 857 blocos (179 788 de textura, 81 447 fins de lista) e NEW GAME com 66 776 246,
+  0 diferentes. Com `banco`, os 179 788 blocos de textura do combate são acusados. Referências com o produto
+  `185c02ac…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **A composição do produto** (revisão Codex `20261029-171814`) é conferida nos dois builds:
+  - as 8 palavras do caminho de textura nas duas vistas e a geração das duas faixas;
+  - o parâmetro inválido como erro explícito com a palavra de controle e sem fim de lista;
+  - no produto, o bloco YUV como erro explícito com o endereço físico.

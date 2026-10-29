@@ -3421,6 +3421,22 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
   - [BAIXA] o destino recusado não passava pelo erro explícito do produto: **aceito**. O teste
     `dmac_channel2_outside_area4_is_an_explicit_error` roda nos dois builds com destino na área 5 e um tratador fatal que
     lança exceção, e confere a mensagem, o destino e a ausência das atualizações do fim.
+- **Incremento 4c (entrada da área 4):**
+  - `native/render/kamui/area4_entry` decide o caminho de cada bloco da área 4, o bit do fim de lista e os offsets do
+    caminho de textura;
+  - no produto, `runtime/system/area4_bus` serve `pvr/ta.h` (`ListSink`, banco de status, `TextureHeap`, erro do YUV).
+    O `ta.cpp` sai do produto (portão `:ta.cpp.obj`);
+  - na validação, o `ta.cpp` (a FIFO do legado) é a referência, e a entrada nativa roda em sombra (`[area-4]`);
+  - negativo `BS_AREA4_MUTACAO=banco`, exigido pelo ctest `n87_area4_mutacao`: no combate, os 179 788 blocos de
+    textura acusados;
+  - equivalência: combate com 145 051 857 blocos (179 788 de textura, 81 447 fins de lista) e NEW GAME com 66 776 246,
+    0 diferentes;
+  - referências com o produto `185c02ac…` (`layout_a4`): N8.0 16/16 (179 exceções usadas) e N8.7 16/16;
+  - unitários: produto 328/0, validação 346/0; render 65/0 (3 casos novos); portão 35/47.
+- **Revisão Codex `20261029-171814`:**
+  - [BAIXA] a sombra compara só os resultados puros, não a composição do produto: **aceito**. Três testes conferem a
+    composição: `ta_texture_block_writes_all_words_and_bumps_both_banks` e `ta_invalid_parameter_is_an_explicit_error`
+    nos dois builds, e `ta_yuv_block_is_a_removed_component_in_the_product` só no produto.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
