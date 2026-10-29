@@ -380,3 +380,27 @@ O que ainda não for medido continua aceito com a semântica atual e coberto pel
   modos;
 - elas saem do banco do PVR para um módulo compartilhado, sem mudança de conta;
 - a comparação do `--tempo nativo` com as referências históricas é o critério (D-K4).
+
+## 13. Incremento 3a: FrameState (2026-10-28)
+
+- **Nativo:** `native/render/kamui/frame_state` guarda os registradores gráficos, responde ID, REVISION e SPG_STATUS,
+  executa os comandos que não guardam o valor e atualiza os ponteiros do TA no `TA_LIST_INIT`. Também converte a paleta e
+  faz as contas do SPG. Os efeitos vão para uma interface (`FrameEffects`), na ordem do modelo anterior. O custo do fim
+  de render é a função pura `render_done_cost`.
+- **Produto:** `runtime/system/graphics_bus` serve a API de `pvr/pvr_regs.h` sobre o FrameState e executa os efeitos:
+  render, prazo, sincronização do INTC, listas, temporização e YUV recusado. O `time_now` é lido nos mesmos pontos de
+  antes. O `pvr_regs.cpp` sai do produto.
+- **Validação:** o banco do legado continua ativo. O FrameState roda em sombra e é comparado a cada acesso:
+  - valores lidos;
+  - registrador gravado e ponteiros do TA;
+  - sequência de efeitos de cada escrita;
+  - prazo do fim de render, contra a fórmula do produto;
+  - banco e paleta a cada render;
+  - contas do SPG.
+  
+  Negativos `BS_FRAME_STATE_MUTACAO=leitura|escrita|fase|efeitos|prazo`; resumo `[frame-state]`.
+- **Equivalência:**
+  - combate (estável): 2 605 652 comparações, 0 diferentes;
+  - combate (experimental): 2 041 730, 0 diferentes;
+  - NEW GAME: 2 067 891, 0 diferentes;
+  - quadros e eventos do produto iguais aos do incremento 2.

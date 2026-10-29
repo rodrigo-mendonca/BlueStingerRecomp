@@ -3311,6 +3311,30 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
   - [BAIXA] a sonda tomava a substituição do tratador sem encadear a anterior: agora encadeia, devolve a anterior ao
     desligar e avisa se outra a substituir. O teste `gfx_probe_chains_and_restores_the_isr_override` cobre as duas
     ordens de instalação.
+- **Incremento 3a (FrameState):**
+  - `native/render/kamui/frame_state` guarda os registradores gráficos, os comandos e a temporização do vídeo;
+  - no produto, `runtime/system/graphics_bus` serve a mesma API de `pvr/pvr_regs.h` sobre ele, e o `pvr_regs` sai do
+    produto (portão);
+  - na validação, o banco do legado continua ativo e o FrameState roda em sombra. A cada acesso são comparados os
+    valores lidos, o registrador gravado, os ponteiros do TA, a sequência dos efeitos de cada escrita, o prazo do fim de
+    render, o banco inteiro e a paleta a cada render, e as contas do SPG;
+  - os 5 negativos são acusados (leitura, escrita, fase, efeitos, prazo);
+  - quadros e eventos do produto iguais aos do produto do incremento 2;
+  - sombra nas rotas longas: combate estável (2 605 652 comparações), combate experimental (2 041 730) e NEW GAME
+    (2 067 891), 0 diferentes;
+  - referências com o produto do FrameState (exe `04249856f0b7e824…`, `--paralelo 2`): N8.0 sem fog e volumes **16/16**,
+    só com as 179 exceções; N8.7 **16/16**, sem exceção;
+  - unitários: produto 319/0, validação 333/0, com o teste do prazo do fim de render nos dois builds; render 49/0
+    (5 casos novos do FrameState).
+- **Revisão Codex `20261028-212527`:**
+  - [ALTA] `known_versions.h` não compila: **rejeitado**. É o arquivo particular do mantenedor (hash `c4ad9e1a`), trocado
+    pelo versionado durante o build e nunca versionado; não faz parte do incremento;
+  - [MÉDIA] a sombra não observava os efeitos nem o prazo do produto: **aceito**. O custo do fim de render virou uma função
+    pura compartilhada (`render_done_cost`, usada pelo produto). A sombra confere o prazo do legado contra ela e a
+    sequência dos efeitos de cada escrita (o legado registra os que executa, a sombra os que pede), com os negativos
+    `prazo` e `efeitos`;
+  - [BAIXA] nenhum teste fixava o prazo: **aceito**. O teste `render_startrender_schedules_render_done_with_the_ta_bytes`
+    cobre o prazo absoluto, a substituição por um segundo render, o teto e o ISTNRM 0 a 2 no prazo.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
