@@ -80,6 +80,7 @@ void vram_touch(uint32_t off, uint32_t n) {
 }
 
 uint64_t vram_generation64(uint32_t off64, uint32_t n) { return g_shadow.generation64(off64, n); }
+const uint8_t* vram_shadow_data() { return g_shadow.data(); }  // N8.7 3c: a entrada do servico de exibicao em sombra
 
 void vram_heap_check() {
     constexpr uint32_t kPage = native::render::kamui::TextureHeap::kPage;

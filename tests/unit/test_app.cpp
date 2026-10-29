@@ -31,7 +31,12 @@ void setReg(uint32_t off, uint32_t v) {
     sh4_write32(&c, 0xA05F8000 + off, v);
 }
 
-void put16(uint32_t addr, uint16_t v) { std::memcpy(vram_data() + addr, &v, 2); }
+// escrita por fora (como o render): marca a pagina, e na validacao a copia para a memoria nativa em sombra (N8.7 3b/3c)
+void put(uint32_t addr, const void* p, uint32_t n) {
+    std::memcpy(vram_data() + addr, p, n);
+    vram_touch(addr, n);
+}
+void put16(uint32_t addr, uint16_t v) { put(addr, &v, 2); }
 
 // 4 pixels de 16 bits por linha (2 palavras), `lines` linhas, modulo 1 (passo = largura).
 void video(uint32_t ctrl, uint32_t lines, bool interlace, uint32_t mod = 1) {
@@ -83,12 +88,12 @@ BS_TEST(video_frame_line_double_formats_and_blank) {
     BS_CHECK(h == 2 && f[0] == 0xFFFF0000 && f[4] == 0xFFFF0000);
     video(1 | (3u << 2), 1, false);  // 0888: 2 pixels por 2 palavras
     const uint8_t px[4] = {0x30, 0x20, 0x10, 0x99};  // B G R K
-    std::memcpy(vram_data() + 0x1000, px, 4);
+    put(0x1000, px, 4);
     pvr_video_frame(f, w, h);
     BS_CHECK(w == 2 && f[0] == 0xFF102030);
     video(1 | (2u << 2), 1, false);  // 888 empacotado: 8 bytes = 2 pixels (+ sobra)
     const uint8_t p3[6] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-    std::memcpy(vram_data() + 0x1000, p3, 6);
+    put(0x1000, p3, 6);
     pvr_video_frame(f, w, h);
     BS_CHECK(f[0] == 0xFF030201 && f[1] == 0xFF060504);
     video(0 | (1u << 2), 1, false);  // leitura desligada
@@ -101,6 +106,35 @@ BS_TEST(video_frame_line_double_formats_and_blank) {
     pvr_video_frame(f, w, h);
     BS_CHECK(f[0] == 0xFF000000);
 }
+
+#if BS_VALIDACAO
+// N8.7 3c: o servico de exibicao nativo roda em sombra em cada quadro, sobre o FrameState e a memoria em sombra, e da o
+// mesmo quadro que a saida do legado nos casos acima (formatos, entrelacamento, duplicacao, desligado, blank). O contador
+// e do processo: nenhum quadro anterior pode ter divergido (revisao Codex 20261029-071855). Negativo: o ctest
+// n87_display_mutacao roda este teste com BS_DISPLAY_MUTACAO=campo e exige a falha
+BS_TEST(video_frame_native_display_shadow_agrees) {
+    auto differ = [] {
+        const std::string s = pvr_display_summary();
+        const size_t      p = s.find("diferentes ");
+        return p == std::string::npos ? ~0ull : std::stoull(s.substr(p + 11));
+    };
+    const uint64_t d0 = differ();
+    std::vector<uint32_t> f;
+    uint32_t              w, h;
+    video(1, 2, true, 3);
+    put16(0x1000, 0x7C00);
+    put16(0x2000, 0x001F);
+    pvr_video_frame(f, w, h);
+    video(1 | 2 | (1u << 2), 1, false);
+    put16(0x1000, 0xF800);
+    pvr_video_frame(f, w, h);
+    video(1 | (1u << 2), 1, false);
+    setReg(0x0E8, 8);
+    pvr_video_frame(f, w, h);
+    BS_CHECK(d0 == 0 && differ() == 0);
+    BS_CHECK(pvr_display_summary().find("[display] quadros comparados") == 0);
+}
+#endif
 
 // Teclado por eventos da janela: mapa padrao (ENTER = START, setas, Z = A), nomes sem
 // diferenca de caixa, soltar e perder o foco.
@@ -168,7 +202,7 @@ GameOptions fakeOptions(Sh4Func entry, bool withThread = false) {
         f.firstRead.assign(64, 0);
         boot_prepare(c, f, 0);  // estado do BIOS: PVR e SPG configurados (VBlank anda)
         const uint32_t v = 0x00F8F8F8;  // FB_R_SOF1 = 0x200000, 0888: um pixel claro
-        std::memcpy(vram_data() + 0x200000, &v, 4);
+        put(0x200000, &v, 4);
     };
     o.realtime = false;
     return o;

@@ -1,7 +1,20 @@
 #include "test.h"
 
+#include <cstdlib>
+#include <cstring>
+
 int main() {
+    // BS_TEST_FILTRO=<trecho>: so os casos com o trecho no nome (os negativos por mutacao rodam um caso isolado)
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+    const char* filter = std::getenv("BS_TEST_FILTRO");
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
     for (auto& c : bs::test::registry()) {
+        if (filter && *filter && !std::strstr(c.name, filter)) continue;
         const int before = bs::test::failures(), skipsBefore = bs::test::skips();
         c.fn();
         const char* r = bs::test::failures() != before ? "FAIL" : bs::test::skips() != skipsBefore ? "skip" : " ok ";

@@ -61,5 +61,7 @@ uint32_t pvr_vblank_out_line();
 
 // N8.7 (validacao): as comparacoes do banco do legado com o FrameState nativo em sombra (pvr_regs.cpp)
 std::string pvr_frame_state_summary();
+// N8.7 3c (so validacao): o valor guardado no FrameState em sombra (a entrada do servico de exibicao em sombra)
+uint32_t pvr_shadow_reg(uint32_t a);
 
 } // namespace bs

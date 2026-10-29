@@ -3,6 +3,7 @@
 // lida da VRAM pelos registradores de leitura do framebuffer, e o aviso de VBlank para o
 // host apresentar quadros. Independente de janela/plataforma.
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace bs {
@@ -17,6 +18,8 @@ namespace bs {
 //  - video desligado (FB_R_CTRL bit 0 = 0) ou em blank (VO_CONTROL 0x0E8 bit 3): preto.
 // Devolve largura e altura; o vetor e redimensionado.
 void pvr_video_frame(std::vector<uint32_t>& argb, uint32_t& width, uint32_t& height);
+// N8.7 3c (validacao): o servico de exibicao nativo em sombra contra esta saida (vazio no produto)
+std::string pvr_display_summary();
 
 // Chamado no inicio de cada VBlank (VBlank-in do SPG), na thread que executa o jogo.
 using PvrVblankHook = void (*)(void* arg);

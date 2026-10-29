@@ -31,5 +31,6 @@ void        vram_touch(uint32_t off, uint32_t n);
 uint64_t    vram_generation64(uint32_t off64, uint32_t n);
 std::string vram_heap_summary();  // validacao: a memoria nativa em sombra contra este modelo
 void        vram_heap_check();    // validacao: compara as paginas tocadas desde a ultima vez (a cada render)
+const uint8_t* vram_shadow_data();  // so validacao (N8.7 3c): os bytes da memoria nativa em sombra
 
 } // namespace bs
