@@ -3383,6 +3383,25 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
     processo, antes e depois dos quadros novos;
   - [BAIXA] o negativo não estava ligado a nenhum teste: o ctest `n87_display_mutacao` roda o caso com a mutação, filtrado
     pelo `BS_TEST_FILTRO` novo do executor de testes, e exige a falha.
+- **Incremento 4a (banco de status de interrupção, D-K3):**
+  - `native/render/kamui/event_status` guarda o status e as máscaras do Holly (escrever 1 limpa), recebe os eventos
+    vencidos e levantados e dá o nível IRL e as contagens;
+  - no produto, `runtime/system/event_bus` serve `pvr/holly_intc.h` sobre ele, com a mesma cola (provedor de tempo,
+    traces, prazos, gancho do VBlank depois do estado). O `holly_intc.cpp` sai do produto (portão);
+  - na validação, o controlador do legado continua sendo a referência. O banco nativo roda em sombra e é comparado depois
+    de cada operação;
+  - negativo `BS_EVENT_STATUS_MUTACAO=limpa` (sem a limpeza do bit 19 na sombra): 543 675 operações acusadas no combate.
+    O ctest `n87_event_status_mutacao` exige a falha;
+  - equivalência: combate com 598 802 operações e NEW GAME com 440 028, 0 diferentes;
+  - referências com o produto `ece1a44b…` (`layout_es`): N8.0 16/16 (179 exceções usadas) e N8.7 16/16;
+  - unitários: produto 323/0, validação 340/0; render 59/0 (3 casos novos do banco); portão 35/47.
+- **Revisão Codex `20261029-103042`:**
+  - [ALTA] `known_versions.h` não compila: **rejeitado**. É o arquivo particular do mantenedor (hash `c4ad9e1a`),
+    trocado pelo versionado durante o build e fora dos commits;
+  - [BAIXA] a sombra não exercita a cola do produto (`event_bus`): **aceito**. O teste
+    `n87_event_glue_orders_bits_counts_and_the_vblank_hook` roda nos dois builds com um provedor roteirizado e os mesmos
+    valores esperados (bits, contagens, eventos sem prazo, instante anterior ignorado, estado visto pelo gancho do
+    VBlank). As referências do produto nos dois modos de tempo conferem a cola na rota inteira.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

@@ -444,3 +444,34 @@ O que ainda não for medido continua aceito com a semântica atual e coberto pel
   - com `campo`, 26 079 quadros acusados no combate (o primeiro no quadro 54);
   - os outros comparadores continuam em 0: ListSink, FrameState, TextureHeap e texturas velhas;
   - referências com o produto (`e85706089cc447fa…`): N8.0 sem fog e volumes 16/16 (só as 179 exceções), N8.7 16/16.
+
+## 16. Incremento 4a: banco de status de interrupção (D-K3, 2026-10-29)
+
+Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da seção 12 e commit próprio:
+- **4a:** o banco de status do Holly;
+- **4b:** a cópia do canal 2, ou seja, o `sh4_dmac` e a parte do `holly_sb` que dispara o DMA. O Maple, o G2, o
+  `SB_FFST` e as faixas removidas ficam no `holly_sb`;
+- **4c:** a entrada da área 4 (`ta.cpp`);
+- **4d:** a orquestração do render (`pvr_render` e `render_capture`).
+
+- **Nativo:** `native/render/kamui/event_status` guarda:
+  - o status (`ISTNRM`/`ISTEXT`/`ISTERR`, escrever 1 limpa) e as máscaras (`IML2/4/6` NRM, EXT e ERR);
+  - os eventos vencidos (`deliver`, na ordem do controlador anterior) e os levantados (`raise`);
+  - o nível IRL (6, 4, 2) e as contagens de VBlank, de VBlanks fundidos e de eventos. A contagem de eventos é do
+    processo e não zera no reset.
+- **Produto:** `runtime/system/event_bus` serve `pvr/holly_intc.h` sobre o banco, com a mesma cola de antes:
+  - os eventos vêm do provedor de tempo, nos mesmos pontos (D-K4: nenhum relógio, ordem ou prazo muda);
+  - os traces, o consumo dos prazos de render e do Maple, o `sh4_irq_wakeup` e o gancho do VBlank, que roda depois do
+    estado.
+
+  O tratador original do Kamui (`8C1C53E2`) lê e limpa o banco como antes. O `holly_intc.cpp` sai do produto (portão).
+  Os nomes da API (`holly_intc_raise`...) continuam, servidos pelo banco nativo, como `vram_data` no 3b.
+- **Validação:** o `holly_intc.cpp` continua sendo a referência. O banco nativo roda em sombra, recebe os mesmos eventos
+  e escritas e é comparado depois de cada operação: os 16 registradores, o nível IRL e as contagens (`[event-status]`).
+  - Negativo `BS_EVENT_STATUS_MUTACAO=limpa`: a sombra ignora a limpeza do bit 19. O ctest `n87_event_status_mutacao`
+    exige a falha.
+  - A cola é conferida nos dois builds pelo teste `n87_event_glue_orders_bits_counts_and_the_vblank_hook` (provedor
+    roteirizado, os mesmos valores esperados).
+- **Equivalência:** combate com 598 802 operações e NEW GAME com 440 028, 0 diferentes. Referências com o produto
+  `ece1a44b…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16. Com `limpa`, 543 675 acusadas, a primeira na operação
+  170 (`ISTNRM` 110 contra 80110).
