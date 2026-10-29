@@ -116,8 +116,9 @@ void writeBack(const native::render::soft::Image& r) {
     const uint32_t   fmt = ctrl & 7, kval = (ctrl >> 8) & 0xFF, thr = (ctrl >> 16) & 0xFF;
     static const int bpp[8] = {2, 2, 2, 2, 3, 4, 4, 4};
     const int w = int(r.width), h = int(r.height);
-    for (int y = std::max(0, ymin); y <= std::min(h - 1, ymax); ++y)
-        for (int x = std::max(0, xmin); x <= std::min(w - 1, xmax); ++x) {
+    const int x0 = std::max(0, xmin), x1 = std::min(w - 1, xmax);
+    for (int y = std::max(0, ymin); y <= std::min(h - 1, ymax); ++y) {
+        for (int x = x0; x <= x1; ++x) {
             const uint32_t c = r.color[size_t(y) * w + x];
             const uint32_t a = c >> 24, rr = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
             uint32_t       v = 0;
@@ -131,8 +132,17 @@ void writeBack(const native::render::soft::Image& r) {
             default: v = c; break;                                                                    // 8888
             }
             const uint32_t addr = (sof + uint32_t(y) * stride + uint32_t(x) * bpp[fmt]) & (kVramSize - 1);
-            std::memcpy(vram_data() + addr, &v, size_t(bpp[fmt]));
+            if (addr + uint32_t(bpp[fmt]) <= kVramSize) {
+                std::memcpy(vram_data() + addr, &v, size_t(bpp[fmt]));
+            } else {  // revisao Codex 20261029-013355: o pixel da a volta no fim dos 8 MB (os leitores mascaram cada byte)
+                for (int i = 0; i < bpp[fmt]; ++i) vram_data()[(addr + uint32_t(i)) & (kVramSize - 1)] = uint8_t(v >> (8 * i));
+            }
         }
+        // N8.7 3b: marca a linha gravada na memoria das texturas (com a volta no fim, se houver)
+        if (x1 >= x0)
+            vram_touch((sof + uint32_t(y) * stride + uint32_t(x0) * bpp[fmt]) & (kVramSize - 1),
+                       uint32_t(x1 - x0 + 1) * uint32_t(bpp[fmt]));
+    }
 }
 
 } // namespace
@@ -178,6 +188,7 @@ native::render::FrameParams pvr_frame_params(uint32_t width, uint32_t height) {
 }
 
 RenderStats pvr_render(Sh4Context* c) {
+    vram_heap_check();  // N8.7 3b (validacao): a memoria das texturas em sombra, as paginas tocadas desde o ultimo render
     const native::render::soft::FpEnv fpEnv;  // ambiente fixo nesta thread (os workers instalam o seu)
     RenderStats    st;
     const uint32_t clip = pvr_reg(R(0x13C));  // TA_GLOB_TILE_CLIP

@@ -57,6 +57,7 @@ public:
 
     uint32_t reg(uint32_t p) const { return regs_[(p - kBase) / 4]; }  // o valor guardado (sem efeito)
     uint32_t palette_argb(uint32_t index) const;                         // entrada 0..1023 em ARGB8888 (PAL_RAM_CTRL)
+    uint64_t palette_generation() const { return pal_gen_; }             // sobe a cada escrita na paleta ou no PAL_RAM_CTRL
 
     // temporizacao do video
     SpgPosition spg_position(uint64_t t) const;
@@ -78,6 +79,7 @@ private:
     std::array<uint32_t, kSize / 4> regs_{};
     uint64_t                        field_;
     uint64_t                        phase_ = 0;  // fase do feixe no instante 0 (dentro de dois campos)
+    uint64_t                        pal_gen_ = 0;
     uint32_t field_lines() const;
 };
 

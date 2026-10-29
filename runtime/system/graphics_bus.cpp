@@ -164,6 +164,7 @@ void pvr_regs_load(const uint32_t* words) {
 void     pvr_set_startrender_hook(PvrStartRenderHook hook) { g_startHook = hook; }
 uint32_t pvr_reg(uint32_t a) { return g_fs.reg(a & 0x1FFFFFFF); }
 uint32_t pvr_pal_entry(uint32_t index) { return g_fs.palette_argb(index); }
+uint64_t pvr_palette_generation() { return g_fs.palette_generation(); }
 uint64_t pvr_render_done_due() { return g_renderDue; }
 void     pvr_render_done_take() { g_renderDue = 0; }
 // a comparacao com o banco do legado so existe na validacao (pvr/pvr_regs.cpp)

@@ -90,10 +90,89 @@ void loadTexture(uint32_t base, uint16_t seed) {  // 8x8 RGB565 twiddled
     for (uint32_t i = 0; i < 64; ++i) {
         const uint16_t v = uint16_t(seed + i * 0x0841);
         std::memcpy(vram_data() + vram_offset64(base + 2 * i), &v, 2);
+        vram_touch(vram_offset64(base + 2 * i), 2);  // N8.7 3b: quem escreve por vram_data() marca a pagina
     }
 }
 
 } // namespace
+
+// N8.7 3b (docs/N8-7-KAMUI.md): o cache de texturas usa a geracao da memoria das texturas; uma textura regravada pela CPU
+// (o caminho de 64 bits, como a copia do Kamui) entre dois renders aparece no segundo. Nos dois builds; na validacao, os
+// bytes relidos confirmam que nenhuma textura ficou velha. Com BS_TEXTURE_HEAP_MUTACAO=marca (validacao: as escritas nao
+// marcam a pagina) este teste tem de falhar
+BS_TEST(render_capture_texture_cache_sees_a_rewritten_texture) {
+    CaptureScene s(rc::Mode::Software);
+    auto fill = [&](uint16_t c565) {  // 8x8 RGB565 numa cor, pela escrita do jogo (0xA4000000 = caminho de 64 bits)
+        for (uint32_t i = 0; i < 64; ++i) sh4_write16(&s.c, 0xA4000000 + kTexA + 2 * i, c565);
+    };
+    auto draw = [&] {
+        s.reg(0x144, 0x80000000);  // TA_LIST_INIT
+        s.ta({0x8000000Au, kIspAlways, kTspOpaque, (1u << 27) | (kTexA >> 3)});  // 565, twiddled, decal
+        s.vtx(0, 0, 1, fb(0), fb(0), 0xFFFFFFFF);
+        s.vtx(64, 0, 1, fb(1), fb(0), 0xFFFFFFFF);
+        s.vtx(0, 64, 1, fb(0), fb(1), 0xFFFFFFFF, true);
+        s.endList();
+        s.render();
+    };
+    auto px = [] {
+        uint16_t v;
+        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        return v;
+    };
+    fill(0xF800);
+    draw();
+    BS_CHECK(px() == 0xF800);
+    fill(0x07E0);
+    draw();
+    BS_CHECK(px() == 0x07E0);
+    BS_CHECK(rc::stats().tex_stale == s.before.tex_stale);
+}
+
+// a mesma textura regravada pelo caminho direto de textura do TA (o destino das store queues e do DMA do canal 2), e uma
+// textura de paleta de 4 bits que so muda a paleta: o cache ve as duas mudancas
+BS_TEST(render_capture_texture_cache_sees_ta_path_and_palette_changes) {
+    CaptureScene s(rc::Mode::Software);
+    auto draw = [&](uint32_t tcw) {
+        s.reg(0x144, 0x80000000);
+        s.ta({0x8000000Au, kIspAlways, kTspOpaque, tcw});
+        s.vtx(0, 0, 1, fb(0), fb(0), 0xFFFFFFFF);
+        s.vtx(64, 0, 1, fb(1), fb(0), 0xFFFFFFFF);
+        s.vtx(0, 64, 1, fb(0), fb(1), 0xFFFFFFFF, true);
+        s.endList();
+        s.render();
+    };
+    auto px = [] {
+        uint16_t v;
+        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        return v;
+    };
+    auto ta_fill = [&](uint16_t c565) {  // 128 bytes (8x8 x 16 bits) em blocos de 32 pelo caminho direto de textura
+        for (uint32_t off = 0; off < 128; off += 32) {
+            uint32_t d[8];
+            for (uint32_t& w : d) w = uint32_t(c565) | (uint32_t(c565) << 16);
+            BS_CHECK(ta_fifo_write(&s.c, 0x11000000 + kTexA + off, d));
+        }
+    };
+    const uint32_t tcw565 = (1u << 27) | (kTexA >> 3);
+    ta_fill(0xF800);
+    draw(tcw565);
+    BS_CHECK(px() == 0xF800);
+    ta_fill(0x001F);
+    draw(tcw565);
+    BS_CHECK(px() == 0x001F);
+    // paleta de 4 bits (formato 5, seletor 0): indices 0; a entrada 0 da paleta (565) muda entre os renders
+    for (uint32_t i = 0; i < 32; ++i) sh4_write8(&s.c, 0xA4000000 + kTexB + i, 0);
+    s.reg(0x108, 1);  // PAL_RAM_CTRL: RGB565
+    s.reg(0x1000, 0xF800);
+    const uint32_t tcwPal = (5u << 27) | (kTexB >> 3);
+    draw(tcwPal);
+    BS_CHECK(px() == 0xF800);
+    s.reg(0x1000, 0x07E0);
+    draw(tcwPal);
+    BS_CHECK(px() == 0x07E0);
+    BS_CHECK(rc::stats().tex_stale == s.before.tex_stale);
+}
+
 #if BS_VALIDACAO  // o modo conferir: a IR contra o caminho do TA (N8.7: so na validacao)
 
 BS_TEST(render_capture_strip_is_one_draw) {
@@ -702,5 +781,42 @@ BS_TEST(gfx_probe_chains_and_restores_the_isr_override) {
     BS_CHECK(sh4_override_get(isr) == fake_isr);
     sh4_override(isr, nullptr);
     std::remove(path.c_str());
+}
+#endif
+
+#if BS_VALIDACAO
+// revisao Codex 20261029-013355: um envio de textura que falha nao confirma a geracao nova; o render seguinte relê os bytes
+// e envia de novo (sem a correcao, o handle antigo seria reaproveitado com a textura velha). Na validacao o render que
+// falhou no software sobre a IR cai no rasterizador do caminho do TA
+BS_TEST(render_capture_failed_texture_upload_does_not_confirm_the_generation) {
+    CaptureScene s(rc::Mode::Software);
+    auto fill = [&](uint16_t c565) {
+        for (uint32_t i = 0; i < 64; ++i) sh4_write16(&s.c, 0xA4000000 + kTexA + 2 * i, c565);
+    };
+    auto draw = [&] {
+        s.reg(0x144, 0x80000000);
+        s.ta({0x8000000Au, kIspAlways, kTspOpaque, (1u << 27) | (kTexA >> 3)});
+        s.vtx(0, 0, 1, fb(0), fb(0), 0xFFFFFFFF);
+        s.vtx(64, 0, 1, fb(1), fb(0), 0xFFFFFFFF);
+        s.vtx(0, 64, 1, fb(0), fb(1), 0xFFFFFFFF, true);
+        s.endList();
+        s.render();
+    };
+    auto px = [] {
+        uint16_t v;
+        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        return v;
+    };
+    fill(0xF800);
+    draw();
+    BS_CHECK(px() == 0xF800);
+    fill(0x07E0);
+    rc::inject_fault(rc::Fault::TextureUpload);
+    const uint64_t failures = rc::stats().soft_failures;
+    draw();  // o envio falha: o software sobre a IR cai, o caminho do TA desenha
+    BS_CHECK(rc::stats().soft_failures == failures + 1 && px() == 0x07E0);
+    draw();  // de novo pelo software: a textura tem de ser reenviada
+    BS_CHECK(rc::stats().soft_failures == failures + 1 && px() == 0x07E0);
+    BS_CHECK(rc::stats().tex_stale == s.before.tex_stale);
 }
 #endif

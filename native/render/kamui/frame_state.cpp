@@ -9,6 +9,7 @@ constexpr uint32_t kDefaultLines = 263;  // NTSC nao entrelacado
 
 void FrameState::reset() {
     regs_.fill(0);
+    ++pal_gen_;
     phase_ = 0;
 }
 
@@ -19,6 +20,7 @@ uint32_t FrameState::field_lines() const {
 
 void FrameState::load(const uint32_t* words) {
     for (uint32_t i = 0; i < kSize / 4; ++i) regs_[i] = words[i];
+    ++pal_gen_;
     const uint32_t status = words[(kSpgStatus - kBase) / 4];
     const uint32_t lines  = field_lines();
     const uint32_t line   = std::min<uint32_t>(status & 0x3FF, lines - 1);
@@ -55,6 +57,7 @@ void FrameState::write(uint32_t p, uint32_t v, FrameEffects& fx) {
     const bool command  = p == kTaListInit || p == kStartRender || p == kSoftReset;
     const bool readOnly = p == kSpgStatus || p == kId || p == kRevision || p == kTaYuvTexCnt;
     if (!command && !readOnly) regs_[(p - kBase) / 4] = v;
+    if (p == kPalRamCtrl || (p >= kPalette && p < kPalette + 0x1000)) ++pal_gen_;
     if (p == kSpgLoad || p == kSpgVblankInt) fx.spg_changed();
     if (p == kTaYuvTexBase || p == kTaYuvTexCtrl) fx.yuv(reg(kTaYuvTexBase), reg(kTaYuvTexCtrl));
 }

@@ -30,6 +30,8 @@ void pvr_regs_dump(Sh4Context* c, uint32_t* out);
 uint32_t pvr_reg(uint32_t a);
 // Entrada da paleta (0..1023) em ARGB8888, conforme PAL_RAM_CTRL.
 uint32_t pvr_pal_entry(uint32_t index);
+// N8.7 3b: sobe a cada escrita na paleta ou no PAL_RAM_CTRL (o cache de texturas com paleta a usa)
+uint64_t pvr_palette_generation();
 // Carrega o banco inteiro (estado deixado pelo BIOS; ID, REVISION e SPG_STATUS sao
 // calculados e ignorados).
 void pvr_regs_load(const uint32_t* words);

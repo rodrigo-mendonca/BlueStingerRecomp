@@ -151,6 +151,20 @@ BS_TEST(render_startrender_schedules_render_done_with_the_ta_bytes) {
     BS_CHECK((sh4_read32(&f.c, 0xA05F6900) & 7) == 7 && pvr_render_done_due() == 0);
 }
 
+// N8.7 3b (revisao Codex 20261029-013355): a gravacao no framebuffer que da a volta no fim dos 8 MB escreve os bytes do
+// pixel na volta (sem sair da memoria) e marca as paginas do inicio na memoria das texturas
+BS_TEST(render_writeback_wraps_at_the_end_of_vram) {
+    RenderFixture f(0x00FF0000);
+    f.reg(0x060, 0x7FFFFC);  // FB_W_SOF1: o pixel 1 da linha 0 comeca no ultimo byte
+    f.reg(0x048, 4);         // FB_W_CTRL: 888 (3 bytes por pixel)
+    const uint64_t g0 = vram_generation64(0, 8);
+    f.render();
+    // fundo vermelho: B, G, R; o pixel 1 fica em 7FFFFF, 0, 1 e o 2 em 2, 3, 4
+    BS_CHECK(vram_data()[0x7FFFFE] == 0xFF && vram_data()[0x7FFFFF] == 0 && vram_data()[1] == 0xFF);
+    BS_CHECK(vram_data()[4] == 0xFF);
+    BS_CHECK(vram_generation64(0, 8) > g0);
+}
+
 // Triangulo (0,0) (32,0) (0,32): amostra no centro do pixel; diagonal x + y + 1 < 32.
 BS_TEST(render_opaque_triangle_covers_pixel_centers) {
     RenderFixture f(0x00FF0000);

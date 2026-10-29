@@ -110,6 +110,9 @@ struct Stats {
     double      cmp_min_psnr = 0, cmp_psnr_sum = 0;  // PSNR (RGB) por quadro: minimo e soma (media = soma / quadros)
     uint64_t    cmp_below40 = 0;                     // quadros com PSNR < 40 dB (criterio do plano, secao 5)
     uint64_t distinct_texture_keys = 0, distinct_texture_ids = 0;  // chaves (TCW+tamanho) e ids de conteudo distintos
+    // N8.7 3b (validacao): texturas que a geracao deu como iguais mas cujos bytes mudaram (tem de ficar em 0)
+    uint64_t    tex_stale = 0;
+    std::string tex_stale_error;
     // N8.7 (docs/N8-7-KAMUI.md, validacao): a IR do ListSink nativo contra a desta captura, render a render (tem de
     // ficar em 0 diferentes); os volumes fechados e os parametros contados pelos dois lados
     uint64_t    list_checked = 0, list_mismatch = 0;
@@ -157,7 +160,7 @@ bool read_hires(const HiresImage& h, std::vector<uint32_t>& argb);
 // so originais (o padrao ate o N9, que traz o carregador de mods). O provedor tem de viver enquanto instalado.
 void         set_texture_replacements(nr::ITextureReplacements* provider);
 // Testes do recuo para o software: a proxima textura (Texture) ou o proximo quadro (Device) falha no Vulkan.
-enum class Fault : uint8_t { None, Texture, Device, DeviceOnce, DeviceAgain };  // Device: falha permanente; DeviceOnce: transitoria
+enum class Fault : uint8_t { None, Texture, Device, DeviceOnce, DeviceAgain, TextureUpload };  // Device: falha permanente; DeviceOnce: transitoria
 void         inject_fault(Fault f);
 
 // Diagnostico (BS_RENDER_IR_GUARDAR=<render>:<arquivo>): a IR inteira de um render (parametros, vertices, desenhos,
@@ -175,5 +178,9 @@ bool load_frame_dump(const std::string& path, nr::CommandList& cl, std::vector<D
 bool texture_argb(const TextureKey& k, std::vector<uint32_t>& argb, bool& legacy);
 // Os bytes que definem a textura na VRAM e a paleta usada (para o cache do backend saber se ela mudou).
 void texture_source(const TextureKey& k, std::vector<uint8_t>& raw);
+// N8.7 3b: o intervalo do caminho de 64 bits da textura, a geracao dele na memoria das texturas e se ela usa a paleta
+void     texture_span(const TextureKey& k, uint32_t& base, uint32_t& n);
+uint64_t texture_generation(const TextureKey& k);
+bool     texture_palette(const TextureKey& k);
 
 } // namespace bs::transitional::render_capture

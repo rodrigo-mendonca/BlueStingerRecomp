@@ -4,6 +4,7 @@
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
+#include "pvr/vram.h"
 #include "render/frame_prep.h"
 #include "render/render_ir.h"
 #include "render/soft/soft_device.h"
@@ -362,6 +363,7 @@ private:
         uint64_t             used = 0;
         uint32_t             w = 0, h = 0;  // o tamanho no dispositivo (o da substituicao, se houver)
         const void*          provider = nullptr;
+        uint64_t             gen = 0, pal = 0;  // N8.7 3b: as geracoes da memoria e da paleta quando os bytes foram lidos
     };
     std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, VkTex> vkTex_;
     std::vector<uint8_t>  raw_;
@@ -455,11 +457,35 @@ private:
             g_fault = Fault::None;
             return false;
         }
-        texture_source(k, raw_);
         VkTex& e = cache[{k.tcw, k.width, k.height, k.stride}];
         e.used   = st.renders;
         nr::ITextureReplacements* repl = hd ? g_replacements : nullptr;
-        if (e.handle && e.raw == raw_ && e.provider == repl) {
+        // N8.7 3b (docs/N8-7-KAMUI.md): a memoria das texturas diz se os bytes da textura (ou a paleta) mudaram desde a
+        // ultima leitura, sem reler; na validacao os bytes ainda sao relidos e uma textura velha e contada (tem de ser 0)
+        const uint64_t gen = texture_generation(k), pal = texture_palette(k) ? pvr_palette_generation() : 0;
+        if (e.handle && e.gen == gen && e.pal == pal && e.provider == repl) {
+#if BS_VALIDACAO
+            texture_source(k, raw_);
+            if (raw_ != e.raw) {
+                ++st.tex_stale;
+                if (st.tex_stale_error.empty())
+                    st.tex_stale_error = "render " + std::to_string(st.renders + 1) + ": TCW " + std::to_string(k.tcw);
+            }
+#endif
+            out = e.handle;
+            return true;
+        }
+        texture_source(k, raw_);
+#if BS_VALIDACAO
+        // negativo (BS_TEXTURE_CACHE_MUTACAO=antecipa): a geracao confirmada antes do envio, como antes da correcao
+        static const bool early = [] {
+            const char* v = std::getenv("BS_TEXTURE_CACHE_MUTACAO");
+            return v && std::string(v) == "antecipa";
+        }();
+        if (early) e.gen = gen, e.pal = pal;
+#endif
+        if (e.handle && e.raw == raw_ && e.provider == repl) {  // os bytes nao mudaram: a geracao nova vale para o handle
+            e.gen = gen, e.pal = pal;
             out = e.handle;
             return true;
         }
@@ -478,6 +504,10 @@ private:
         }
         const auto bytes = std::as_bytes(std::span<const uint32_t>(*texels));
         if (e.handle && (e.w != tw || e.h != th)) dev.destroy_texture(e.handle), e.handle = {};
+        if (g_fault == Fault::TextureUpload) {  // testes: o envio falha depois da leitura dos bytes
+            g_fault = Fault::None;
+            return false;
+        }
         if (e.handle) {
             if (!dev.update_texture(e.handle, bytes)) return false;
         } else {
@@ -488,7 +518,8 @@ private:
             e.handle = r.value();
         }
         e.w = tw, e.h = th, e.provider = repl;
-        e.raw = raw_;
+        // revisao Codex 20261029-013355: os bytes e as geracoes so valem depois do envio que deu certo
+        e.raw = raw_, e.gen = gen, e.pal = pal;
         ++st.tex_uploads;
         out = e.handle;
         return true;
@@ -893,16 +924,34 @@ bool convert_texture(const TextureKey& k, std::vector<uint32_t>& argb) {
     return false;  // YUV (o conversor saiu do produto no N8.5), bump e paleta de 4 bits com mipmap: sem conversao nativa
 }
 
-void texture_source(const TextureKey& k, std::vector<uint8_t>& raw) {
-    const uint32_t fmt = (k.tcw >> 27) & 7, base = (k.tcw & 0x1FFFFF) << 3;
+// N8.7 3b: o intervalo do caminho de 64 bits que a textura ocupa (o mesmo que texture_source le)
+void texture_span(const TextureKey& k, uint32_t& base, uint32_t& n) {
+    const uint32_t fmt = (k.tcw >> 27) & 7;
     const bool     mip = k.tcw >> 31, vq = (k.tcw >> 30) & 1, linear = (k.tcw >> 26) & 1, strideSel = (k.tcw >> 25) & 1;
     const uint32_t w = k.width, h = k.height;
-    const uint32_t bits = fmt == 5 ? 4 : (fmt == 6 ? 8 : 16);  // paleta de 4 e de 8 bits; o resto, 16
-    uint32_t       n;
+    const uint32_t bits = fmt == 5 ? 4 : (fmt == 6 ? 8 : 16);
+    base = (k.tcw & 0x1FFFFF) << 3;
     if (vq) n = 2048 + (mip ? pvr_mip_offset(fmt, true, w) : 0) + (w / 2) * (h / 2);
     else if (linear && strideSel && k.stride) n = 2 * k.stride * h;
     else if (mip) n = pvr_mip_offset(fmt, false, w) + bits * w * w / 8;
     else n = bits * w * h / 8;
+}
+
+uint64_t texture_generation(const TextureKey& k) {
+    uint32_t base = 0, n = 0;
+    texture_span(k, base, n);
+    return vram_generation64(base, n);
+}
+
+bool texture_palette(const TextureKey& k) {
+    const uint32_t fmt = (k.tcw >> 27) & 7;
+    return fmt == 5 || fmt == 6;
+}
+
+void texture_source(const TextureKey& k, std::vector<uint8_t>& raw) {
+    const uint32_t fmt  = (k.tcw >> 27) & 7;
+    uint32_t       base = 0, n = 0;
+    texture_span(k, base, n);  // N8.7 3b: o mesmo intervalo da geracao
     raw.resize(n);
     pvr_texture_read(base, raw.data(), n);
     if (fmt == 5 || fmt == 6) {  // o banco de paleta que o seletor escolhe
@@ -1110,6 +1159,11 @@ std::string summary() {
         out += b;
     }
     out += pvr_frame_state_summary();  // N8.7 3a (validacao): o FrameState em sombra contra o banco do legado
+    out += vram_heap_summary();        // N8.7 3b (validacao): a memoria das texturas em sombra contra o modelo da VRAM
+#if BS_VALIDACAO
+    out += "[texture-cache] texturas velhas pela geracao " + std::to_string(s.tex_stale) +
+           (s.tex_stale_error.empty() ? std::string() : "; primeira: " + s.tex_stale_error) + "\n";
+#endif
     if (s.hires_renders) {  // N7c: resolucao interna
         char r[300];
         std::snprintf(r, sizeof r,

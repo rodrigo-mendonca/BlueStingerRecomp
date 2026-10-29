@@ -27,7 +27,7 @@ add_library(bs_rt_nativo OBJECT
 # N8.7 (docs/N8-7-KAMUI.md, incremento 3a): no produto, os registradores graficos sao o estado do quadro nativo; na
 # validacao o banco do legado (pvr/pvr_regs.cpp) continua ativo e o FrameState roda em sombra
 if(NOT BS_VALIDACAO)
-  target_sources(bs_rt_nativo PRIVATE system/graphics_bus.cpp)
+  target_sources(bs_rt_nativo PRIVATE system/graphics_bus.cpp system/texture_heap_bus.cpp)  # 3b: a memoria das texturas
 endif()
 list(APPEND BS_RT_PAPEIS nativo)
 
@@ -41,7 +41,6 @@ add_library(bs_rt_simulacao OBJECT
   pvr/pvr_texture.cpp
   pvr/holly_intc.cpp
   pvr/holly_sb.cpp
-  pvr/vram.cpp
   pvr/ta.cpp
   input/input.cpp
   boot/native_boot.cpp
@@ -75,7 +74,8 @@ if(BS_VALIDACAO)
   # N8.7: a referencia grafica do caminho do TA: o rasterizador sobre o TA, os texels da VRAM e o conversor YUV
   add_library(bs_rt_validacao OBJECT debug/hw_probe.cpp debug/gfx_probe.cpp debug/cycle_noise.cpp debug/cri_diag.cpp
     pvr/pvr_render_ta.cpp pvr/pvr_texel.cpp pvr/ta_yuv.cpp
-    pvr/pvr_regs.cpp)  # N8.7 3a: o banco de registradores do legado, referencia do FrameState
+    pvr/pvr_regs.cpp   # N8.7 3a: o banco de registradores do legado, referencia do FrameState
+    pvr/vram.cpp)      # N8.7 3b: o modelo da VRAM do legado, referencia da memoria das texturas
   list(APPEND BS_RT_PAPEIS validacao)
 else()
   add_library(bs_rt_validacao OBJECT debug/validacao_stubs.cpp)

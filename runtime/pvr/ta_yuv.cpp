@@ -56,6 +56,7 @@ void yuvConvert() {
             const uint32_t off = tiles ? g_yuv.count * 512 + (row * 16 + col) * 2
                                        : ((my * 16 + row) * wMb * 16 + mx * 16 + col) * 2;
             std::memcpy(vram_data() + vram_offset64(g_yuv.base + off), &word, 4);
+            vram_touch(vram_offset64(g_yuv.base + off), 4);
         }
     }
     if (++g_yuv.count >= wMb * hMb) {

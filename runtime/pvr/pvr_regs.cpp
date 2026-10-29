@@ -284,6 +284,7 @@ uint32_t pvr_pal_entry(uint32_t index) {
     return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
+uint64_t pvr_palette_generation() { return g_shadow.palette_generation(); }  // N8.7 3b: a do FrameState em sombra
 uint64_t pvr_render_done_due() { return g_renderDue; }
 void     pvr_render_done_take() { g_renderDue = 0; }
 

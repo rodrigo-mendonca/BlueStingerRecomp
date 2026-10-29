@@ -186,6 +186,9 @@ bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     if (p & 0x01000000) {  // caminho direto de textura: VRAM pelo caminho de 64 bits
         const uint32_t off = p & 0x00FFFFE0;
         for (int i = 0; i < 8; ++i) std::memcpy(vram_data() + vram_offset64(off + 4 * i), &data[i], 4);
+        // N8.7 3b: as 8 palavras ficam 4 em cada banco, contiguas (16 bytes em cada)
+        vram_touch(vram_offset64(off), 16);
+        vram_touch(vram_offset64(off + 4), 16);
         return true;
     }
 #if !BS_VALIDACAO
