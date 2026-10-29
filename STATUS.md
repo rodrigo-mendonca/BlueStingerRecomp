@@ -3365,6 +3365,24 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
     `Fault::TextureUpload` e o negativo `antecipa`;
   - [BAIXA] faltava cobertura das fronteiras: os testes novos cobrem a volta, o caminho direto de textura do TA e a
     mudança só da paleta (`render_capture_texture_cache_sees_ta_path_and_palette_changes`).
+- **Incremento 3c (DisplayService):**
+  - `native/render/kamui/display_service` gera a imagem exibida a partir dos registradores de leitura do framebuffer e da
+    memória das texturas, com a mesma conta da saída anterior;
+  - no produto, `runtime/system/display_bus` serve `pvr/pvr_video.h` (com o gancho do VBlank) sobre o FrameState e o
+    TextureHeap, e o `pvr_video.cpp` sai do produto (portão);
+  - na validação, a saída do legado continua sendo a referência. O serviço nativo roda em sombra a cada quadro, sobre o
+    FrameState e a memória em sombra, e o quadro inteiro é comparado;
+  - negativo `BS_DISPLAY_MUTACAO=campo` (os campos trocados na sombra): 26 079 quadros acusados no combate. O ctest
+    `n87_display_mutacao` exige a falha do caso de sombra;
+  - equivalência: combate (54 344 quadros) e NEW GAME (40 000), 0 diferentes, com os outros comparadores em 0;
+  - referências com o produto do DisplayService (exe `e85706089cc447fa…`, `--paralelo 2`): N8.0 sem fog e volumes
+    **16/16**, só com as 179 exceções; N8.7 **16/16**, sem exceção;
+  - unitários: produto 322/0, validação 338/0; render 56/0 (4 casos novos do serviço de exibição); portão 35/47.
+- **Revisão Codex `20261029-071855`:** os 2 achados foram aceitos e corrigidos.
+  - [MÉDIA] o teste de sombra aceitava divergências acumuladas dos casos anteriores: agora exige 0 divergências no
+    processo, antes e depois dos quadros novos;
+  - [BAIXA] o negativo não estava ligado a nenhum teste: o ctest `n87_display_mutacao` roda o caso com a mutação, filtrado
+    pelo `BS_TEST_FILTRO` novo do executor de testes, e exige a falha.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

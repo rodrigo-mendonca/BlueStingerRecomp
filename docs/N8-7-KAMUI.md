@@ -425,3 +425,22 @@ O que ainda não for medido continua aceito com a semântica atual e coberto pel
   - negativos `BS_TEXTURE_HEAP_MUTACAO=marca` e `BS_TEXTURE_CACHE_MUTACAO=antecipa`.
 - **Equivalência:** combate (4 106 438 páginas) e NEW GAME (3 020 507), 0 diferentes e 0 texturas velhas; referências
   com o produto (`3f7e74e08f6d055f…`): N8.0 sem fog e volumes 16/16 (só as 179 exceções), N8.7 16/16.
+
+## 15. Incremento 3c: DisplayService (2026-10-29)
+
+- **Nativo:** `native/render/kamui/display_service` gera a imagem exibida (`scanout`) a partir dos seis registradores
+  de leitura do framebuffer (`DisplayRegs`: FB_R_CTRL, FB_R_SOF1/2, FB_R_SIZE, SPG_CONTROL e VO_CONTROL) e da memória
+  das texturas. A conta é a mesma da saída anterior: formatos 0555, 565, 888 e 0888, duplicação de linha, os dois campos
+  intercalados com o módulo, preto com a leitura desligada ou em blank, e cada byte com a volta no fim dos 8 MB.
+- **Produto:** `runtime/system/display_bus` serve `pvr/pvr_video.h` sobre o FrameState e o TextureHeap, junto com o
+  gancho do VBlank (chamado pelo `holly_intc` nos mesmos pontos). O `pvr_video.cpp` sai do produto (portão).
+- **Validação:** o `pvr_video.cpp` continua sendo a referência. A cada quadro, o serviço nativo roda em sombra sobre o
+  FrameState em sombra (`pvr_shadow_reg`) e a memória em sombra (`vram_shadow_data`), e o quadro inteiro é comparado
+  (`[display]`). O negativo `BS_DISPLAY_MUTACAO=campo` troca os dois campos na sombra. O ctest `n87_display_mutacao`
+  exige que o caso de sombra falhe com ele.
+- **Equivalência:**
+  - combate: 54 344 quadros, 0 diferentes;
+  - NEW GAME: 40 000 quadros, 0 diferentes;
+  - com `campo`, 26 079 quadros acusados no combate (o primeiro no quadro 54);
+  - os outros comparadores continuam em 0: ListSink, FrameState, TextureHeap e texturas velhas;
+  - referências com o produto (`e85706089cc447fa…`): N8.0 sem fog e volumes 16/16 (só as 179 exceções), N8.7 16/16.
