@@ -37,6 +37,7 @@
 #include "cpu/sh4_threads.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/vram.h"
+#include "system/graphics_ports.h"
 
 #include <chrono>
 #include <cstdio>
@@ -260,7 +261,7 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
         actual.save(save);
         std::filesystem::path v = save, r = save;
         std::ofstream(v.replace_extension(".vram"), std::ios::binary)
-            .write(reinterpret_cast<const char*>(vram_data()), kVramSize);
+            .write(reinterpret_cast<const char*>(texture_memory()), kVramSize);
         std::vector<uint32_t> bank(2048);
         pvr_regs_dump(&c, bank.data());
         std::ofstream(r.replace_extension(".pvr"), std::ios::binary)
@@ -287,7 +288,7 @@ int run(const char* mode, uint32_t func, const char* entryPath, const char* outP
     if (std::filesystem::exists(vramPath)) {
         std::vector<uint8_t> ev(kVramSize);
         std::ifstream(vramPath, std::ios::binary).read(reinterpret_cast<char*>(ev.data()), ev.size());
-        const std::vector<uint8_t> av(vram_data(), vram_data() + kVramSize);
+        const std::vector<uint8_t> av(texture_memory(), texture_memory() + kVramSize);
         printRanges("vram32", 0x05000000, ev, av);
         same = same && ev == av;
     } else {

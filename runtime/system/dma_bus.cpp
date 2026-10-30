@@ -9,6 +9,7 @@
 #include "cpu/sh4_runtime.h"
 #include "pvr/ta.h"
 #include "render/kamui/channel_dma.h"
+#include "system/graphics_ports.h"
 
 namespace bs {
 namespace {
@@ -19,7 +20,9 @@ ChannelDma g_dma;
 
 uint32_t read(void* ctx, uint32_t a) { return sh4_read32(static_cast<Sh4Context*>(ctx), a); }
 
-bool sink(void* ctx, uint32_t dest, const uint32_t* blk) { return ta_fifo_write(static_cast<Sh4Context*>(ctx), dest, blk); }
+bool sink(void* ctx, uint32_t dest, const uint32_t* blk) {
+    return area4_write(static_cast<Sh4Context*>(ctx), dest, blk);
+}
 
 } // namespace
 
@@ -37,7 +40,7 @@ bool sh4_dmac_write(uint32_t a, unsigned size, uint32_t v) {
     return true;
 }
 
-bool sh4_dmac_ch2_start(Sh4Context* c, uint32_t& c2dstat, uint32_t& c2dlen, uint32_t& c2dst) {
+bool channel2_start(Sh4Context* c, uint32_t& c2dstat, uint32_t& c2dlen, uint32_t& c2dst) {
     ChannelDma::SbRegs sb{c2dstat, c2dlen, c2dst};
     const uint32_t     dest = c2dstat;
     switch (g_dma.ch2_start(sb, read, sink, c)) {

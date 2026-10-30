@@ -190,6 +190,23 @@ tem("PvrCaptureSink" ha)
 if(NOT VALIDACAO AND ha)
   list(APPEND bad "simbolo PvrCaptureSink (os retornos do decodificador do legado) no produto")
 endif()
+# N8.7 5c: os nomes do legado no caminho grafico (TA, rasterizador de referencia, VRAM, controlador de interrupcoes,
+# DMAC) so na validacao; no produto, as entradas de system/graphics_ports.h servidas pelos servicos nativos (na
+# validacao elas repassam ao legado em linha, e o build de depuracao pode emitir a copia: nao se exige a ausencia)
+foreach(sym "?ta_fifo_write@bs@@" "?pvr_render@bs@@" "?vram_data@bs@@" "?holly_intc_raise@bs@@"
+            "?sh4_dmac_ch2_start@bs@@")
+  tem("${sym}" ha)
+  if(NOT VALIDACAO AND ha)
+    list(APPEND bad "simbolo ${sym} (nome do legado) no produto")
+  endif()
+endforeach()
+foreach(sym "?area4_write@bs@@" "?render_pass_run@bs@@" "?texture_memory@bs@@" "?event_status_raise@bs@@"
+            "?channel2_start@bs@@")
+  tem("${sym}" ha)
+  if(NOT VALIDACAO AND NOT ha)
+    list(APPEND bad "simbolo ${sym} (entrada nativa do caminho grafico) ausente do produto")
+  endif()
+endforeach()
 # N8.7 5b: no produto, o system block nativo (system/system_block_bus); o modelo do legado (holly_sb) so na validacao
 tem(":holly_sb.cpp.obj" ha)
 if(NOT VALIDACAO AND ha)

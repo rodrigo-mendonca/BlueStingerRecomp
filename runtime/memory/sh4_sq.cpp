@@ -14,6 +14,7 @@
 #include "cpu/sh4_mem.h"
 #include "cpu/sh4_runtime.h"
 #include "pvr/ta.h"
+#include "system/graphics_ports.h"
 
 namespace bs {
 namespace {
@@ -76,7 +77,7 @@ void sh4_sq_flush(Sh4Context* c, uint32_t addr) {
         return;
     }
     if (g_gfx_probe && ((target & 0x1FFFFFFF) >> 26) == 4) gfx_probe_ta(c, target, GfxPath::StoreQueue);
-    if (ta_fifo_write(c, target, q)) return;  // area 4: TA e caminho direto de textura
+    if (area4_write(c, target, q)) return;  // area 4: TA e caminho direto de textura
     sh4_fatal(c, "store queue para destino ainda nao implementado", c->pc, target);
 }
 

@@ -6,6 +6,7 @@
 #include "pvr/pvr_regs.h"
 #include "pvr/vram.h"
 #include "render/kamui/display_service.h"
+#include "system/graphics_ports.h"
 
 namespace bs {
 namespace {
@@ -17,7 +18,7 @@ void*         g_hookArg = nullptr;
 
 void pvr_video_frame(std::vector<uint32_t>& argb, uint32_t& width, uint32_t& height) {
     namespace k = native::render::kamui;
-    k::scanout(k::DisplayRegs::from([](uint32_t a) { return pvr_reg(a); }), vram_data(), argb, width, height);
+    k::scanout(k::DisplayRegs::from([](uint32_t a) { return pvr_reg(a); }), texture_memory(), argb, width, height);
 }
 
 std::string pvr_display_summary() { return {}; }  // a comparacao com a saida do legado so existe na validacao

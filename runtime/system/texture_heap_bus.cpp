@@ -5,6 +5,7 @@
 
 #include "cpu/sh4_runtime.h"
 #include "render/kamui/texture_heap.h"
+#include "system/graphics_ports.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -27,7 +28,7 @@ int64_t locate(uint32_t a) {
 
 } // namespace
 
-uint8_t* vram_data() { return g_heap.data(); }
+uint8_t* texture_memory() { return g_heap.data(); }
 void     vram_reset() { g_heap.reset(); }
 void     vram_touch(uint32_t off, uint32_t n) { g_heap.touch(off, n); }
 uint64_t vram_generation64(uint32_t off64, uint32_t n) { return g_heap.generation64(off64, n); }

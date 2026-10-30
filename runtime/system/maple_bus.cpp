@@ -7,6 +7,7 @@
 #include "debug/intc_trace.h"
 #include "input/input.h"
 #include "pvr/holly_intc.h"
+#include "system/graphics_ports.h"
 
 #include <array>
 #include <cstdio>
@@ -107,7 +108,7 @@ bool nativeWrite(Sh4Context* c, uint32_t a, uint32_t v) {
     if (p == kMdtsel && (v & 1)) removed(c, "disparo por VBlank (MDTSEL)", v);
     if (p == kMdst) {
         if (g_due && time_now(c) >= g_due) {  // fim anterior ainda nao visto pelo controlador
-            holly_intc_raise(kIstMapleDma);
+            event_status_raise(kIstMapleDma);
             g_due = 0;
             time_provider().maple_cancel();
         }

@@ -3,6 +3,7 @@
 
 #include "cpu/sh4_mem.h"
 #include "pvr/vram.h"
+#include "system/graphics_ports.h"
 
 #include <vector>
 
@@ -26,7 +27,7 @@ BS_TEST(vram_32bit_path_is_linear_with_mirrors) {
     VramFixture f;
     sh4_write32(&f.c, 0xA5000000, 0x11223344);
     sh4_write32(&f.c, 0xA57FFFFC, 0x55667788);
-    BS_CHECK(vram_data()[0] == 0x44 && vram_data()[kVramSize - 1] == 0x55);
+    BS_CHECK(texture_memory()[0] == 0x44 && texture_memory()[kVramSize - 1] == 0x55);
     BS_CHECK(sh4_read32(&f.c, 0x05000000) == 0x11223344);  // P0
     BS_CHECK(sh4_read32(&f.c, 0x85800000) == 0x11223344);  // espelho de 8 MB dentro da janela
     BS_CHECK(sh4_read32(&f.c, 0xA7000000) == 0x11223344);  // espelho 0x07

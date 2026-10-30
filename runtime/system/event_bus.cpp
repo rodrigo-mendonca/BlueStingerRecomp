@@ -13,6 +13,7 @@
 #include "pvr/pvr_video.h"
 #include "render/kamui/event_status.h"
 #include "system/maple_bus.h"
+#include "system/graphics_ports.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -65,7 +66,7 @@ uint64_t holly_vblank_fused() { return g_bank.fused(); }
 uint64_t holly_event_count() { return g_bank.events(); }
 std::string holly_event_status_summary() { return {}; }  // a comparacao com o controlador do legado so na validacao
 
-void holly_intc_raise(uint32_t bits) {
+void event_status_raise(uint32_t bits) {
     const uint32_t before = rg(EventStatus::kIstNrm);
     g_bank.raise(bits);
     sh4_irq_wakeup();  // N8.1, cadencia B (no tempo estavel nao faz nada)

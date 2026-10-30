@@ -15,6 +15,7 @@
 #include "pvr/holly_intc.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_video.h"
+#include "system/graphics_ports.h"
 
 #include <string>
 #include <vector>
@@ -119,7 +120,7 @@ BS_TEST(intc_native_event_status_shadow_agrees) {
     f.c.pc         = 0x8C010000;
     f.c.ret_expect = 0x8C000000;
     sh4_irq_check(&f.c);                                // VBlank-In vencido, entregue e reconhecido pelo tratador
-    holly_intc_raise((1u << 19) | (1u << 8));           // fim do DMA do canal 2 + fim do modificador opaco
+    event_status_raise((1u << 19) | (1u << 8));           // fim do DMA do canal 2 + fim do modificador opaco
     sh4_write32(&f.c, 0xA05F6920, 1u << 19);            // IML4NRM
     BS_CHECK(holly_irl_level(f.c.cycles) == 4);
     sh4_write32(&f.c, 0xA05F6900, (1u << 19) | (1u << 8));  // o tratador do Kamui limpa os dois
@@ -185,7 +186,7 @@ BS_TEST(n8_cadence_b_wakeup_requests_service_only_when_deliverable) {
     sh4_irq_bind(&f.c);
     sh4_set_sr(f.c, 0x400000F0);  // IMASK 15: mascarado pelo SR
     f.c.next_event = ~0ull;
-    holly_intc_raise(kIstVblankIn);
+    event_status_raise(kIstVblankIn);
     BS_CHECK(f.c.next_event == ~0ull);  // nada entregavel: nenhum pedido
     sh4_write32(&f.c, 0xA05F6930, 0);      // IML6NRM = 0
     sh4_set_sr(f.c, 0x40000000);           // IMASK 0 (no jogo o ldc sr passa pelo BS_IRQ_CHECK)
@@ -194,7 +195,7 @@ BS_TEST(n8_cadence_b_wakeup_requests_service_only_when_deliverable) {
     BS_CHECK(f.c.next_event == 0);
     f.c.next_event = ~0ull;
     sh4_write32(&f.c, 0xA05F6900, kIstVblankIn);  // reconhece
-    holly_intc_raise(kIstVblankIn);               // fonte nova ja entregavel
+    event_status_raise(kIstVblankIn);               // fonte nova ja entregavel
     BS_CHECK(f.c.next_event == 0);
     f.c.next_event = ~0ull;
     sh4_request_service();
@@ -206,7 +207,7 @@ BS_TEST(n8_cadence_b_wakeup_requests_service_only_when_deliverable) {
     // reset: o contexto da sessao anterior nao e mais escrito
     sh4_intc_reset();
     f.c.next_event = ~0ull;
-    holly_intc_raise(kIstVblankIn);
+    event_status_raise(kIstVblankIn);
     sh4_request_service();
     BS_CHECK(f.c.next_event == ~0ull);
     time_set_provider(nullptr);
@@ -251,7 +252,7 @@ BS_TEST(n87_event_glue_orders_bits_counts_and_the_vblank_hook) {
     holly_intc_sync(30);  // nada venceu: nao conta
     holly_intc_sync(25);  // instante anterior: ignorado
     BS_CHECK(holly_event_count() == e0 + 2 && g_atHook.calls == 2 && p.next == 3);
-    holly_intc_raise(1u << 19);
+    event_status_raise(1u << 19);
     uint32_t ist, i6, i4, i2;
     holly_intc_peek(ist, i6, i4, i2);
     BS_CHECK(ist == (kIstVblankIn | kIstVblankOut | 0x7u | (1u << 12) | (1u << 19)) && holly_event_count() == e0 + 3);
@@ -266,7 +267,7 @@ BS_TEST(n8_cadence_b_stable_time_keeps_the_cycle_quantum) {
     sh4_irq_bind(&f.c);
     sh4_set_sr(f.c, 0x40000000);
     f.c.next_event = ~0ull;
-    holly_intc_raise(kIstVblankIn);
+    event_status_raise(kIstVblankIn);
     sh4_request_service();
     BS_CHECK(f.c.next_event == ~0ull);  // no estavel nada pede atendimento: o quantum continua
     f.c.next_poll = 0;
@@ -457,7 +458,7 @@ Seen irqOnce(bool logical) {
     sh4_set_sr(f.c, 0x40000000);
     f.c.r[0] = 0x11111111, f.c.rbank[0] = 0x22222222, f.c.r[15] = 0x8C00F3A0, f.c.pc = 0x8C08BBB4;
     f.c.ret_expect = 0x8C000000;
-    holly_intc_raise(kIstVblankIn);  // a mesma fonte nos dois (o espiao nao agenda VBlank)
+    event_status_raise(kIstVblankIn);  // a mesma fonte nos dois (o espiao nao agenda VBlank)
     sh4_irq_check(&f.c);
     const Seen s = g_seen;
     sh4_set_sr(f.c, 0x40000060);  // IMASK 6: nada
@@ -518,8 +519,8 @@ BS_TEST(n8_irq_bridge_hands_over_inside_a_handler) {
     sh4_set_function_table(kTableOut, 1);
     g_intevts.clear();
     sh4_write32(&f.c, 0xA05F6920, 1u << 12);  // IML4NRM = fim do DMA do Maple
-    holly_intc_raise(kIstVblankIn);
-    holly_intc_raise(1u << 12);
+    event_status_raise(kIstVblankIn);
+    event_status_raise(1u << 12);
     sh4_set_sr(f.c, 0x40000000);
     f.c.pc = 0x8C08BBB4, f.c.ret_expect = 0x8C000000;
     sh4_irq_check(&f.c);

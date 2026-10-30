@@ -29,6 +29,7 @@
 #include "cpu/sh4_runtime.h"
 #include "input/input.h"
 #include "pvr/holly_intc.h"
+#include "system/graphics_ports.h"
 
 #include <array>
 #include <cstdio>
@@ -265,7 +266,7 @@ bool maple_write(Sh4Context* c, uint32_t a, uint32_t v) {
     }
     if (p == kMdst) {
         if (g_due && time_now(c) >= g_due) {  // fim anterior ainda nao visto pelo controlador
-            holly_intc_raise(kIstMapleDma);
+            event_status_raise(kIstMapleDma);
             g_due = 0;
             time_provider().maple_cancel();
         }

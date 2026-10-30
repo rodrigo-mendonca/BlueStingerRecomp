@@ -9,6 +9,7 @@
 #include "pvr/vram.h"
 #include "render/vulkan/vk_device.h"
 #include "render_capture.h"
+#include "system/graphics_ports.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -54,7 +55,7 @@ struct CaptureScene {
         reg(0x088, fb(0.0001f));
         reg(0x080, 7);
         const uint32_t plane[3 + 3 * 4] = {0, 0, 0, 0, 0, 1, 0xFF102030, 32, 0, 1, 0xFF102030, 0, 32, 1, 0xFF102030};
-        std::memcpy(vram_data(), plane, sizeof plane);
+        std::memcpy(texture_memory(), plane, sizeof plane);
         reg(0x144, 0x80000000);
         rc::install(mode);
         before = rc::stats();
@@ -65,7 +66,7 @@ struct CaptureScene {
     void ta(std::initializer_list<uint32_t> words) {
         uint32_t d[8] = {};
         std::copy(words.begin(), words.end(), d);
-        BS_CHECK(ta_fifo_write(&c, 0x10000000, d));
+        BS_CHECK(area4_write(&c, 0x10000000, d));
     }
     void vtx(float x, float y, float z, uint32_t w4, uint32_t w5, uint32_t w6, bool end = false) {
         ta({0xE0000000u | (end ? 1u << 28 : 0), fb(x), fb(y), fb(z), w4, w5, w6, 0});
@@ -89,8 +90,8 @@ constexpr uint32_t kTexA = 0x400000, kTexB = 0x410000;
 void loadTexture(uint32_t base, uint16_t seed) {  // 8x8 RGB565 twiddled
     for (uint32_t i = 0; i < 64; ++i) {
         const uint16_t v = uint16_t(seed + i * 0x0841);
-        std::memcpy(vram_data() + vram_offset64(base + 2 * i), &v, 2);
-        vram_touch(vram_offset64(base + 2 * i), 2);  // N8.7 3b: quem escreve por vram_data() marca a pagina
+        std::memcpy(texture_memory() + vram_offset64(base + 2 * i), &v, 2);
+        vram_touch(vram_offset64(base + 2 * i), 2);  // N8.7 3b: quem escreve por texture_memory() marca a pagina
     }
 }
 
@@ -116,7 +117,7 @@ BS_TEST(render_capture_texture_cache_sees_a_rewritten_texture) {
     };
     auto px = [] {
         uint16_t v;
-        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        std::memcpy(&v, texture_memory() + 0x100000 + 5 * 64 + 5 * 2, 2);
         return v;
     };
     fill(0xF800);
@@ -145,7 +146,7 @@ BS_TEST(render_capture_install_swaps_the_connected_renderer) {
     };
     auto px = [] {
         uint16_t v;
-        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        std::memcpy(&v, texture_memory() + 0x100000 + 5 * 64 + 5 * 2, 2);
         return v;
     };
     draw();
@@ -155,7 +156,7 @@ BS_TEST(render_capture_install_swaps_the_connected_renderer) {
     BS_CHECK(rc::last_frame().cl.draws.size() == 1);
     rc::install(rc::Mode::Software);
     BS_CHECK(rc::stats().renders == 0 && rc::stats().draws == 0);
-    std::memset(vram_data() + 0x100000, 0, 64 * 32);
+    std::memset(texture_memory() + 0x100000, 0, 64 * 32);
     draw();
     BS_CHECK(px() == 0xF800);
     BS_CHECK(rc::stats().renders == 1 && rc::stats().draws == 1 && rc::stats().soft_frames == 1);
@@ -178,14 +179,14 @@ BS_TEST(render_capture_texture_cache_sees_ta_path_and_palette_changes) {
     };
     auto px = [] {
         uint16_t v;
-        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        std::memcpy(&v, texture_memory() + 0x100000 + 5 * 64 + 5 * 2, 2);
         return v;
     };
     auto ta_fill = [&](uint16_t c565) {  // 128 bytes (8x8 x 16 bits) em blocos de 32 pelo caminho direto de textura
         for (uint32_t off = 0; off < 128; off += 32) {
             uint32_t d[8];
             for (uint32_t& w : d) w = uint32_t(c565) | (uint32_t(c565) << 16);
-            BS_CHECK(ta_fifo_write(&s.c, 0x11000000 + kTexA + off, d));
+            BS_CHECK(area4_write(&s.c, 0x11000000 + kTexA + off, d));
         }
     };
     const uint32_t tcw565 = (1u << 27) | (kTexA >> 3);
@@ -371,7 +372,7 @@ BS_TEST(render_capture_cull_names_follow_the_rasterizer) {
         const rc::Frame& f = rc::last_frame();
         BS_CHECK(f.cl.draws.size() == 1);
         uint16_t px;
-        std::memcpy(&px, vram_data() + 0x100000 + 8 * 64 + 8 * 2, 2);
+        std::memcpy(&px, texture_memory() + 0x100000 + 8 * 64 + 8 * 2, 2);
         const bool drawn = px == 0xF800;
         BS_CHECK(f.cl.draws[0].state.cull == (cull == 2 ? nr::Cull::CounterClockwise : nr::Cull::Clockwise));
         BS_CHECK(drawn == (cull == 2));  // horario: o modo 2 desenha, o 3 descarta
@@ -458,7 +459,7 @@ BS_TEST(render_capture_native_vulkan_and_hd_replacement) {
     auto frame = [](CaptureScene& s) {
         for (uint32_t i = 0; i < 64; ++i) {  // 8x8 RGB565 vermelho
             const uint16_t red = 0xF800;
-            std::memcpy(vram_data() + vram_offset64(kTexA + 2 * i), &red, 2);
+            std::memcpy(texture_memory() + vram_offset64(kTexA + 2 * i), &red, 2);
         }
         s.ta({0x8000000Au, kIspAlways, kTspOpaque, (1u << 27) | (kTexA >> 3)});  // decal: a cor e o texel
         s.vtx(0, 0, 1, fb(0), fb(0), 0xFFFFFFFF);
@@ -468,7 +469,7 @@ BS_TEST(render_capture_native_vulkan_and_hd_replacement) {
         s.endList();
         s.render();
         uint16_t px;
-        std::memcpy(&px, vram_data() + 0x100000 + 16 * 64 + 16 * 2, 2);
+        std::memcpy(&px, texture_memory() + 0x100000 + 16 * 64 + 16 * 2, 2);
         return px;
     };
     Provider p;
@@ -676,7 +677,7 @@ BS_TEST(render_capture_vulkan_failures_fall_back_to_software) {
     auto textured = [](CaptureScene& s) {
         for (uint32_t i = 0; i < 64; ++i) {
             const uint16_t red = 0xF800;
-            std::memcpy(vram_data() + vram_offset64(kTexA + 2 * i), &red, 2);
+            std::memcpy(texture_memory() + vram_offset64(kTexA + 2 * i), &red, 2);
         }
         s.ta({0x8000000Au, kIspAlways, kTspOpaque, (1u << 27) | (kTexA >> 3)});
         s.vtx(0, 0, 1, fb(0), fb(0), 0xFFFFFFFF);
@@ -686,7 +687,7 @@ BS_TEST(render_capture_vulkan_failures_fall_back_to_software) {
         s.endList();
         s.render();
         uint16_t px;
-        std::memcpy(&px, vram_data() + 0x100000 + 16 * 64 + 16 * 2, 2);
+        std::memcpy(&px, texture_memory() + 0x100000 + 16 * 64 + 16 * 2, 2);
         return px;
     };
     {
@@ -839,7 +840,7 @@ BS_TEST(render_capture_failed_texture_upload_does_not_confirm_the_generation) {
     };
     auto px = [] {
         uint16_t v;
-        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        std::memcpy(&v, texture_memory() + 0x100000 + 5 * 64 + 5 * 2, 2);
         return v;
     };
     fill(0xF800);

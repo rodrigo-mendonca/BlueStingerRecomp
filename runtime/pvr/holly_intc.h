@@ -11,8 +11,11 @@ namespace bs {
 constexpr uint32_t kIstVblankIn  = 1u << 3;
 constexpr uint32_t kIstVblankOut = 1u << 4;
 
-// Acende bits de ISTNRM (eventos do PVR: fim de lista do TA, fim de render).
+#if BS_VALIDACAO
+// Acende bits de ISTNRM (eventos do PVR: fim de lista do TA, fim de render). N8.7 5c: so a validacao; nos dois builds,
+// event_status_raise (system/graphics_ports.h).
 void holly_intc_raise(uint32_t bits);
+#endif
 
 void holly_intc_reset(uint64_t cycles = 0);
 

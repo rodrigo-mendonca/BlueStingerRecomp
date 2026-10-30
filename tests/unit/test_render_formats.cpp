@@ -14,6 +14,7 @@
 #include "pvr/vram.h"
 #include "render/texture_convert.h"
 #include "render_capture.h"
+#include "system/graphics_ports.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -61,7 +62,7 @@ struct Scene {
         reg(0x088, fb(0.0001f));
         reg(0x080, 7);  // HALF_OFFSET: amostras no centro (valor escrito pelo jogo)
         const uint32_t plane[3 + 3 * 4] = {0, 0, 0, 0, 0, 1, bg, 32, 0, 1, bg, 0, 32, 1, bg};
-        std::memcpy(vram_data(), plane, sizeof plane);
+        std::memcpy(texture_memory(), plane, sizeof plane);
         reg(0x144, 0x80000000);  // TA_LIST_INIT
 #if !BS_VALIDACAO
         // N8.7: no produto, o render vai pela IR (o renderizador em software sobre a captura)
@@ -74,7 +75,7 @@ struct Scene {
     void ta(std::initializer_list<uint32_t> words) {
         uint32_t d[8] = {};
         std::copy(words.begin(), words.end(), d);
-        BS_CHECK(ta_fifo_write(&c, 0x10000000, d));
+        BS_CHECK(area4_write(&c, 0x10000000, d));
     }
     void global(uint32_t pcw, uint32_t isp, uint32_t tsp, uint32_t tcw = 0) { ta({pcw, isp, tsp, tcw}); }
     // vertice de 32 bytes: x, y, z, w4..w7 (u, v, cor base, offset conforme o tipo)
@@ -87,12 +88,12 @@ struct Scene {
 
     uint16_t px16(int x, int y) const {
         uint16_t v;
-        std::memcpy(&v, vram_data() + kFb + y * stride + x * 2, 2);
+        std::memcpy(&v, texture_memory() + kFb + y * stride + x * 2, 2);
         return v;
     }
     uint32_t px32(int x, int y) const {
         uint32_t v;
-        std::memcpy(&v, vram_data() + kFb + y * stride + x * 4, 4);
+        std::memcpy(&v, texture_memory() + kFb + y * stride + x * 4, 4);
         return v;
     }
 };
@@ -108,7 +109,7 @@ void loadTexture() {
         for (uint32_t x = 0; x < 8; ++x) {
             const uint16_t v = x < 4 ? 0xF800 : 0x07E0;
             const uint32_t i = bs::native::render::twiddle_index(x, y, 8, 8);
-            std::memcpy(vram_data() + vram_offset64(kTex + 2 * i), &v, 2);
+            std::memcpy(texture_memory() + vram_offset64(kTex + 2 * i), &v, 2);
         }
 }
 
@@ -132,7 +133,7 @@ BS_TEST(fb_format_888_0888_8888) {
     {
         Scene s(0x00804020, 4, 3, 96);  // 888: 3 bytes por pixel, B G R
         s.render();
-        const uint8_t* p = vram_data() + kFb + 2 * 96 + 7 * 3;
+        const uint8_t* p = texture_memory() + kFb + 2 * 96 + 7 * 3;
         BS_CHECK(p[0] == 0x20 && p[1] == 0x40 && p[2] == 0x80);
     }
     { Scene s(0x00804020, 5 | (0x5Au << 8), 4); s.render(); BS_CHECK(s.px32(7, 2) == 0x5A804020); }  // 0888: K no byte alto
@@ -277,12 +278,12 @@ BS_TEST(render_texture_point_sampling_and_uv16) {
 BS_TEST(render_vram_write_respects_clip_and_stride) {
     Scene s(0x00FF0000, 1, 2, 128);  // linha de 128 bytes (maior que a largura)
     s.reg(0x068, 15u << 16);         // FB_X_CLIP 0..15
-    for (uint32_t i = 0; i < 32 * 128; i += 2) std::memcpy(vram_data() + kFb + i, "\xAA\xAA", 2);
+    for (uint32_t i = 0; i < 32 * 128; i += 2) std::memcpy(texture_memory() + kFb + i, "\xAA\xAA", 2);
     s.render();
     BS_CHECK(s.px16(0, 0) == 0xF800 && s.px16(15, 1) == 0xF800);
     BS_CHECK(s.px16(16, 0) == 0xAAAA && s.px16(31, 1) == 0xAAAA);  // fora do clip
     uint16_t pad;
-    std::memcpy(&pad, vram_data() + kFb + 1 * 128 + 40 * 2, 2);   // alem da largura na linha
+    std::memcpy(&pad, texture_memory() + kFb + 1 * 128 + 40 * 2, 2);   // alem da largura na linha
     BS_CHECK(pad == 0xAAAA);
 }
 
@@ -342,7 +343,7 @@ uint64_t compositeHash() {
     s.vtx(12, 30, 2, fb(0), fb(1), 0x80FFFFFF, 0, true);
     s.endList();
     s.render();
-    return fnv1a(vram_data() + kFb, 32 * 64);
+    return fnv1a(texture_memory() + kFb, 32 * 64);
 }
 } // namespace
 
@@ -361,10 +362,10 @@ BS_TEST(render_composite_scene_hash) {
     s.vtx(12, 30, 2, fb(0), fb(1), 0x80FFFFFF, 0, true);
     s.endList();
     s.render();
-    const uint64_t h = fnv1a(vram_data() + kFb, 32 * 64);
+    const uint64_t h = fnv1a(texture_memory() + kFb, 32 * 64);
     if (const char* dump = std::getenv("BS_RENDER_DUMP")) {  // RGB565 32x32 cru, para inspecao
         if (FILE* f = std::fopen(dump, "wb")) {
-            std::fwrite(vram_data() + kFb, 1, 32 * 64, f);
+            std::fwrite(texture_memory() + kFb, 1, 32 * 64, f);
             std::fclose(f);
         }
     }
@@ -378,7 +379,7 @@ namespace {
 
 // Textura 8x8 twiddled em kTex com o mesmo texel de 16 bits.
 void fillTexture16(uint16_t v) {
-    for (uint32_t i = 0; i < 64; ++i) std::memcpy(vram_data() + vram_offset64(kTex + 2 * i), &v, 2);
+    for (uint32_t i = 0; i < 64; ++i) std::memcpy(texture_memory() + vram_offset64(kTex + 2 * i), &v, 2);
 }
 
 // Quadrado de tela inteira texturizado (strip), cor base/offset empacotadas, U de u0..u1.
@@ -429,7 +430,8 @@ BS_TEST(render_texture_bilinear_and_point) {
         for (uint32_t y = 0; y < 8; ++y)
             for (uint32_t x = 0; x < 8; ++x) {
                 const uint16_t v = x < 4 ? 0x0000 : 0xFFFF;
-                std::memcpy(vram_data() + vram_offset64(kTex + 2 * bs::native::render::twiddle_index(x, y, 8, 8)), &v, 2);
+                const uint32_t t = bs::native::render::twiddle_index(x, y, 8, 8);
+                std::memcpy(texture_memory() + vram_offset64(kTex + 2 * t), &v, 2);
             }
         fullQuad(s, 0x8000000Au, kIspAlways, kTspOpaque | (filter << 13), kTcw565, 0xFFFFFFFF, 0, -0.015625f,
                  0.984375f);
@@ -460,7 +462,7 @@ BS_TEST(render_texture_palette_8bpp) {
     s.reg(0x108, 1);                // PAL_RAM_CTRL: 565
     s.reg(0x1000 + 4 * 261, 0x001F);
     s.reg(0x1000 + 4 * 5, 0xF800);  // bloco 0 (seletor ignorado daria vermelho)
-    for (uint32_t i = 0; i < 64; ++i) vram_data()[vram_offset64(kTex + i)] = 5;
+    for (uint32_t i = 0; i < 64; ++i) texture_memory()[vram_offset64(kTex + i)] = 5;
     fullQuad(s, 0x8000000Au, kIspAlways, kTspOpaque, (6u << 27) | (0x10u << 21) | (kTex >> 3), 0xFFFFFFFF, 0);
     s.render();
     BS_CHECK(s.px16(10, 10) == 0x001F);
@@ -473,12 +475,12 @@ BS_TEST(render_texture_linear_stride) {
     s.reg(0x0E4, 1);
     for (uint32_t i = 0; i < 32 * 8; ++i) {
         const uint16_t v = 0x001F;
-        std::memcpy(vram_data() + vram_offset64(kTex + 2 * i), &v, 2);
+        std::memcpy(texture_memory() + vram_offset64(kTex + 2 * i), &v, 2);
     }
     for (uint32_t y = 0; y < 8; ++y)
         for (uint32_t x = 0; x < 8; ++x) {
             const uint16_t v = x < 4 ? 0xF800 : 0x07E0;
-            std::memcpy(vram_data() + vram_offset64(kTex + 2 * (y * 32 + x)), &v, 2);
+            std::memcpy(texture_memory() + vram_offset64(kTex + 2 * (y * 32 + x)), &v, 2);
         }
     fullQuad(s, 0x8000000Au, kIspAlways, kTspOpaque, (1u << 27) | (1u << 26) | (1u << 25) | (kTex >> 3), 0xFFFFFFFF,
              0);
@@ -855,7 +857,7 @@ BS_TEST(render_native_pass_shadow_agrees) {
         s.render();
         if (fmt == 1) {  // o mesmo quadro de novo, com o fundo texturizado (ISP bit 25, UV de 32 bits)
             const uint32_t isp = 1u << 25;
-            std::memcpy(vram_data(), &isp, 4);
+            std::memcpy(texture_memory(), &isp, 4);
             s.reg(0x144, 0x80000000);  // TA_LIST_INIT
             s.global(0x80000000u, kIspAlways, kTspOpaque);
             for (auto [x, y] : {std::pair{0.f, 0.f}, {32.f, 0.f}, {0.f, 32.f}})

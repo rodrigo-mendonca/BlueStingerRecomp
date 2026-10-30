@@ -10,6 +10,7 @@
 #include "pvr/holly_intc.h"
 #include "render/kamui/system_block.h"
 #include "system/maple_bus.h"
+#include "system/graphics_ports.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -108,9 +109,9 @@ bool holly_sb_write(Sh4Context* c, uint32_t a, unsigned size, uint32_t v) {
         std::fprintf(stderr, "[sb] G2 escrita %08X = %08X (ciclo %llu)\n", p, v, (unsigned long long)c->cycles);
     // a copia do canal 2 (4b) de SB_C2DLEN bytes para SB_C2DSTAT; no fim, ISTNRM bit 19 (fim do DMA do PVR) acende e a
     // interrupcao e avaliada no proximo poll (next_event = 0)
-    if (act == SystemBlock::Action::Ch2Start && sh4_dmac_ch2_start(c, g_sb.at(SystemBlock::kC2Dstat),
-                                                                   g_sb.at(SystemBlock::kC2Dlen), g_sb.at(SystemBlock::kC2Dst))) {
-        holly_intc_raise(kIstPvrDma);
+    if (act == SystemBlock::Action::Ch2Start && channel2_start(c, g_sb.at(SystemBlock::kC2Dstat),
+                                                               g_sb.at(SystemBlock::kC2Dlen), g_sb.at(SystemBlock::kC2Dst))) {
+        event_status_raise(kIstPvrDma);
         c->next_event = 0;
     }
     return true;

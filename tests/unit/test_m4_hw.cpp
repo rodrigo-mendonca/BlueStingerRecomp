@@ -15,6 +15,7 @@
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
+#include "system/graphics_ports.h"
 
 #include <cstring>
 #include <stdexcept>
@@ -540,7 +541,7 @@ BS_TEST(ta_yuv_converter_macroblocks_to_vram) {
         for (size_t o = 0; o < mb.size(); o += 32) {
             uint32_t w[8];
             std::memcpy(w, mb.data() + o, 32);
-            ta_fifo_write(&h.c, 0x10800000, w);
+            area4_write(&h.c, 0x10800000, w);
         }
     };
     // macrobloco 420: U = 0x40 + i, V = 0x80 + i, Y do bloco b = 0x10*b + i (i = indice no 8x8)
@@ -554,7 +555,7 @@ BS_TEST(ta_yuv_converter_macroblocks_to_vram) {
     auto uyvy = [](uint32_t u, uint32_t y0, uint32_t v, uint32_t y1) { return u | (y0 << 8) | (v << 16) | (y1 << 24); };
     auto word64 = [](uint32_t off) {
         uint32_t v;
-        std::memcpy(&v, vram_data() + vram_offset64(off), 4);
+        std::memcpy(&v, texture_memory() + vram_offset64(off), 4);
         return v;
     };
     const uint32_t base = 0x00200000;
@@ -599,7 +600,7 @@ BS_TEST(texture_yuv422_linear) {
     BS_CHECK(pvr_yuv_to_argb(128, 128, 128) == 0xFF808080);  // cinza
     BS_CHECK(pvr_yuv_to_argb(255, 128, 255) == 0xFFFFA8FF);  // R e B saturam; G = 255 - 11*127/16
     const uint32_t word = 0x80u | (50u << 8) | (0x80u << 16) | (200u << 24);  // U, Y0, V, Y1
-    std::memcpy(vram_data() + vram_offset64(0x1000), &word, 4);
+    std::memcpy(texture_memory() + vram_offset64(0x1000), &word, 4);
     TexInfo t;
     t.tcw   = (3u << 27) | (1u << 26) | (0x1000 >> 3);  // YUV422 linear
     t.width = 8, t.height = 8;
@@ -614,8 +615,8 @@ BS_TEST(texture_yuv422_linear) {
 // (twiddled em w/2 x h/2). Mipmap: deslocamento do maior nivel (16 bits, paleta 8 bpp, VQ).
 BS_TEST(texture_vq_and_mipmap_offsets) {
     vram_reset();
-    auto put16 = [](uint32_t off, uint16_t v) { std::memcpy(vram_data() + vram_offset64(off), &v, 2); };
-    auto put8  = [](uint32_t off, uint8_t v) { vram_data()[vram_offset64(off)] = v; };
+    auto put16 = [](uint32_t off, uint16_t v) { std::memcpy(texture_memory() + vram_offset64(off), &v, 2); };
+    auto put8  = [](uint32_t off, uint8_t v) { texture_memory()[vram_offset64(off)] = v; };
     const uint32_t base = 0x4000;
     // codigo 5: texels (0,0)=0xF800 (vermelho 565), (0,1)=0x07E0 (verde), (1,0)=0x001F (azul), (1,1)=0xFFFF
     put16(base + 5 * 8 + 0, 0xF800), put16(base + 5 * 8 + 2, 0x07E0), put16(base + 5 * 8 + 4, 0x001F), put16(base + 5 * 8 + 6, 0xFFFF);

@@ -120,7 +120,7 @@ void boot_prepare(Sh4Context& c, const BootFiles& files, uint32_t rtcSeconds) {
     c.ret_expect = c.pr;
     c.next_event = 0;
     c.next_poll  = ~0ull;  // N8.1: o primeiro atendimento decide (cadencia B no tempo logico)
-    sh4_irq_bind(&c);      // N8.1: quem pede atendimento sem contexto (holly_intc_raise) escreve neste
+    sh4_irq_bind(&c);      // N8.1: quem pede atendimento sem contexto (event_status_raise) escreve neste
 
     std::vector<uint32_t> pvr(2048, 0);
     for (const auto& r : kBiosPvrState) pvr[r[0] / 4] = r[1];

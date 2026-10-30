@@ -11,6 +11,7 @@
 #include "pvr/ta.h"
 #include "pvr/vram.h"
 #include "render_capture.h"
+#include "system/graphics_ports.h"
 
 #include <cstring>
 #include <vector>
@@ -47,7 +48,7 @@ struct RenderFixture {
         reg(0x088, fbits(0.0001f));          // ISP_BACKGND_D
         reg(0x080, 7);                       // HALF_OFFSET: amostras no centro (valor do jogo)
         const uint32_t plane[3 + 3 * 4] = {0, 0, 0, 0, 0, 1, bg, 32, 0, 1, bg, 0, 32, 1, bg};
-        std::memcpy(vram_data(), plane, sizeof plane);
+        std::memcpy(texture_memory(), plane, sizeof plane);
         reg(0x144, 0x80000000);              // TA_LIST_INIT
 #if !BS_VALIDACAO
         // N8.7: no produto, o render vai pela IR (o renderizador em software sobre a captura); na validacao, o
@@ -62,7 +63,7 @@ struct RenderFixture {
     void ta(std::initializer_list<uint32_t> words) {
         uint32_t d[8] = {};
         std::copy(words.begin(), words.end(), d);
-        BS_CHECK(ta_fifo_write(&c, 0x10000000, d));
+        BS_CHECK(area4_write(&c, 0x10000000, d));
     }
 
     // Poligono opaco sem textura, cor empacotada, gouraud
@@ -75,7 +76,7 @@ struct RenderFixture {
 
     uint16_t px(int x, int y) {
         uint16_t v;
-        std::memcpy(&v, vram_data() + 0x100000 + y * 64 + x * 2, 2);
+        std::memcpy(&v, texture_memory() + 0x100000 + y * 64 + x * 2, 2);
         return v;
     }
 };
@@ -108,7 +109,7 @@ BS_TEST(pvr_texel_pal4_uses_low_nibble_first_and_selector) {
     f.reg(0x1000 + 4 * (16 + 1), 0xF800);
     f.reg(0x1000 + 4 * (16 + 2), 0x001F);
     const uint32_t texAddr = 0x200000;
-    vram_data()[vram_offset64(texAddr)] = 0x21;  // texel 0 = 1, texel 1 = 2
+    texture_memory()[vram_offset64(texAddr)] = 0x21;  // texel 0 = 1, texel 1 = 2
     TexInfo t;
     t.tcw = (5u << 27) | (1u << 21) | (texAddr >> 3);
     BS_CHECK(pvr_texel(t, 0, 0) == 0xFFFF0000);
@@ -160,8 +161,8 @@ BS_TEST(render_writeback_wraps_at_the_end_of_vram) {
     const uint64_t g0 = vram_generation64(0, 8);
     f.render();
     // fundo vermelho: B, G, R; o pixel 1 fica em 7FFFFF, 0, 1 e o 2 em 2, 3, 4
-    BS_CHECK(vram_data()[0x7FFFFE] == 0xFF && vram_data()[0x7FFFFF] == 0 && vram_data()[1] == 0xFF);
-    BS_CHECK(vram_data()[4] == 0xFF);
+    BS_CHECK(texture_memory()[0x7FFFFE] == 0xFF && texture_memory()[0x7FFFFF] == 0 && texture_memory()[1] == 0xFF);
+    BS_CHECK(texture_memory()[4] == 0xFF);
     BS_CHECK(vram_generation64(0, 8) > g0);
 }
 
@@ -226,7 +227,7 @@ namespace {
 // Tela de 2x1 tiles (64x32) para o recorte do usuario; pixel em 0x100000, linha de 128 bytes.
 uint16_t px64(int x, int y) {
     uint16_t v;
-    std::memcpy(&v, vram_data() + 0x100000 + y * 128 + x * 2, 2);
+    std::memcpy(&v, texture_memory() + 0x100000 + y * 128 + x * 2, 2);
     return v;
 }
 void clipScene(RenderFixture& f, uint32_t mode) {

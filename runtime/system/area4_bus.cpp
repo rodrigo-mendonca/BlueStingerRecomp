@@ -1,14 +1,15 @@
 // N8.7 (docs/N8-7-KAMUI.md, incremento 4c): no produto, a entrada da area 4 (pvr/ta.h) e a nativa
 // (native/render/kamui/area4_entry): o caminho de cada bloco das store queues e da copia do canal 2, as listas do Kamui
 // para o ListSink (o fim de lista acende ISTNRM no banco de status, no mesmo bloco), o caminho de textura na memoria das
-// texturas (vram_data/vram_touch, a TextureHeap do 3b) e o erro explicito do conversor YUV removido (N8.5). O TA do
-// legado (pvr/ta.cpp, com a FIFO de poligonos de referencia) fica na validacao.
+// texturas (texture_memory/vram_touch, a TextureHeap do 3b) e o erro explicito do conversor YUV removido (N8.5). O TA
+// do legado (pvr/ta.cpp, com a FIFO de poligonos de referencia) fica na validacao.
 #include "pvr/ta.h"
 
 #include "cpu/sh4_runtime.h"
 #include "pvr/holly_intc.h"
 #include "pvr/vram.h"
 #include "render/kamui/area4_entry.h"
+#include "system/graphics_ports.h"
 
 #include <cstdio>
 #include <cstring>
@@ -32,19 +33,19 @@ uint64_t                         ta_list_end_mismatches() { return 0; }  // a co
 native::render::kamui::ListSink& ta_list_sink() { return g_list; }
 std::string                      ta_area4_summary() { return {}; }
 
-bool ta_fifo_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
+bool area4_write(Sh4Context* c, uint32_t target, const uint32_t* data) {
     switch (Area4Entry::route(target)) {
     case Area4Entry::Path::Outside: return false;
     case Area4Entry::Path::Polygon: {
         const native::render::kamui::BlockResult r = g_list.feed(data);
         if (r.invalid) sh4_fatal(c, "parametro do TA com tipo invalido", c->pc, data[0]);
-        if (r.list_end >= 0) holly_intc_raise(Area4Entry::list_end_bit(r.list_end));
+        if (r.list_end >= 0) event_status_raise(Area4Entry::list_end_bit(r.list_end));
         return true;
     }
     case Area4Entry::Path::Texture: {
         uint32_t o[8];
         Area4Entry::texture_offsets(target, o);
-        for (int i = 0; i < 8; ++i) std::memcpy(vram_data() + o[i], &data[i], 4);
+        for (int i = 0; i < 8; ++i) std::memcpy(texture_memory() + o[i], &data[i], 4);
         vram_touch(o[0], 16);
         vram_touch(o[1], 16);
         return true;

@@ -7,6 +7,7 @@
 #include "cpu/sh4_runtime.h"
 #include "pvr/pvr_regs.h"
 #include "pvr/ta.h"
+#include "system/graphics_ports.h"
 
 #include <stdexcept>
 #include <string>
@@ -40,9 +41,9 @@ BS_TEST(n85_product_yuv_converter_is_removed) {
     m[0] = expectFatal([&] { sh4_write32(&c, 0xA05F8148, 0x00200000); });  // TA_YUV_TEX_BASE
     m[1] = expectFatal([&] { sh4_write32(&c, 0xA05F814C, 0x00000001); });  // TA_YUV_TEX_CTRL
     m[2] = expectFatal([&] { (void)sh4_read32(&c, 0xA05F8150); });         // TA_YUV_TEX_CNT
-    m[3] = expectFatal([&] { ta_fifo_write(&c, 0x10800000, mb); });        // macrobloco
+    m[3] = expectFatal([&] { area4_write(&c, 0x10800000, mb); });        // macrobloco
     for (const auto& s : m) BS_CHECK(s.find("removidos do produto no N8.5") != std::string::npos);
-    BS_CHECK(ta_fifo_write(&c, 0x10000000, mb));  // a FIFO de poligonos continua (N8.7)
+    BS_CHECK(area4_write(&c, 0x10000000, mb));  // a FIFO de poligonos continua (N8.7)
 }
 
 // O boot carrega o estado do PVR medido (pvr_regs_load) direto, sem passar pela escrita do guest: valores nos registradores

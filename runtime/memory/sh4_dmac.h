@@ -18,7 +18,10 @@ bool sh4_dmac_write(uint32_t a, unsigned size, uint32_t v);
 // TA ou caminho de textura). No fim, SAR2 avanca, DMATCR2 zera e CHCR2.TE acende; C2DSTAT avanca e
 // C2DLEN e C2DST zeram. Devolve false (nada muda) se o canal nao estiver habilitado (DMAOR.DME e
 // CHCR2.DE). Destino fora da area 4 e erro explicito. O fim (ISTNRM bit 19) fica com quem chama.
+// N8.7 5c: so a validacao; nos dois builds, channel2_start (system/graphics_ports.h).
+#if BS_VALIDACAO
 bool sh4_dmac_ch2_start(Sh4Context* c, uint32_t& c2dstat, uint32_t& c2dlen, uint32_t& c2dst);
+#endif
 
 // N8.7 4b, so a validacao: comparacao da copia nativa com o DMAC do legado ("[canal-2] ...\n"); vazio no produto
 std::string sh4_dmac_ch2_summary();

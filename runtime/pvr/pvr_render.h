@@ -24,7 +24,9 @@ struct RenderStats {
     uint32_t width = 0, height = 0;
 };
 
-RenderStats pvr_render(Sh4Context* c);
+#if BS_VALIDACAO
+RenderStats pvr_render(Sh4Context* c);  // N8.7 5c: so a validacao; nos dois builds, render_pass_run
+#endif
 // N8.7 4d, so a validacao: a passagem nativa em sombra no rasterizador de referencia ("[render-pass] ...\n"); vazio no
 // produto (system/render_bus.cpp)
 std::string pvr_render_pass_summary();

@@ -1,9 +1,8 @@
 // N8.7 (docs/N8-7-KAMUI.md, incremento 4d): no produto, o render pedido por STARTRENDER (pvr/pvr_render.h) e a passagem
 // nativa (native/render/kamui/render_pass) sobre o estado do quadro (pvr_reg, o FrameState do 3a) e a memoria das
-// texturas (vram_data/vram_touch, a TextureHeap do 3b): tamanho, fundo, parametros do quadro, Region Array, as listas do
-// Kamui pelo ListSink para a IR, o desenho pela IR (o PvrListRenderer, transitional/render_core) e a gravacao no
-// framebuffer. O rasterizador de
-// referencia (pvr/pvr_render.cpp, com o caminho do TA) fica na validacao.
+// texturas (texture_memory/vram_touch, a TextureHeap do 3b): tamanho, fundo, parametros do quadro, Region Array, as
+// listas do Kamui pelo ListSink para a IR, o desenho pela IR (o PvrListRenderer, transitional/render_core) e a gravacao
+// no framebuffer. O rasterizador de referencia (pvr/pvr_render.cpp, com o caminho do TA) fica na validacao.
 #include "pvr/pvr_render.h"
 
 #include "cpu/sh4_runtime.h"
@@ -12,6 +11,7 @@
 #include "pvr/vram.h"
 #include "render/kamui/render_pass.h"
 #include "render/soft/soft_raster.h"
+#include "system/graphics_ports.h"
 
 #include <chrono>
 #include <cstdio>
@@ -37,7 +37,7 @@ void note(const char* what) {
 }
 
 uint32_t background() {
-    const RenderPass::Background b = RenderPass::background(reg, nullptr, vram_data());
+    const RenderPass::Background b = RenderPass::background(reg, nullptr, texture_memory());
     if (b.textured) note("fundo com textura");
     return b.color;
 }
@@ -53,7 +53,7 @@ native::render::FrameParams pvr_frame_params(uint32_t width, uint32_t height) {
 
 std::string pvr_render_pass_summary() { return {}; }  // a comparacao com o rasterizador de referencia so na validacao
 
-RenderStats pvr_render(Sh4Context* c) {
+RenderStats render_pass_run(Sh4Context* c) {
     const native::render::soft::FpEnv fpEnv;  // ambiente fixo nesta thread (os workers instalam o seu)
     RenderStats                       st;
     const RenderPass::Size            sz = RenderPass::size(reg, nullptr);
@@ -62,7 +62,7 @@ RenderStats pvr_render(Sh4Context* c) {
     const uint32_t bg = background() & 0xFFFFFF;
     // ISP_FEED_CFG (0x098) bit 0: 1 = pre-sort (translucidos na ordem de submissao), 0 = autosort por pixel
     const bool autosort = !(pvr_reg(0x005F8098) & 1);
-    if (RenderPass::region_sort_mismatch(reg, nullptr, vram_data(), autosort))
+    if (RenderPass::region_sort_mismatch(reg, nullptr, texture_memory(), autosort))
         note("Region Array com modo de ordenacao por tile diferente do global");
     std::vector<uint32_t> color(size_t(st.width) * st.height, 0xFF000000 | bg);
     // as listas do Kamui direto para a IR (ListSink); os parametros do quadro vem dos registradores
@@ -88,7 +88,7 @@ RenderStats pvr_render(Sh4Context* c) {
                                        "paleta de 4 bits com mipmap ou dois volumes)", st.unsupported);
         sh4_fatal(c, msg, c ? c->pc : 0, st.unsupported);
     }
-    RenderPass::write_back(reg, nullptr, color, st.width, st.height, vram_data(), touch);
+    RenderPass::write_back(reg, nullptr, color, st.width, st.height, texture_memory(), touch);
     if (prof)
         std::fprintf(stderr, "[perfil] parse %.2f opaca %.2f pt %.2f transl %.2f resolve %.2f ms; fragmentos %zu\n",
                      ms[0], ms[1], ms[2], ms[3], ms[4], size_t(0));

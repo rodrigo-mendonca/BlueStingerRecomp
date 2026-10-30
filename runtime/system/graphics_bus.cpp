@@ -13,6 +13,7 @@
 #include "pvr/pvr_render.h"
 #include "pvr/ta.h"
 #include "render/kamui/frame_state.h"
+#include "system/graphics_ports.h"
 
 #include <algorithm>
 #include <array>
@@ -62,7 +63,7 @@ public:
         // de render sinalizado
         {
             const auto        t0 = std::chrono::steady_clock::now();
-            const RenderStats st = pvr_render(c_);
+            const RenderStats st = render_pass_run(c_);
             if (std::getenv("BS_PVR_DEBUG"))
                 std::fprintf(stderr, "[render] #%d %ux%u tri=%u sprites=%u omitidos=%u (%.2f ms)\n", g_startCount, st.width,
                              st.height, st.triangles, st.sprites, st.skipped,

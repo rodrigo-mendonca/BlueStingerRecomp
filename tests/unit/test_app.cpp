@@ -12,6 +12,7 @@
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr_video.h"
 #include "pvr/vram.h"
+#include "system/graphics_ports.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -33,7 +34,7 @@ void setReg(uint32_t off, uint32_t v) {
 
 // escrita por fora (como o render): marca a pagina, e na validacao a copia para a memoria nativa em sombra (N8.7 3b/3c)
 void put(uint32_t addr, const void* p, uint32_t n) {
-    std::memcpy(vram_data() + addr, p, n);
+    std::memcpy(texture_memory() + addr, p, n);
     vram_touch(addr, n);
 }
 void put16(uint32_t addr, uint16_t v) { put(addr, &v, 2); }
@@ -321,13 +322,13 @@ BS_TEST(boot_prepare_resets_hardware_between_sessions) {
     f.ipBin.assign(0x8000, 0);
     f.firstRead.assign(64, 0);
     boot_prepare(c, f, 0);
-    vram_data()[0x300000] = 0xAB;          // sessao anterior: VRAM suja
+    texture_memory()[0x300000] = 0xAB;          // sessao anterior: VRAM suja
     c.cycles              = 50000000000ull;  // e o SPG muito adiante
     sh4_read32(&c, 0xA05F6900);
     Sh4Context c2{};
     c2.ram = ram.data();
     boot_prepare(c2, f, 0);
-    BS_CHECK(vram_data()[0x300000] == 0);
+    BS_CHECK(texture_memory()[0x300000] == 0);
     sh4_write32(&c2, 0xA05F6900, 0xFFFFFFFF);  // limpa ISTNRM
     c2.cycles = 7000000;                       // ~2 campos de 3,3 milhoes de ciclos
     BS_CHECK((sh4_read32(&c2, 0xA05F6900) & (1u << 3)) != 0);  // VBlank-in na nova sessao

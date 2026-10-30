@@ -12,13 +12,14 @@
 #include "pvr/pvr_texture.h"
 
 #include "pvr/vram.h"
+#include "system/graphics_ports.h"
 
 #include <cstring>
 
 namespace bs {
 namespace {
 
-uint8_t vram8_64(uint32_t off) { return vram_data()[vram_offset64(off)]; }
+uint8_t vram8_64(uint32_t off) { return texture_memory()[vram_offset64(off)]; }
 
 } // namespace
 

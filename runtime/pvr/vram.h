@@ -10,7 +10,9 @@ namespace bs {
 
 constexpr uint32_t kVramSize = 8u << 20;
 
-uint8_t* vram_data();  // layout do caminho de 32 bits
+#if BS_VALIDACAO
+uint8_t* vram_data();  // layout do caminho de 32 bits (N8.7 5c: so a validacao; nos dois builds, texture_memory)
+#endif
 void     vram_reset();
 
 // Offset no layout de 32 bits para um offset do caminho de 64 bits.
