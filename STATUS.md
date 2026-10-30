@@ -3437,6 +3437,25 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
   - [BAIXA] a sombra compara só os resultados puros, não a composição do produto: **aceito**. Três testes conferem a
     composição: `ta_texture_block_writes_all_words_and_bumps_both_banks` e `ta_invalid_parameter_is_an_explicit_error`
     nos dois builds, e `ta_yuv_block_is_a_removed_component_in_the_product` só no produto.
+- **Incremento 4d (passagem de render):**
+  - `native/render/kamui/render_pass` dá o tamanho, o fundo, os parâmetros do quadro e o aviso do Region Array, e grava
+    a imagem no framebuffer;
+  - no produto, `runtime/system/render_bus` serve `pvr/pvr_render.h` com a sequência de antes. O `pvr_render.cpp` sai
+    do produto (portão `:pvr_render.cpp.obj`);
+  - na validação, o rasterizador de referência é a referência, e a passagem nativa roda em sombra (`[render-pass]`):
+    antes do render, tamanho, fundo, parâmetros e Region Array; depois, faixas e bytes do framebuffer;
+  - negativo `BS_RENDER_PASSO_MUTACAO=formato`, exigido pelo ctest `n87_render_pass_mutacao`: no combate, 13 044 dos
+    27 149 renders acusados;
+  - equivalência: combate com 27 149 renders (16 680 345 600 bytes gravados) e NEW GAME com 19 984 (12 278 169 600),
+    0 diferentes;
+  - referências com o produto `a8d2f8fd…` (`layout_rp`): N8.0 16/16 (179 exceções usadas) e N8.7 16/16;
+  - unitários: produto 328/0, validação 347/0; render 70/0 (5 casos novos); portão 35/47.
+- **Revisão Codex `20261029-205240`:**
+  - [MÉDIA] o armazenamento da sombra guardava bytes de renders anteriores, que podiam esconder um byte não gravado:
+    **aceito**. Cada faixa gravada pelo legado recebe antes o complemento do resultado. O teste ganhou um segundo render
+    no mesmo framebuffer;
+  - [BAIXA] a sombra não comparava se o fundo tem textura (o aviso do produto depende disso): **aceito**. A referência
+    registra o campo, a sombra o compara e o teste tem um fundo texturizado.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

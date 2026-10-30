@@ -531,3 +531,40 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
   - as 8 palavras do caminho de textura nas duas vistas e a geração das duas faixas;
   - o parâmetro inválido como erro explícito com a palavra de controle e sem fim de lista;
   - no produto, o bloco YUV como erro explícito com o endereço físico.
+
+## 19. Incremento 4d: passagem de render (2026-10-29)
+
+- **Nativo:** `native/render/kamui/render_pass`, sem estado. Quem chama passa o leitor de registrador e a memória das
+  texturas. A passagem dá:
+  - o tamanho do render, por `TA_GLOB_TILE_CLIP`;
+  - o fundo pela memória de parâmetros, com a cor do primeiro vértice e se ele tem textura;
+  - os parâmetros do quadro da IR;
+  - o aviso do Region Array tipo 2, quando um tile pede o modo de ordenação oposto ao global;
+  - a gravação da imagem no framebuffer, nos 7 formatos de `FB_W_CTRL`, com stride, clip, a volta no fim dos 8 MB e as
+    faixas marcadas.
+- **Produto:** `runtime/system/render_bus` serve `pvr/pvr_render.h` com a mesma sequência do ramo do produto de antes:
+  1. o fundo, antes do Region Array (a ordem dos avisos se mantém);
+  2. as listas do Kamui pelo `ListSink` para a IR;
+  3. o desenho pela IR (`render_capture`). O render sem desenho ou com estados que a IR não representa continua erro
+     explícito;
+  4. a gravação na `TextureHeap`.
+
+  O `pvr_render.cpp` sai do produto (portão `:pvr_render.cpp.obj`).
+- **Validação:** o `pvr_render.cpp` fica só com o rasterizador de referência e é a referência da passagem nativa, que
+  roda em sombra em cada render (`[render-pass]`):
+  - antes do render, compara o tamanho, o fundo (cor e textura), os parâmetros do quadro campo a campo (os floats pelos
+    bits, porque podem ser NaN) e o Region Array;
+  - depois da gravação do legado, a passagem nativa grava num armazenamento à parte. Antes disso, cada faixa que o
+    legado gravou recebe o complemento do resultado, de modo que um byte que a passagem nativa deixe de escrever nunca
+    passa com o valor de um render anterior (revisão Codex `20261029-205240`). A comparação confere as faixas marcadas
+    e os bytes;
+  - negativo `BS_RENDER_PASSO_MUTACAO=formato`: a sombra lê `FB_W_CTRL` com o bit 0 do formato trocado. O ctest
+    `n87_render_pass_mutacao` exige a falha.
+- **Equivalência:** combate com 27 149 renders (16 680 345 600 bytes gravados) e NEW GAME com 19 984
+  (12 278 169 600), 0 diferentes. Com `formato`, 13 044 dos 27 149 renders do combate são acusados. Referências
+  com o produto `a8d2f8fd…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **Testes:**
+  - os de formatos de framebuffer (`test_render_formats`) rodam nos dois builds e passam pela composição do produto;
+  - na validação, `render_native_pass_shadow_agrees` cobre os 7 formatos com clip parcial e um segundo render no mesmo
+    framebuffer com fundo texturizado;
+  - cinco casos do componente em `bs_render_tests`.
