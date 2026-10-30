@@ -593,3 +593,43 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
     `[render-pass]` 16.680.345.600 bytes, `[canal-2]`, `[area-4]`, `[event-status]`), NEW GAME 19.984 renders; com
     `BS_LISTA_NATIVA_MUTACAO=vertice` o `[lista-nativa]` acusa 13.145 dos 27.149 renders;
   - referências com o exe do produto `219bb52c…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+
+
+## 21. Passo 5b: o system block nativo (2026-10-30)
+
+- **Responsabilidades não gráficas preservadas** (a regra do mantenedor: `holly_sb` só sai com elas provadas):
+  - **Maple** (DMA em `0x005F6C04`/`0x005F6C18` e o resto do bloco do Maple): continua no barramento sem dispositivos do
+    N8.4 (`system/maple_bus`), consultado antes do bloco, como antes;
+  - **banco de status** (`0x005F6900-0x005F693F`): o `EventStatus` do 4a, consultado antes, como antes;
+  - **SB_FFST** (`0x005F688C`) e a configuração dos DMAs: o último valor escrito, com o registro da primeira leitura;
+  - **guarda do G2** (`0x005F7818/38/58/78`): a partida com o bit 0 é erro explícito no produto (N8.6);
+  - **drive de GD-ROM e DMA do G1**: componentes removidos (N8.3), salvo `GDST = 0` da tabela do SDK;
+  - **partida do canal 2** (`SB_C2DST`): a cópia do 4b e o bit 19 de `ISTNRM` no banco de status;
+  - os negativos do N2b-2 (`BS_SB_MUTACAO=c2dst_ocupado|ffst_ocupado`) e os diagnósticos `BS_PVR_DEBUG`/`BS_SB_LOG`
+    continuam no produto, com o mesmo efeito.
+- **Nativo:** `native/render/kamui/system_block` guarda os registradores e decide o que cada acesso pede: revisão,
+  componente removido, último valor com a marca da primeira leitura, partida do canal 2 ou do G2.
+- **Produto:** `runtime/system/system_block_bus` serve `pvr/holly_sb.h` na mesma ordem de antes (componente removido,
+  faixa, Maple, mutações do N2b-2, o bloco) e com as mesmas mensagens. O `holly_sb.cpp` sai do produto (portão
+  `:holly_sb.cpp.obj`; `system_block_bus` só no produto; `:system_block.cpp.obj` e `SystemBlock::write` obrigatórios).
+- **Validação:** o `holly_sb.cpp` é a referência e o bloco nativo roda em sombra em cada acesso (`[system-block]`): a
+  decisão de componente removido, a faixa, o valor lido e a marca da primeira leitura, o valor guardado e as partidas do
+  canal 2 e do G2. A do G2 é comparada e contada, mas não executada, porque a validação tem o modelo da AICA. O que a
+  cópia faz nos registradores do canal 2 é do 4b (sombra `[canal-2]`), e a sombra recebe o mesmo resultado.
+  - Negativo `BS_SYSTEM_BLOCK_MUTACAO=valor`: a sombra guarda o valor com o bit 0 trocado. O ctest
+    `n87_system_block_mutacao` exige a falha;
+  - negativo `BS_SYSTEM_BLOCK_MUTACAO=g2`: a sombra recebe as partidas do G2 com o bit 0 apagado. O ctest
+    `n87_system_block_g2` exige que a primeira diferença seja a partida do G2 em `0x005F7818`.
+- **Testes:** quatro casos do componente em `bs_render_tests`; `sb_native_system_block_shadow_agrees` na validação. A
+  composição continua coberta nos dois builds por `test_port` (revisão), `test_n83_sistema` (componentes removidos),
+  `test_n86_som` (G2), `test_m4_hw` (canal 2) e os testes do Maple e do N8.4.
+- **Revisão Codex `20261030-054124`:** [MÉDIA] a sombra só contava as partidas do G2, sem comparar a decisão com a
+  do legado: **aceito**. A sombra compara e o teste pede as quatro partidas, com o negativo `n87_system_block_g2`.
+- **Provas:**
+  - unitários: produto 329/0, validação 349/0; render 74/0; portão 35/47; os negativos `n87_*` passam (7, com os dois
+    do system block);
+  - rotas no exe de validação, com todas as sombras em 0 diferenças: combate `[system-block]` 1.880.750 acessos
+    (1.715.801 leituras, 164.949 escritas, 54.959 partidas do canal 2, nenhuma do G2); NEW GAME 1.448.321 acessos
+    (40.092 partidas do canal 2). As sombras do 3a ao 4d continuam em 0. NEW GAME com `BS_SYSTEM_BLOCK_MUTACAO=valor`:
+    1.073.290 diferentes, a primeira no valor guardado em `0x005F6800`;
+  - referências com o exe do produto `57cf9344…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.

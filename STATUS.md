@@ -3475,6 +3475,25 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
   - [MÉDIA] nenhum teste exercia a ligação do produto nem a troca do renderizador: **aceito**.
     `render_capture_install_swaps_the_connected_renderer` (nos dois builds) desenha pela ligação do build, confere a
     imagem e as estatísticas, troca o renderizador com `install()` e o desliga com `Off`.
+- **Passo 5b (system block nativo):**
+  - `native/render/kamui/system_block` guarda os registradores do system block e decide o que cada acesso pede
+    (revisão, componente removido, último valor com a primeira leitura, partidas do canal 2 e do G2);
+  - no produto, `runtime/system/system_block_bus` serve `pvr/holly_sb.h` na mesma ordem e com as mesmas mensagens:
+    Maple e banco de status antes, SB_FFST, GD-ROM/G1 removidos, G2 fatal, canal 2 com `ISTNRM` bit 19, os negativos
+    do N2b-2. `holly_sb.cpp` fica só na validação, como referência da sombra `[system-block]`;
+  - portão: `:holly_sb.cpp.obj` proibido no produto e obrigatório na validação; `system_block_bus` só no produto;
+    `:system_block.cpp.obj` e `SystemBlock::write` obrigatórios;
+  - unitários: produto 329/0, validação 349/0; render 74/0; portão 35/47; os negativos `n87_*` passam (7, com os dois
+    do system block);
+  - rotas no exe de validação, com todas as sombras em 0 diferenças: combate `[system-block]` 1.880.750 acessos
+    (1.715.801 leituras, 164.949 escritas, 54.959 partidas do canal 2, nenhuma do G2); NEW GAME 1.448.321 acessos
+    (40.092 partidas do canal 2). As sombras do 3a ao 4d continuam em 0. NEW GAME com `BS_SYSTEM_BLOCK_MUTACAO=valor`:
+    1.073.290 diferentes, a primeira no valor guardado em `0x005F6800`;
+  - referências com o exe do produto `57cf9344…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **Revisão Codex `20261030-054124`:**
+  - [MÉDIA] a sombra não comparava a partida do G2 (só a contava): **aceito**. Ela compara a decisão com a regra do
+    legado, o teste escreve 1 nos quatro registradores de partida e o negativo `BS_SYSTEM_BLOCK_MUTACAO=g2`
+    (`n87_system_block_g2`) exige que a primeira diferença seja a partida do G2 em `0x005F7818`.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
