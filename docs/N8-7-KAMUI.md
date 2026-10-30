@@ -568,3 +568,28 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
   - na validação, `render_native_pass_shadow_agrees` cobre os 7 formatos com clip parcial e um segundo render no mesmo
     framebuffer com fundo texturizado;
   - cinco casos do componente em `bs_render_tests`.
+
+## 20. Passo 5a: o renderizador sobre a IR separado do adaptador do legado (2026-10-30)
+
+- **Antes:** a classe `Capture` de `transitional/render_capture.cpp` era, ao mesmo tempo, o renderizador real do produto
+  (Vulkan, software sobre a IR, cache das texturas, resolução interna, estatísticas) e o receptor dos retornos do
+  decodificador do legado (`PvrCaptureSink`). O produto a ligava só pela entrada `render_list`, mas o objeto e o
+  `PvrCaptureSink` entravam no mapa.
+- **Agora são duas partes:**
+  - `transitional/render_core` (os dois builds): o `Renderer`, com o dispositivo, as texturas, a resolução interna, as
+    estatísticas, o resumo e a API de `render_capture.h`, que não muda. Ele implementa `PvrListRenderer`, a interface nova
+    de `pvr/pvr_render.h` pela qual o produto (`system/render_bus`) entrega a IR do `ListSink`;
+  - `transitional/render_capture.cpp` (só a validação): o adaptador do `PvrCaptureSink`. Ele monta a IR no `Renderer`
+    pelos retornos do decodificador, chama o desenho dele e faz as conferências do modo conferir, a do `ListSink`
+    contra a captura e a comparação do Vulkan com o software;
+  - o `PvrCaptureSink`, o `pvr_render_set_capture` e o resto do bloco do legado em `pvr_render.h` ficam sob
+    `BS_VALIDACAO`. `install()` liga o renderizador pela interface do build: `pvr_render_set_renderer` no produto e o
+    adaptador na validação.
+- **Portão:** `:render_capture.cpp.obj` e o símbolo `PvrCaptureSink` proibidos no produto; `:render_core.cpp.obj` e
+  `?draw@Renderer@render_capture@transitional@bs@@` obrigatórios nos dois builds.
+- **Provas:**
+  - unitários: produto 329/0, validação 348/0; render 70/0; portão 35/47; negativos `n87_*` passam;
+  - rotas no exe de validação (todas as sombras em 0 diferenças): combate 27.149 renders (`[lista-nativa]`,
+    `[render-pass]` 16.680.345.600 bytes, `[canal-2]`, `[area-4]`, `[event-status]`), NEW GAME 19.984 renders; com
+    `BS_LISTA_NATIVA_MUTACAO=vertice` o `[lista-nativa]` acusa 13.145 dos 27.149 renders;
+  - referências com o exe do produto `219bb52c…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.

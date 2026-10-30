@@ -3456,6 +3456,25 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
     no mesmo framebuffer;
   - [BAIXA] a sombra não comparava se o fundo tem textura (o aviso do produto depende disso): **aceito**. A referência
     registra o campo, a sombra o compara e o teste tem um fundo texturizado.
+- **Passo 5a (renderizador sobre a IR separado do adaptador do legado):**
+  - `transitional/render_core` (os dois builds) tem o `Renderer`: dispositivo, texturas, resolução interna, estatísticas
+    e a API de `render_capture.h`. No produto ele recebe a IR do `ListSink` por `PvrListRenderer` (`pvr/pvr_render.h`);
+  - `transitional/render_capture.cpp` fica só na validação, com o adaptador do `PvrCaptureSink` (monta a IR pelos
+    retornos do decodificador e faz as conferências). O `PvrCaptureSink` e o bloco do legado de `pvr_render.h` ficam
+    sob `BS_VALIDACAO`;
+  - portão: `:render_capture.cpp.obj` e `PvrCaptureSink` proibidos no produto; `:render_core.cpp.obj` e
+    `Renderer::draw` obrigatórios nos dois builds;
+  - unitários: produto 329/0, validação 348/0; render 70/0; portão 35/47; os negativos `n87_*` passam;
+  - rotas no exe de validação (todas as sombras em 0 diferenças): combate 27.149 renders (`[lista-nativa]`,
+    `[render-pass]` 16.680.345.600 bytes, `[canal-2]`, `[area-4]`, `[event-status]`), NEW GAME 19.984 renders; com
+    `BS_LISTA_NATIVA_MUTACAO=vertice` o `[lista-nativa]` acusa 13.145 dos 27.149 renders;
+  - referências com o exe do produto `219bb52c…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **Revisão Codex `20261030-011020`:**
+  - [ALTA] `known_versions.h` incompleto: **rejeitado**. É o arquivo particular do mantenedor, fora do repositório
+    público, e o build com ele passa;
+  - [MÉDIA] nenhum teste exercia a ligação do produto nem a troca do renderizador: **aceito**.
+    `render_capture_install_swaps_the_connected_renderer` (nos dois builds) desenha pela ligação do build, confere a
+    imagem e as estatísticas, troca o renderizador com `install()` e o desliga com `Off`.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
