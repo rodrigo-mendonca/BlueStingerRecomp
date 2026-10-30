@@ -831,3 +831,40 @@ BS_TEST(render_product_unsupported_state_is_explicit_error) {
     }
 }
 #endif
+
+#if BS_VALIDACAO
+// N8.7 4d (validacao): a passagem de render nativa em sombra no rasterizador de referencia nao diverge em nenhum formato
+// de framebuffer (incluindo o clip parcial, o fundo com e sem textura e dois renders seguidos no mesmo framebuffer, em
+// que o segundo grava os mesmos bytes do primeiro; revisao Codex 20261029-205240). Negativo:
+// BS_RENDER_PASSO_MUTACAO=formato (ctest n87_render_pass_mutacao) tem de acusar
+BS_TEST(render_native_pass_shadow_agrees) {
+    auto differ = [] {
+        const std::string s = pvr_render_pass_summary();
+        const size_t      p = s.find("diferentes ");
+        return p == std::string::npos ? ~0ull : std::stoull(s.substr(p + 11));
+    };
+    BS_CHECK(differ() == 0);
+    static const uint32_t bpp[8] = {2, 2, 2, 2, 3, 4, 4, 4};
+    for (uint32_t fmt = 0; fmt < 7; ++fmt) {
+        Scene s(0xFF204060u, fmt | (0x80u << 8) | (0x40u << 16), bpp[fmt]);
+        s.reg(0x068, (20u << 16) | 3);  // FB_X_CLIP: so as colunas 3-20
+        s.global(0x80000000u, kIspAlways, kTspOpaque);
+        for (auto [x, y] : {std::pair{0.f, 0.f}, {32.f, 0.f}, {0.f, 32.f}})
+            s.vtx(x, y, 1.f, 0, 0, 0x80FF8040u, 0, x == 0.f && y == 32.f);
+        s.endList();
+        s.render();
+        if (fmt == 1) {  // o mesmo quadro de novo, com o fundo texturizado (ISP bit 25, UV de 32 bits)
+            const uint32_t isp = 1u << 25;
+            std::memcpy(vram_data(), &isp, 4);
+            s.reg(0x144, 0x80000000);  // TA_LIST_INIT
+            s.global(0x80000000u, kIspAlways, kTspOpaque);
+            for (auto [x, y] : {std::pair{0.f, 0.f}, {32.f, 0.f}, {0.f, 32.f}})
+                s.vtx(x, y, 1.f, 0, 0, 0x80FF8040u, 0, x == 0.f && y == 32.f);
+            s.endList();
+            s.render();
+        }
+    }
+    BS_CHECK(differ() == 0);
+    BS_CHECK(pvr_render_pass_summary().find("[render-pass] renders comparados") == 0);
+}
+#endif

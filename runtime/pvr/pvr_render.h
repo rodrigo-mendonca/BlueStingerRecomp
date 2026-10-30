@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace bs {
@@ -24,6 +25,9 @@ struct RenderStats {
 };
 
 RenderStats pvr_render(Sh4Context* c);
+// N8.7 4d, so a validacao: a passagem nativa em sombra no rasterizador de referencia ("[render-pass] ...\n"); vazio no
+// produto (system/render_bus.cpp)
+std::string pvr_render_pass_summary();
 
 // Testes: true se, desde a ultima chamada, algum worker da resolucao paralela calculou com
 // MXCSR diferente do padrao (o render deve isolar o ambiente de ponto flutuante).

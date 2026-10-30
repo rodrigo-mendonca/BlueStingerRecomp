@@ -15,6 +15,11 @@
 // Aproximacoes (registradas no STATUS.md): sem fog, dither, mipmap, VQ, YUV, bump, dois
 // volumes, buffers secundarios (SRC/DST select) e escala do SCALER_CTL; empates de
 // amostragem exatamente na fronteira de texels dependem da precisao numerica.
+//
+// N8.7 4d (docs/N8-7-KAMUI.md): so na validacao, como referencia da passagem nativa (native/render/kamui/render_pass),
+// que roda em sombra em cada render: tamanho, fundo, parametros do quadro, Region Array e a gravacao no framebuffer
+// (as mesmas faixas, com os mesmos bytes) sao comparados com os deste arquivo ([render-pass]). No produto, o render e
+// system/render_bus.cpp.
 #include "pvr/pvr_render.h"
 
 #include "cpu/sh4_runtime.h"
@@ -22,6 +27,7 @@
 #include "pvr/pvr_texture.h"
 #include "pvr/ta.h"
 #include "pvr/vram.h"
+#include "render/kamui/render_pass.h"
 #include "render/soft/soft_raster.h"
 
 #include <algorithm>
@@ -35,6 +41,7 @@
 #include <xmmintrin.h>
 #include <map>
 #include <set>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -49,10 +56,32 @@ float f32(uint32_t w) {
     return f;
 }
 
-PvrCaptureSink* g_sink = nullptr;
-#if BS_VALIDACAO
+PvrCaptureSink*    g_sink       = nullptr;  // N7a: captura da IR de render (pvr_render_set_capture)
 const RenderStats* g_inProgress = nullptr;  // as contagens do legado durante o end() da captura
-#endif  // N7a: captura da IR de render (pvr_render_set_capture)
+
+// N8.7 4d: a passagem nativa em sombra
+using native::render::kamui::RenderPass;
+uint64_t    g_rpRenders = 0, g_rpBytes = 0, g_rpDiffer = 0;
+std::string g_rpFirst;
+std::vector<std::pair<uint32_t, uint32_t>>* g_legacyTouches = nullptr;  // as faixas que writeBack marca
+
+// negativo (BS_RENDER_PASSO_MUTACAO=formato): a sombra le FB_W_CTRL com o formato trocado (565 por 0555 e vice-versa)
+bool rp_mutation() {
+    static const bool m = [] {
+        const char* v = std::getenv("BS_RENDER_PASSO_MUTACAO");
+        return v && std::string(v) == "formato";
+    }();
+    return m;
+}
+uint32_t rp_reg(void*, uint32_t p) {
+    const uint32_t v = pvr_reg(p);
+    return rp_mutation() && p == 0x005F8048 ? v ^ 1 : v;
+}
+
+void rp_differ(const char* detail) {
+    ++g_rpDiffer;
+    if (g_rpFirst.empty()) g_rpFirst = "render " + std::to_string(g_rpRenders) + ": " + detail;
+}
 
 void note(const char* what) {
     static std::vector<const char*> seen;
@@ -66,6 +95,7 @@ void note(const char* what) {
 // Fundo: ISP/TSP/TCW e 3 vertices na memoria de parametros (caminho de 32 bits) em
 // (PARAM_BASE & 0xF00000) + tag_address * 4; vertice = x, y, z, [u, v], cor base,
 // [offset], com (3 + skip) palavras. M4: cor do primeiro vertice (fundo sem textura).
+bool g_bgTextured = false;  // N8.7 4d: se o ultimo fundo lido tinha textura (a sombra compara; revisao Codex 20261029-205240)
 uint32_t backgroundColor() {
     const uint32_t t    = pvr_reg(R(0x08C));
     const uint32_t base = ((pvr_reg(R(0x020)) & 0xF00000) + ((t >> 3) & 0x1FFFFF) * 4) & (kVramSize - 1);
@@ -77,6 +107,7 @@ uint32_t backgroundColor() {
     const uint32_t isp  = rd(base);
     const uint32_t skip = (t >> 24) & 7, vsize = (3 + skip) * 4;
     uint32_t       p    = base + 12 + (t & 7) * vsize + 12;  // pula x, y, z do 1o vertice
+    g_bgTextured        = isp & (1u << 25);
     if (isp & (1u << 25)) {
         note("fundo com textura");
         p += (isp & (1u << 22)) ? 4 : 8;
@@ -89,8 +120,8 @@ uint32_t backgroundColor() {
 // Array; usa um modo para a tela inteira. Se algum tile pedir outro modo, avisa (uma
 // vez) em vez de divergir em silencio (revisao Codex 2026-10-14). Entradas de 6 palavras,
 // a ultima com o bit 31.
-void checkRegionSortModes(bool autosort) {
-    if (!((pvr_reg(R(0x07C)) >> 21) & 1)) return;
+bool checkRegionSortModes(bool autosort) {
+    if (!((pvr_reg(R(0x07C)) >> 21) & 1)) return false;
     uint32_t a = pvr_reg(R(0x02C)) & 0x7FFFFC;
     for (int n = 0; n < 4096; ++n, a += 24) {
         uint32_t ctrl;
@@ -98,10 +129,11 @@ void checkRegionSortModes(bool autosort) {
         const bool presort = (ctrl >> 29) & 1;
         if (presort == autosort) {
             note("Region Array com modo de ordenacao por tile diferente do global");
-            return;
+            return true;
         }
-        if (ctrl >> 31) return;
+        if (ctrl >> 31) return false;
     }
+    return false;
 }
 
 void writeBack(const native::render::soft::Image& r) {
@@ -139,9 +171,69 @@ void writeBack(const native::render::soft::Image& r) {
             }
         }
         // N8.7 3b: marca a linha gravada na memoria das texturas (com a volta no fim, se houver)
-        if (x1 >= x0)
-            vram_touch((sof + uint32_t(y) * stride + uint32_t(x0) * bpp[fmt]) & (kVramSize - 1),
-                       uint32_t(x1 - x0 + 1) * uint32_t(bpp[fmt]));
+        if (x1 >= x0) {
+            const uint32_t o = (sof + uint32_t(y) * stride + uint32_t(x0) * bpp[fmt]) & (kVramSize - 1);
+            const uint32_t n = uint32_t(x1 - x0 + 1) * uint32_t(bpp[fmt]);
+            vram_touch(o, n);
+            if (g_legacyTouches) g_legacyTouches->emplace_back(o, n);
+        }
+    }
+}
+
+bool same_bits(float a, float b) { return std::memcmp(&a, &b, 4) == 0; }
+
+// os parametros do quadro, campo a campo (os floats pelos bits: vem dos registradores e podem ser NaN)
+const char* frame_params_differ(const native::render::FrameParams& a, const native::render::FrameParams& b) {
+    if (a.width != b.width || a.height != b.height) return "tamanho";
+    if (a.clear_color != b.clear_color || !same_bits(a.clear_depth, b.clear_depth)) return "fundo";
+    if (a.fog_table != b.fog_table || a.fog_color != b.fog_color || a.fog_vertex_color != b.fog_vertex_color ||
+        a.fog_density != b.fog_density)
+        return "fog";
+    if (a.shadow_scale != b.shadow_scale) return "sombra";
+    if (!same_bits(a.punch_through_ref, b.punch_through_ref)) return "punch-through";
+    if (a.translucent_autosort != b.translucent_autosort || a.sample_center != b.sample_center ||
+        a.attribute_center != b.attribute_center || a.texel_center != b.texel_center)
+        return "regras do quadro";
+    if (!same_bits(a.small_cull, b.small_cull)) return "cull";
+    if (a.clamp_min != b.clamp_min || a.clamp_max != b.clamp_max) return "clamp";
+    return nullptr;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> g_nativeTouches;
+void rp_touch(void*, uint32_t off, uint32_t n) { g_nativeTouches.emplace_back(off, n); }
+
+// a gravacao nativa num armazenamento a parte; as faixas marcadas sao exatamente os bytes gravados, comparados com os
+// da memoria das texturas depois da gravacao do legado
+void shadow_write_back(const std::vector<uint32_t>& color, uint32_t w, uint32_t h,
+                       const std::vector<std::pair<uint32_t, uint32_t>>& legacy) {
+    static std::vector<uint8_t> mem(kVramSize);
+    // revisao Codex 20261029-205240: cada faixa que o legado gravou comeca com o complemento do resultado, para que um
+    // byte que a gravacao nativa deixe de escrever nunca passe com o valor de um render anterior
+    for (const auto& [o, n] : legacy)
+        for (uint32_t i = 0; i < n; ++i) {
+            const uint32_t a = (o + i) & (kVramSize - 1);
+            mem[a]           = uint8_t(~vram_data()[a]);
+        }
+    g_nativeTouches.clear();
+    RenderPass::write_back(rp_reg, nullptr, color, w, h, mem.data(), rp_touch);
+    if (g_nativeTouches != legacy) {
+        char b[128];
+        std::snprintf(b, sizeof b, "faixas gravadas: legado %zu (%08X+%u), nativo %zu (%08X+%u)", legacy.size(),
+                      legacy.empty() ? 0 : legacy[0].first, legacy.empty() ? 0 : legacy[0].second,
+                      g_nativeTouches.size(), g_nativeTouches.empty() ? 0 : g_nativeTouches[0].first,
+                      g_nativeTouches.empty() ? 0 : g_nativeTouches[0].second);
+        return rp_differ(b);
+    }
+    for (const auto& [o, n] : legacy) {
+        g_rpBytes += n;
+        for (uint32_t i = 0; i < n; ++i) {
+            const uint32_t a = (o + i) & (kVramSize - 1);
+            if (mem[a] != vram_data()[a]) {
+                char b[96];
+                std::snprintf(b, sizeof b, "framebuffer em %06X: legado %02X, nativo %02X", a, vram_data()[a], mem[a]);
+                return rp_differ(b);
+            }
+        }
     }
 }
 
@@ -187,6 +279,12 @@ native::render::FrameParams pvr_frame_params(uint32_t width, uint32_t height) {
     return f;
 }
 
+std::string pvr_render_pass_summary() {
+    return "[render-pass] renders comparados " + std::to_string(g_rpRenders) + " (" + std::to_string(g_rpBytes) +
+           " bytes gravados), diferentes " + std::to_string(g_rpDiffer) +
+           (g_rpFirst.empty() ? std::string() : "; primeira: " + g_rpFirst) + "\n";
+}
+
 RenderStats pvr_render(Sh4Context* c) {
     vram_heap_check();  // N8.7 3b (validacao): a memoria das texturas em sombra, as paginas tocadas desde o ultimo render
     const native::render::soft::FpEnv fpEnv;  // ambiente fixo nesta thread (os workers instalam o seu)
@@ -195,25 +293,37 @@ RenderStats pvr_render(Sh4Context* c) {
     st.width            = ((clip & 0x3F) + 1) * 32;
     st.height           = (((clip >> 16) & 0xF) + 1) * 32;
     const PvrFrame fr = pvr_frame_from_regs();
-    checkRegionSortModes(fr.autosort);
+    const bool     regionMismatch = checkRegionSortModes(fr.autosort);
+    // N8.7 4d: a passagem nativa em sombra (antes do render: o render grava a memoria das texturas)
+    ++g_rpRenders;
+    {
+        const RenderPass::Size       sz = RenderPass::size(rp_reg, nullptr);
+        const RenderPass::Background bg = RenderPass::background(rp_reg, nullptr, vram_data());
+        char                         b[128];
+        if (sz.width != st.width || sz.height != st.height) {
+            std::snprintf(b, sizeof b, "tamanho legado %ux%u, nativo %ux%u", st.width, st.height, sz.width, sz.height);
+            rp_differ(b);
+        } else if ((bg.color & 0xFFFFFF) != fr.background || bg.textured != g_bgTextured) {
+            std::snprintf(b, sizeof b, "fundo legado %06X (textura %d), nativo %06X (textura %d)", fr.background,
+                          int(g_bgTextured), bg.color & 0xFFFFFF, int(bg.textured));
+            rp_differ(b);
+        } else if (const char* f = frame_params_differ(pvr_frame_params(st.width, st.height),
+                                                       RenderPass::frame_params(rp_reg, nullptr, st.width, st.height,
+                                                                                bg.color))) {
+            rp_differ((std::string("parametros do quadro: ") + f).c_str());
+        } else if (RenderPass::region_sort_mismatch(rp_reg, nullptr, vram_data(), fr.autosort) != regionMismatch) {
+            rp_differ("Region Array");
+        }
+    }
     native::render::soft::Image r;  // o fundo pelo plano de ISP_BACKGND_T, com a profundidade de ISP_BACKGND_D
     r.width = st.width, r.height = st.height;
     r.color.assign(size_t(st.width) * st.height, 0xFF000000 | fr.background);
     r.depth.assign(size_t(st.width) * st.height, fr.background_depth);
 
-#if BS_VALIDACAO
     // o decodificador do legado (a referencia): os triangulos do caminho do TA e a captura da IR pelos retornos
     PvrLegacyDecode dec;
     if (g_sink) g_sink->begin(st.width, st.height);
     pvr_decode_legacy(g_sink, st, dec);
-#else
-    // N8.7 (docs/N8-7-KAMUI.md): o produto decodifica as listas do Kamui direto para a IR (ListSink), sem o decodificador
-    // do legado; os parametros do quadro vem dos registradores (pvr_frame_params)
-    native::render::kamui::ListFrame lf;
-    ta_list_sink().build(pvr_frame_params(st.width, st.height), (pvr_reg(R(0x0E4)) & 0x1F) * 32, lf);
-    st.triangles = lf.triangles, st.sprites = lf.sprites, st.skipped = lf.skipped, st.unsupported = lf.unsupported;
-    st.two_volume = lf.two_volume;
-#endif
     // Diagnostico: BS_RENDER_PROFILE=1 mede as fases (ms) e conta fragmentos translucidos
     static const bool prof = std::getenv("BS_RENDER_PROFILE") != nullptr;
     using Clock            = std::chrono::steady_clock;
@@ -225,21 +335,6 @@ RenderStats pvr_render(Sh4Context* c) {
         tp = n;
     };
     lap(0);
-#if !BS_VALIDACAO
-    const bool replaced = g_sink && g_sink->render_list(lf, st.width, st.height, r.color);
-    // N8.7: o produto desenha so pela IR (render_capture Software ou Native): o rasterizador sobre o TA e os texels da
-    // VRAM sao da validacao. Um render que a IR nao desenhou e erro explicito (nunca um recuo silencioso)
-    if (!replaced) sh4_fatal(c, "render sem o renderizador sobre a IR (o caminho do TA saiu do produto no N8.7)", c ? c->pc : 0, 0);
-    const size_t nfrags = 0;
-    // revisao Codex 20261028-115305: um poligono que o PVR desenharia mas a IR nao representa (bump, YUV twiddled,
-    // paleta de 4 bits com mipmap, dois volumes) e erro explicito no produto, nunca um quadro publicado sem ele
-    if (st.unsupported) {
-        static char msg[160];
-        std::snprintf(msg, sizeof msg, "render com %u vertices de estados que a IR nao representa (textura bump, YUV twiddled, "
-                                       "paleta de 4 bits com mipmap ou dois volumes)", st.unsupported);
-        sh4_fatal(c, msg, c ? c->pc : 0, st.unsupported);
-    }
-#else
     (void)c;
     const bool   replaced = g_sink && g_sink->render(fr, st.width, st.height, r.color);  // N7b: --render nativo
     const size_t nfrags   = replaced ? 0
@@ -248,17 +343,18 @@ RenderStats pvr_render(Sh4Context* c) {
     g_inProgress = &st;
     if (g_sink) g_sink->end(fr, dec.prims, r.color, st.width, st.height);
     g_inProgress = nullptr;
-#endif
+    std::vector<std::pair<uint32_t, uint32_t>> touches;
+    g_legacyTouches = &touches;
     writeBack(r);
+    g_legacyTouches = nullptr;
+    shadow_write_back(r.color, st.width, st.height, touches);
     if (prof)
         std::fprintf(stderr, "[perfil] parse %.2f opaca %.2f pt %.2f transl %.2f resolve %.2f ms; fragmentos %zu\n",
                      ms[0], ms[1], ms[2], ms[3], ms[4], nfrags);
     return st;
 }
 
-#if BS_VALIDACAO
 const RenderStats* pvr_render_stats_in_progress() { return g_inProgress; }
-#endif
 
 bool pvr_render_take_fp_violation() { return native::render::soft::take_fp_violation(); }
 
