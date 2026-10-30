@@ -256,6 +256,39 @@ BS_TEST(dmac_channel2_native_shadow_agrees) {
     BS_CHECK(differ() == 0);
     BS_CHECK(sh4_dmac_ch2_summary().find("[canal-2] operacoes comparadas") == 0);
 }
+
+// N8.7 5b (validacao): o system block nativo em sombra no modelo do legado: revisao, ultimo valor escrito com a primeira
+// leitura, GDST = 0 da tabela do SDK, as partidas do G2 (paradas e pedidas; a validacao so guarda o valor) e a do canal
+// 2. Negativos: BS_SYSTEM_BLOCK_MUTACAO=valor e =g2 (ctest n87_system_block_mutacao, n87_system_block_g2) tem de acusar
+BS_TEST(sb_native_system_block_shadow_agrees) {
+    auto differ = [] {
+        const std::string s = holly_sb_summary();
+        const size_t      p = s.find("diferentes ");
+        return p == std::string::npos ? ~0ull : std::stoull(s.substr(p + 11));
+    };
+    Hw h;
+    BS_CHECK(sh4_read32(&h.c, 0xA05F689C) == 0x0000000B);
+    sh4_write32(&h.c, 0xA05F689C, 0);                // so leitura
+    BS_CHECK(sh4_read32(&h.c, 0xA05F689C) == 0x0000000B);
+    BS_CHECK(sh4_read32(&h.c, 0xA05F688C) == 0);     // SB_FFST: primeira leitura, sem escrita
+    BS_CHECK(sh4_read32(&h.c, 0xA05F688C) == 0);
+    sh4_write32(&h.c, 0xA05F6884, 0x12345678);       // configuracao sem modelo: o ultimo valor escrito
+    BS_CHECK(sh4_read32(&h.c, 0xA05F6884) == 0x12345678);
+    sh4_write32(&h.c, 0xA05F7418, 0);                // GDST = 0 (tabela do SDK)
+    sh4_write32(&h.c, 0xA05F7818, 0);                // G2 parado
+    for (uint32_t a : {0xA05F7818u, 0xA05F7838u, 0xA05F7858u, 0xA05F7878u}) {
+        sh4_write32(&h.c, a, 1);                     // partida pedida
+        sh4_write32(&h.c, a, 0);
+    }
+    sh4_write32(&h.c, 0xA05F6800, 0x10000000);
+    sh4_write32(&h.c, 0xA05F6804, 64);
+    sh4_write32(&h.c, 0xA05F6808, 1);                // partida do canal 2 (DMAC desligado: nada copiado)
+    BS_CHECK(sh4_read32(&h.c, 0xA05F6808) == 1 && sh4_read32(&h.c, 0xA05F6804) == 64);
+    if (differ() != 0) std::fprintf(stderr, "%s", holly_sb_summary().c_str());  // a primeira diferenca, para os negativos
+    BS_CHECK(differ() == 0);
+    BS_CHECK(holly_sb_summary().find("[system-block] acessos comparados") == 0);
+    BS_CHECK(holly_sb_summary().find("do G2 4)") != std::string::npos);
+}
 #endif
 
 namespace {

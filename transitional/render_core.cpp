@@ -9,6 +9,7 @@
 #include "pvr/ta.h"
 #include "memory/sh4_dmac.h"
 #include "pvr/holly_intc.h"
+#include "pvr/holly_sb.h"
 #include "pvr/pvr_video.h"
 #include "pvr/vram.h"
 #include "render/render_ir.h"
@@ -781,6 +782,7 @@ std::string summary() {
     out += sh4_dmac_ch2_summary();        // N8.7 4b (validacao): a copia do canal 2 em sombra contra o DMAC
     out += ta_area4_summary();            // N8.7 4c (validacao): a entrada da area 4 em sombra contra o TA
     out += pvr_render_pass_summary();     // N8.7 4d (validacao): a passagem de render em sombra contra a referencia
+    out += holly_sb_summary();            // N8.7 5b (validacao): o system block nativo em sombra contra o legado
 #if BS_VALIDACAO
     out += "[texture-cache] texturas velhas pela geracao " + std::to_string(s.tex_stale) +
            (s.tex_stale_error.empty() ? std::string() : "; primeira: " + s.tex_stale_error) + "\n";

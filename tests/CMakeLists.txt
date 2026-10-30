@@ -73,7 +73,7 @@ add_executable(bs_render_tests unit/main.cpp unit/test_render_native.cpp unit/te
                unit/test_render_texture_heap.cpp
                unit/test_render_display_service.cpp unit/test_render_event_status.cpp
                unit/test_render_channel_dma.cpp unit/test_render_area4_entry.cpp
-               unit/test_render_pass.cpp)
+               unit/test_render_pass.cpp unit/test_render_system_block.cpp)
 target_include_directories(bs_render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/unit)
 target_link_libraries(bs_render_tests PRIVATE bs_native_render bs_native_render_vk)
 add_test(NAME render COMMAND bs_render_tests)
@@ -105,6 +105,15 @@ if(BS_VALIDACAO)
   set_tests_properties(n87_render_pass_mutacao PROPERTIES
     ENVIRONMENT "BS_RENDER_PASSO_MUTACAO=formato;BS_TEST_FILTRO=render_native_pass_shadow_agrees"
     PASS_REGULAR_EXPRESSION "FAIL. render_native_pass_shadow_agrees")
+  # N8.7 5b: negativo do system block em sombra: com o bit 0 do valor guardado trocado na sombra, tem de acusar
+  add_test(NAME n87_system_block_mutacao COMMAND bs_unit_tests)
+  set_tests_properties(n87_system_block_mutacao PROPERTIES
+    ENVIRONMENT "BS_SYSTEM_BLOCK_MUTACAO=valor;BS_TEST_FILTRO=sb_native_system_block_shadow_agrees"
+    PASS_REGULAR_EXPRESSION "FAIL. sb_native_system_block_shadow_agrees")
+  add_test(NAME n87_system_block_g2 COMMAND bs_unit_tests)
+  set_tests_properties(n87_system_block_g2 PROPERTIES
+    ENVIRONMENT "BS_SYSTEM_BLOCK_MUTACAO=g2;BS_TEST_FILTRO=sb_native_system_block_shadow_agrees"
+    PASS_REGULAR_EXPRESSION "primeira: partida do G2 em 005F7818")
 endif()
 
 # Interface do recompilador (catalogo de textos, configuracao da instalacao, troca da instalacao)

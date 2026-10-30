@@ -32,7 +32,8 @@ if(NOT BS_VALIDACAO)
     system/event_bus.cpp     # 4a: o banco de status de interrupcao (D-K3)
     system/dma_bus.cpp       # 4b: a copia do canal 2
     system/area4_bus.cpp     # 4c: a entrada da area 4
-    system/render_bus.cpp)   # 4d: o render pedido por STARTRENDER
+    system/render_bus.cpp    # 4d: o render pedido por STARTRENDER
+    system/system_block_bus.cpp)  # 5b: o system block do Holly que sobra (Maple antes, removidos, canal 2)
 endif()
 list(APPEND BS_RT_PAPEIS nativo)
 
@@ -41,7 +42,6 @@ list(APPEND BS_RT_PAPEIS nativo)
 add_library(bs_rt_simulacao OBJECT
   memory/sh4_sq.cpp
   pvr/pvr_texture.cpp
-  pvr/holly_sb.cpp
   input/input.cpp
   boot/native_boot.cpp
 )
@@ -80,7 +80,8 @@ if(BS_VALIDACAO)
     pvr/holly_intc.cpp  # N8.7 4a: o controlador de interrupcoes do legado, referencia do banco de status
     memory/sh4_dmac.cpp  # N8.7 4b: o DMAC do legado, referencia da copia do canal 2
     pvr/ta.cpp           # N8.7 4c: o TA do legado (FIFO de poligonos), referencia da entrada da area 4
-    pvr/pvr_render.cpp)  # N8.7 4d: o rasterizador de referencia, referencia da passagem de render
+    pvr/pvr_render.cpp   # N8.7 4d: o rasterizador de referencia, referencia da passagem de render
+    pvr/holly_sb.cpp)    # N8.7 5b: o system block do legado, referencia do bloco nativo
   list(APPEND BS_RT_PAPEIS validacao)
 else()
   add_library(bs_rt_validacao OBJECT debug/validacao_stubs.cpp)
