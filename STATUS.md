@@ -16,7 +16,7 @@ Cada item registra **o que** foi verificado, **como** e **quando**.
 | M7 controle e saves | — |
 | M8 zerável | — |
 | M9 melhorias | — |
-| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) e N8.3 (boot, BIOS, flash e GD-ROM fora do produto) concluídos em 2026-10-26; N8.4 (controles, saves e Maple fora do produto), N8.5 (filme legado e conversor YUV fora do produto) e N8.6 (áudio legado e AICA fora do produto) concluídos em 2026-10-27; N8.7 bloqueado e depois autorizado em 2026-10-28 (em execução, `docs/N8-7-DIAGNOSTICO.md`); N8.8 suspenso aguardando o N8.7.** Ver as seções de cada marco e o "Roadmap N0–N10". |
+| **Port nativo** (`docs/PLANO-PORT-NATIVO.md` v2, aprovado 2026-10-15) | N0 e N1 concluídos. **N2 (tempo e eventos) concluído funcionalmente em 2026-10-24:** U1–U8 comprovados, espera de hardware correta no tempo lógico, experimental padrão na janela, `--tempo nativo` como recuo e headless estável por compatibilidade; N2c abre o N8. N3, N4, N5 e N6 concluídos; H9 do N6 aprovado. **N7 funcional, 95%, em fechamento técnico:** Vulkan padrão com recuo seguro; ainda bloqueiam o encerramento a causa não eliminada do DEVICE_LOST na AMD e a prova de fog/volumes contra o Flycast. O fallback é mitigação, não correção. **N8 iniciado em 2026-10-24: N8.0 (portão e referências) concluído em 2026-10-25; N8.1 (N2c) concluído em 2026-10-26 (tempo lógico sem ciclos nem TMU/INTC/CCN/porta; estável preservado); N8.2 (separação produto × validação) e N8.3 (boot, BIOS, flash e GD-ROM fora do produto) concluídos em 2026-10-26; N8.4 (controles, saves e Maple fora do produto), N8.5 (filme legado e conversor YUV fora do produto) e N8.6 (áudio legado e AICA fora do produto) concluídos em 2026-10-27; N8.7 bloqueado, autorizado em 2026-10-28 e concluído em 2026-10-30 (caminho gráfico do legado fora do produto, `docs/N8-7-KAMUI.md` seção 23); N8.8 é o próximo.** Ver as seções de cada marco e o "Roadmap N0–N10". |
 
 ## Versão suportada
 
@@ -3507,6 +3507,15 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
     27.149 renders (`[system-block]` 1.880.750 acessos), NEW GAME 19.984 renders (1.448.321 acessos);
   - referências com o exe do produto `2d393379…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
 - **Revisão Codex `20261030-090455`:** nenhum achado.
+- **Fechamento do N8.7 (2026-10-30)** (`docs/N8-7-KAMUI.md`, seção 23):
+  - fora do produto, só na validação e em sombra: `pvr_render_ta`, `pvr_texel`, `ta_yuv`, `pvr_regs`, `vram`,
+    `pvr_video`, `holly_intc`, `sh4_dmac`, `ta`, `pvr_render`, `render_capture` e `holly_sb`, além dos nomes antigos do
+    caminho gráfico;
+  - residuais no produto: `sh4_sq.cpp` (store queues da CPU), `pvr_texture.cpp` (leitura do TCW) e a fronteira guest no
+    contrato do jogo (D-K1 a);
+  - portão 35/47; render 74/0; unitários 329/349/349; 7 negativos `n87_*`; rotas com todas as sombras em 0; referências
+    N8.0 16/16 (179 exceções) e N8.7 16/16 com o exe `2d393379…`;
+  - N7 permanece em 95% (falta o quadro de fog pareado e o encerramento formal). Próximo: N8.8.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 
@@ -3515,7 +3524,7 @@ viraram a **N10**. N0–N8 mantêm os objetivos e a ordem. Ordem de execução:
 1. N7 permanece **funcional, 95%**, com AMD e fidelidade de fog/volumes abertas; isso não bloqueia N8.0–N8.6, mas
    fog/volumes bloqueiam o corte gráfico N8.7 e o fallback software não pode ser retirado;
 2. retorno ao N2 — **concluído funcionalmente em 2026-10-24**;
-3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c), N8.2 e N8.3 concluídos em 2026-10-26; N8.4, N8.5 e N8.6 em 2026-10-27; N8.7 em execução (autorizado em 2026-10-28) e N8.8 suspenso aguardando o N8.7;
+3. N8 — iniciado em 2026-10-24 (D-N8-1 a D-N8-4); N8.0 concluído em 2026-10-25; N8.1 (N2c), N8.2 e N8.3 concluídos em 2026-10-26; N8.4, N8.5 e N8.6 em 2026-10-27; N8.7 concluído em 2026-10-30 (autorizado em 2026-10-28); N8.8 é o próximo;
 4. N9;
 5. N10.
 
@@ -3531,7 +3540,7 @@ Plano: `docs/PLANO-PORT-NATIVO.md`, seções 4 e 4.2.
 | N5 Filmes | concluída | 100 |
 | N6 Áudio | **concluída** (2026-10-23): H9 aprovado 3/3 com o Vulkan padrão (0 faltas); legado como fallback até o N8 | 100 |
 | N7 Vulkan | **funcional, em fechamento técnico**: Vulkan padrão da janela com recuo seguro para o software; N7a, N7b e N7c validadas. Os dois bloqueios ganharam evidência no N8.7 (2026-10-28). **AMD:** a causa do `Invalid Read` foi demonstrada e corrigida (descritor não reescrito no realloc de `tris_`; 0/90 depois). **Fog e volumes:** implementados no software e no Vulkan, iguais em 32 bits, com a sombra conferida com o Flycast; falta um quadro de fog pareado. O N7 fica em 95% até o mantenedor encerrar formalmente esses bloqueios. SSAO, 16:9 real e MSAA permanecem no N9 (`docs/N7-PLANO.md` seção 25) | 95 |
-| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4 **concluído** em 2026-10-27 (barramento sem dispositivos; Maple, `--controles/--saves legado` fora do produto); N8.5 **concluído** em 2026-10-27 (filme legado e conversor YUV fora do produto); N8.6 **concluído** em 2026-10-27 (área de som nativa; AICA, áudio legado e DMA do G2 fora do produto); N8.7 **em execução** desde 2026-10-28: AMD corrigida, fog e volumes nos dois renderizadores, raster pelo TA, VRAM e YUV fora do produto; a fronteira guest (PVR/TA/VRAM) fica, por decisão pendente D-N8-2 b; N8.8 **suspenso** aguardando o N8.7 (regressão nível 3 interrompida nas referências) | 0 |
+| N8 Sem legado | **iniciada** em 2026-10-24 (D-N8-1 a D-N8-4). N8.0 **concluído** em 2026-10-25 (regressão nível 3, correções, 16 referências validadas e reproduzidas, fixação do áudio nas suítes históricas); N8.1 **concluído** em 2026-10-26 (cadência B, TMU, CCN, cabo e ponte de interrupções no tempo lógico); N8.2 **concluído** em 2026-10-26 (produto × validação: papéis, `BS_VALIDACAO`, catraca do mapa); N8.3 **concluído** em 2026-10-26 (serviço nativo das syscalls; BIOS, drive e flash simulados fora do produto); N8.4 **concluído** em 2026-10-27 (barramento sem dispositivos; Maple, `--controles/--saves legado` fora do produto); N8.5 **concluído** em 2026-10-27 (filme legado e conversor YUV fora do produto); N8.6 **concluído** em 2026-10-27 (área de som nativa; AICA, áudio legado e DMA do G2 fora do produto); N8.7 **concluído** em 2026-10-30: AMD corrigida, fog e volumes nos dois renderizadores, o caminho gráfico do legado (TA, PVR, VRAM, vídeo, interrupções, DMAC, system block, rasterizador de referência) fora do produto e em sombra na validação; a fronteira guest fica no contrato do jogo (D-K1 a); N8.8 é o próximo (regressão nível 3 suspensa em 2026-10-28) | 0 |
 | N9 Remasterização | **não iniciada**; planejamento oficial aprovado em 2026-10-23 (`docs/N9-PLANO.md`): duas edições, Original e Remastered, do mesmo núcleo; começa depois do N8 | 0 |
 | N10 Mods e elevação | não iniciada (extensões preparadas: mídia do N5/N6, texturas HD por conteúdo e shaders validados do N7) | 0 |
 

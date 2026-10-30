@@ -663,3 +663,34 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
   - rotas no exe de validação, com todas as sombras do 3a ao 5b em 0 diferenças e as mesmas contagens do 5b: combate
     27.149 renders (`[system-block]` 1.880.750 acessos), NEW GAME 19.984 renders (1.448.321 acessos);
   - referências com o exe do produto `2d393379…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+
+## 23. Fechamento do N8.7 (2026-10-30)
+
+- **Componentes retirados do produto** (objetos só da validação, cada um como referência de uma sombra com
+  0 diferenças nas rotas):
+  - o rasterizador pelo TA, os texels da VRAM e o conversor YUV (`pvr_render_ta`, `pvr_texel`, `ta_yuv`);
+  - o banco de registradores do PVR (`pvr_regs`, 3a), o modelo da VRAM (`vram`, 3b) e a saída de vídeo (`pvr_video`,
+    3c);
+  - o controlador de interrupções do Holly (`holly_intc`, 4a), o DMAC (`sh4_dmac`, 4b), o TA (`ta`, 4c) e o
+    rasterizador de referência (`pvr_render`, 4d);
+  - o adaptador do decodificador do legado (`render_capture`, 5a) e o system block do legado (`holly_sb`, 5b);
+  - os nomes do legado (`ta_fifo_write`, `pvr_render`, `vram_data`, `holly_intc_raise`, `sh4_dmac_ch2_start`), 5c.
+- **No lugar deles, no produto:** os serviços nativos `graphics_bus` (FrameState), `texture_heap_bus`, `display_bus`,
+  `event_bus`, `dma_bus`, `area4_bus`, `render_bus` e `system_block_bus`, sobre os componentes de `native/render/kamui`
+  e as entradas de `system/graphics_ports.h`. O renderizador (`transitional/render_core`, Vulkan com o recuo em
+  software sobre a IR) fica nos dois builds.
+- **Dependências residuais no produto:**
+  - `sh4_sq.cpp`: as store queues do SH-4 (semântica da CPU que o AOT usa), que entregam os blocos à área 4 nativa;
+  - `pvr_texture.cpp`: a leitura do TCW e dos bytes das texturas para o renderizador nativo, sem modelo de hardware;
+  - a fronteira guest continua no contrato do jogo (D-K1 a): o Kamui escreve nos endereços do PVR, do TA e da VRAM, e
+    os serviços nativos os atendem. Tirar essa fronteira exige mudar o AOT, o que está fora do N8.
+- **Portão:** produto com 35 objetos e validação com 47. Todos os objetos do legado listados acima e os nomes antigos
+  ficam proibidos no produto. Os serviços nativos e as entradas novas são obrigatórios.
+- **Testes gráficos:** `bs_render_tests` 74/0 nos três builds. Unitários: produto 329/0, validação e depuração 349/0.
+  Os 7 negativos `n87_*` passam. As rotas de combate (27.149 renders) e NEW GAME (19.984) têm 0 diferenças em todas as
+  sombras: `[lista-nativa]`, `[frame-state]`, `[texture-heap]`, `[display]`, `[event-status]`, `[canal-2]`, `[area-4]`,
+  `[render-pass]` e `[system-block]`.
+- **Referências** (exe do produto `2d393379…`): N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **N7:** permanece em 95%. Fog e volumes estão nos dois renderizadores e a sombra foi conferida com o Flycast; falta o
+  quadro de fog pareado e o encerramento formal pelo mantenedor.
+- **Próximo:** o N8.8 (fechamento do N8 com a regressão nível 3 suspensa em 2026-10-28). N9 e N10 não começam.
