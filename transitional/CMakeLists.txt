@@ -3,8 +3,12 @@
 # Some quando os chamadores forem elevados.
 add_library(bs_transitional STATIC boundary_registry.cpp bu_adapter.cpp bu_machine.cpp cri_idle.cpp gdfs_adapter.cpp input_bridge.cpp
             pad_adapter.cpp pad_contract.cpp pad_probe.cpp time_adapter.cpp
-            render_capture.cpp   # N7a: IR de render a partir do decodificador do TA
+            render_core.cpp      # N8.7 5a: o renderizador sobre a IR (Vulkan e software), nos dois builds
             free_camera.cpp)     # N7c: camera livre (slots da montagem da camera de gameplay)
+if(BS_VALIDACAO)
+  # N7a / N8.7 5a: o adaptador do decodificador do legado (PvrCaptureSink), que monta a IR pelos retornos do TA e a confere
+  target_sources(bs_transitional PRIVATE render_capture.cpp)
+endif()
 target_include_directories(bs_transitional PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(bs_transitional PUBLIC bs_runtime bs_native bs_native_render bs_native_render_vk bs_dcmap)
 

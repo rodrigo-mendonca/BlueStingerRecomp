@@ -128,6 +128,41 @@ BS_TEST(render_capture_texture_cache_sees_a_rewritten_texture) {
     BS_CHECK(rc::stats().tex_stale == s.before.tex_stale);
 }
 
+// N8.7 5a (revisao Codex 20261030-011020): o renderizador instalado recebe o render pela ligacao do build (no produto, a IR
+// do ListSink por PvrListRenderer::render_list; na validacao, o adaptador do decodificador do legado) e desenha a imagem
+// com as estatisticas; um install() novo troca o renderizador (estatisticas do zero, o anterior nao recebe mais nada) e
+// Off o desliga
+BS_TEST(render_capture_install_swaps_the_connected_renderer) {
+    CaptureScene s(rc::Mode::Software);
+    auto draw = [&] {
+        s.reg(0x144, 0x80000000);  // TA_LIST_INIT
+        s.ta({0x80000000u, kIspAlways, kTspOpaque, 0});
+        s.vtx(0, 0, 1, 0, 0, 0xFFFF0000);
+        s.vtx(64, 0, 1, 0, 0, 0xFFFF0000);
+        s.vtx(0, 64, 1, 0, 0, 0xFFFF0000, true);
+        s.endList();
+        s.render();
+    };
+    auto px = [] {
+        uint16_t v;
+        std::memcpy(&v, vram_data() + 0x100000 + 5 * 64 + 5 * 2, 2);
+        return v;
+    };
+    draw();
+    BS_CHECK(px() == 0xF800);
+    BS_CHECK(rc::stats().renders == 1 && rc::stats().draws == 1 && rc::stats().vertices == 3);
+    BS_CHECK(rc::stats().soft_frames == 1 && rc::stats().soft_failures == 0);
+    BS_CHECK(rc::last_frame().cl.draws.size() == 1);
+    rc::install(rc::Mode::Software);
+    BS_CHECK(rc::stats().renders == 0 && rc::stats().draws == 0);
+    std::memset(vram_data() + 0x100000, 0, 64 * 32);
+    draw();
+    BS_CHECK(px() == 0xF800);
+    BS_CHECK(rc::stats().renders == 1 && rc::stats().draws == 1 && rc::stats().soft_frames == 1);
+    rc::install(rc::Mode::Off);
+    BS_CHECK(rc::stats().renders == 0 && rc::last_frame().cl.draws.empty());
+}
+
 // a mesma textura regravada pelo caminho direto de textura do TA (o destino das store queues e do DMA do canal 2), e uma
 // textura de paleta de 4 bits que so muda a paleta: o cache ve as duas mudancas
 BS_TEST(render_capture_texture_cache_sees_ta_path_and_palette_changes) {

@@ -178,6 +178,24 @@ if(NOT VALIDACAO AND NOT ha)
 elseif(VALIDACAO AND ha)
   list(APPEND bad "render_bus.cpp.obj na validacao (a passagem de render roda em sombra no rasterizador de referencia)")
 endif()
+# N8.7 5a: o renderizador sobre a IR (transitional/render_core) nos dois builds; no produto ele recebe a IR do ListSink
+# (PvrListRenderer) e nem o adaptador do decodificador do legado (render_capture) nem o PvrCaptureSink entram
+tem(":render_capture.cpp.obj" ha)
+if(NOT VALIDACAO AND ha)
+  list(APPEND bad "render_capture.cpp.obj (o adaptador do decodificador do legado) no produto")
+elseif(VALIDACAO AND NOT ha)
+  list(APPEND bad "render_capture.cpp.obj (o adaptador do decodificador do legado) ausente da validacao")
+endif()
+tem("PvrCaptureSink" ha)
+if(NOT VALIDACAO AND ha)
+  list(APPEND bad "simbolo PvrCaptureSink (os retornos do decodificador do legado) no produto")
+endif()
+foreach(sym ":render_core.cpp.obj" "?draw@Renderer@render_capture@transitional@bs@@")
+  tem("${sym}" ha)
+  if(NOT ha)
+    list(APPEND bad "${sym} (o renderizador sobre a IR) ausente")
+  endif()
+endforeach()
 foreach(sym "list_sink.cpp.obj" "?feed@ListSink@kamui@" "frame_state.cpp.obj" "?write@FrameState@kamui@" "texture_heap.cpp.obj"
     "display_service.cpp.obj" "?scanout@kamui@" "event_status.cpp.obj" "?deliver@EventStatus@kamui@"
     "channel_dma.cpp.obj" "?ch2_start@ChannelDma@kamui@" "area4_entry.cpp.obj" "?route@Area4Entry@kamui@"

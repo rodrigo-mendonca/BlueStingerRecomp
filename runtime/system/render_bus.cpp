@@ -1,7 +1,8 @@
 // N8.7 (docs/N8-7-KAMUI.md, incremento 4d): no produto, o render pedido por STARTRENDER (pvr/pvr_render.h) e a passagem
 // nativa (native/render/kamui/render_pass) sobre o estado do quadro (pvr_reg, o FrameState do 3a) e a memoria das
 // texturas (vram_data/vram_touch, a TextureHeap do 3b): tamanho, fundo, parametros do quadro, Region Array, as listas do
-// Kamui pelo ListSink para a IR, o desenho pela IR (render_capture) e a gravacao no framebuffer. O rasterizador de
+// Kamui pelo ListSink para a IR, o desenho pela IR (o PvrListRenderer, transitional/render_core) e a gravacao no
+// framebuffer. O rasterizador de
 // referencia (pvr/pvr_render.cpp, com o caminho do TA) fica na validacao.
 #include "pvr/pvr_render.h"
 
@@ -22,7 +23,7 @@ namespace {
 
 using native::render::kamui::RenderPass;
 
-PvrCaptureSink* g_sink = nullptr;
+PvrListRenderer* g_renderer = nullptr;
 
 uint32_t reg(void*, uint32_t p) { return pvr_reg(p); }
 void     touch(void*, uint32_t off, uint32_t n) { vram_touch(off, n); }
@@ -43,7 +44,7 @@ uint32_t background() {
 
 } // namespace
 
-void     pvr_render_set_capture(PvrCaptureSink* sink) { g_sink = sink; }
+void     pvr_render_set_renderer(PvrListRenderer* renderer) { g_renderer = renderer; }
 uint32_t pvr_background_color() { return background(); }
 
 native::render::FrameParams pvr_frame_params(uint32_t width, uint32_t height) {
@@ -75,9 +76,9 @@ RenderStats pvr_render(Sh4Context* c) {
     auto   tp              = Clock::now();
     double ms[5]           = {};
     ms[0] += std::chrono::duration<double, std::milli>(Clock::now() - tp).count();
-    // o produto desenha so pela IR (render_capture Software ou Native). Um render que a IR nao desenhou e erro
+    // o produto desenha so pela IR (render_core, Software ou Native). Um render que a IR nao desenhou e erro
     // explicito (nunca um recuo silencioso)
-    const bool replaced = g_sink && g_sink->render_list(lf, st.width, st.height, color);
+    const bool replaced = g_renderer && g_renderer->render_list(lf, st.width, st.height, color);
     if (!replaced) sh4_fatal(c, "render sem o renderizador sobre a IR (o caminho do TA saiu do produto no N8.7)", c ? c->pc : 0, 0);
     // revisao Codex 20261028-115305: um poligono que o PVR desenharia mas a IR nao representa (bump, YUV twiddled,
     // paleta de 4 bits com mipmap, dois volumes) e erro explicito no produto, nunca um quadro publicado sem ele

@@ -47,6 +47,20 @@ native::render::FrameParams pvr_frame_params(uint32_t width, uint32_t height);
 
 using TaParam = native::render::kamui::ListParam;  // N8.7: o parametro do TA (pvr/ta.h)
 
+// N8.7 5a (produto, system/render_bus): o renderizador sobre a IR (transitional/render_core) recebe a IR que o ListSink
+// decodificou das listas do Kamui; desenha e preenche `image` (w x h ARGB8888). false = nada desenhado (erro explicito
+// no chamador)
+class PvrListRenderer {
+public:
+    virtual ~PvrListRenderer() = default;
+    virtual bool render_list(const native::render::kamui::ListFrame&, uint32_t, uint32_t, std::vector<uint32_t>&) = 0;
+};
+void     pvr_render_set_renderer(PvrListRenderer* renderer);  // nullptr desliga; so o produto
+uint32_t pvr_background_color();                               // cor do plano de fundo do render atual (ISP_BACKGND_T), RGB
+
+#if BS_VALIDACAO
+// ---- N8.7 5a: so a validacao (pvr/pvr_render.cpp, o rasterizador de referencia, e o decodificador do legado) ----
+
 // Captura (N7a): recebe, na ordem de submissao, o que o decodificador produz em cada render. `vertex` e cada vertice
 // de um strip com o estado do desenho (os vertices de `state` nao valem; end = fim de strip pelo PCW);
 // `strip_break` quando o decodificador recomeca o strip sem fim (global novo, fim de lista); `sprite` os 4 cantos
@@ -71,12 +85,8 @@ public:
     // N7b: depois da decodificacao, antes do rasterizador em software. true = `image` (w x h ARGB8888, ja com o
     // tamanho certo) foi preenchida por outro renderizador e o software nao roda neste render.
     virtual bool render(const PvrFrame&, uint32_t, uint32_t, std::vector<uint32_t>&) { return false; }
-    // N8.7 (produto): a IR que o ListSink decodificou das listas do Kamui; desenha e preenche `image` (w x h ARGB8888).
-    // false = nada desenhado (erro explicito no chamador)
-    virtual bool render_list(const native::render::kamui::ListFrame&, uint32_t, uint32_t, std::vector<uint32_t>&) { return false; }
 };
 void pvr_render_set_capture(PvrCaptureSink* sink);  // nullptr desliga
-uint32_t pvr_background_color();                     // cor do plano de fundo do render atual (ISP_BACKGND_T), RGB
 
 // Rasteriza triangulos dados (na ordem de submissao) com os registradores de quadro `frame` (nenhum registrador do
 // PVR e lido; os texels vem da VRAM atual), sem a VRAM de saida: a imagem ARGB8888 w x h. Mesma regra do pvr_render
@@ -97,5 +107,6 @@ size_t pvr_render_ta(std::span<const PvrTri> prims, std::span<const native::rend
 std::vector<uint32_t> pvr_render_triangles(std::span<const PvrTri> tris, std::span<const native::render::soft::Volume> vols,
                                            std::span<const native::render::soft::VolumeTri> vtris, const PvrFrame& frame,
                                            uint32_t width, uint32_t height);
+#endif
 
 } // namespace bs

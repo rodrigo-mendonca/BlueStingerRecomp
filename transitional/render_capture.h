@@ -23,6 +23,10 @@
 // Texturas: as conversoes nativas; sem conversao nativa (paleta de 8 bits, YUV, bump), o decodificador do legado
 // texel a texel (contadas, nunca descartadas). O cache do backend refaz uma textura quando os bytes dela na VRAM
 // (ou a paleta) mudam.
+//
+// N8.7 5a (docs/N8-7-KAMUI.md): duas partes. O renderizador sobre a IR (render_core: dispositivo, texturas, estatisticas,
+// esta API) entra nos dois builds; no produto ele recebe a IR do ListSink (PvrListRenderer). O adaptador do decodificador
+// do legado (render_capture.cpp: PvrCaptureSink, modo conferir, ListSink contra a captura) so na validacao.
 #include "pvr/pvr_render.h"
 #include "render/render.h"
 #include "render/texture_replacement.h"
