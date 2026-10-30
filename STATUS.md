@@ -3494,6 +3494,19 @@ somente leitura está em `docs/N8-7-DIAGNOSTICO.md`. A regressão parou nas refe
   - [MÉDIA] a sombra não comparava a partida do G2 (só a contava): **aceito**. Ela compara a decisão com a regra do
     legado, o teste escreve 1 nos quatro registradores de partida e o negativo `BS_SYSTEM_BLOCK_MUTACAO=g2`
     (`n87_system_block_g2`) exige que a primeira diferença seja a partida do G2 em `0x005F7818`.
+- **Passo 5c (nomes do legado fora do produto):**
+  - `runtime/system/graphics_ports.h` tem as entradas neutras (`area4_write`, `render_pass_run`, `texture_memory`,
+    `event_status_raise`, `channel2_start`). Os serviços nativos as definem no produto; na validação elas repassam em
+    linha ao legado. Os nomes antigos ficam declarados só sob `BS_VALIDACAO`;
+  - portão: `?ta_fifo_write@bs@@`, `?pvr_render@bs@@`, `?vram_data@bs@@`, `?holly_intc_raise@bs@@` e
+    `?sh4_dmac_ch2_start@bs@@` proibidos no produto, e as cinco entradas novas obrigatórias. O plano citava
+    `sh4_dmac_ch2_transfer`, que não existe; o nome real é `sh4_dmac_ch2_start`. A prova fora da linha usa mapas
+    adulterados: com um nome antigo, o portão recusa; sem uma entrada nova, também;
+  - unitários: produto 329/0, validação 349/0; render 74/0; portão 35/47; os 7 negativos `n87_*` passam;
+  - rotas no exe de validação, com todas as sombras do 3a ao 5b em 0 diferenças e as mesmas contagens do 5b: combate
+    27.149 renders (`[system-block]` 1.880.750 acessos), NEW GAME 19.984 renders (1.448.321 acessos);
+  - referências com o exe do produto `2d393379…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+- **Revisão Codex `20261030-090455`:** nenhum achado.
 
 ### Roadmap N0–N10 (decisão do mantenedor, 2026-10-22)
 

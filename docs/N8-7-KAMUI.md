@@ -633,3 +633,33 @@ Divisão do passo 4 da seção 5 (eventos e DMA), cada parte com o padrão da se
     (40.092 partidas do canal 2). As sombras do 3a ao 4d continuam em 0. NEW GAME com `BS_SYSTEM_BLOCK_MUTACAO=valor`:
     1.073.290 diferentes, a primeira no valor guardado em `0x005F6800`;
   - referências com o exe do produto `57cf9344…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
+
+## 22. Passo 5c: os nomes do legado fora do produto (2026-10-30)
+
+- **Antes:** os serviços nativos do produto atendiam o caminho gráfico com os nomes dos modelos do legado
+  (`ta_fifo_write`, `pvr_render`, `vram_data`, `holly_intc_raise`, `sh4_dmac_ch2_start`), declarados nos cabeçalhos do
+  legado. Um objeto do legado que voltasse ao produto não seria visível por esses nomes.
+- **Agora:**
+  - `runtime/system/graphics_ports.h` tem as entradas neutras que o código dos dois builds chama: `area4_write`,
+    `render_pass_run`, `texture_memory`, `event_status_raise` e `channel2_start`. No produto, quem as define são os
+    serviços nativos (`area4_bus`, `render_bus`, `texture_heap_bus`, `event_bus`, `dma_bus`). Na validação, elas repassam
+    em linha aos modelos do legado, que mantêm os nomes antigos;
+  - as declarações antigas ficam sob `BS_VALIDACAO` em `pvr/ta.h`, `pvr/pvr_render.h`, `pvr/vram.h`,
+    `pvr/holly_intc.h` e `memory/sh4_dmac.h`. O produto que chamasse um nome antigo não compilaria;
+  - chamadores trocados: as store queues (`sh4_sq.cpp`), as texturas (`pvr_texture.cpp`), o Maple (`maple.cpp` e
+    `system/maple_bus.cpp`), os serviços do produto, o `bs-diff` e os testes.
+- **Nome corrigido:** o plano (seção 7) citava `sh4_dmac_ch2_transfer`, que não existe. A entrada do canal 2 do legado
+  é `sh4_dmac_ch2_start`, e é ela que o portão proíbe.
+- **Portão:**
+  - os cinco nomes antigos (`?ta_fifo_write@bs@@`, `?pvr_render@bs@@`, `?vram_data@bs@@`, `?holly_intc_raise@bs@@`,
+    `?sh4_dmac_ch2_start@bs@@`) são proibidos no mapa do produto;
+  - as cinco entradas novas são obrigatórias nele. Na validação não se exige a ausência, porque o build de depuração
+    pode emitir a cópia do repasse em linha;
+  - a prova fora da linha: um mapa do produto com `?vram_data@bs@@` ou `?sh4_dmac_ch2_start@bs@@` acrescentado é
+    recusado ("nome do legado no produto"), e um sem `?texture_memory@bs@@` também ("ausente do produto").
+- **Revisão Codex `20261030-090455`:** nenhum achado.
+- **Provas:**
+  - unitários: produto 329/0, validação 349/0; render 74/0; portão 35/47; os 7 negativos `n87_*` passam;
+  - rotas no exe de validação, com todas as sombras do 3a ao 5b em 0 diferenças e as mesmas contagens do 5b: combate
+    27.149 renders (`[system-block]` 1.880.750 acessos), NEW GAME 19.984 renders (1.448.321 acessos);
+  - referências com o exe do produto `2d393379…`: N8.0 16/16 (179 exceções usadas) e N8.7 16/16.
